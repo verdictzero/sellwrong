@@ -16,8 +16,10 @@ vendored copy of three.js sitting next to it.
   css/style.css         the furniture around the frame
   vendor/three.module.js  three r160, local so the game runs off a memory stick
   js/                   the game
-  art/                  the two things a person drew, as PNGs
+  art/                  the logo and the weapon, as PNGs
+  assets/sprites/       the staff: Freedoom's player, aproned
   tools/bake-art.mjs    node tools/bake-art.mjs — turns art/ into source
+  tools/build_employee.sh  re-paints the apron and the face onto the sprites
   tools/smoke-test.mjs  node tools/smoke-test.mjs — no install, no browser
 
 
@@ -364,10 +366,39 @@ He is there to be the thing you are not frightened of, so that the other one
 lands. The STOCKER is the Imp: 60 health, hunched, faster, and it throws a
 tin of something at your head from across the shop floor.
 
-Both are placeholders in the sense that the DRAWING is provisional, and not
-placeholders in the sense that the animation is. The state tables, the
-timings, the eight rotations and the anchor points are final. Real art drops
-into the same eight slots per frame and nothing else changes.
+THE REAL ART ARRIVED AND DROPPED STRAIGHT IN, which is the whole reason the
+placeholders were built the way they were. The staff are Freedoom's player
+sprite now — a smiley face painted over the visor, a blue SellWrong apron
+over the armour — and switching to them changed the state tables' LETTERS
+and nothing else. Not one timing, not one action function, not one anchor
+point.
+
+Both monsters come out of the same pictures. Freedoom ships the player
+standing (PLAY) and crouching (PLYC); the Associate is the standing set and
+the Stocker is the crouching one, which is the same employee bent over a
+pallet — exactly the difference between them that the placeholders were
+faking with a lower, longer walk.
+
+They are LOADED, not baked into source like the logo and the weapon. Those
+two are single images that will never change again; a hundred and two sprite
+frames somebody is still iterating on want to stay as files, so that changing
+the apron is a re-run of tools/build_employee.sh and a reload. If the files
+are not there the game falls back to the drawn-by-code figures without
+complaint, which is why js/figure.js is still here.
+
+Doom's filenames carry the whole loading rule and there is no manifest:
+PLAYA1 is frame A rotation 1, PLAYA2A8 is one picture serving rotations 2
+and 8 with 8 mirrored, PLAYH0 is one picture seen the same from everywhere.
+Rotation 1 is the front and this engine's view 0 is the front, so Doom
+rotation N is view N-1 and there is nothing to reconcile. The smoke test
+checks the rule against the directory in both directions.
+
+One thing the PNGs do not carry is Doom's per-patch OFFSET, which is what
+made the feet line up when the frames were 26, 29 and 36 across. So every
+view of a set is padded into one canvas the size of the widest and tallest
+in it, centred across and standing on the bottom. Without that a walk cycle
+slides sideways as it plays and a twenty-pixel death frame floats at the
+height of a standing man.
 
 
 THE TEST
@@ -377,7 +408,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-190 checks. Every one of them earns its place by having caught something
+195 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -409,8 +440,10 @@ that had already reached a screenshot:
 WHAT IS NOT DONE
 ----------------
 
-  the logo and the weapon are the only art a person made; everything else
-    is still procedural and still provisional
+  the staff, the logo and the weapon are the art a person made; every
+    other surface in the game is still procedural and still provisional
+  js/figure.js still builds the placeholder monsters, and they are now
+    only ever seen if the sprite files are missing
   the cars are placeholders and are meant to be. They are things with a
     position, an angle and a variant and nothing else, laid out on the same
     arithmetic that drew the bays, so every one of them is IN a bay — which

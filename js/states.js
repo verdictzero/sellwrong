@@ -57,8 +57,12 @@ function walkCycle(prefix, sprite, tics, action, loopTo) {
 /* ---------------------------------------------------------------------
    THE ASSOCIATE
    ------------------------------------------------------------------- */
-S('ASSO_STAND',  'ASSO', 'W', 10, 'A_Look', 'ASSO_STAND2');
-S('ASSO_STAND2', 'ASSO', 'W', 10, 'A_Look', 'ASSO_STAND');
+/* Standing still is walk frames A and B held long, which is what Doom's
+   own zombieman does. There used to be a dedicated idle pose at W; the
+   real sprites use every letter from A to W for something else, and the
+   art wins. */
+S('ASSO_STAND',  'ASSO', 'A', 10, 'A_Look', 'ASSO_STAND2');
+S('ASSO_STAND2', 'ASSO', 'B', 10, 'A_Look', 'ASSO_STAND');
 walkCycle('ASSO_RUN', 'ASSO', 4, 'A_Chase', 'ASSO_RUN1');
 
 /* Aim, fire, recover. The long first state is the tell — you get ten
@@ -75,17 +79,19 @@ S('ASSO_DIE1', 'ASSO', 'H', 5, null,       'ASSO_DIE2');
 S('ASSO_DIE2', 'ASSO', 'I', 5, 'A_Scream', 'ASSO_DIE3');
 S('ASSO_DIE3', 'ASSO', 'J', 5, 'A_Fall',   'ASSO_DIE4');
 S('ASSO_DIE4', 'ASSO', 'K', 5, null,       'ASSO_DIE5');
-S('ASSO_DIE5', 'ASSO', 'L', -1, null,      null);
+S('ASSO_DIE5', 'ASSO', 'L', 5, null,       'ASSO_DIE6');
+S('ASSO_DIE6', 'ASSO', 'M', 5, null,       'ASSO_DIE7');
+S('ASSO_DIE7', 'ASSO', 'N', -1, null,      null);
 
-S('ASSO_XDIE1', 'ASSO', 'M', 5, 'A_XScream', 'ASSO_XDIE2');
-S('ASSO_XDIE2', 'ASSO', 'N', 5, null,        'ASSO_XDIE3');
-S('ASSO_XDIE3', 'ASSO', 'O', 5, 'A_Fall',    'ASSO_XDIE4');
-S('ASSO_XDIE4', 'ASSO', 'P', 5, null,        'ASSO_XDIE5');
-S('ASSO_XDIE5', 'ASSO', 'Q', 5, null,        'ASSO_XDIE6');
-S('ASSO_XDIE6', 'ASSO', 'R', 5, null,        'ASSO_XDIE7');
-S('ASSO_XDIE7', 'ASSO', 'S', 5, null,        'ASSO_XDIE8');
-S('ASSO_XDIE8', 'ASSO', 'T', 5, null,        'ASSO_XDIE9');
-S('ASSO_XDIE9', 'ASSO', 'U', -1, null,       null);
+S('ASSO_XDIE1', 'ASSO', 'O', 5, 'A_XScream', 'ASSO_XDIE2');
+S('ASSO_XDIE2', 'ASSO', 'P', 5, null,        'ASSO_XDIE3');
+S('ASSO_XDIE3', 'ASSO', 'Q', 5, 'A_Fall',    'ASSO_XDIE4');
+S('ASSO_XDIE4', 'ASSO', 'R', 5, null,        'ASSO_XDIE5');
+S('ASSO_XDIE5', 'ASSO', 'S', 5, null,        'ASSO_XDIE6');
+S('ASSO_XDIE6', 'ASSO', 'T', 5, null,        'ASSO_XDIE7');
+S('ASSO_XDIE7', 'ASSO', 'U', 5, null,        'ASSO_XDIE8');
+S('ASSO_XDIE8', 'ASSO', 'V', 5, null,        'ASSO_XDIE9');
+S('ASSO_XDIE9', 'ASSO', 'W', -1, null,       null);
 
 /* ---------------------------------------------------------------------
    THE STOCKER
@@ -95,32 +101,40 @@ S('ASSO_XDIE9', 'ASSO', 'U', -1, null,       null);
    Associate; he just looks like he means it, which turns out to matter
    more.
    ------------------------------------------------------------------- */
-S('STKR_STAND',  'STKR', 'W', 10, 'A_Look', 'STKR_STAND2');
-S('STKR_STAND2', 'STKR', 'W', 10, 'A_Look', 'STKR_STAND');
+S('STKR_STAND',  'STKR', 'A', 10, 'A_Look', 'STKR_STAND2');
+S('STKR_STAND2', 'STKR', 'B', 10, 'A_Look', 'STKR_STAND');
 walkCycle('STKR_RUN', 'STKR', 3, 'A_Chase', 'STKR_RUN1');
 
+/* Wind up, throw, recover — three states over the two attack frames, the
+   recovery landing back on the wind-up picture. The Stocker used to have
+   a third attack frame of its own at G, which pushed every letter after
+   it up by one; sharing Doom's layout with the Associate is what lets
+   both of them be the same sprite set with different letters on the
+   filenames. */
 S('STKR_ATK1', 'STKR', 'E', 8, 'A_FaceTarget', 'STKR_ATK2');
-S('STKR_ATK2', 'STKR', 'F', 8, 'A_FaceTarget', 'STKR_ATK3');
-S('STKR_ATK3', 'STKR', 'G', 6, 'A_StockAttack', 'STKR_RUN1');
+S('STKR_ATK2', 'STKR', 'F', 8, 'A_StockAttack', 'STKR_ATK3');
+S('STKR_ATK3', 'STKR', 'E', 6, null,           'STKR_RUN1');
 
-S('STKR_PAIN',  'STKR', 'H', 2, null,     'STKR_PAIN2');
-S('STKR_PAIN2', 'STKR', 'H', 2, 'A_Pain', 'STKR_RUN1');
+S('STKR_PAIN',  'STKR', 'G', 2, null,     'STKR_PAIN2');
+S('STKR_PAIN2', 'STKR', 'G', 2, 'A_Pain', 'STKR_RUN1');
 
-S('STKR_DIE1', 'STKR', 'I', 8, null,       'STKR_DIE2');
-S('STKR_DIE2', 'STKR', 'J', 8, 'A_Scream', 'STKR_DIE3');
-S('STKR_DIE3', 'STKR', 'K', 6, null,       'STKR_DIE4');
-S('STKR_DIE4', 'STKR', 'L', 6, 'A_Fall',   'STKR_DIE5');
-S('STKR_DIE5', 'STKR', 'M', -1, null,      null);
+S('STKR_DIE1', 'STKR', 'H', 8, null,       'STKR_DIE2');
+S('STKR_DIE2', 'STKR', 'I', 8, 'A_Scream', 'STKR_DIE3');
+S('STKR_DIE3', 'STKR', 'J', 6, null,       'STKR_DIE4');
+S('STKR_DIE4', 'STKR', 'K', 6, 'A_Fall',   'STKR_DIE5');
+S('STKR_DIE5', 'STKR', 'L', 6, null,       'STKR_DIE6');
+S('STKR_DIE6', 'STKR', 'M', 6, null,       'STKR_DIE7');
+S('STKR_DIE7', 'STKR', 'N', -1, null,      null);
 
-S('STKR_XDIE1', 'STKR', 'N', 5, 'A_XScream', 'STKR_XDIE2');
-S('STKR_XDIE2', 'STKR', 'O', 5, null,        'STKR_XDIE3');
-S('STKR_XDIE3', 'STKR', 'P', 5, 'A_Fall',    'STKR_XDIE4');
-S('STKR_XDIE4', 'STKR', 'Q', 5, null,        'STKR_XDIE5');
-S('STKR_XDIE5', 'STKR', 'R', 5, null,        'STKR_XDIE6');
-S('STKR_XDIE6', 'STKR', 'S', 5, null,        'STKR_XDIE7');
-S('STKR_XDIE7', 'STKR', 'T', 5, null,        'STKR_XDIE8');
-S('STKR_XDIE8', 'STKR', 'U', 5, null,        'STKR_XDIE9');
-S('STKR_XDIE9', 'STKR', 'V', -1, null,       null);
+S('STKR_XDIE1', 'STKR', 'O', 5, 'A_XScream', 'STKR_XDIE2');
+S('STKR_XDIE2', 'STKR', 'P', 5, null,        'STKR_XDIE3');
+S('STKR_XDIE3', 'STKR', 'Q', 5, 'A_Fall',    'STKR_XDIE4');
+S('STKR_XDIE4', 'STKR', 'R', 5, null,        'STKR_XDIE5');
+S('STKR_XDIE5', 'STKR', 'S', 5, null,        'STKR_XDIE6');
+S('STKR_XDIE6', 'STKR', 'T', 5, null,        'STKR_XDIE7');
+S('STKR_XDIE7', 'STKR', 'U', 5, null,        'STKR_XDIE8');
+S('STKR_XDIE8', 'STKR', 'V', 5, null,        'STKR_XDIE9');
+S('STKR_XDIE9', 'STKR', 'W', -1, null,       null);
 
 /* ---------------------------------------------------------------------
    Things that are not monsters

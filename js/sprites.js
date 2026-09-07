@@ -111,25 +111,33 @@ export class SpriteBank {
  * them.
  */
 function humanoidFrames(bank, name, skin, gait, opts = {}) {
+  /* DOOM'S OWN LAYOUT FOR A PLAYER, exactly: four to walk on, two for
+     the attack, one for pain, seven for dying and nine for coming apart.
+     It used to differ — a dedicated idle frame at W, five death frames
+     and the gibs starting at M — and that was fine while these pictures
+     were drawn by this file. They are not any more: the staff are
+     Freedoom's player sprite with an apron on, they arrive with Doom's
+     letters on their filenames, and the tables that name the frames are
+     shared between the real art and the placeholders. So the
+     placeholders moved to match the art rather than the other way round.
+
+     What that cost: the dedicated standing pose. There is no spare
+     letter for one — A through W is all of them — so a thing standing
+     still uses walk frames A and B, alternating slowly, which is what
+     Doom's own zombieman does. */
   const L = {
-    walk: ['A', 'B', 'C', 'D'], stand: 'W', attack: ['E', 'F'], pain: 'G',
-    death: ['H', 'I', 'J', 'K', 'L'],
-    xdeath: ['M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U'],
+    walk: ['A', 'B', 'C', 'D'], attack: ['E', 'F'], pain: 'G',
+    death: ['H', 'I', 'J', 'K', 'L', 'M', 'N'],
+    xdeath: ['O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W'],
     ...(opts.letters || {}),
   };
 
   const walk = F.walkKeys(gait);
   const attack = F.attackPoses(opts.attack || {});      // [wind, cock, release]
-  const stand = F.standPose(gait);
   const deaths = F.deathPoses();
   const ro = { rig: opts.rig || F.RIG, scaleX: opts.scaleX || 1, scaleY: opts.scaleY || 1 };
 
   L.walk.forEach((ltr, i) => bank.addFrame(name, ltr, F.renderAllRotations(walk[i], skin, ro)));
-
-  /* A dedicated idle, so a thing standing still is not frozen mid-stride.
-     Doom reused its first two walk frames for this; a separate pose is
-     better and costs one frame. */
-  bank.addFrame(name, L.stand, F.renderAllRotations(stand, skin, ro));
 
   /* Two attack frames take the wind-up and the release; three take the
      extra beat in between. */
@@ -138,8 +146,12 @@ function humanoidFrames(bank, name, skin, gait, opts = {}) {
 
   bank.addFrame(name, L.pain, F.renderAllRotations(F.painPose(), skin, ro));
 
-  /* Death, single-rotation, exactly as Doom stored it. */
-  deaths.forEach((p, i) => bank.addFrame(name, L.death[i], F.renderAllRotations(p, skin, { ...ro, only: 2 })));
+  /* Death, single-rotation, exactly as Doom stored it. Driven by the
+     LETTERS rather than by the poses, and clamped, so a table asking for
+     seven frames out of five poses holds the last one — which is what
+     the end of a death animation is anyway. */
+  L.death.forEach((ltr, i) => bank.addFrame(name, ltr,
+    F.renderAllRotations(deaths[Math.min(i, deaths.length - 1)], skin, { ...ro, only: 2 })));
 
   /* And the other way out. */
   gibFrames(skin, L.xdeath.length).forEach((views, i) => bank.addFrame(name, L.xdeath[i], views));
@@ -449,13 +461,6 @@ export function bakeSprites() {
     {
       rig: { ...F.RIG, thigh: 13, shin: 13, upperArm: 12, foreArm: 12, torsoR: 6.2, headR: 5.6, limbR: 3.0, armR: 2.5 },
       attack: { lean: 16, windSh: -18, windElb: 96, windSpread: 40, releaseLean: 26, relSh: 96, relElb: 6, relSpread: 30 },
-      /* three attack frames, so everything after them shifts up one —
-         exactly the way Doom's Imp differs from its Zombieman */
-      letters: {
-        attack: ['E', 'F', 'G'], pain: 'H',
-        death: ['I', 'J', 'K', 'L', 'M'],
-        xdeath: ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V'],
-      },
     });
 
   /* --- fire, in three sizes --- */

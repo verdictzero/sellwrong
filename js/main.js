@@ -15,6 +15,7 @@ import * as THREE from 'three';
 import { LofiPipeline } from './lofi.js';
 import { bakeTextures } from './textures.js';
 import { bakeSprites, bakeWeapons } from './sprites.js';
+import { loadDoomSprites, browserDecoder } from './spriteload.js';
 import { buildSellWrong } from './maps/sellwrong.js';
 import { Game } from './game.js';
 import { Hud } from './hud.js';
@@ -61,6 +62,28 @@ async function boot() {
   status('BAKING SPRITES', 0.35); await breathe();
   const sprites = bakeSprites();
   const weapons = bakeWeapons();
+
+  /* THE STAFF ARE THE ONE THING NOT DRAWN BY THIS PROGRAM. They are
+     Freedoom's player sprite with a smiley face over the visor and a
+     SellWrong apron on, and they are LOADED rather than baked — the
+     apron is still being iterated on and files you can re-export beat a
+     wall of base64 you have to re-generate.
+
+     Both monsters come out of the same pictures: the Associate is the
+     standing set and the Stocker is the crouching one, which is the same
+     employee bent over a pallet, and is exactly the difference the two
+     of them were always meant to have.
+
+     If the art is not there this quietly does nothing and the game runs
+     on the figures in sprites.js, which is why those are still built
+     above rather than deleted. */
+  status('THE STAFF', 0.55); await breathe();
+  const employee = browserDecoder('assets/sprites/employee');
+  const loaded = (await Promise.all([
+    loadDoomSprites(sprites, { sprite: 'PLAY', as: 'ASSO', decode: employee }),
+    loadDoomSprites(sprites, { sprite: 'PLYC', as: 'STKR', decode: employee }),
+  ])).reduce((a, b) => a + b, 0);
+  if (loaded) console.log(`staff: ${loaded} frames of real art`);
 
   status('BUILDING SELLWRONG', 0.70); await breathe();
   const level = buildSellWrong();

@@ -167,6 +167,57 @@ const st = await import('../js/states.js');
   check('sprites are 64px or under',
     [...bank.frames.values()].every(f => f.views[0].w <= 64 && f.views[0].h <= 64));
 
+  /* ---------- the staff, who are the one thing a person drew ----------
+
+     These are files rather than code, so the checks are about the files:
+     that the naming rule in spriteload.js predicts exactly the set on
+     disk in both directions, and that loading them through the game's
+     OWN loader still satisfies every letter the state tables name. The
+     letters moved to Doom's layout when the real art arrived, and the
+     placeholders moved with them; this is what stops the two drifting.  */
+  {
+    const load = await import('../js/spriteload.js');
+    const { readPNG } = await import('./png-read.mjs');
+    const fs = await import('node:fs');
+    const dir = new URL('../assets/sprites/employee/', import.meta.url);
+
+    const predicted = new Set();
+    for (const sprite of ['PLAY', 'PLYC'])
+      for (const f of load.frameFiles(sprite)) predicted.add(f.file + '.png');
+    const onDisk = new Set(fs.readdirSync(dir).filter(f => f.endsWith('.png')));
+
+    const absent = [...predicted].filter(f => !onDisk.has(f));
+    const extra = [...onDisk].filter(f => !predicted.has(f));
+    note('employee frames', `${onDisk.size} on disk, ${predicted.size} named by the rule`);
+    check('every frame the naming rule predicts is on disk',
+      absent.length === 0, absent.slice(0, 6).join(' '));
+    check('every frame on disk is one the rule predicts',
+      extra.length === 0, extra.slice(0, 6).join(' '));
+
+    const decode = async (name) => readPNG(new URL(name + '.png', dir));
+    const n = (await Promise.all([
+      load.loadDoomSprites(bank, { sprite: 'PLAY', as: 'ASSO', decode }),
+      load.loadDoomSprites(bank, { sprite: 'PLYC', as: 'STKR', decode }),
+    ])).reduce((a, b) => a + b, 0);
+    check('both staff sprite sets load', n === 46, `${n} letters`);
+
+    const stillMissing = [];
+    for (const [name, st2] of Object.entries(st.STATES)) {
+      if (!/^(ASSO|STKR)/.test(st2.sprite)) continue;
+      const e = bank.frames.get(st2.sprite + st2.frame);
+      if (!e) { stillMissing.push(`${name} wants ${st2.sprite}${st2.frame}`); continue; }
+      if (e.views.length !== 8 || e.views.some(v => !v)) stillMissing.push(`${name} has a hole`);
+    }
+    check('every staff state is satisfied by the real art', stillMissing.length === 0,
+      stillMissing.slice(0, 5).join(', '));
+    check('the real sprites are 64px or under',
+      ['ASSO', 'STKR'].every(n2 => {
+        const e = bank.frames.get(n2 + 'A');
+        return e.w <= 64 && e.h <= 64;
+      }), `ASSO ${bank.frames.get('ASSOA').w}x${bank.frames.get('ASSOA').h}, ` +
+          `STKR ${bank.frames.get('STKRA').w}x${bank.frames.get('STKRA').h}`);
+  }
+
   /* a walking figure must actually differ between frames, or it is four
      drawings of standing still */
   const diff = (a, b) => { let d = 0; for (let i = 0; i < a.data.length; i += 4) if (a.data[i + 3] !== b.data[i + 3]) d++; return d; };
