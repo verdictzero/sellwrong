@@ -371,6 +371,9 @@ export class Actor {
       rot = ((Math.round(rel / (Math.PI / 4)) % 8) + 8) % 8;
     }
 
+    /* `variants` picks CAR0..CAR4 style sprite sets off one actor type.
+       Nothing declares it since the placeholder cars came out; it is left
+       standing because it is the hook the real cars will want. */
     const spr = this.spriteOverride || (this.info.variants
       ? this.state.sprite.slice(0, 3) + (this.variant % this.info.variants)
       : this.state.sprite);

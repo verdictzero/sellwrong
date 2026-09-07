@@ -346,85 +346,6 @@ export function fireFrames(w, h, count, seed = 7, opts = {}) {
   return out;
 }
 
-/* ====================================================================
-   Props
-
-   Cars, trolleys, bollards and the things you set alight. All of them
-   are placeholders in the sense that they are simple; none of them is a
-   placeholder in the sense that it is missing.
-   ==================================================================== */
-
-/**
- * A car, from eight angles.
- *
- * Not modelled — parameterised. The silhouette of a box seen from above
- * at angle t is |L cos t| + |W sin t| wide, so the drawing is that wide
- * and everything on it is placed as a fraction of that width. Eight
- * consistent views out of one equation, which is all a placeholder needs
- * and rather more than a placeholder usually gets.
- */
-function carViews(bodyKey, bodyT, seed) {
-  const rng = makeRng(seed);
-  const L = 60, W = 26;                         // in sprite pixels, before scaling
-  const out = [];
-  for (let rot = 0; rot < 8; rot++) {
-    const p = new Pix(64, 32, seed + rot, false);
-    const th = rot * Math.PI / 4;
-    /* A box's width on screen is its OWN width across the view plus its
-       own length along it. The car's length runs along its facing axis,
-       so at rot 0 — nose-on — the length is pointing at the camera and
-       contributes nothing, and what you see is 26 units of bonnet. The
-       first version of this had L and W the wrong way round and produced
-       a car park of cars all parked broadside to everything. */
-    const span = Math.abs(W * Math.cos(th)) + Math.abs(L * Math.sin(th));
-    const x0 = Math.round(32 - span / 2), x1 = Math.round(32 + span / 2);
-    const side = Math.abs(Math.sin(th));        // 1 = broadside, 0 = nose-on
-    const groundY = 30;
-    const bodyTop = 14 + Math.round((1 - side) * 1);
-    const roofTop = 6;
-
-    /* body */
-    for (let y = bodyTop; y <= groundY - 3; y++)
-      for (let x = x0; x <= x1; x++) {
-        const edge = (x === x0 || x === x1) ? -0.16 : 0;
-        p.ink(x, y, bodyKey, bodyT + (y === bodyTop ? 0.22 : edge));
-      }
-    /* cabin, shorter than the body and set back a little at an angle */
-    const cabW = Math.round(span * (0.42 + side * 0.16));
-    const cabOff = Math.round(Math.sin(th) * span * 0.06);
-    const cx0 = 32 - (cabW >> 1) + cabOff, cx1 = cx0 + cabW;
-    for (let y = roofTop; y < bodyTop; y++)
-      for (let x = cx0; x <= cx1; x++)
-        p.ink(x, y, bodyKey, bodyT - 0.06);
-    /* glass */
-    for (let y = roofTop + 2; y < bodyTop - 1; y++)
-      for (let x = cx0 + 2; x <= cx1 - 2; x++)
-        p.ink(x, y, 'blue', 0.14 + (y - roofTop) * 0.02);
-    p.hline(cx0, cx1, roofTop, bodyKey, bodyT + 0.26);
-    /* wheels: two when broadside, one arch when end on */
-    const wy = groundY - 3;
-    const wheels = side > 0.4 ? [x0 + Math.round(span * 0.18), x1 - Math.round(span * 0.18)]
-                              : [Math.round((x0 + x1) / 2)];
-    for (const wx of wheels) {
-      p.disc(wx, wy, 3.4, 'grey', 0.07);
-      p.disc(wx, wy, 1.6, 'grey', 0.26);
-    }
-    /* lights, on whichever end is pointing anywhere near us */
-    const facing = Math.cos(th);
-    if (facing > 0.3) { p.disc(x0 + 3, bodyTop + 3, 1.6, 'bone', 0.86); p.disc(x1 - 3, bodyTop + 3, 1.6, 'bone', 0.86); }
-    else if (facing < -0.3) { p.disc(x0 + 3, bodyTop + 3, 1.4, 'red', 0.66); p.disc(x1 - 3, bodyTop + 3, 1.4, 'red', 0.66); }
-    /* the shadow it sits in */
-    for (let x = x0; x <= x1; x++) { p.ink(x, groundY, 'grey', 0.05); p.ink(x, groundY + 1, 'grey', 0.06); }
-    /* rust and filth, because nobody has moved these in a while */
-    for (let i = 0; i < 40; i++) {
-      const x = x0 + Math.floor(rng() * Math.max(1, span)), y = bodyTop + Math.floor(rng() * 12);
-      if (rng() < 0.5) p.wash(x, y, 'rust', 0.24, 0.4);
-    }
-    p.snap(0.3);
-    out.push(p);
-  }
-  return out;
-}
 
 /** Anything that is the same from every side: barrels, cans, bollards. */
 function radial(draw, w = 32, h = 40, seed = 1) {
@@ -473,12 +394,6 @@ export function bakeSprites() {
     bank.addFrame('BLAZ', 'ABCDEFGH'[i], new Array(8).fill(p), { fullbright: true, scale: 2.5 }));
   fireFrames(24, 24, 6, 31, { taper: 0.9 }).forEach((p, i) =>
     bank.addFrame('EMBR', 'ABCDEF'[i], new Array(8).fill(p), { fullbright: true }));
-
-  /* --- cars: three of them, so a car park is not one car forty times --- */
-  const CARS = [['blue', 0.30, 501], ['red', 0.34, 502], ['bone', 0.44, 503],
-                ['olive', 0.28, 504], ['grey', 0.24, 505]];
-  CARS.forEach(([key, t, seed], i) =>
-    bank.addFrame('CAR' + i, 'A', carViews(key, t, seed), { scale: 3.0 }));
 
   /* --- a trolley, abandoned mid-aisle --- */
   bank.addFrame('TRLY', 'A', radial(p => {

@@ -139,7 +139,6 @@ S('STKR_XDIE9', 'STKR', 'W', -1, null,       null);
 /* ---------------------------------------------------------------------
    Things that are not monsters
    ------------------------------------------------------------------- */
-S('CAR_STAND',   'CAR0', 'A', -1, null, null);
 S('TRLY_STAND',  'TRLY', 'A', -1, null, null);
 S('BOLL_STAND',  'BOLL', 'A', -1, null, null);
 S('GCAN_STAND',  'GCAN', 'A', -1, null, null);
@@ -203,8 +202,6 @@ export const ACTORS = {
   },
 
   /* Scenery. Solid, mostly, and most of it burns. */
-  CAR:     { name: 'Car',     spawn: 'CAR_STAND',  radius: 46, height: 60, solid: true, health: 100,
-             shootable: true, flammable: true, fuel: 220, explodes: true, variants: 5 },
   TROLLEY: { name: 'Trolley', spawn: 'TRLY_STAND', radius: 16, height: 44, solid: true, pushable: true },
   BOLLARD: { name: 'Bollard', spawn: 'BOLL_STAND', radius: 10, height: 42, solid: true },
   FUELCAN: { name: 'Fuel can', spawn: 'GCAN_STAND', radius: 12, height: 38, solid: false,

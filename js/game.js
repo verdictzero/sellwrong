@@ -36,7 +36,7 @@ import { buildSky, followSky } from './sky.js';
 
 const THING_TO_ACTOR = {
   ASSOCIATE: 'ASSOCIATE', STOCKER: 'STOCKER',
-  CAR: 'CAR', TROLLEY: 'TROLLEY', BOLLARD: 'BOLLARD',
+  TROLLEY: 'TROLLEY', BOLLARD: 'BOLLARD',
   FUELCAN: 'FUELCAN', CRATE: 'CRATE', LAMP: 'LAMP',
 };
 

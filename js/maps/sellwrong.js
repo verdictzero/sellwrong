@@ -249,6 +249,7 @@ const FUEL = {
 export function buildSellWrong() {
   const mb = new MapBuilder('SELLWRONG');
   const rm = new RectMap(mb);
+  const carSlots = [];
 
   /* The ends of the parade, once the wings are laid out.
 
@@ -669,16 +670,23 @@ export function buildSellWrong() {
   /* the player, out at the mouth of the car park, looking at the sign */
   mb.thing('START', 1240, LOT_Y0 + 200, Math.PI / 2);
 
-  /* --- the cars ------------------------------------------------------
-     Placed on the bay pitch, from the same arithmetic that drew the
-     bays, so every one of them is IN a bay. They are things with a
-     position, an angle and a variant, and nothing else — which is the
-     shape a loader for real models wants, so when the 3D cars arrive the
-     only change is what gets drawn at each of these.
+  /* --- where the cars go ---------------------------------------------
+     Not things, and no longer drawn. There WERE placeholder cars here —
+     eight views apiece off one silhouette equation, which was a decent
+     placeholder and is now in the way of a better one — and the moment
+     real models are the plan, a box on a billboard stops being a
+     stand-in and starts being something you have to remember to delete.
+
+     So what survives is the part worth keeping: the ARITHMETIC. Every
+     slot comes off the same pitch that drew the bay lines, so a car put
+     at one of these is genuinely in a bay rather than near one, and the
+     shape is what a loader wants and nothing more — a position, a
+     heading, and which of them it is. Read `level.carSlots`, put a model
+     at each, and the lot is parked.
 
      A car park that is FULL is wrong for this: the place is half empty
      because half the town has already left, so bays are taken at about
-     one in three, thinning towards the back. */
+     one in three, thinning towards the road. */
   {
     let seed = 20250907;
     const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
@@ -691,14 +699,17 @@ export function buildSellWrong() {
         const cx = LOT_X0 + (i + 0.5) * BAY_W;
         /* nobody parks in the two bays either side of the entrance */
         if (Math.abs(cx - (ENT_A0 + ENTRY_W)) < 200 && ri === 0) continue;
-        mb.thing('CAR', cx, cy + (rnd() - 0.5) * 14, row.facing + (rnd() - 0.5) * 0.10,
-          { variant: Math.floor(rnd() * 5) });
+        carSlots.push({
+          x: cx, y: cy + (rnd() - 0.5) * 14,
+          angle: row.facing + (rnd() - 0.5) * 0.10,
+          variant: Math.floor(rnd() * 5),
+        });
       }
     });
     /* and three abandoned across the lanes, because everyone left at once */
-    mb.thing('CAR', 1500, FIRELANE_Y - 60, 0.35, { variant: 2 });
-    mb.thing('CAR', 3100, FIRELANE_Y - 80, -0.25, { variant: 4 });
-    mb.thing('CAR', 620, FIRELANE_Y - 700, 1.4, { variant: 1 });
+    carSlots.push({ x: 1500, y: FIRELANE_Y - 60,  angle: 0.35,  variant: 2 });
+    carSlots.push({ x: 3100, y: FIRELANE_Y - 80,  angle: -0.25, variant: 4 });
+    carSlots.push({ x: 620,  y: FIRELANE_Y - 700, angle: 1.4,   variant: 1 });
   }
 
   /* --- the furniture of a shop front --------------------------------- */
@@ -813,6 +824,8 @@ export function buildSellWrong() {
 
   const level = mb.build();
   level.slideDoors = slide;
+  /* Position, heading and which one it is, for whatever draws the cars. */
+  level.carSlots = carSlots;
   level.burnTarget = 60;          // per cent of the parade, to win
   /* Where "outside" starts, for the escape. The footway is outdoors and
      is NOT far enough: getting clear means getting off the pavement and

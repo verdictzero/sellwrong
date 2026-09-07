@@ -408,7 +408,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-195 checks. Every one of them earns its place by having caught something
+199 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -444,11 +444,12 @@ WHAT IS NOT DONE
     other surface in the game is still procedural and still provisional
   js/figure.js still builds the placeholder monsters, and they are now
     only ever seen if the sprite files are missing
-  the cars are placeholders and are meant to be. They are things with a
-    position, an angle and a variant and nothing else, laid out on the same
-    arithmetic that drew the bays, so every one of them is IN a bay — which
-    is the shape a loader for real models wants. There is deliberately no
-    such loader yet: writing one against no models is guessing.
+  there are no cars. The placeholders are gone and what is left is
+    `level.carSlots` — a position, a heading and a variant for each, off
+    the same arithmetic that drew the bay lines, so every slot is IN a bay
+    rather than near one. Put a model at each and the lot is parked.
+    There is deliberately no loader yet: writing one against no models is
+    guessing.
   four of the six neighbouring units are a shopfront with nothing behind
     it, which is one wall each and buys the whole read of the place
   no music

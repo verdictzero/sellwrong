@@ -156,7 +156,6 @@ const st = await import('../js/states.js');
   for (const [n, s] of Object.entries(st.STATES)) {
     const key = s.sprite + s.frame;
     if (bank.frames.has(key)) continue;
-    if (s.sprite.startsWith('CAR') && bank.frames.has('CAR0' + s.frame)) continue;
     missing.push(`${n} wants ${key}`);
   }
   check('every state has the sprite frame it names', missing.length === 0, missing.join(', '));
@@ -251,6 +250,34 @@ const level = buildSellWrong();
     placed.filter(t => !level.sectorAt(t.x, t.y)).map(t => `${t.type}@${t.x},${t.y}`).join(' '));
 
   check('there is a start', level.things.some(t => t.type === 'START'));
+
+  /* THE CARS ARE DATA, NOT THINGS. The placeholder cars are gone and what
+     is left is a list of slots for real models to be put at. The point of
+     the list is that it came off the same pitch that drew the bay lines,
+     so every slot is IN a bay rather than near one — which is worth
+     checking, because it is the only property of it that is hard to see
+     and easy to break. */
+  {
+    const slots = level.carSlots || [];
+    note('parking slots', slots.length);
+    check('the lot has cars marked out', slots.length > 40, `${slots.length}`);
+    check('nothing is still spawning placeholder cars',
+      !level.things.some(t => t.type === 'CAR'));
+    const shape = slots.every(c =>
+      typeof c.x === 'number' && typeof c.y === 'number' &&
+      typeof c.angle === 'number' && Number.isInteger(c.variant));
+    check('every slot is a position, a heading and a variant', shape);
+    const stray = slots.filter(c => {
+      const sec = level.sectorAt(c.x, c.y);
+      return !sec || (sec.name !== 'bays' && sec.name !== 'fire lane');
+    });
+    check('every car is parked in a bay',
+      stray.length === 0,
+      stray.slice(0, 4).map(c => {
+        const sec = level.sectorAt(c.x, c.y);
+        return `${c.x | 0},${c.y | 0} in ${sec ? sec.name : 'nothing'}`;
+      }).join(' '));
+  }
 
   /* CAN YOU ACTUALLY GET THERE.
 
