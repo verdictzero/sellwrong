@@ -1,0 +1,55 @@
+# The same two jobs as .gitlab-ci.yml, for the place the repository
+# actually lives. Both call tools/build-site.sh, so there is one
+# definition of what the site is and no chance of the two drifting.
+name: test and publish
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - name: smoke test
+        run: node tools/smoke-test.mjs
+      - name: art is in step with art/
+        run: |
+          cp js/art-data.js /tmp/art-data.committed.js
+          node tools/bake-art.mjs
+          if ! diff -q /tmp/art-data.committed.js js/art-data.js > /dev/null; then
+            echo "js/art-data.js is stale — art/ has changed since it was baked."
+            echo "Run: node tools/bake-art.mjs   and commit the result."
+            exit 1
+          fi
+
+  publish:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: assemble the site
+        run: sh tools/build-site.sh public
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: public }
+      - id: deploy
+        uses: actions/deploy-pages@v4

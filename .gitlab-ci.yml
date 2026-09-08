@@ -1,0 +1,67 @@
+# =====================================================================
+# SELLWRONG — test, then publish
+# =====================================================================
+#
+# The game has no build step: every texture, sprite and level is
+# generated in the page at start-up, and the only file it loads is a
+# vendored three.js. So this pipeline is two things and nothing else —
+# run the checks, and copy the parts of the repository that are the
+# site into public/ for GitLab Pages.
+#
+# THE CHECKS RUN BEFORE THE DEPLOY AND THE DEPLOY DEPENDS ON THEM. A
+# broken build that reaches the URL is worse than no deploy: this is a
+# game, so nobody files a bug, they just close the tab. `needs` makes
+# the dependency explicit rather than relying on stage ordering, so the
+# pages job cannot be retried past a red test.
+#
+# There is no npm install anywhere on purpose. tools/smoke-test.mjs
+# stubs three.js itself and everything else in the repo is dependency
+# free, so the pipeline is one container pull and about a second of
+# actual work.
+
+default:
+  image: node:22-alpine
+  interruptible: true
+
+stages:
+  - test
+  - deploy
+
+# 199 checks: the palette, the texture and sprite bakeries, the map, the
+# collision, the state tables and the fire grid. No browser needed —
+# everything that is not WebGL is exercised here.
+smoke test:
+  stage: test
+  script:
+    - node --version
+    - node tools/smoke-test.mjs
+
+# The art in art/ is baked into js/art-data.js by hand, deliberately, so
+# that the game has no build step. That is only safe if something checks
+# the two have not drifted — otherwise a re-exported logo sits in the
+# repo looking authoritative while the game still draws the old one.
+art is in step:
+  stage: test
+  script:
+    - cp js/art-data.js /tmp/art-data.committed.js
+    - node tools/bake-art.mjs
+    - |
+      if ! diff -q /tmp/art-data.committed.js js/art-data.js > /dev/null; then
+        echo "js/art-data.js is stale — art/ has changed since it was baked."
+        echo "Run: node tools/bake-art.mjs   and commit the result."
+        exit 1
+      fi
+    - echo "art-data.js matches art/"
+
+pages:
+  stage: deploy
+  needs: ["smoke test", "art is in step"]
+  script:
+    - sh tools/build-site.sh public
+  artifacts:
+    paths:
+      - public
+  rules:
+    # Only the default branch is the published game. Everything else gets
+    # tested and nothing more.
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

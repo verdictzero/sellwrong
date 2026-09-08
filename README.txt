@@ -12,6 +12,8 @@ texture, every sprite, every sound and the whole level are generated in the
 page at start-up, in about half a second. The only file it loads is a
 vendored copy of three.js sitting next to it.
 
+  .gitlab-ci.yml        test, then publish to GitLab Pages
+  .github/workflows/    the same two jobs, for GitHub Pages
   index.html            the page
   css/style.css         the furniture around the frame
   vendor/three.module.js  three r160, local so the game runs off a memory stick
@@ -20,7 +22,37 @@ vendored copy of three.js sitting next to it.
   assets/sprites/       the staff: Freedoom's player, aproned
   tools/bake-art.mjs    node tools/bake-art.mjs — turns art/ into source
   tools/build_employee.sh  re-paints the apron and the face onto the sprites
+  tools/build-site.sh   assembles public/ — what actually gets published
   tools/smoke-test.mjs  node tools/smoke-test.mjs — no install, no browser
+
+
+DEPLOYING
+---------
+
+It is a static site with no build step, so publishing it is a copy. What
+gets copied is not the whole repository: the untouched Freedoom frames
+the apron is painted over, the source PNGs for art already baked into
+js/art-data.js, the tools and this file are all repository, not site.
+tools/build-site.sh is the one definition of the difference, and both CI
+files call it rather than each keeping a list that can drift.
+
+Both pipelines run the same two checks first, and the deploy DEPENDS on
+them rather than merely following them — a broken build that reaches the
+URL is worse than no deploy, because nobody files a bug against a game,
+they close the tab.
+
+  the smoke test         199 checks, no install and no browser
+  art is in step         re-bakes art/ and fails if js/art-data.js moved
+
+That second one exists because baking the logo and the weapon into source
+by hand is what buys the no-build-step property, and a hand-run step is
+only safe if something notices when it has not been run. Otherwise a
+re-exported logo sits in the repo looking authoritative while the game
+goes on drawing the old one.
+
+There is no npm install anywhere on purpose: the smoke test stubs three.js
+itself and nothing else in the repo has a dependency, so a pipeline is one
+container pull and about a second of work.
 
 
 WHAT YOU DO
