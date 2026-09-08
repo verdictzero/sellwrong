@@ -25,6 +25,9 @@ rm -rf "$OUT"
 mkdir -p "$OUT/assets/sprites"
 
 cp index.html "$OUT/"
+# The two files a phone reads before the game: what to call it and what
+# to draw on the home screen.
+cp manifest.webmanifest icon.png "$OUT/"
 cp -r css js vendor "$OUT/"
 
 # The staff are the one thing loaded at run time rather than generated,

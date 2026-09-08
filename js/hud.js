@@ -201,13 +201,15 @@ export class Hud {
     this._msgKey = key;
     if (!this.messages.length && !big) { this.msgMesh.visible = false; return; }
 
-    const h = 60;
+    /* three lines of big text fit: the end-of-game card is a verdict, a
+       score and how to go again */
+    const h = 72;
     const pix = new Pix(this.width, h, 1, false);
     this.messages.forEach((m, i) => drawText(pix, m.text, 4, 4 + i * 8, 'bone', 0.86));
     if (big) {
       const lines = big.split('\n');
       lines.forEach((ln, i) => {
-        const y = 26 + i * 12;
+        const y = 26 + i * 16;
         const tw = textWidth(ln) * 2;
         bigText(pix, ln, Math.round((this.width - tw) / 2), y, 'fire', 0.85, 2);
       });

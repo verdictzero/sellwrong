@@ -250,7 +250,13 @@ export class Game {
      One tic of the world
      ------------------------------------------------------------------ */
   update(dt) {
-    if (this.paused) return;
+    if (this.paused) {
+      /* Still listen. A pause that stops sampling the pause key is a
+         door with no handle on the inside. */
+      this.input.sample(1 / TICRATE);
+      if (this.input.pausePressed) this.setPaused(false);
+      return;
+    }
     this.accum += dt;
     const step = 1 / TICRATE;
     let n = 0;
@@ -262,7 +268,7 @@ export class Game {
     this.tics++;
     this.input.sample(1 / TICRATE);
 
-    if (this.input.pausePressed && this.state === 'play') this.paused = !this.paused;
+    if (this.input.pausePressed && this.state === 'play') this.setPaused(true);
 
     this.player.tic(this.input, 1 / TICRATE);
     for (let i = 0; i < this.actors.length; i++) this.actors[i].tic();
@@ -340,14 +346,29 @@ export class Game {
     }
   }
 
+  /** The pause is owned here and announced outward, so the menu on the
+   *  page, the keyboard and the button on a phone all go through one
+   *  switch and cannot disagree about whether the game is running. */
+  setPaused(on) {
+    on = !!on;
+    if (this.paused === on) return;
+    this.paused = on;
+    this.onPauseChange?.(on);
+  }
+
+  /* what "go again" is, on whatever this is being played on */
+  get retryPrompt() { return this.input?.mode === 'touch' ? 'TAP TO GO AGAIN' : 'PRESS SPACE TO GO AGAIN'; }
+
   win() {
     this.state = 'won';
-    this.setBigMessage(`SELLWRONG IS CLOSED\n${Math.round(this.burnPercent)}% BURNED  ${this.player.kills} STAFF`, 100000);
+    this.setBigMessage(`SELLWRONG IS CLOSED\n${Math.round(this.burnPercent)}% BURNED  ${this.player.kills} STAFF\n${this.retryPrompt}`, 100000);
+    this.onStateChange?.(this.state);
   }
 
   onPlayerDied() {
     this.state = 'dead';
-    this.setBigMessage('YOU DIED IN AISLE 5\nPRESS SPACE', 100000);
+    this.setBigMessage(`YOU DIED IN AISLE 5\n${this.retryPrompt}`, 100000);
+    this.onStateChange?.(this.state);
   }
 
   onMonsterKilled(a, source) { if (source === this.player) this.player.kills++; }

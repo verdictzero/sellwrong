@@ -1,8 +1,13 @@
 /* SELLWRONG — the page around the game.
    Everything in the frame is drawn by the renderer; this is only the
-   furniture that surrounds it, and it stays out of the way. */
+   furniture that surrounds it, and it stays out of the way.
+
+   On a phone the furniture includes the controls, and the rule for them
+   is the same one the status bar follows: never in the way of the
+   picture, and never demanding to be looked at. */
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
+[hidden] { display: none !important; }
 
 html, body {
   width: 100%; height: 100%; overflow: hidden;
@@ -10,9 +15,29 @@ html, body {
   color: #cfcfd6;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   -webkit-font-smoothing: none;
+  /* A phone's browser must not treat the game as a page: no rubber-band
+     at the edges, no pinch, no double-tap zoom, no selecting the HUD, no
+     long-press menu, no grey flash under a tap. */
+  overscroll-behavior: none;
+  touch-action: none;
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
-#game { position: fixed; inset: 0; }
+/* THE FRAME KEEPS OUT OF THE NOTCH. The status bar is drawn INTO the
+   picture along its bottom edge, and BURNED sits in its bottom-left
+   corner: a notch over that is a notch over the objective. So the
+   frame — and the controls, which share its box — sit inside the safe
+   area, and the strip a phone reserves for its hardware shows the page
+   background. On anything without a notch these are zero. */
+#game, #touch {
+  position: fixed;
+  top: env(safe-area-inset-top, 0px);
+  right: env(safe-area-inset-right, 0px);
+  bottom: env(safe-area-inset-bottom, 0px);
+  left: env(safe-area-inset-left, 0px);
+}
 
 /* Nearest-neighbour all the way to the glass. Without this the browser
    bilinearly smooths the upscale and undoes the entire renderer. */
@@ -22,29 +47,34 @@ html, body {
   image-rendering: crisp-edges;
 }
 
-#loading, #title {
+/* ---- the screens: loading, title, pause -------------------------- */
+#loading, #title, #pause {
   position: fixed; inset: 0;
   display: flex; align-items: center; justify-content: center;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+           env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
   background: radial-gradient(ellipse at center, #14161e 0%, #05060a 70%);
   z-index: 10;
   transition: opacity .35s ease;
 }
-#loading.gone, #title.gone { opacity: 0; pointer-events: none; }
+#pause { background: rgba(5, 6, 10, .86); z-index: 20; }
+#loading.gone, #title.gone, #pause.gone { opacity: 0; pointer-events: none; }
 
 .panel { text-align: center; max-width: 40rem; padding: 2rem; }
 
 h1 {
-  font-size: clamp(2.5rem, 9vw, 5rem);
+  font-size: clamp(2.2rem, 9vmin, 5rem);
   letter-spacing: .12em;
   color: #d8241a;
   text-shadow: 0 3px 0 #4a0806, 0 0 30px rgba(216,36,26,.35);
   margin-bottom: .3rem;
 }
+h2 { font-size: 1.1rem; letter-spacing: .3em; color: #d8241a; margin-bottom: 1.2rem; }
 
 .tag { color: #7a7a84; letter-spacing: .34em; font-size: .8rem; margin-bottom: 2rem; }
 
 #load-status { letter-spacing: .2em; font-size: .8rem; color: #8a8a94; margin-bottom: .7rem; }
-.bar { width: 16rem; height: 6px; margin: 0 auto; background: #1b1d26; }
+.bar { width: 16rem; max-width: 70vw; height: 6px; margin: 0 auto; background: #1b1d26; }
 #load-bar { height: 100%; width: 0; background: #d8241a; transition: width .2s ease; }
 
 .prompt {
@@ -52,15 +82,191 @@ h1 {
   animation: blink 1.4s steps(2) infinite;
 }
 @keyframes blink { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .prompt { animation: none; } }
 
 .keys { margin: 0 auto 1.4rem; border-collapse: collapse; font-size: .72rem; color: #9a9aa4; }
 .keys td { padding: .18rem .7rem; text-align: left; }
-.keys td:nth-child(odd) { color: #d8d8e0; text-align: right; }
+.keys td:nth-child(odd) { color: #d8d8e0; text-align: right; white-space: nowrap; }
 
 .brief { font-size: .74rem; line-height: 1.7; color: #7a7a84; }
 
+/* what shows depends on what the game is being played with — decided
+   by input.js, stamped on <html> */
+html.touch .desk-only, html:not(.touch) .touch-only { display: none !important; }
+
+/* a phone in landscape is short: pull the title in so it all fits */
+@media (max-height: 480px) {
+  .panel { padding: .8rem 1.2rem; }
+  h1 { margin-bottom: .1rem; }
+  h2 { font-size: .95rem; margin-bottom: .6rem; }
+  .tag { margin-bottom: .8rem; }
+  .prompt { margin-bottom: .8rem; }
+  .keys { margin-bottom: .7rem; }
+  .brief { font-size: .68rem; line-height: 1.5; }
+  .menu .row { margin: .3rem 0; gap: .4rem; }
+  .btn { min-height: 40px; padding: .4rem .8rem; font-size: .68rem; letter-spacing: .12em; }
+  .btn.primary { padding: .4rem 1.8rem; }
+  .slider input { height: 40px; }
+}
+
+/* ---- the pause menu ---------------------------------------------- */
+.menu { max-width: 38rem; width: 100%; max-height: 100%; overflow-y: auto; }
+.menu .row {
+  display: flex; flex-wrap: wrap; justify-content: center; align-items: center;
+  gap: .5rem; margin: .5rem 0;
+}
+.btn {
+  min-height: 44px; min-width: 44px;                 /* a thumb's worth */
+  padding: .6rem 1.1rem;
+  font: inherit; font-size: .78rem; letter-spacing: .16em; text-transform: uppercase;
+  color: #cfcfd6; background: #14161e;
+  border: 2px solid #2a2d3a; border-radius: 0;
+  cursor: pointer; touch-action: manipulation;
+  transition: background .08s, border-color .08s, transform .08s;
+}
+.btn:hover, .btn:focus-visible { border-color: #6a6d7a; outline: none; }
+.btn:active { transform: translateY(1px); }
+.btn.primary { background: #d8241a; border-color: #ff6a5a; color: #fff; padding: .7rem 2.4rem; }
+.btn.primary:hover { background: #ec3428; }
+.btn.quiet { color: #8a8a94; }
+.btn.quiet.armed { color: #e8c34a; border-color: #e8c34a; }
+.btn.tog::before { content: '○ '; color: #6a6d7a; }
+.btn.tog[aria-pressed="true"] { border-color: #e8c34a; color: #e8c34a; }
+.btn.tog[aria-pressed="true"]::before { content: '● '; color: #e8c34a; }
+.slider { font-size: .78rem; letter-spacing: .16em; color: #9a9aa4; }
+.slider span { min-width: 6.5rem; text-align: right; }
+.slider b { min-width: 3rem; text-align: left; color: #e8c34a; font-weight: normal; }
+.slider input {
+  flex: 1 1 8rem; min-width: 7rem; height: 44px;
+  accent-color: #d8241a; touch-action: pan-x; cursor: pointer;
+}
+
+/* ---- the touch controls ------------------------------------------ */
+#touch {
+  z-index: 6;
+  touch-action: none;
+  --stick-r: 56px;                       /* set by touch.js from the screen */
+  --btn: clamp(64px, 18vmin, 84px);      /* the flame button */
+  --edge-x: calc(4vw + 12px);            /* how far in from the thumb's side */
+  /* The status bar is part of the picture and its height on screen
+     depends on how chunky the picture is (main.js keeps --bar current).
+     Everything down here is measured up from the top of it, so nothing
+     ever sits over BURNED. */
+  --bar: 16vh;
+  --edge-y: calc(var(--bar) + 12px);
+}
+#touch.paused { visibility: hidden; }
+
+/* the buttons: dark glass with a rim, brighter under the thumb */
+#touch .tb {
+  position: absolute;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  border: 2px solid rgba(207, 207, 214, .38);
+  background: rgba(5, 6, 10, .30);
+  color: rgba(207, 207, 214, .85);
+  font-size: 11px; letter-spacing: .18em;
+  text-shadow: 0 1px 0 #000;
+  will-change: transform, opacity;
+  transition: opacity .6s ease, background .08s, border-color .08s, transform .08s, box-shadow .08s;
+}
+#touch .tb.held { transform: scale(.94); background: rgba(207, 207, 214, .30); border-color: #cfcfd6; }
+
+.tb-fire {
+  width: var(--btn); height: var(--btn);
+  right: var(--edge-x); bottom: var(--edge-y);
+  border-color: rgba(232, 98, 26, .62);
+  background: rgba(232, 98, 26, .14);
+}
+.tb-fire svg { width: 58%; height: 58%; display: block; }
+#touch .tb-fire.held {
+  background: rgba(232, 98, 26, .52);
+  border-color: #ffe07a;
+  box-shadow: 0 0 28px rgba(232, 98, 26, .6), inset 0 0 12px rgba(255, 224, 122, .35);
+}
+
+.tb-use {
+  width: calc(var(--btn) * .72); height: calc(var(--btn) * .72);
+  right: calc(var(--edge-x) + var(--btn) + 14px);
+  bottom: calc(var(--edge-y) + var(--btn) * .55);
+}
+
+.tb-pause { width: 44px; height: 44px; top: 8px; right: 8px; border-color: rgba(207, 207, 214, .22); }
+.tb-pause i { display: block; width: 4px; height: 14px; margin: 0 2px; background: currentColor; }
+
+/* the left-handed layout is the same layout in a mirror */
+#touch.lefty .tb-fire { right: auto; left: var(--edge-x); }
+#touch.lefty .tb-use  { right: auto; left: calc(var(--edge-x) + var(--btn) + 14px); }
+#touch.lefty .tb-pause { right: auto; left: 8px; }
+
+/* the stick: drawn where the thumb landed, towed along behind it */
+.stick {
+  position: absolute; left: 0; top: 0;
+  width: calc(var(--stick-r) * 2); height: calc(var(--stick-r) * 2);
+  margin: calc(var(--stick-r) * -1) 0 0 calc(var(--stick-r) * -1);
+  border-radius: 50%;
+  border: 2px solid rgba(207, 207, 214, .34);
+  background: rgba(5, 6, 10, .24);
+  opacity: 0; pointer-events: none;
+  will-change: transform, opacity;
+  transition: opacity .18s ease;
+}
+.stick.on { opacity: 1; }
+.stick::after {                        /* the centre, so "back to the middle" is visible */
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: 4px; height: 4px; margin: -2px 0 0 -2px;
+  background: rgba(207, 207, 214, .5);
+}
+.stick .knob {
+  position: absolute; left: 50%; top: 50%;
+  width: calc(var(--stick-r) * .8); height: calc(var(--stick-r) * .8);
+  margin: calc(var(--stick-r) * -.4) 0 0 calc(var(--stick-r) * -.4);
+  border-radius: 50%;
+  background: rgba(207, 207, 214, .86);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, .4);
+  will-change: transform;
+  transition: background .12s;
+}
+.stick.run .knob { background: #e8c34a; }  /* full throw: running */
+
+/* untouched for a moment, the controls get out of the picture */
+#touch.idle .tb, #touch.idle .stick.on { opacity: .38; }
+
+/* the once-only hints */
+.hint {
+  position: absolute; pointer-events: none;
+  font-size: 10px; letter-spacing: .24em; color: rgba(207, 207, 214, .55);
+  text-shadow: 0 1px 0 #000;
+  transition: opacity .8s ease;
+}
+.hint-move {
+  left: calc(20% - var(--stick-r)); bottom: calc(var(--bar) + 30px);
+  width: calc(var(--stick-r) * 2); height: calc(var(--stick-r) * 2);
+  border: 2px dashed rgba(207, 207, 214, .32); border-radius: 50%;
+}
+.hint-move span { position: absolute; left: 0; right: 0; top: 100%; margin-top: 6px; text-align: center; }
+.hint-look { right: 24%; bottom: calc(var(--bar) + 44%); }
+#touch.lefty .hint-move { left: auto; right: calc(20% - var(--stick-r)); }
+#touch.lefty .hint-look { right: auto; left: 30%; }
+#touch.used-move .hint-move, #touch.used-look .hint-look { opacity: 0; }
+
+/* a first-person game held upright is a keyhole; say so, once, quietly */
+#rotate {
+  display: none;
+  position: fixed; left: 0; right: 0; top: env(safe-area-inset-top, 0px);
+  padding: .5rem 1rem; z-index: 7;
+  font-size: .68rem; letter-spacing: .18em; text-align: center;
+  color: #e8c34a; background: rgba(5, 6, 10, .78);
+  pointer-events: none;
+}
+@media (orientation: portrait) { html.touch #rotate { display: block; } }
+
 #fps {
-  position: fixed; left: 6px; top: 4px; z-index: 5;
+  position: fixed; z-index: 5;
+  left: calc(env(safe-area-inset-left, 0px) + 6px);
+  top: calc(env(safe-area-inset-top, 0px) + 4px);
   font-size: 10px; color: rgba(200,200,210,.35);
   pointer-events: none; text-shadow: 0 1px 0 #000;
 }
+/* on a phone the top-left corner is where the game talks */
+html.touch #fps { left: 50%; transform: translateX(-50%); white-space: nowrap; }

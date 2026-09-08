@@ -1,0 +1,15 @@
+{
+  "name": "SellWrong",
+  "short_name": "SellWrong",
+  "description": "Burn down the supermarket. A lo-fi Doom that runs in the browser and downloads nothing.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#05060a",
+  "theme_color": "#05060a",
+  "icons": [
+    { "src": "icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

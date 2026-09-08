@@ -331,6 +331,7 @@ export class Player {
     this.health -= amount;
     this.damageFlash = Math.min(16, 5 + amount * 0.6);
     this.game.sound?.play(opts.fire ? 'burn' : 'hurt', this);
+    this.game.onPlayerHurt?.(amount);
     /* the shove, so a hit from the side moves you */
     if (source) {
       const a = Math.atan2(this.y - source.y, this.x - source.x);

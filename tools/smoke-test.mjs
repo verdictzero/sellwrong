@@ -457,6 +457,25 @@ section('lighting');
   check('a burst lamp is dead and shows its broken frame',
         g.lamps.some(l => l.dead && l.state && l.state.sprite === 'LAMP'));
   check('bursting a lamp throws sparks', g.projectiles.some(p => p.kind === 'SPARK'));
+
+  /* ---- and the pause, while there is a real Game to hand ----
+     It used to be a one-way door: update() returned before the tic that
+     sampled the pause key, so nothing could ever unpause. */
+  section('pause');
+  let sampled = 0;
+  const seen = [];
+  g.input = { mode: 'desktop', pausePressed: false, sample() { sampled++; this.pausePressed = sampled === 2; } };
+  g.onPauseChange = on => seen.push(on);
+  g.setPaused(true);
+  g.update(1 / 35);
+  check('a paused game still listens to the keyboard', sampled === 1 && g.paused);
+  g.update(1 / 35);
+  check('and the pause key lets you back out', sampled === 2 && !g.paused);
+  check('the switch announces both throws, once each', seen.join(',') === 'true,false', seen.join(','));
+  g.setPaused(false);
+  check('throwing it the way it already is says nothing', seen.length === 2);
+  check('the retry prompt knows what it is being played on',
+    g.retryPrompt.includes('SPACE') && (g.input.mode = 'touch', g.retryPrompt.includes('TAP')));
 }
 
 /* ---------- collision ---------- */
@@ -578,6 +597,47 @@ section('fire');
   note('20% by spreading alone', `${ticsAlone} tics (${(ticsAlone / 35).toFixed(0)}s)`);
   check('spreading alone is slow enough to leave room for a player', ticsAlone > 600,
         `${ticsAlone} tics is too fast to be worth a weapon`);
+}
+
+/* ---------- touch ---------- */
+section('touch');
+{
+  /* The stick's maths, without a screen. The numbers are the ones a
+     thumb feels: nothing inside the dead zone, nothing sudden at its
+     edge, a walk at half throw and a run at the rim. */
+  const t = await import('../js/touch.js');
+  const R = 56;
+  const rest = t.stickVector(0, 0, R);
+  check('a resting thumb is no movement', rest.x === 0 && rest.y === 0 && rest.mag === 0);
+  check('inside the dead zone is still no movement', t.stickVector(R * 0.1, 0, R).mag === 0);
+  const edge = t.stickVector(R * 0.121, 0, R);
+  check('leaving the dead zone starts from zero, not a jump', edge.mag > 0 && edge.mag < 0.01, `mag ${edge.mag.toFixed(3)}`);
+  const half = t.stickVector(0, -R * 0.56, R);
+  check('half a push forward is a walk, straight ahead', half.x === 0 && half.y > 0.45 && half.y < 0.55, `y ${half.y.toFixed(2)}`);
+  const full = t.stickVector(0, -R, R);
+  check('the rim is a full run', Math.abs(full.y - 1) < 1e-9 && full.mag === 1);
+  const past = t.stickVector(0, -3 * R, R);
+  check('past the rim is still exactly one', past.mag === 1 && Math.abs(past.y - 1) < 1e-9);
+  const diag = t.stickVector(R, R, R);
+  check('a diagonal is unit length, not root two', Math.abs(Math.hypot(diag.x, diag.y) - 1) < 1e-9);
+  check('screen-down is back and screen-right is right',
+    t.stickVector(0, R, R).y < 0 && t.stickVector(R, 0, R).x > 0);
+
+  const [bx, by] = t.followBase(100, 100, 100 + R * 2, 100, R);
+  check('the base is towed to one radius behind the finger', Math.abs(bx - (100 + R)) < 1e-9 && by === 100, `${bx},${by}`);
+  const [sx, sy] = t.followBase(100, 100, 130, 110, R);
+  check('and stays put while the finger is inside the rim', sx === 100 && sy === 100);
+
+  note('stick radius: phone / small / tablet',
+    `${t.stickRadius(844, 390)} / ${t.stickRadius(320, 240)} / ${t.stickRadius(1366, 1024)}`);
+  check('the stick fits a phone', t.stickRadius(844, 390) === 55 && t.stickRadius(320, 240) === 44);
+  check('and is not a saucer on a tablet', t.stickRadius(1366, 1024) === 64);
+
+  const look = t.lookDelta(150, 150, 1);
+  note('a 150px swipe', `${(look.x * 180 / Math.PI).toFixed(0)} degrees across, ${(look.y * 180 / Math.PI).toFixed(0)} up`);
+  check('a thumb swipe turns about sixty degrees', look.x > 0.95 && look.x < 1.15);
+  check('vertical look is slower than horizontal', look.y > 0 && look.y < look.x);
+  check('look speed scales the swipe', Math.abs(t.lookDelta(100, 0, 2).x - 2 * t.lookDelta(100, 0, 1).x) < 1e-12);
 }
 
 /* ---------- verdict ---------- */

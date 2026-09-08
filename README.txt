@@ -15,7 +15,9 @@ vendored copy of three.js sitting next to it.
   .gitlab-ci.yml        test, then publish to GitLab Pages
   .github/workflows/    the same two jobs, for GitHub Pages
   index.html            the page
-  css/style.css         the furniture around the frame
+  css/style.css         the furniture around the frame, and the thumb controls
+  manifest.webmanifest  what a phone calls it when it is added to a home screen
+  icon.png              and what it draws there — node tools/bake-icons.mjs
   vendor/three.module.js  three r160, local so the game runs off a memory stick
   js/                   the game
   art/                  the logo and the weapon, as PNGs
@@ -23,6 +25,7 @@ vendored copy of three.js sitting next to it.
   tools/bake-art.mjs    node tools/bake-art.mjs — turns art/ into source
   tools/build_employee.sh  re-paints the apron and the face onto the sprites
   tools/build-site.sh   assembles public/ — what actually gets published
+  tools/bake-icons.mjs  the home-screen icon, out of the game's own fire
   tools/smoke-test.mjs  node tools/smoke-test.mjs — no install, no browser
 
 
@@ -41,7 +44,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         199 checks, no install and no browser
+  the smoke test         219 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -69,7 +72,8 @@ Burn 60% of it, then get back out past the fire lane into the lot.
   SPACE / F     open, use       ESC       pause
   [  ]          chunkiness      N         palette on / off
 
-Gamepad works. Mouse look needs a click to grab the pointer.
+Gamepad works. Mouse look needs a click to grab the pointer. On a phone
+none of that applies and the next section is the one that does.
 
 One weapon, and it is a flamethrower: four metres of reach, a
 forty-five degree cone, and a tank that holds five hundred with cans
@@ -77,6 +81,64 @@ scattered over the whole store. A boxcutter and a molotov are written,
 tested and switched off — a boxcutter is a more interesting weapon than
 a flamethrower in almost every game ever made, and in this one it is the
 wrong verb.
+
+
+ON A PHONE
+----------
+
+The phone is the main way this is meant to be played, so the controls
+were designed rather than bolted on. Open the page, tap, and:
+
+  LEFT THUMB    a stick appears where the thumb lands. Push a little
+                to walk, all the way to run; the knob goes yellow at a
+                run. Pull past the rim and the stick is towed along
+                behind the thumb, so a long drag in a new direction
+                changes direction instead of pinning you against the
+                old rim.
+  RIGHT THUMB   drag anywhere to look. The view moves exactly as far
+                as the thumb did and stops when it stops.
+  FLAME         under the right thumb's rest. Hold it to burn — and
+                while it is held, sliding the same thumb still looks,
+                so a held flame swept across an aisle is one motion.
+                That one detail is what makes a one-weapon game
+                playable with two thumbs: the thumb that fires never
+                lets go to aim.
+  USE           above the flame, for the doors that are not automatic.
+  PAUSE         top corner. The menu has look speed, invert, a
+                left-handed mirror of the whole layout, vibration,
+                chunkiness and fullscreen, and remembers them.
+
+The rules the layout follows: nothing ever sits over the picture's
+status bar, whatever the chunkiness (the bar's height on screen is
+handed to the CSS every resize); every target is at least a thumb wide;
+the controls dim after a couple of seconds untouched and brighten under
+a thumb; the frame and the controls both keep inside the notch and the
+home indicator; the first-time MOVE and DRAG TO LOOK hints go away the
+moment each is used. A finger the browser takes back — an edge swipe, a
+notification — releases whatever it was holding, so a stick is never
+left pushed. Dying or getting out drops the controls, and after a
+moment's grace any touch goes again.
+
+The page asks for fullscreen and landscape on the start tap where the
+browser allows it (Android); on an iPhone neither is allowed from a
+page, and adding it to the home screen — the manifest and the icon are
+for that — opens it without the browser around it. Held upright it
+still plays, but a first-person view through a keyhole is not the game,
+and it says so at the top of the screen.
+
+Which kind of machine it is gets decided by whatever spoke last: a
+laptop with a touchscreen is a phone until a key goes down, a phone
+with a keyboard is a desktop until it is tapped. The game never finds
+out — it reads one Input, and touch.js writes into it like any other
+device. Pointer lock is a desktop-only idea and is never asked for by
+touch.
+
+One thing came out of building this that had nothing to do with
+phones: the pause was a one-way door. update() returned before the tic
+that sampled the pause key, so nothing could ever unpause, and on the
+desktop Escape drops the pointer lock and the browser swallows the key
+anyway. Now a lost pointer lock is a pause, the menu releases the mouse
+so it can be pointed at, and a hidden tab pauses too.
 
 
 THE ONE IDEA
@@ -440,7 +502,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-199 checks. Every one of them earns its place by having caught something
+219 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -488,5 +550,8 @@ WHAT IS NOT DONE
   no second level, and no level-to-level flow
   the boxcutter and the molotov are built and switched off
   the Stocker's thrown tin has no trail and is easy to miss
-  touch controls are wired in input.js but have no on-screen buttons
+  the touch controls were proven on an emulated phone — real touch
+    events through Chromium, both thumbs at once — and not yet on glass;
+    the look speed, the dead zone and the button sizes want a real thumb
+    on them, which is what the LOOK SPEED slider is for in the meantime
   no save
