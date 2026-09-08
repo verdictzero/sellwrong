@@ -29,6 +29,7 @@ somewhere else: the staff, the trees, the sky, and the gun.
   assets/forest/        the wood: ten plants with their burn maps, two grounds
   assets/sky/night.png  the night, baked from a Polyhaven panorama
   assets/models/        the flamethrower, prepared from the user's .glb
+  assets/fire/          four looping fire strips from the golf project
   assets/fonts/         Michroma (SIL OFL), the title face
   tools/bake-art.mjs    node tools/bake-art.mjs — turns art/ into source
   tools/build_employee.sh  re-paints the apron and the face onto the sprites
@@ -55,7 +56,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         253 checks, no install and no browser
+  the smoke test         263 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -76,9 +77,11 @@ You start at the mouth of the car park at night, under the pylon sign. The
 parade is in front of you, the automatic doors open when you get near them,
 and the night crew are still inside.
 
-Burn 60% of it, then get back out past the fire lane into the lot. Or
-walk off the edge of the car park into the wood and see what a forest
-does when you put a match to it.
+There is no goal. Burn what you like — the store, the wood behind it,
+both — and see what the night brings down the road. The sixty-per-cent
+target and the run back to the car park are gone, at the user's request:
+the only aim for now is open mayhem, and the night ends when you close
+the tab.
 
   WASD          move            MOUSE     look
   SHIFT         run             LMB/CTRL  flamethrower
@@ -89,12 +92,14 @@ does when you put a match to it.
 Gamepad works. Mouse look needs a click to grab the pointer. On a phone
 none of that applies and the next section is the one that does.
 
-One weapon, and it is a flamethrower: a STREAM. Hold the trigger and a
-few particles a tic leave the nozzle at a thousand units a second, slow
-in the air, drop, and set fire to whatever they land on — a shelf four
-hundred units off, the floor a dozen metres out if you fire level, a
-tree. It goes where you point it and no further, which is the whole
-feel of the thing. FOR NOW the player cannot be hurt and the tank never
+One weapon, and it is a flamethrower: a STREAM. Hold the trigger and
+six fireballs a tic leave the nozzle at a thousand units a second, in a
+line rather than a string of beads, slow in the air, drop, and set fire
+to whatever they land on — seven hundred units of reach, on the floor
+about four hundred out if you fire level, further if you lift it. Drawn
+additively, so where they overlap they add up to a white-hot core and
+the whole arc reads as one unbroken tongue. It goes where you point it
+and no further, which is the whole feel of the thing. FOR NOW the player cannot be hurt and the tank never
 empties; both are one flag each at the top of js/player.js. A boxcutter
 and a molotov are written, tested and switched off.
 
@@ -250,10 +255,25 @@ THE SIMULATION is a grid of 64-unit cells with a byte of state each —
 green, alight, gone — and a list of the ones burning. Every cell is fuel
 (the floor is dry litter) and a cell with a tree in it burns longer and
 throws fire further; there is a wind from the west and the fire moves
-with it three times as readily as against it. It percolates: one match,
-left alone, has a twentieth of the wood gone in about four minutes and a
-quarter in eight, downwind faster than across. The smoke test runs that
-match in Node and holds it to those numbers.
+with it three times as readily as against it. It percolates — and that
+is a separate dial from how fast. The first tuning had a quarter of the
+wood gone in eight minutes; simply lowering the chances put the floor on
+the percolation line, where whether a match took depended on which
+trees stood nearby. So the chances stay high and the burn is long, with
+nothing able to spread until it is a third of the way through: a ground
+cell smoulders for ten seconds, a tree for eighteen, and one match, left
+alone, has a twentieth of the wood gone in about ten minutes and a
+quarter in twenty-three, downwind faster than across. The smoke test
+runs that match in Node and holds it to those numbers.
+
+AND IT HAS FLAMES ON IT. The burn map chars a tree and puts coals on
+it; a pool of two hundred instanced flame quads, re-parked every frame
+on the hottest burning cells near the eye, puts FIRE on it — carried at
+the height the front has climbed to, so a fir is seen burning from the
+ground up. The flames are the golf project's twenty-frame looping strips
+(assets/fire), which have a ROUND base: that is also why the store's
+three fire sets are now those strips frame for frame, so a shelf alight
+is a fire sitting on a shelf and not a fire sawn off flat at its edge.
 
 THE DRAWING is instanced billboards: every plant is one entry in a buffer
 and each kind of plant is one draw call, so the whole wood is ten calls
@@ -295,6 +315,32 @@ out of the gun's scene and back into the world's, so it always leaves
 the end of the gun you can see, whatever the two fields of view are.
 The same tool drops the maps an unlit renderer cannot use, which was a
 third of the download.
+
+
+THE ROAD, AND WHO COMES DOWN IT
+-------------------------------
+
+A two-lane road runs along the front of the lot, between the fire lane
+and the first row of bays, and carries on out of the lot through the
+wood in both directions until the forest ends — the way you drove in,
+and the way anyone else is going to arrive. It is five strips of sector
+(an edge line, a lane, the centre line, a lane, an edge line), because a
+floor is textured to the world grid and a 64-unit tile cannot hold one
+line across a 300-unit road, but a strip six units wide wearing a tile
+that is line all the way through can. Out in the wood it is a firebreak
+and no tree stands on it.
+
+js/responders.js is the PLACEHOLDER for what comes down it: the shape of
+the thing, with nothing in it that can hurt you yet. One number, the
+ALARM, climbs with how much of the store and the wood has gone, how many
+of the staff, and how long anything has been alight. Six tiers — the
+night manager, security, the police, the fire brigade, riot police, the
+helicopter — each have an alarm they are dispatched at (you hear about
+it) and a delay before they arrive, at one end of the road. Arrival
+calls spawn(), which today records the wave and returns. The fight, when
+it exists, is against people whose job is to make the fire stop, and
+defeated() is where a beaten tier reports in. The escalation is done;
+the people are not.
 
 
 THE SKY AND THE NAME
@@ -597,7 +643,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-253 checks. Every one of them earns its place by having caught something
+263 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -629,9 +675,13 @@ that had already reached a screenshot:
     ground — every particle "hit a tree" beside the player and the splash
     embers spawned in the camera's face as thirty-pixel squares. The
     check now fires beside a trunk and demands the stream pass it
-  a forest fire whose pace was a guess; the check runs one match for
-    forty minutes of game time and holds it between a flash and an
-    afternoon
+  a forest fire whose pace was a guess; the check runs one match for an
+    hour of game time and holds it between a flash and an afternoon —
+    and it caught the second tuning sitting on the percolation edge,
+    where a match took or fizzled by luck
+  a store fire quartered to please the ear, which stopped the footway
+    carrying it along the parade; the neighbours never caught. The
+    slowing moved to the fire's clock, which is what the clock is for
 
 
 WHAT IS NOT DONE
@@ -663,6 +713,9 @@ WHAT IS NOT DONE
     yet watched it on one
   the player cannot be hurt and the tank never empties — asked for, for
     now, and one flag each in js/player.js
+  nobody comes down the road yet: js/responders.js escalates, announces
+    and records the waves, and spawn() is one function waiting for
+    actors and art
   the staff do not follow you into the wood, and the wood's fire and the
     store's do not cross the car park to each other; the flamethrower is
     the bridge

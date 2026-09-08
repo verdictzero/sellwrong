@@ -36,6 +36,7 @@ import { buildSky, followSky } from './sky.js';
 import { Forest } from './forest.js';
 import { FlameStream } from './flame.js';
 import { Effects } from './effects.js';
+import { Responders } from './responders.js';
 
 const THING_TO_ACTOR = {
   ASSOCIATE: 'ASSOCIATE', STOCKER: 'STOCKER',
@@ -72,8 +73,6 @@ export class Game {
     this.bigMessage = null;
     this.bigMessageTics = 0;
     this.totalMonsters = 0;
-    this.burnTarget = level.burnTarget ?? 60;
-    this.escapeArmed = false;
 
     const geo = buildLevelGeometry(level, textures);
     this.geo = geo;
@@ -99,6 +98,9 @@ export class Game {
     if (flameAtlas) this.flame.attach(scene);
     if (fxAtlases) this.fx.attach(scene);
     this.weapon3d = null;
+    /* who the night brings — the escalation is real, the arrivals are
+       not yet; see js/responders.js */
+    this.responders = new Responders(this);
     this.idle = false;                 // the title: the world stands still and the eye wanders
     this._nozzle = { x: 0, y: 0, z: 0 };
 
@@ -320,7 +322,7 @@ export class Game {
     for (let i = this.actors.length - 1; i >= 0; i--)
       if (this.actors[i].removed) this.actors.splice(i, 1);
 
-    this.checkObjective();
+    this.responders.tic();
 
     if (this.sound) {
       this.sound.listener = this.player;
@@ -345,6 +347,13 @@ export class Game {
           const burnt = charredName(s[k]);
           if (burnt !== s[k] && this.textures.map.has(burnt)) s[k] = burnt;
         }
+        /* A region that has burnt is LIT BY WHAT IT WAS: embers in every
+           crack, the roof gone through, the next aisle alight. Its fittings
+           are dead by now and its emergency ambient was written for a dark
+           shop with the power off, which left a gutted store near black —
+           and you have to walk back out through it. So the floor of a
+           charred region's light comes up, and stays up. */
+        if (!s.outdoor) s.ambient = Math.max(s.ambient, 0.58);
       }
       /* A slider whose entrance has burned is not a door any more. */
       for (const d of this.slideDoors)
@@ -362,24 +371,10 @@ export class Game {
     }
   }
 
-  checkObjective() {
-    if (this.state !== 'play') return;
-    const burn = this.burnPercent;
-    if (!this.escapeArmed && burn >= this.burnTarget) {
-      this.escapeArmed = true;
-      this.sound?.play('alarm', null);
-      this.message('THE STORE IS GOING. GET OUT.');
-      this.setBigMessage('GET TO THE CAR PARK', 210);
-    }
-    if (this.escapeArmed) {
-      /* Where "out" is, is the map's business. The footway in front of
-         the shops is outdoors too, and standing on the pavement while the
-         parade goes up behind you is not getting clear of it. */
-      const s = this.level.sectorAt(this.player.x, this.player.y, this.player.sector);
-      const out = this.level.escapeY ?? 340;
-      if (s && s.outdoor && s.fuel === 0 && this.player.y < out) this.win();
-    }
-  }
+  /* THERE IS NO GOAL. There was — burn sixty per cent and get back to
+     the car park — and it is gone, at the user's request: the only aim
+     for now is open mayhem, and the night ends when you close the tab.
+     What the night brings in return is js/responders.js's business. */
 
   /** The pause is owned here and announced outward, so the menu on the
    *  page, the keyboard and the button on a phone all go through one
@@ -393,12 +388,6 @@ export class Game {
 
   /* what "go again" is, on whatever this is being played on */
   get retryPrompt() { return this.input?.mode === 'touch' ? 'TAP TO GO AGAIN' : 'PRESS SPACE TO GO AGAIN'; }
-
-  win() {
-    this.state = 'won';
-    this.setBigMessage(`SELLWRONG IS CLOSED\n${Math.round(this.burnPercent)}% OF THE STORE  ${Math.round(this.forestPercent)}% OF THE WOOD  ${this.player.kills} STAFF\n${this.retryPrompt}`, 100000);
-    this.onStateChange?.(this.state);
-  }
 
   onPlayerDied() {
     this.state = 'dead';

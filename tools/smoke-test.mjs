@@ -533,13 +533,13 @@ section('fire');
   check('ignition takes', fire.liveCells > 0);
 
   let stalled = -1;
-  for (let i = 0; i < 40000; i++) {
+  for (let i = 0; i < 90000; i++) {
     fire.tic();
     if (i > 20 && fire.liveCells === 0) { stalled = i; break; }
   }
   const burnt = fire.burnFraction;
   note('one match, left alone', `${(burnt * 100).toFixed(1)}% burned` +
-    (stalled >= 0 ? `, went out after ${stalled} tics` : ', still going at 40000 tics'));
+    (stalled >= 0 ? `, went out after ${stalled} tics` : ', still going at 90000 tics'));
   check('one match takes essentially the whole shop', burnt > 0.97,
         `${(burnt * 100).toFixed(1)}% — the fire stalled somewhere`);
 
@@ -593,7 +593,7 @@ section('fire');
   const f2 = new FireSystem(fake);
   f2.ignite(540, 1000, 150, 26);
   let ticsAlone = 0;
-  while (f2.burnFraction < 0.20 && ticsAlone < 40000) { f2.tic(); ticsAlone++; }
+  while (f2.burnFraction < 0.20 && ticsAlone < 90000) { f2.tic(); ticsAlone++; }
   note('20% by spreading alone', `${ticsAlone} tics (${(ticsAlone / 35).toFixed(0)}s)`);
   check('spreading alone is slow enough to leave room for a player', ticsAlone > 600,
         `${ticsAlone} tics is too fast to be worth a weapon`);
@@ -661,7 +661,13 @@ section('the wood');
   }
   check('no tree stands in the car park or the store', inClearing === 0, `${inClearing} did`);
   check('the store has no forest fuel under it', !forest.fuel[forest.idx(forest.cellX(2000), forest.cellY(1000))]);
-  check('the fuel grid stops at the store', level.fireBounds[3] === 3400 && level.fireBounds[1] === -2496, level.fireBounds.join());
+  check('the fuel grid stops at the store', level.fireBounds[0] === -1400 && level.fireBounds[2] === 5680 && level.fireBounds[3] === 3400, level.fireBounds.join());
+  const roadOut = level.sectors.filter(s => s.outside);
+  check('the road runs out through the wood on both sides', roadOut.some(s => s.bbox[2] <= -1400) && roadOut.some(s => s.bbox[0] >= 5680), `${roadOut.length} outside sectors`);
+  check('and is not the store\'s fuel', roadOut.every(s => s.fuel === 0) && roadOut.every(s => s.bbox[0] >= level.fireBounds[2] || s.bbox[2] <= level.fireBounds[0]));
+  check('the road has two ends to arrive from', level.roadEnds?.length === 2 && level.roadEnds[0].side !== level.roadEnds[1].side);
+  const onRoad = level.sectorAt(2000, (level.road.y0 + level.road.y1) / 2);
+  check('the road crosses the lot in front of the store', !!onRoad && /road/.test(onRoad.name) && onRoad.outdoor && !onRoad.forest, onRoad?.name);
 
   /* a plant is a trunk to the flame, not a billboard */
   const fir = F.KINDS[0];
@@ -684,7 +690,7 @@ section('the wood');
   forest.emitters(sx, sy, 1200, 4, out);
   check('what is burning near you lights you and throws sparks', acc.n > 0 && out.length > 0, `${acc.n} / ${out.length}`);
   let tics = 90, t25 = 0, t5 = 0;
-  while (forest.burnFraction < 0.25 && tics < 35 * 60 * 40) {
+  while (forest.burnFraction < 0.25 && tics < 35 * 60 * 60) {
     forest.tic(); tics++;
     if (!t5 && forest.burnFraction >= 0.05) t5 = tics;
   }
@@ -692,7 +698,7 @@ section('the wood');
   note('5% / 25% of the wood, left alone', `${(t5 / 35 / 60).toFixed(1)} min / ${(t25 / 35 / 60).toFixed(1)} min`);
   check('the fire takes the wood on its own', forest.burnFraction >= 0.25, `${(forest.burnFraction * 100).toFixed(1)}% after ${tics} tics`);
   check('but not in a flash', t5 > 35 * 60, `${(t5 / 35).toFixed(0)}s to 5%`);
-  check('nor in an afternoon', t25 < 35 * 60 * 30, `${(t25 / 35 / 60).toFixed(0)} min to 25%`);
+  check('nor in an afternoon', t25 < 35 * 60 * 50, `${(t25 / 35 / 60).toFixed(0)} min to 25%`);
   check('burnt cells stay burnt', forest.state[forest.idx(forest.cellX(sx), forest.cellY(sy))] === 2);
 }
 
@@ -703,8 +709,8 @@ section('the flame');
   const reach = FL.streamReach();
   const drop = FL.streamDrop(28);
   note('reach / on the floor at', `${reach.toFixed(0)} / ${drop.toFixed(0)} units`);
-  check('the stream reaches across an aisle and a half', reach > 380 && reach < 520, reach.toFixed(0));
-  check('and lands on the floor before it runs out', drop > 200 && drop < reach, drop.toFixed(0));
+  check('the stream reaches across an aisle', reach > 600 && reach < 900, reach.toFixed(0));
+  check('and lands on the floor before it runs out', drop > 250 && drop < reach, drop.toFixed(0));
   check('the heat stays below the accelerant line', FL.STREAM.heat < 40, `${FL.STREAM.heat}`);
 
   /* particles: a pool, not an allocator */

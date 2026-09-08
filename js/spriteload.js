@@ -135,6 +135,32 @@ export async function loadDoomSprites(bank, { sprite, as, decode }) {
 }
 
 /** A decoder for a browser: the platform already has one. */
+/* A horizontal strip of equal cells — the fire from assets/fire — cut
+   into frames and given to the bank as one set, lettered A onward. Each
+   frame is the same from every side, like every other fire here. */
+export const STRIP_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+export function stripFrames(img, cell) {
+  const n = Math.floor(img.w / cell);
+  const out = [];
+  for (let f = 0; f < n; f++) {
+    const p = new Pix(cell, img.h, 1, false);
+    p.clear();
+    for (let y = 0; y < img.h; y++)
+      for (let x = 0; x < cell; x++) {
+        const s = (y * img.w + f * cell + x) * 4;
+        if (img.data[s + 3] < 8) continue;
+        p.set(x, y, img.data[s], img.data[s + 1], img.data[s + 2], img.data[s + 3]);
+      }
+    out.push(p);
+  }
+  return out;
+}
+export function addStrip(bank, name, img, cell, opts = {}) {
+  const frames = stripFrames(img, cell);
+  frames.forEach((p, i) => bank.addFrame(name, STRIP_LETTERS[i], new Array(8).fill(p), opts));
+  return frames.length;
+}
+
 export function browserDecoder(dir) {
   return async (name) => {
     const img = new Image();

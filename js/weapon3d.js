@@ -196,6 +196,7 @@ export class Weapon3D {
       this.gunMaterials = [];
       root.traverse(o => { if (o.isMesh && o.material.uniforms?.glow) this.gunMaterials.push(o.material); });
 
+      this.frames = atlas.frames;
       /* the pilot light: a small flame sprite, always on */
       this.pilot = new THREE.Mesh(new THREE.PlaneGeometry(0.036, 0.05), flameMaterial(atlas));
       this.pilot.geometry.translate(0, 0.02, 0);
@@ -252,7 +253,7 @@ export class Weapon3D {
     this.pilot.position.copy(pv);
     const flick = 0.85 + 0.15 * Math.sin(tics * 1.7) * Math.cos(tics * 0.53);
     this.pilot.scale.set(flick, 0.8 + flick * 0.35, 1);
-    this.pilot.material.uniforms.frame.value = (tics >> 1) & 7;
+    this.pilot.material.uniforms.frame.value = (tics >> 1) % this.frames;
     this.pilot.visible = !firing;
 
     /* the muzzle, only while firing */
@@ -260,8 +261,8 @@ export class Weapon3D {
     if (firing) {
       const s = 0.85 + Math.random() * 0.3;
       this.muzzle.scale.set(s, s, 0.9 + Math.random() * 0.35);
-      this.muzzleMaterials[0].uniforms.frame.value = (tics) & 7;
-      this.muzzleMaterials[1].uniforms.frame.value = (tics + 3) & 7;
+      this.muzzleMaterials[0].uniforms.frame.value = tics % this.frames;
+      this.muzzleMaterials[1].uniforms.frame.value = (tics + 7) % this.frames;
     }
 
     /* and what they throw on the gun */

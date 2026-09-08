@@ -163,5 +163,25 @@ export function bakeEffectAtlases() {
       }
     puffs.push(p);
   }
-  return { spark: atlasTexture([spark]), smoke: atlasTexture(puffs) };
+  /* The stream's particle: a ball of fire, white at the heart through
+     the ember colours to a soft dark-red rim, eight of them so a stream
+     is not one blob repeated. Drawn additively, so where they overlap
+     they add up to white — which is what makes a dense arc of them read
+     as one continuous flame rather than as beads on a string. */
+  const balls = [];
+  for (let f = 0; f < 8; f++) {
+    const p = new Pix(32, 32, 90 + f, false);
+    const n = fbm(32, 32, 4, 3, 300 + f * 17);
+    for (let y = 0; y < 32; y++)
+      for (let x = 0; x < 32; x++) {
+        const dx = (x - 15.5) / 15.5, dy = (y - 15.5) / 15.5;
+        const d = Math.hypot(dx, dy);
+        const v = Math.max(0, Math.min(1, (1 - d) * (0.6 + n[y * 32 + x] * 0.8)));
+        if (v < 0.06) continue;
+        const a = Math.min(1, v / 0.35);
+        p.ink(x, y, 'fire', Math.min(1, v * 1.15), Math.round(a * 255));
+      }
+    balls.push(p);
+  }
+  return { spark: atlasTexture([spark]), smoke: atlasTexture(puffs), fireball: atlasTexture(balls) };
 }

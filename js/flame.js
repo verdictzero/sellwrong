@@ -31,16 +31,18 @@ import { Particles } from './particles.js';
 import { pRandom, dist2 } from './util.js';
 
 export const STREAM = {
-  perTic: 3,          // particles a tic while the trigger is down
-  speed: 31,          // units a tic, leaving the nozzle
-  jitter: 0.05,       // radians of spread either way
-  life: 24,           // tics in the air at most
-  drag: 0.955,        // speed kept per tic
-  gravity: -0.30,     // units a tic a tic
-  size0: 9,           // world units across, leaving the nozzle
-  size1: 64,          // and at the end of its life
+  perTic: 6,          // particles a tic while the trigger is down, staggered along the tic
+  speed: 30,          // units a tic, leaving the nozzle
+  jitter: 0.04,       // radians of spread either way
+  life: 40,           // tics in the air at most
+  drag: 0.972,        // speed kept per tic
+  gravity: -0.22,     // units a tic a tic
+  size0: 8,           // world units across, leaving the nozzle
+  size1: 44,          // and at the end of its life
+  alpha: 0.5,         // per particle; they add up where they overlap
   heat: 36,           // what it puts into the fuel grid where it lands
-  treeRadius: 40,     // how much forest one landing lights
+  heatRadius: 22,     // how far round the landing the store's grid takes it
+  treeRadius: 26,     // how much forest one landing lights
 };
 
 /** How far a particle travels before its life runs out, ignoring the
@@ -70,9 +72,12 @@ export class FlameStream {
    */
   constructor(game, atlas = null) {
     this.game = game;
+    /* Additive: overlapping fire adds up toward white, so a dense enough
+       stream is one unbroken tongue with a hot core and soft edges, and
+       the end of it dissolves instead of popping. */
     this.particles = new Particles({
-      max: 256, texture: atlas?.texture || null, frames: atlas?.frames || 8,
-      blend: 'cutout', fullbright: true, name: 'flame', renderOrder: 11, nearShrink: 30,
+      max: 420, texture: atlas?.texture || null, frames: atlas?.frames || 8,
+      blend: 'add', fullbright: true, name: 'flame', renderOrder: 11, nearShrink: 30,
     });
     this.firing = 0;
     this.glow = { x: 0, y: 0, z: 0, w: 0 };
@@ -89,15 +94,22 @@ export class FlameStream {
     for (let k = 0; k < s.perTic; k++) {
       const a = angle + (pRandom() / 255 - 0.5) * s.jitter * 2;
       const p = pitch + (pRandom() / 255 - 0.5) * s.jitter * 1.4;
-      const sp = s.speed * (0.9 + (pRandom() / 255) * 0.2);
+      const sp = s.speed * (0.94 + (pRandom() / 255) * 0.12);
       const ch = Math.cos(p);
+      const vx = Math.cos(a) * ch * sp, vy = Math.sin(a) * ch * sp, vz = Math.sin(p) * sp;
+      /* STAGGERED ALONG THE TIC. Six particles born at the same point
+         once a tic are six beads thirty units apart; six born along the
+         first tic's travel, each a sixth of a tic older than the last,
+         are five units apart — a line, not a string of beads. */
+      const f = k / s.perTic;
       this.particles.spawn({
-        x: origin.x, y: origin.y, z: origin.z,
-        vx: Math.cos(a) * ch * sp, vy: Math.sin(a) * ch * sp, vz: Math.sin(p) * sp,
-        life: Math.round(s.life * (0.85 + (pRandom() / 255) * 0.3)),
+        x: origin.x + vx * f, y: origin.y + vy * f, z: origin.z + vz * f,
+        vx, vy, vz, age: f,
+        life: Math.round(s.life * (0.9 + (pRandom() / 255) * 0.2)),
         size0: s.size0, size1: s.size1,
-        c0: [1, 1, 1], c1: [1, 0.62, 0.38],
-        frame: pRandom() & 7, frameRate: 0.5,
+        c0: [1.0, 0.92, 0.66], c1: [1.0, 0.32, 0.08],
+        a0: s.alpha, a1: 0.0,
+        frame: pRandom() & 7, frameRate: 0.6,
         drag: s.drag, gravity: s.gravity,
       });
     }
@@ -147,7 +159,7 @@ export class FlameStream {
   _land(x, y, z) {
     const g = this.game;
     this._hits++;
-    g.fire?.ignite(x, y, STREAM.heat, 28);
+    g.fire?.ignite(x, y, STREAM.heat, STREAM.heatRadius);
     g.forest?.ignite(x, y, STREAM.treeRadius);
     g.fx?.splash(x, y, z);
   }

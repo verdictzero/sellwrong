@@ -146,7 +146,7 @@ export class Particles {
     this.alive[i] = 1; this.count++;
     this.x[i] = o.x; this.y[i] = o.y; this.z[i] = o.z;
     this.vx[i] = o.vx || 0; this.vy[i] = o.vy || 0; this.vz[i] = o.vz || 0;
-    this.age[i] = 0; this.life[i] = Math.max(1, o.life || 30);
+    this.age[i] = o.age || 0; this.life[i] = Math.max(1, o.life || 30);
     this.size0[i] = o.size0 ?? o.size ?? 8; this.size1[i] = o.size1 ?? o.size ?? this.size0[i];
     const c0 = o.c0 || [1, 1, 1], c1 = o.c1 || c0;
     this.r0[i] = c0[0]; this.g0[i] = c0[1]; this.b0[i] = c0[2]; this.a0[i] = o.a0 ?? 1;
@@ -271,6 +271,18 @@ export class Particles {
    same generator the floor fire uses, so the stream and what it lights
    are the same fire, and a soft blob for smoke.
    ------------------------------------------------------------------ */
+/** A strip that arrived as a picture, as a particle atlas texture. */
+export function imageTexture(img) {
+  const t = new THREE.Texture(img);
+  t.magFilter = THREE.NearestFilter;
+  t.minFilter = THREE.NearestFilter;
+  t.generateMipmaps = false;
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.needsUpdate = true;
+  return t;
+}
+
 export function atlasTexture(frames) {
   const w = frames[0].w, h = frames[0].h;
   const c = document.createElement('canvas');

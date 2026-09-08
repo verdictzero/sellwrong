@@ -42,6 +42,16 @@ pair grass_6_128         grass
 cp "$T/TEX_forest_ground_01_albedo_128.png" "$OUT/ground.png"
 cp "$T/TEX_crater_char_albedo_128.png"      "$OUT/ground_burnt.png"
 
+# And the fire itself: four seamlessly looping twenty-frame strips
+# (tools/TOOL_gen_flame_loop.py there), bottom-anchored with a round
+# base, in the same eight ember colours the plants burn in. The game
+# draws every fire — the store's, the wood's, the gun's — with these.
+F=assets/fire
+mkdir -p "$F"
+for k in flame blaze ember smoke; do
+  cp "$SRC/sprites/fire/SPRITE_fire_${k}_20.png" "$F/$k.png"
+done
+
 printf 'assets/forest: '
 ls "$OUT" | wc -l | tr -d ' '
 printf ' files, '

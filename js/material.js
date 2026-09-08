@@ -131,7 +131,9 @@ vec3 worldShade(vec3 albedo, float l, float depth, vec3 world, float fullbright)
   /* Smoke. Multiplied by fogDensity so a store that is not yet on fire has
      no haze at all rather than a permanent grey wash. */
   float f = clamp((depth - fogNear) / max(1.0, fogFar - fogNear), 0.0, 1.0) * fogDensity;
-  return mix(c, fogColor * max(l, 0.35), f);
+  /* the smoke is lit by the fire under it, not by the room: its floor
+     sits well above the room's own light, or a burning store goes black */
+  return mix(c, fogColor * max(l, 0.7), f);
 }
 `;
 

@@ -1110,6 +1110,40 @@ T.HATCHKEEP = () => {
   return p.snap(0.5);
 };
 
+T.ROADTAR = () => {
+  /* The road's own surface: the lot's asphalt, but the lot is floodlit
+     and the road is not, so it is a shade darker — which is also what
+     lets it read as a band across the far end of the lot from the
+     verge, where its lines are too thin to see. */
+  const p = T.ASPHALT();
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) p.wash(x, y, 'grey', 0.30, 0.42);
+  return p.snap(0.5);
+};
+
+T.ROADLINE = () => {
+  /* The centre line of the road: a dash of yellow, 40 on and 24 off.
+     The dash runs the FULL height of the tile, because the strip it is
+     laid on is six units wide and shows only six of these rows —
+     whichever six, they have to carry the line. */
+  const p = T.ASPHALT();
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+    if (x >= 40) continue;
+    if (((x * 5 + y * 3) % 13) < 2) continue;              // worn through
+    p.ink(x, y, 'yellow', 0.60 + ((x + y) & 1) * 0.08);
+  }
+  return p.snap(0.5);
+};
+
+T.ROADEDGE = () => {
+  /* The white line along each edge, same idea: line all the way through. */
+  const p = T.ASPHALT();
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+    if (((x * 7 + y * 11) % 17) < 3) continue;
+    p.ink(x, y, 'bone', 0.64 + ((x + y) & 1) * 0.06);
+  }
+  return p.snap(0.5);
+};
+
 T.BAYROW = () => {
   /* A car park bay, and ONE REPEAT IS ONE BAY: declared 186 across and
      180 deep, so a row of forty bays is one sector with this on the floor
@@ -1520,13 +1554,15 @@ export function charVariant(src, seed) {
          gutted store literally unreadable — and you have to walk back
          out through it. So it keeps rather more than it should, and the
          ash below is doing most of the work of making it legible. */
-      const keep = 0.17 + s * 0.24 + lum * 0.22;
+      const keep = 0.30 + s * 0.26 + lum * 0.26;
       d[i] *= keep; d[i + 1] *= keep * 0.95; d[i + 2] *= keep * 0.88;
 
-      /* ash: pale, patchy, and the only thing you can actually see by */
+      /* ash: pale, patchy, and the only thing you can actually see by.
+         Lifted again after the burnt store came out "WAY too dark" —
+         a gutted aisle is grey, not black. */
       const a = ash[y * src.w + x];
-      if (a > 0.52) p.wash(x, y, 'grey', 0.34 + (a - 0.52) * 0.9, (a - 0.52) * 1.5);
-      if (a > 0.78 && s > 0.5) p.wash(x, y, 'grey', 0.52, (a - 0.78) * 1.6);
+      if (a > 0.48) p.wash(x, y, 'grey', 0.44 + (a - 0.48) * 0.9, (a - 0.48) * 1.7);
+      if (a > 0.74 && s > 0.5) p.wash(x, y, 'grey', 0.60, (a - 0.74) * 1.8);
     }
   }
 

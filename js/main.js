@@ -23,7 +23,7 @@ import * as THREE from 'three';
 import { LofiPipeline } from './lofi.js';
 import { bakeTextures } from './textures.js';
 import { bakeSprites, bakeWeapons, fireFrames } from './sprites.js';
-import { loadDoomSprites, browserDecoder } from './spriteload.js';
+import { loadDoomSprites, browserDecoder, addStrip } from './spriteload.js';
 import { buildSellWrong } from './maps/sellwrong.js';
 import { Game } from './game.js';
 import { Hud } from './hud.js';
@@ -31,7 +31,7 @@ import { Audio } from './audio.js';
 import { Input } from './input.js';
 import { TouchControls } from './touch.js';
 import { world } from './material.js';
-import { atlasTexture } from './particles.js';
+import { atlasTexture, imageTexture } from './particles.js';
 import { bakeEffectAtlases } from './effects.js';
 import { Weapon3D } from './weapon3d.js';
 import { KINDS } from './forest.js';
@@ -138,6 +138,10 @@ async function boot() {
   /* The files start arriving now, behind the baking. */
   const forestArtP = loadForestArt().catch(e => { console.warn('no forest art:', e.message); return null; });
   const skyP = loadImage('assets/sky/night.png').catch(e => { console.warn('no sky:', e.message); return null; });
+  /* the fire: the golf project's looping strips — flame, blaze, ember —
+     for the store's fire, the wood's flames and the gun's muzzle alike */
+  const fireP = Promise.all(['flame', 'blaze', 'ember'].map(k => loadImage(`assets/fire/${k}.png`)))
+    .catch(e => { console.warn('no fire strips, drawing our own:', e.message); return null; });
 
   status('BAKING TEXTURES', 0.05); await breathe();
   const textures = bakeTextures();
@@ -145,9 +149,10 @@ async function boot() {
   status('BAKING SPRITES', 0.30); await breathe();
   const sprites = bakeSprites();
   const weapons = bakeWeapons();
-  /* the flame the gun makes, as an atlas the particles and the muzzle share */
-  const flameAtlas = { texture: atlasTexture(fireFrames(24, 32, 8, 19, { taper: 0.7 })), frames: 8 };
   const fxAtlases = bakeEffectAtlases();
+  /* the stream out of the gun is fireballs (bakeEffectAtlases); the
+     muzzle, the pilot and the flames on the wood are the flame strip */
+  const streamAtlas = { texture: fxAtlases.fireball, frames: 8 };
 
   /* THE STAFF ARE NOT DRAWN BY THIS PROGRAM. They are Freedoom's player
      sprite with a smiley face over the visor and a SellWrong apron on,
@@ -161,6 +166,21 @@ async function boot() {
   ])).reduce((a, b) => a + b, 0);
   if (loaded) console.log(`staff: ${loaded} frames of real art`);
 
+  status('THE FIRE', 0.50);
+  const fireImgs = await fireP;
+  let flameAtlas;
+  if (fireImgs) {
+    const [flameImg, blazeImg, emberImg] = fireImgs;
+    const pixOf = img => { const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight; const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height); return { w: d.width, h: d.height, data: d.data }; };
+    /* the store's three fire sets, replaced frame for frame: a round
+       base, so a shelf alight is a fire sitting on a shelf and not a fire
+       sawn off flat at the shelf's edge */
+    addStrip(sprites, 'FIRE', pixOf(flameImg), 48, { fullbright: true, scale: 1.0 });
+    addStrip(sprites, 'BLAZ', pixOf(blazeImg), 96, { fullbright: true, scale: 1.1 });
+    addStrip(sprites, 'EMBR', pixOf(emberImg), 16, { fullbright: true, scale: 1.6 });
+    flameAtlas = { texture: imageTexture(flameImg), frames: 20 };
+  } else flameAtlas = { texture: atlasTexture(fireFrames(24, 32, 8, 19, { taper: 0.7 })), frames: 8 };
+
   status('THE WOOD', 0.55);
   const forestArt = await forestArtP;
   status('THE SKY', 0.62);
@@ -173,7 +193,7 @@ async function boot() {
   const hud = new Hud(null);
   const audio = new Audio();
   const input = new Input(renderer.domElement);
-  const game = new Game({ level, scene, camera, textures, sprites, hud, audio, input, sky: skyImage, flameAtlas, fxAtlases });
+  const game = new Game({ level, scene, camera, textures, sprites, hud, audio, input, sky: skyImage, flameAtlas: streamAtlas, fxAtlases });
   hud.game = game;
   const touch = new TouchControls(input, { root: $('touch'), prefs, onPause: () => pause(true) });
 
@@ -183,7 +203,7 @@ async function boot() {
   hud.showWeaponSprite = !weapon3d.ready;
 
   status('PLANTING THE WOOD', 0.88); await breathe();
-  if (forestArt) game.forest.build(scene, forestArt);
+  if (forestArt) { game.forest.build(scene, forestArt); game.forest.attachFlames(scene, flameAtlas); }
   console.log(`wood: ${game.forest.treeCount} trees, ${game.forest.plantCount} plants`);
 
   status('OPENING', 0.95); await breathe();
@@ -307,7 +327,7 @@ async function boot() {
     if (input.mode === 'touch') { enterFullscreen(); touch.setEnabled(true); }
     else input.requestLock();
     input.keys.clear();
-    game.message('BURN ' + game.burnTarget + '% OF THE STORE. GET OUT.');
+    game.message('SELLWRONG SUPERSTORE. OPEN ALL NIGHT.');
   }
   title.addEventListener('click', start);
   let debug = false;
@@ -368,7 +388,7 @@ async function boot() {
   requestAnimationFrame(frame);
 
   /* let the console poke at it */
-  window.SELLWRONG = { game, pipeline, renderer, scene, camera, textures, sprites, world, level, input, touch, weapon3d };
+  window.SELLWRONG = { game, pipeline, renderer, scene, camera, textures, sprites, world, level, input, touch, weapon3d, responders: game.responders };
 }
 
 boot().catch(e => {

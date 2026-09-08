@@ -178,6 +178,12 @@ const BAY_W = 186, BAY_D = 180, LANE_D = 160;
 const LOT_X0 = -1400, LOT_X1 = 5680;
 const CANOPY_Y = -136;                       // the outer edge of the canopy
 const FIRELANE_Y = CANOPY_Y - LANE_D;        // -296: nobody parks here
+/* THE ROAD. Two lanes along the front of the lot, between the fire lane
+   and the first row of bays, running out of the lot and on through the
+   wood in both directions until the forest ends — the way you drove in,
+   and the way everyone else is going to arrive. */
+const ROAD_D = 300;
+const ROAD_Y1 = FIRELANE_Y, ROAD_Y0 = FIRELANE_Y - ROAD_D;
 
 /* Seven rows in three back-to-back pairs and a single, with a driving
    lane between each pair. Written as a script so the lot reads top to
@@ -325,8 +331,24 @@ export function buildSellWrong() {
   rm.add(SIGN_XM, S1_Y, SIGN_X1, PORCH_Y, signStrip('sign box', 328 + SIGN_ROW, 'LOGO1'));
   rm.add(SIGN_X0, S2_Y, SIGN_X1, S1_Y, signStrip('sign cap', 328 + SIGN_H, 'PARAPET'));
 
+  /* The road across the lot: an edge line, a lane, the centre line, a
+     lane, an edge line. The lines are sectors of their own because a
+     floor is textured to the world grid and a 64-unit tile cannot hold
+     one line across a 300-unit road; a strip a few units wide wearing a
+     tile that is line all the way through can. */
+  const roadAcross = (x0, x1, tag, extra = {}) => {
+    const mid = (ROAD_Y0 + ROAD_Y1) / 2;
+    const strip = (a, b, tex, name) => rm.add(x0, a, x1, b, lot(name, { floorTex: tex, light: 0.56, ...extra }));
+    strip(ROAD_Y0, ROAD_Y0 + 6, 'ROADEDGE', `road edge, ${tag}`);
+    strip(ROAD_Y0 + 6, mid - 3, 'ROADTAR', `road, ${tag}`);
+    strip(mid - 3, mid + 3, 'ROADLINE', `road centre, ${tag}`);
+    strip(mid + 3, ROAD_Y1 - 6, 'ROADTAR', `road, ${tag}`);
+    strip(ROAD_Y1 - 6, ROAD_Y1, 'ROADEDGE', `road edge, ${tag}`);
+  };
+  roadAcross(LOT_X0, LOT_X1, 'in the lot');
+
   /* and then the rows, walking south */
-  let y = FIRELANE_Y;
+  let y = ROAD_Y0;
   const bayRows = [];
   for (const step of LOT_PLAN) {
     if (step.kind === 'lane') {
@@ -655,8 +677,14 @@ export function buildSellWrong() {
   const OX0 = LOT_X0 - FOREST_REACH, OX1 = LOT_X1 + FOREST_REACH;
   const OY0 = LOT_Y0 - FOREST_REACH, OY1 = BACK_Y + FOREST_REACH;
   woodRect(OX0, OY0, OX1, LOT_Y0, 'wood, the road side');
-  woodRect(OX0, LOT_Y0, LOT_X0, OY1, 'wood, west');
-  woodRect(LOT_X1, LOT_Y0, OX1, OY1, 'wood, east');
+  /* the road goes on through the wood on both sides, so the two side
+     strips are each split around it */
+  roadAcross(OX0, LOT_X0, 'west', { outside: true });
+  roadAcross(LOT_X1, OX1, 'east', { outside: true });
+  woodRect(OX0, LOT_Y0, LOT_X0, ROAD_Y0, 'wood, west, this side of the road');
+  woodRect(OX0, ROAD_Y1, LOT_X0, OY1, 'wood, west');
+  woodRect(LOT_X1, LOT_Y0, OX1, ROAD_Y0, 'wood, east, this side of the road');
+  woodRect(LOT_X1, ROAD_Y1, OX1, OY1, 'wood, east');
   woodRect(LOT_X0, CANOPY_Y, PARADE_X0 - 2 * WALL, MALL_Y1, 'wood, west flank');
   woodRect(PARADE_X1 + 2 * WALL, CANOPY_Y, LOT_X1, MALL_Y1, 'wood, east flank');
   woodRect(LOT_X0, MALL_Y1, ANCHOR_X0 - WALL, BACK_Y, 'wood, behind the west wing');
@@ -750,9 +778,9 @@ export function buildSellWrong() {
       }
     });
     /* and three abandoned across the lanes, because everyone left at once */
-    carSlots.push({ x: 1500, y: FIRELANE_Y - 60,  angle: 0.35,  variant: 2 });
-    carSlots.push({ x: 3100, y: FIRELANE_Y - 80,  angle: -0.25, variant: 4 });
-    carSlots.push({ x: 620,  y: FIRELANE_Y - 700, angle: 1.4,   variant: 1 });
+    carSlots.push({ x: 1500, y: ROAD_Y0 - 60,  angle: 0.35,  variant: 2 });
+    carSlots.push({ x: 3100, y: ROAD_Y0 - 80,  angle: -0.25, variant: 4 });
+    carSlots.push({ x: 620,  y: ROAD_Y0 - 700, angle: 1.4,   variant: 1 });
   }
 
   /* --- the furniture of a shop front --------------------------------- */
@@ -869,11 +897,13 @@ export function buildSellWrong() {
   level.slideDoors = slide;
   /* Position, heading and which one it is, for whatever draws the cars. */
   level.carSlots = carSlots;
-  level.burnTarget = 60;          // per cent of the parade, to win
-  /* Where "outside" starts, for the escape. The footway is outdoors and
-     is NOT far enough: getting clear means getting off the pavement and
-     out into the lot, past the fire lane. */
-  level.escapeY = FIRELANE_Y - 40;
+  /* the road, and where it leaves the map: whoever comes, comes from
+     one of these two points */
+  level.road = { y0: ROAD_Y0, y1: ROAD_Y1 };
+  level.roadEnds = [
+    { x: OX0 + 240, y: (ROAD_Y0 + ROAD_Y1) / 2, heading: 0, side: 'west' },
+    { x: OX1 - 240, y: (ROAD_Y0 + ROAD_Y1) / 2, heading: Math.PI, side: 'east' },
+  ];
   level.title = 'SELLWRONG — SUPERSTORE';
   /* the wood, for js/forest.js: where it is, and the hole in it */
   level.forestRects = forestRects;

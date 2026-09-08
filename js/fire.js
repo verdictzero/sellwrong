@@ -96,7 +96,7 @@ const CELL = 32;
    nothing for the player to do. At 6 it is a few minutes, which is time
    to walk in, work, and get out — and the flamethrower is roughly ten
    times faster than waiting, which is the point of carrying it. */
-const FIRE_INTERVAL = 6;
+const FIRE_INTERVAL = 12;
 
 const IGNITE_AT   = 55;      // heat a cell starts at when it catches
 const PEAK        = 255;
@@ -142,7 +142,13 @@ const peakHeat = f0 => Math.max(112, Math.min(PEAK, 112 + f0 * 0.5));
    Both are far above the percolation threshold, so both go eventually.
    The difference between them is entirely PACE, which is what makes
    watching a fire find its way across a walkway worth watching. */
-const spreadChance = f => Math.max(3, Math.min(110, f >> 2));
+/* Halved from the first cut, and no further: at a quarter the footway
+   stopped carrying the fire along the parade and the neighbours never
+   caught, which is the invariant the map is written against. The rest
+   of the slowing — the user watched a torched aisle take the store in a
+   couple of minutes and said so twice — is the CLOCK above, doubled,
+   which slows every fire in the store without touching what percolates. */
+const spreadChance = f => Math.max(2, Math.min(70, f >> 3));
 
 export class FireSystem {
   constructor(game) {
@@ -428,16 +434,21 @@ export class FireSystem {
        stays small: what you see of a forest fire is the smoke standing
        over the trees (js/effects.js), not a haze over everything. */
     const wood = this.game.forest ? this.game.forest.burnFraction : 0;
-    world.fogDensity.value = Math.min(0.92, burn * 2.4 + wood * 0.9);
-    world.fogColor.value.setRGB(0.16 + burn * 0.12, 0.14 + burn * 0.07, 0.13);
+    /* Smoke that is LIT. The first cut of this fog was near-black and
+       went to nine-tenths density, which turned a burning store into a
+       dark room with the lights off: correct for smoke in a cellar,
+       wrong for smoke over a fire, which is orange-grey from underneath.
+       So it is warm, it is lighter, and it stops well short of opaque. */
+    world.fogDensity.value = Math.min(0.50, burn * 1.2 + wood * 0.5);
+    world.fogColor.value.setRGB(0.46 + burn * 0.12, 0.34 + burn * 0.08, 0.24 + burn * 0.03);
 
     /* A gutted store lit only by embers is, accurately, almost pitch
        black — and the player still has to find the way out of it. So the
        ambient lifts as the place goes: partly the embers themselves,
        partly the roof no longer being entirely there. Accuracy loses
        this one on purpose. */
-    world.minLight.value = 0.22 + burn * 0.20;
-    world.globalLight.value = 1.0 + burn * 0.18;
+    world.minLight.value = 0.26 + burn * 0.30;
+    world.globalLight.value = 1.0 + burn * 0.22;
 
     const p = this.game.player;
     if (!p) return;
@@ -465,8 +476,8 @@ export class FireSystem {
       world.fireLightPos.value.set(sx / sw, this.game.level.sectorAt(sx / sw, sy / sw)?.floor + 48 || 48, sy / sw);
       /* flicker, keyed to the tic so it is the same for everything */
       const flick = 0.86 + 0.14 * Math.sin(this.tics * 0.7) * Math.cos(this.tics * 0.31);
-      world.fireLight.value = Math.min(1.5, Math.sqrt(sw) * 0.30) * flick;
-      world.fireLightRange.value = 380 + Math.min(700, sw * 26);
+      world.fireLight.value = Math.min(1.8, Math.sqrt(sw) * 0.36) * flick;
+      world.fireLightRange.value = 420 + Math.min(800, sw * 28);
     } else {
       world.fireLight.value *= 0.86;
     }
@@ -545,7 +556,9 @@ export class FireSystem {
       const c = cand[s];
       /* which flame: an ember, a fire, or a proper blaze */
       const set = c.h > 200 ? 'BLAZ' : c.h > 90 ? 'FIRE' : 'EMBR';
-      const letters = set === 'EMBR' ? 6 : 8;
+      /* however many frames the set has: eight from the bakery, twenty
+         from the strips in assets/fire when they loaded */
+      const letters = bank.count(set) || (set === 'EMBR' ? 6 : 8);
       /* Offset by the cell index so neighbouring flames are out of step
          with each other — in phase, a wall of fire pulses like a heart. */
       const frame = String.fromCharCode(65 + ((this.tics >> 1) + c.i * 3) % letters);

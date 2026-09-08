@@ -153,8 +153,6 @@ export class Hud {
       const on = f * 100 <= burn;
       for (let k = 0; k < s; k++) pix.ink(gx0 + i, gy + k, on ? 'fire' : 'grey', on ? 0.5 + f * 0.45 : 0.18);
     }
-    const tx = gx0 + Math.round(gw * g.burnTarget / 100);
-    for (let k = -1; k <= s; k++) pix.ink(tx, gy + k, 'bone', 0.85);
     x = bigText(pix, 'WOOD', x + 6 * s, M, 'grey', 0.55, s);
     bigText(pix, `${wood}%`, x + 2 * s, M, 'fire', wood > 0 ? 0.66 : 0.3, s);
 

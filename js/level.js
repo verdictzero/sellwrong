@@ -153,6 +153,9 @@ export class MapBuilder {
          but no floor is drawn for it (js/forest.js draws its own, one
          that can char) and the store's fuel grid stops at its edge. */
       forest: !!props.forest,
+      /* The road where it runs out through the wood: walkable and drawn
+         like the lot, but not the store's business for the fuel grid. */
+      outside: !!props.outside,
       special: props.special ?? null,
       bbox: null,
     };
@@ -279,7 +282,7 @@ export class Level {
        units of wood on every side, which has its own fire. */
     let fb = [Infinity, Infinity, -Infinity, -Infinity], any = false;
     for (const s of this.sectors) {
-      if (s.forest) continue;
+      if (s.forest || s.outside) continue;
       any = true;
       fb = [Math.min(fb[0], s.bbox[0]), Math.min(fb[1], s.bbox[1]), Math.max(fb[2], s.bbox[2]), Math.max(fb[3], s.bbox[3])];
     }

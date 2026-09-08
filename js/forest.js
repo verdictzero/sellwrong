@@ -46,11 +46,12 @@
 
 import * as THREE from 'three';
 import { worldUniforms, WORLD_UNIFORMS_GLSL, WORLD_SHADE_GLSL } from './material.js';
+import { Particles } from './particles.js';
 import { pRandom, pChance, dist2, clamp } from './util.js';
 import { fbm } from './pixel.js';
 
 export const CELL = 64;
-export const FIRE_INTERVAL = 6;       // the store's clock, so the two fires keep time
+export const FIRE_INTERVAL = 9;       // the store's clock, so the two fires keep time
 
 /* How each kind of plant is drawn and what it does to a fire.
 
@@ -85,9 +86,20 @@ export const EMBER_RAMP = ['#181008', '#302000', '#503000', '#704000', '#985800'
    tic, so 72 is about twelve seconds); chances are out of 256 per fire
    tic per neighbour, and are what decide the pace. */
 export const BURN = {
-  treeTics: 72, groundTics: 28,
-  window: [0.12, 0.85],          // the part of a burn that can light a neighbour
-  treeToTree: 10, treeToGround: 8, groundToTree: 6, groundToGround: 4,
+  /* SLOW AND SURE, and those are two different dials. The first cut had
+     a quarter of the wood gone in eight minutes and read as a fuse; the
+     obvious fix — lower the chances — put the floor right on the line
+     where a fire keeps itself going, and whether a match took depended
+     on which trees happened to stand nearby. So the chances stay HIGH
+     (a burning cell lights most of its neighbours before it is done)
+     and the burn is LONG, with nothing able to spread until it is a
+     third of the way through. A ground cell smoulders for ten seconds,
+     a tree for eighteen, and a front walks downwind at a cell every
+     eight seconds or so, creeps against the wind, and always takes the
+     lot in the end. The headless check holds it to that. */
+  treeTics: 110, groundTics: 60,
+  window: [0.30, 0.90],          // the part of a burn that can light a neighbour
+  treeToTree: 5, treeToGround: 4, groundToTree: 5, groundToGround: 4,
   diagonal: 0.6,
   wind: [1.55, 0.55],            // downwind (+x) and upwind multipliers
 };
@@ -130,6 +142,7 @@ export class Forest {
     this.tics = 0;
     this.kindArrays = null;
     this.mesh = null;
+    this.flames = null;
 
     const b = level.forestBounds || [0, 0, 0, 0];
     this.bounds = b;
@@ -455,7 +468,7 @@ export class Forest {
         map: { value: groundTex(art.ground) }, mapBurnt: { value: groundTex(art.groundBurnt) },
         mask: { value: this.mask },
         maskRect: { value: new THREE.Vector4(this.originX, this.originY, 1 / (this.cols * CELL), 1 / (this.rows * CELL)) },
-        light: { value: 0.52 }, uTime: this.uTime, ramp: { value: ramp },
+        light: { value: 0.56 }, uTime: this.uTime, ramp: { value: ramp },
         ...worldUniforms(),
       },
       vertexShader: GROUND_VERT, fragmentShader: GROUND_FRAG, toneMapped: false, fog: false,
@@ -512,7 +525,7 @@ export class Forest {
           map: { value: spriteTex(art.sprites[k.name].albedo, false) },
           burnMap: { value: spriteTex(art.sprites[k.name].burn, true) },
           billboardRot: this.uRot, uTime: this.uTime, ramp: { value: ramp },
-          light: { value: 0.52 },
+          light: { value: 0.56 },
           ...worldUniforms(),
         },
         vertexShader: PLANT_VERT, fragmentShader: PLANT_FRAG,
@@ -553,6 +566,68 @@ export class Forest {
     this.uRot.value = billboardRot;
     this.uTime.value = time;
     this._flush();
+    if (this.flames) { this._placeFlames(camX, camY); this.flames.render(billboardRot); }
+  }
+
+  /* ------------------------------------------------------------------
+     Actual fire
+
+     The burn map turns a tree black and puts coals on it; this puts
+     FLAMES on it. A pool of instanced flame quads (one draw call) is
+     re-parked every frame on the hottest burning cells near the eye —
+     the same trick the store's fire uses, done as instances. A burning
+     fir carries its flame at the height the front has climbed to, so
+     the fire is seen going up the tree; the ground burns at the ground.
+     ------------------------------------------------------------------ */
+  attachFlames(scene, atlas) {
+    if (this.flames || !atlas) return;
+    this.flames = new Particles({
+      max: 200, texture: atlas.texture, frames: atlas.frames,
+      blend: 'add', fullbright: true, name: 'wood-flames', renderOrder: 13, nearShrink: 60,
+    });
+    this.flames.attach(scene);
+    this._flameCand = [];
+  }
+
+  _placeFlames(camX, camY) {
+    const F = this.flames;
+    F.killAll();
+    const cand = this._flameCand;
+    cand.length = 0;
+    const R2 = 1700 * 1700;
+    /* a sample of a big fire, every cell of a small one */
+    const step = Math.max(1, this.active.length >> 9);
+    for (let k = 0; k < this.active.length; k += step) {
+      const i = this.active[k];
+      const t = this.prog[i] / 255;
+      if (t < 0.05 || t > 0.93) continue;
+      const x = this.worldX(i % this.cols), y = this.worldY((i / this.cols) | 0);
+      const d2 = dist2(x, y, camX, camY);
+      if (d2 > R2) continue;
+      const q = (t - 0.45) / 0.35;
+      const heat = Math.exp(-q * q);
+      cand.push({ i, x, y, t, heat, key: d2 / (0.3 + heat) });
+    }
+    cand.sort((a, b) => a.key - b.key);
+    const n = Math.min(F.max, cand.length);
+    const tics = this.tics;
+    for (let s = 0; s < n; s++) {
+      const c = cand[s];
+      const ti = this.cellTree[c.i];
+      let x = c.x, y = c.y, base = 0, w;
+      if (ti >= 0) {
+        const k = KINDS[this.trees.kind[ti]], th = k.h * this.trees.scale[ti];
+        x = this.trees.x[ti]; y = this.trees.y[ti];
+        base = th * clamp(c.t * 1.1, 0.02, 0.86);
+        w = Math.max(44, th * (k.aspect < 1 ? 0.40 : 0.85)) * (0.6 + c.heat * 0.6);
+      } else w = 30 + c.heat * 26;
+      /* the quad is centred; the art's round base wants to sit on `base` */
+      F.spawn({
+        x, y, z: base + w * 0.46, life: 2, size: w,
+        c0: [1, 1, 1], a0: 0.5 + c.heat * 0.5,
+        frame: ((tics >> 1) + c.i * 7) % F.opts.frames,
+      });
+    }
   }
 }
 
@@ -632,8 +707,11 @@ void main() {
     /* Dry and brown, then black, then a little ash on what is left. The
        three overlap: a crown is scorching while the lower branches char. */
     col = mix(col, col * 0.55 + vec3(0.30, 0.16, 0.06), smoothstep(0.0, 0.55, tt) * 0.85);
-    col = mix(col, vec3(0.05, 0.04, 0.035) * (0.55 + 2.6 * lum), smoothstep(0.30, 0.95, tt) * bm.g);
-    col = mix(col, vec3(0.36, 0.34, 0.31) * (0.60 + 2.0 * lum), smoothstep(0.85, 1.0, tt) * (1.0 - bm.g) * 0.55);
+    /* Char that is charcoal, not a hole in the night: it keeps a fair
+       share of the art's own light and the ash on it goes properly pale,
+       so a burnt stand reads as burnt trees rather than as nothing. */
+    col = mix(col, vec3(0.15, 0.13, 0.11) * (0.7 + 2.2 * lum), smoothstep(0.30, 0.95, tt) * bm.g);
+    col = mix(col, vec3(0.46, 0.44, 0.40) * (0.60 + 2.0 * lum), smoothstep(0.85, 1.0, tt) * (1.0 - bm.g) * 0.75);
 
     /* Two sines beaten against each other so neighbouring coals on one
        plant are out of step; the seed keeps two plants apart. */
@@ -701,7 +779,9 @@ void main() {
      of a burn follows the litter rather than the grid. */
   float lum = dot(g, vec3(0.333));
   float k = smoothstep(0.06, 0.55, burn + (lum - 0.5) * 0.3);
-  vec3 col = mix(g, b, k);
+  /* the char tile is painted for a crater at noon; lifted, and never
+     the whole way, so burnt ground is dark ground and not black */
+  vec3 col = mix(g, min(vec3(1.0), b * 1.9 + 0.06), k * 0.85);
 
   float l = worldBand(light, vDepth, 1.0, 0.0);
   vec3 c = worldShade(col, l, vDepth, vWorld, 0.0);

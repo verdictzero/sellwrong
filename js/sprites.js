@@ -44,11 +44,15 @@ import { WEAPON_TILE, WEAPON_TOP, CLEAR_INDEX } from './art-data.js';
 import * as F from './figure.js';
 
 export class SpriteBank {
-  constructor() { this.frames = new Map(); this.warned = new Set(); }
+  constructor() { this.frames = new Map(); this.warned = new Set(); this.counts = new Map(); }
+
+  /** How many frames a set has — the highest letter given to it. */
+  count(name) { return this.counts.get(name) || 0; }
 
   /** One frame: eight views, each a Pix. Uploaded on demand. */
   addFrame(name, letter, views, opts = {}) {
     const key = name + letter;
+    this.counts.set(name, Math.max(this.counts.get(name) || 0, letter.charCodeAt(0) - 64));
     const entry = {
       key, views, textures: new Array(8).fill(null),
       w: opts.w ?? views[0].w, h: opts.h ?? views[0].h,
