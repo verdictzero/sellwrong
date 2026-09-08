@@ -1,5 +1,5 @@
 /* =====================================================================
-   SELLWRONG — fire
+   GROCERY STORE SIMULATOR — fire
    =====================================================================
 
    The store burning down is the game. Everything else — the zombies, the

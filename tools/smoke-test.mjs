@@ -1,5 +1,5 @@
 /* =====================================================================
-   SELLWRONG — smoke test
+   GROCERY STORE SIMULATOR — smoke test
    =====================================================================
 
    node tools/smoke-test.mjs
@@ -151,14 +151,30 @@ const st = await import('../js/states.js');
       ['spawn', 'see', 'pain', 'melee', 'missile', 'death', 'xdeath'].every(k => !a[k] || st.STATES[a[k]])));
 
   /* THE ONE. A state naming a frame the bakery never drew renders as the
-     missing-sprite placeholder, in the middle of a fight, once. */
+     missing-sprite placeholder, in the middle of a fight, once.
+
+     VARIANTS make this less obvious than it looks. An actor with
+     `variants: n` never draws the sprite its state names: Actor.render
+     takes the first three letters and appends the variant, so the state
+     SHOP/A is drawn as SHO0A through SHO16A and the key SHOPA is in no
+     bank anywhere. So the variant bases are collected off the ACTORS
+     first, and a state on one of them has to satisfy EVERY variant —
+     which is the check that actually matters, since a missing sixteenth
+     shopper would otherwise show up as one magenta person in a crowd. */
+  const variantOf = new Map();
+  for (const info of Object.values(st.ACTORS))
+    if (info.variants) variantOf.set(st.STATES[info.spawn].sprite.slice(0, 3), info.variants);
   const missing = [];
   for (const [n, s] of Object.entries(st.STATES)) {
-    const key = s.sprite + s.frame;
-    if (bank.frames.has(key)) continue;
-    missing.push(`${n} wants ${key}`);
+    const base = s.sprite.slice(0, 3);
+    const keys = variantOf.has(base)
+      ? Array.from({ length: variantOf.get(base) }, (_, v) => base + v + s.frame)
+      : [s.sprite + s.frame];
+    for (const key of keys) if (!bank.frames.has(key)) missing.push(`${n} wants ${key}`);
   }
   check('every state has the sprite frame it names', missing.length === 0, missing.join(', '));
+  note('sprite sets with variants',
+    [...variantOf].map(([b, n]) => `${b}0..${b}${n - 1}`).join(', '));
 
   check('every frame has all eight rotations',
     [...bank.frames.values()].every(f => f.views.length === 8 && f.views.every(v => v && v.w > 0)));
@@ -166,66 +182,59 @@ const st = await import('../js/states.js');
   check('sprites are 64px or under',
     [...bank.frames.values()].every(f => f.views[0].w <= 64 && f.views[0].h <= 64));
 
-  /* ---------- the staff, who are the one thing a person drew ----------
+  /* ---------- the people, who are the one thing a person drew ---------
 
-     These are files rather than code, so the checks are about the files:
-     that the naming rule in spriteload.js predicts exactly the set on
-     disk in both directions, and that loading them through the game's
-     OWN loader still satisfies every letter the state tables name. The
-     letters moved to Doom's layout when the real art arrived, and the
-     placeholders moved with them; this is what stops the two drifting.  */
+     Four strips of painted art in assets/people, written by
+     tools/prep-people.mjs out of the galvarius project. They are files
+     rather than code, so the checks are about the files: that every one
+     is there, that its cells are exactly the size js/people.js declares,
+     and that the number of cells is the number the tables are built on.
+     Get any of those wrong and the game cuts a shopper in half at load
+     time and says nothing about it. */
   {
-    const load = await import('../js/spriteload.js');
+    const ppl = await import('../js/people.js');
     const { readPNG } = await import('./png-read.mjs');
-    const fs = await import('node:fs');
-    const dir = new URL('../assets/sprites/employee/', import.meta.url);
-
-    const predicted = new Set();
-    for (const sprite of ['PLAY', 'PLYC'])
-      for (const f of load.frameFiles(sprite)) predicted.add(f.file + '.png');
-    const onDisk = new Set(fs.readdirSync(dir).filter(f => f.endsWith('.png')));
-
-    const absent = [...predicted].filter(f => !onDisk.has(f));
-    const extra = [...onDisk].filter(f => !predicted.has(f));
-    note('employee frames', `${onDisk.size} on disk, ${predicted.size} named by the rule`);
-    check('every frame the naming rule predicts is on disk',
-      absent.length === 0, absent.slice(0, 6).join(' '));
-    check('every frame on disk is one the rule predicts',
-      extra.length === 0, extra.slice(0, 6).join(' '));
-
-    const decode = async (name) => readPNG(new URL(name + '.png', dir));
-    const n = (await Promise.all([
-      load.loadDoomSprites(bank, { sprite: 'PLAY', as: 'ASSO', decode }),
-      load.loadDoomSprites(bank, { sprite: 'PLYC', as: 'STKR', decode }),
-    ])).reduce((a, b) => a + b, 0);
-    check('both staff sprite sets load', n === 46, `${n} letters`);
-
-    const stillMissing = [];
-    for (const [name, st2] of Object.entries(st.STATES)) {
-      if (!/^(ASSO|STKR)/.test(st2.sprite)) continue;
-      const e = bank.frames.get(st2.sprite + st2.frame);
-      if (!e) { stillMissing.push(`${name} wants ${st2.sprite}${st2.frame}`); continue; }
-      if (e.views.length !== 8 || e.views.some(v => !v)) stillMissing.push(`${name} has a hole`);
+    const dir = new URL('../assets/people/', import.meta.url);
+    const want = [
+      ['shoppers', ppl.CELLS.shoppers, ppl.SHOPPERS],
+      ['giblets',  ppl.CELLS.giblets,  ppl.GIBLETS],
+      ['splat',    ppl.CELLS.splat,    ppl.SPLATS],
+      ['blast',    ppl.CELLS.blast,    ppl.BLASTS],
+    ];
+    for (const [name, cell, count] of want) {
+      let img = null;
+      try { img = readPNG(new URL(name + '.png', dir)); } catch { /* reported below */ }
+      check(`assets/people/${name}.png is there`, !!img);
+      if (!img) continue;
+      check(`${name}.png is ${count} cells of ${cell.w}x${cell.h}`,
+        img.h === cell.h && img.w === cell.w * count, `${img.w}x${img.h}`);
     }
-    check('every staff state is satisfied by the real art', stillMissing.length === 0,
-      stillMissing.slice(0, 5).join(', '));
-    check('the real sprites are 64px or under',
-      ['ASSO', 'STKR'].every(n2 => {
-        const e = bank.frames.get(n2 + 'A');
-        return e.w <= 64 && e.h <= 64;
-      }), `ASSO ${bank.frames.get('ASSOA').w}x${bank.frames.get('ASSOA').h}, ` +
-          `STKR ${bank.frames.get('STKRA').w}x${bank.frames.get('STKRA').h}`);
+
+    /* And that the game's own loader puts them where the tables look.
+       stripFrames is what the browser runs, so running it here is the
+       same cut, on the same bytes. */
+    const shoppers = readPNG(new URL('shoppers.png', dir));
+    const n = ppl.addStandees(bank, shoppers);
+    check('every shopper loads into the bank', n === ppl.SHOPPERS, `${n} of ${ppl.SHOPPERS}`);
+    const splats = ppl.addSplats(bank, readPNG(new URL('splat.png', dir)));
+    check('every splat loads into the bank', splats === ppl.SPLATS, `${splats} of ${ppl.SPLATS}`);
+
+    /* the painted people are allowed to be taller than 64 the way the
+       fire strips are, but not by accident: they are people, and a
+       person is the height of a person */
+    const tall = [...Array(ppl.SHOPPERS).keys()].map(v => bank.frames.get(`SHO${v}A`).h);
+    check('the shoppers are all one cell tall', tall.every(h => h === ppl.CELLS.shoppers.h),
+      [...new Set(tall)].join(', '));
+
+    /* seventeen drawings, not one drawing seventeen times */
+    const px = v => { const p = bank.frames.get(`SHO${v}A`).views[0]; let c = 0;
+                      for (let i = 3; i < p.data.length; i += 4) if (p.data[i] > 8) c++; return c; };
+    const counts = [...Array(ppl.SHOPPERS).keys()].map(px);
+    check('the shoppers are different people', new Set(counts).size >= ppl.SHOPPERS - 1,
+      `${new Set(counts).size} distinct silhouettes`);
+    note('shopper silhouettes', `${Math.min(...counts)}..${Math.max(...counts)} lit pixels`);
   }
 
-  /* a walking figure must actually differ between frames, or it is four
-     drawings of standing still */
-  const diff = (a, b) => { let d = 0; for (let i = 0; i < a.data.length; i += 4) if (a.data[i + 3] !== b.data[i + 3]) d++; return d; };
-  for (const name of ['ASSO', 'STKR']) {
-    for (const rot of [0, 2]) {
-      const A = bank.get(name, 'A').views[rot], B = bank.get(name, 'B').views[rot];
-      check(`${name} walk moves at rotation ${rot}`, diff(A, B) > 40, `${diff(A, B)} pixels differ`);
-    }
-  }
   const w = spr.bakeWeapons();
   note('weapon frames', w.size);
   check('weapon frames all present',
@@ -742,6 +751,86 @@ section('the flame');
   check('and every particle has landed', g.flame.liveCount === 0 && g.flame._hits > 0, `${g.flame.liveCount} live, ${g.flame._hits} hits`);
   check('the player cannot be hurt for now', (p.damage(50, null), p.health === 100));
   check('and the tank never empties', p.hasAmmo('FLAMER') && p.ammoFor('FLAMER') === Infinity);
+}
+
+/* ---------- the crowd ---------- */
+section('the crowd');
+{
+  const ppl = await import('../js/people.js');
+  const { Game } = await import('../js/game.js');
+  const THREE = await import('three');
+  const hudStub = { message() {}, ticMessages() {}, resize() {}, update() {} };
+  const inputStub = { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 }, attack: false, use: false, run: false, sample() {}, sensitivity: 0 };
+  const g = new Game({ level, scene: new THREE.Scene(), camera: {}, textures: tex.bakeTextures(), sprites: spr.bakeSprites(), hud: hudStub, audio: null, input: inputStub });
+
+  /* --- who is in the shop --- */
+  const crowd = g.actors.filter(a => a.type === 'SHOPPER');
+  const inside = crowd.filter(a => a.y > 0 && a.y < 3400 && a.x > 200 && a.x < 4080);
+  const outside = crowd.filter(a => a.y < 0);
+  note('shoppers: in the shop / in the lot', `${inside.length} / ${outside.length}`);
+  check('the shop has a crowd in it', inside.length > 40, `${inside.length}`);
+  check('and so has the car park', outside.length > 8, `${outside.length}`);
+  check('nobody is a staff monster any more',
+    !g.actors.some(a => a.type === 'ASSOCIATE' || a.type === 'STOCKER'));
+  check('every shopper is one of the drawings there are',
+    crowd.every(a => Number.isInteger(a.variant) && a.variant >= 0 && a.variant < ppl.SHOPPERS));
+  check('and there is more than one of them being used',
+    new Set(crowd.map(a => a.variant)).size === ppl.SHOPPERS,
+    `${new Set(crowd.map(a => a.variant)).size} of ${ppl.SHOPPERS}`);
+  check('they are solid, shootable and they burn',
+    crowd.every(a => a.solid && a.shootable && a.flammable));
+
+  /* --- one tic of the stream is more than a person --- */
+  const FL2 = await import('../js/flame.js');
+  check('one tic of the flame is over a shopper twice',
+    FL2.STREAM.perTic * 5 > st.ACTORS.SHOPPER.health * 2,
+    `${FL2.STREAM.perTic * 5} damage against ${st.ACTORS.SHOPPER.health} health`);
+
+  /* --- and what that looks like --- */
+  const victim = inside[0];
+  const before = g.actors.length;
+  victim.damage(50, g.player, { fire: true });
+  check('a shopper hit hard enough comes apart', g.giblets.bursts === 1 && victim.dead);
+  const blast = g.actors.filter(a => a.type === 'BLAST');
+  check('there is a fireball where they were', blast.length === 1 &&
+    Math.hypot(blast[0].x - victim.x, blast[0].y - victim.y) < 1);
+  check('and a splat under it', g.actors.some(a => a.type === 'GORE'));
+  g.actors.forEach(a => a.tic());            // the gib state is one tic long
+  check('the person is gone', victim.removed);
+  check('the pieces are in the air', g.giblets.chunks.count === ppl.GIB.count,
+    `${g.giblets.chunks.count} of ${ppl.GIB.count}`);
+  check('and they are on fire', (g.giblets.tic(), g.giblets.trail.count > 0),
+    `${g.giblets.trail.count} flames`);
+
+  const heatBefore = g.fire.burningCells;
+  for (let k = 0; k < 200; k++) { g.giblets.tic(); g.fire.tic(); }
+  check('every piece comes down', g.giblets.chunks.count === 0, `${g.giblets.chunks.count} still up`);
+  check('they leave something on the floor', g.actors.filter(a => a.type === 'GORE').length > 1);
+  check('and they start a fire where they land', g.fire.burningCells > heatBefore,
+    `${heatBefore} -> ${g.fire.burningCells} cells`);
+  note('one person', `${g.actors.length - before + 1} things left behind, ` +
+    `${g.actors.filter(a => a.type === 'GORE').length} splats`);
+
+  /* --- the floor does not fill up with them for ever --- */
+  for (let k = 0; k < ppl.GIB.maxSplats + 40; k++) g.giblets.splat(1200, 900, 0);
+  check('the splats are capped', g.giblets.splats.length === ppl.GIB.maxSplats,
+    `${g.giblets.splats.length}`);
+  check('and the ones over the cap are taken away',
+    g.actors.filter(a => a.type === 'GORE' && !a.removed).length <= ppl.GIB.maxSplats + 2);
+
+  /* --- standing still, but not perfectly --- */
+  {
+    const a = inside[1];
+    const at = t => { const s2 = ppl.swayOf(a, t); return { ...s2 }; };
+    const p0 = at(0), p1 = at(20);
+    check('a standee sways', Math.hypot(p0.dx - p1.dx, p0.dy - p1.dy, p0.dz - p1.dz) > 0.2);
+    let worst = 0;
+    for (let t = 0; t < 400; t++) { const s2 = at(t); worst = Math.max(worst, Math.hypot(s2.dx, s2.dy), Math.abs(s2.dz)); }
+    check('by less than two units', worst < 2, worst.toFixed(2));
+    const b = ppl.swayOf(inside[2], 0);
+    check('and not in step with the next one along',
+      Math.hypot(p0.dx - b.dx, p0.dy - b.dy) > 0.01);
+  }
 }
 
 /* ---------- the gun ---------- */

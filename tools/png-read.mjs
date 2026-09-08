@@ -1,17 +1,19 @@
 /* =====================================================================
-   A PNG reader, only as much as one is
+   A PNG reader and writer, only as much as either one is
    =====================================================================
 
-   Node only, and shared by the two things that need to read a PNG
-   without a browser: tools/bake-art.mjs, which turns art into source,
-   and tools/smoke-test.mjs, which checks the sprite frames on disk are
-   the ones the state tables name. The GAME does not use this — in a
-   browser the platform already has a PNG decoder and it is faster than
-   anything written here would be.
+   Node only, and shared by the things that have to handle a PNG without
+   a browser: tools/bake-art.mjs, which turns art into source,
+   tools/smoke-test.mjs, which checks what is on disk against what the
+   tables name, tools/bake-icons.mjs, and tools/prep-people.mjs, which
+   crunches somebody else's art down to this game's scale. The GAME does
+   not use this — in a browser the platform already has a PNG codec and
+   it is faster than anything written here would be.
 
    Enough of the format for the files in art/ and assets/: eight-bit,
-   non-interlaced, any of the five colour types. Anything else throws
-   rather than guessing.
+   non-interlaced, any of the five colour types on the way in, and
+   eight-bit RGBA on the way out. Anything else throws rather than
+   guessing.
    ===================================================================== */
 
 import fs from 'node:fs';
@@ -72,4 +74,34 @@ export function readPNG(file) {
            rgba[o+3] = trns && out[s] < trns.length ? trns[out[s]] : 255; }
   }
   return { w, h, data: rgba };
+}
+
+/* --------------------------------------------------------------------
+   Out again: one IHDR, one IDAT of unfiltered RGBA, one IEND. No
+   filtering, because deflate on flat pixel art gets most of it anyway
+   and a filter here would be a second thing to get wrong.
+   ------------------------------------------------------------------ */
+export function writePNG(w, h, rgba) {
+  const stride = w * 4;
+  const src = Buffer.isBuffer(rgba) ? rgba : Buffer.from(rgba.buffer ?? rgba, rgba.byteOffset ?? 0, stride * h);
+  const raw = Buffer.alloc((stride + 1) * h);
+  for (let y = 0; y < h; y++) {
+    raw[y * (stride + 1)] = 0;                       // filter: none
+    src.copy(raw, y * (stride + 1) + 1, y * stride, y * stride + stride);
+  }
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length, 0);
+    const body = Buffer.concat([Buffer.from(type, 'latin1'), data]);
+    const crc = Buffer.alloc(4); crc.writeUInt32BE(zlib.crc32(body) >>> 0, 0);
+    return Buffer.concat([len, body, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = 8; ihdr[9] = 6; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;   // 8-bit RGBA
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', zlib.deflateSync(raw, { level: 9 })),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
 }

@@ -1,5 +1,5 @@
 /* =====================================================================
-   SELLWRONG — the flame
+   GROCERY STORE SIMULATOR — the flame
    =====================================================================
 
    What comes out of the gun. Not a cone of damage applied to a list —

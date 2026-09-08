@@ -1,5 +1,5 @@
 /* =====================================================================
-   SELLWRONG — the parade
+   GROCERY STORE SIMULATOR — the parade
    =====================================================================
 
    SellWrong is not a building, it is the middle of a building. It is the
@@ -55,6 +55,7 @@
 
 import { MapBuilder } from '../level.js';
 import { RectMap } from './rectmap.js';
+import { SHOPPERS } from '../people.js';
 
 /* --- the one rule ------------------------------------------------- */
 const WALL = 16;                  // the void between two rooms IS the wall
@@ -848,49 +849,98 @@ export function buildSellWrong() {
         mb.thing('LAMP', gx * PITCH + OFF, gy * PITCH + OFF, 0);
   }
 
-  /* --- the staff -----------------------------------------------------
-     Spread by department rather than by hand, so that tripling the floor
-     area did not mean tripling a list of coordinates and getting one of
-     them wrong. Thin at the front, thick at the back: walking in should
-     feel survivable and being at the far end of Aisle 9 should not. */
+  /* --- the crowd -----------------------------------------------------
+     A supermarket at two in the morning is not empty, it is thin: a
+     handful down each aisle, more of them at the back where the night
+     shift and the people who shop at night both are, a queue at the
+     tills, and a scatter across the car park of people who have parked
+     and not got in yet. Nobody is placed by hand except the queue,
+     because tripling the floor area once already turned a hand-written
+     list into a bug hunt; everything else comes off the same geometry
+     the shelves and the bays came off, from a fixed seed, so the shop is
+     laid out the same way every time you load it.
+
+     WHICH PERSON is chosen here rather than at spawn time for the same
+     reason: two runs of the same map put the same seventeen people in
+     the same places, and a screenshot is a screenshot of something.
+
+     They are all one actor type. There are no easy ones and no hard
+     ones, because none of them is fighting you — the things that will
+     are on the road, later, in js/responders.js. */
   {
     let seed = 777;
     const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
-    const place = (type, x, yy) => mb.thing(type, x, yy, rnd() * Math.PI * 2);
+    const who = () => Math.floor(rnd() * SHOPPERS);
+    const place = (x, yy) => mb.thing('SHOPPER', x, yy, rnd() * Math.PI * 2, { variant: who() });
 
-    /* one or two per aisle, deeper into the store the further back */
+    /* two or three per aisle, thinner across the front where you come in
+       and thickest at the back — walking in should look survivable and
+       the far end of aisle nine should not */
     ROWS.forEach((row, ri) => {
       for (let k = 0; k < NCOL - 1; k++) {
         const x = colX(k) + GOND_W + AISLE_W / 2;
-        const n = ri === 0 ? (k % 3 === 0 ? 1 : 0) : (k % 2 === 0 ? 2 : 1);
+        const n = ri === 0 ? (k % 2 === 0 ? 1 : 0) : (k % 2 === 0 ? 3 : 2);
         for (let i = 0; i < n; i++)
-          place(rnd() < 0.28 ? 'STOCKER' : 'ASSOCIATE',
-                x + (rnd() - 0.5) * 60, row.y0 + 60 + rnd() * (row.y1 - row.y0 - 120));
+          place(x + (rnd() - 0.5) * 60, row.y0 + 60 + rnd() * (row.y1 - row.y0 - 120));
       }
     });
-    /* the perimeter, the front end and the counters */
+
     /* The perimeter departments are all FIXTURES at bench or gondola
-       height, so a member of staff placed "in produce" is standing on top
-       of the produce. They go in the walkway beside it, which is where
-       they would be anyway. */
+       height, so somebody placed "in produce" is standing on top of the
+       produce. They go in the walkway beside it, which is where they
+       would be anyway. */
     for (const [x, yy] of [[410, 700], [410, 1600], [410, 2400],
                            [3760, 700], [3760, 1600], [3760, 2400],
                            [800, 2690], [2500, 2690], [3800, 2690],
                            [900, 320], [2900, 320], [3550, 180]])
-      place('ASSOCIATE', x, yy);
-    /* and the back of house, which is where the night crew are */
+      place(x, yy);
+
+    /* the back of house, which at this hour is the busiest part of it */
     for (const [x, yy] of [[400, 2900], [700, 3150], [1100, 3300], [1500, 2900],
                            [2100, 3100], [2500, 2950], [2800, 3300],
                            [3100, 3050], [3500, 2900], [3900, 3200],
                            [600, 3350], [1900, 3350]])
-      place('STOCKER', x, yy);
-    /* two in each of the neighbours */
+      place(x, yy);
+
+    /* A QUEUE, which is the one thing worth placing by hand. Four people
+       one behind the other at two of the tills, all facing the same way,
+       which is the only arrangement in the game that says "these are
+       people" before you have looked at any of them. */
+    for (const tx of [1180, 2620])
+      for (let i = 0; i < 4; i++)
+        mb.thing('SHOPPER', tx + (rnd() - 0.5) * 20, Y_TILLEND + 70 + i * 62,
+                 Math.PI / 2, { variant: who() });
+
+    /* two in each of the neighbouring units */
     for (const b of bays) {
       if (b.anchor || !b.in) continue;
       const mid = (b.x0 + b.x1) / 2;
-      place('ASSOCIATE', mid - 40, 240);
-      place('STOCKER', mid + 40, 520);
+      place(mid - 40, 240);
+      place(mid + 40, 520);
     }
+
+    /* --- and outside -------------------------------------------------
+       Across the bays, between the parked cars, in ones and twos, and
+       thicker near the doors than out by the road: a car park empties
+       from the far end. They stand in the LANES rather than in the bays
+       wherever the bay is taken, since the cars are coming and standing
+       a shopper inside one would put them in a bonnet. */
+    bayRows.forEach((row, ri) => {
+      const cy = (row.y0 + row.y1) / 2;
+      const n = Math.floor((LOT_X1 - LOT_X0) / BAY_W);
+      const take = 0.20 - ri * 0.03;                  // emptier towards the road
+      for (let i = 0; i < n; i++) {
+        if (rnd() > take) continue;
+        const cx = LOT_X0 + (i + 0.5) * BAY_W;
+        place(cx + (rnd() - 0.5) * 40, row.y1 + 26 + rnd() * 20);
+      }
+    });
+    /* the pavement outside the doors, where the trolleys are */
+    for (let i = 0; i < 9; i++)
+      place(ENT_A0 - 520 + rnd() * 1500, -190 - rnd() * 150);
+    /* and a few who have got as far as the sign */
+    for (const [x, yy] of [[1180, -900], [1620, -1180], [2760, -820], [3180, -1320]])
+      place(x + (rnd() - 0.5) * 60, yy + (rnd() - 0.5) * 60);
   }
 
   const level = mb.build();

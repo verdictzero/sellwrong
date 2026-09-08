@@ -1,5 +1,5 @@
 /* =====================================================================
-   SELLWRONG — the home-screen icon
+   GROCERY STORE SIMULATOR — the home-screen icon
    =====================================================================
 
    node tools/bake-icons.mjs        -> icon.png (512x512)
@@ -16,7 +16,7 @@
 import { register } from 'node:module';
 register('./loader.mjs', import.meta.url);
 import { writeFileSync } from 'node:fs';
-import zlib from 'node:zlib';
+import { writePNG } from './png-read.mjs';
 
 globalThis.document = {
   createElement: () => ({
@@ -62,31 +62,7 @@ for (let y = 0; y < W; y++)
     rgba[i] = c[0]; rgba[i + 1] = c[1]; rgba[i + 2] = c[2]; rgba[i + 3] = 255;
   }
 
-function png(w, h, pixels) {
-  const stride = w * 4;
-  const raw = Buffer.alloc((stride + 1) * h);
-  for (let y = 0; y < h; y++) {
-    raw[y * (stride + 1)] = 0;                       // filter: none
-    pixels.copy(raw, y * (stride + 1) + 1, y * stride, y * stride + stride);
-  }
-  const chunk = (type, data) => {
-    const len = Buffer.alloc(4); len.writeUInt32BE(data.length, 0);
-    const body = Buffer.concat([Buffer.from(type, 'latin1'), data]);
-    const crc = Buffer.alloc(4); crc.writeUInt32BE(zlib.crc32(body) >>> 0, 0);
-    return Buffer.concat([len, body, crc]);
-  };
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4);
-  ihdr[8] = 8; ihdr[9] = 6; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;   // 8-bit RGBA
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk('IHDR', ihdr),
-    chunk('IDAT', zlib.deflateSync(raw, { level: 9 })),
-    chunk('IEND', Buffer.alloc(0)),
-  ]);
-}
-
 const out = new URL('../icon.png', import.meta.url);
-const bytes = png(W, W, rgba);
+const bytes = writePNG(W, W, rgba);
 writeFileSync(out, bytes);
 console.log(`icon.png: ${W}x${W}, ${bytes.length} bytes`);

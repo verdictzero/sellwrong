@@ -1,5 +1,5 @@
 /* =====================================================================
-   SELLWRONG — the thing in your hands
+   GROCERY STORE SIMULATOR — the thing in your hands
    =====================================================================
 
    The flamethrower is a model: the one the user built, loaded from a

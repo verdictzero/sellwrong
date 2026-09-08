@@ -1,5 +1,5 @@
 /* =====================================================================
-   SELLWRONG — materials, and light that steps instead of fading
+   GROCERY STORE SIMULATOR — materials, and light that steps instead of fading
    =====================================================================
 
    There is one material in this game and it is unlit. Nothing here has a

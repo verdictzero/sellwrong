@@ -1,5 +1,5 @@
 /* =====================================================================
-   SELLWRONG — the lo-fi pipeline
+   GROCERY STORE SIMULATOR — the lo-fi pipeline
    =====================================================================
 
    The whole game is drawn into a buffer about 320 pixels tall and then

@@ -1,5 +1,5 @@
 /* =====================================================================
-   SELLWRONG — the player
+   GROCERY STORE SIMULATOR — the player
    =====================================================================
 
    Doom's movement numbers, exactly, because they are the reason it feels

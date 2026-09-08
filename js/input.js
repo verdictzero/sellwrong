@@ -1,5 +1,5 @@
 /* =====================================================================
-   SELLWRONG — input
+   GROCERY STORE SIMULATOR — input
    =====================================================================
 
    One layer over keyboard, mouse, gamepad and touch, because the game

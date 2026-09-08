@@ -1,5 +1,5 @@
 /* =====================================================================
-   SELLWRONG — bringing real artwork in
+   GROCERY STORE SIMULATOR — bringing real artwork in
    =====================================================================
 
      node tools/bake-art.mjs

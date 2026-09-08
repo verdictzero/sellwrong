@@ -1,5 +1,5 @@
 /* =====================================================================
-   SELLWRONG — particles: one draw call of little billboards
+   GROCERY STORE SIMULATOR — particles: one draw call of little billboards
    =====================================================================
 
    The flame coming out of the gun, the embers lifting off a burning

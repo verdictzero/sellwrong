@@ -1,5 +1,5 @@
 /* =====================================================================
-   SELLWRONG — the pixel toolkit
+   GROCERY STORE SIMULATOR — the pixel toolkit
    =====================================================================
 
    Every texture and every sprite in this game is generated here, in

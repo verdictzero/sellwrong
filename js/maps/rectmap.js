@@ -1,5 +1,5 @@
 /* =====================================================================
-   SELLWRONG — laying out a shop in rectangles
+   GROCERY STORE SIMULATOR — laying out a shop in rectangles
    =====================================================================
 
    MapBuilder welds two sectors into a doorway when they share an EDGE,

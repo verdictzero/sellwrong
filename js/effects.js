@@ -1,5 +1,5 @@
 /* =====================================================================
-   SELLWRONG — embers and smoke
+   GROCERY STORE SIMULATOR — embers and smoke
    =====================================================================
 
    A fire that only glows is a picture of a fire. What sells it is what

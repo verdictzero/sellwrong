@@ -23,7 +23,8 @@ import * as THREE from 'three';
 import { LofiPipeline } from './lofi.js';
 import { bakeTextures } from './textures.js';
 import { bakeSprites, bakeWeapons, fireFrames } from './sprites.js';
-import { loadDoomSprites, browserDecoder, addStrip } from './spriteload.js';
+import { addStrip, imageData } from './spriteload.js';
+import { CELLS, GIBLETS, BLAST_SPRITE, addStandees, addSplats } from './people.js';
 import { buildSellWrong } from './maps/sellwrong.js';
 import { Game } from './game.js';
 import { Hud } from './hud.js';
@@ -142,6 +143,11 @@ async function boot() {
      for the store's fire, the wood's flames and the gun's muzzle alike */
   const fireP = Promise.all(['flame', 'blaze', 'ember'].map(k => loadImage(`assets/fire/${k}.png`)))
     .catch(e => { console.warn('no fire strips, drawing our own:', e.message); return null; });
+  /* and the crowd: the galvarius project's standees, the pieces they
+     come apart into, what is left on the floor and the fireball that
+     does it — see js/people.js and tools/prep-people.mjs */
+  const peopleP = Promise.all(['shoppers', 'giblets', 'splat', 'blast'].map(k => loadImage(`assets/people/${k}.png`)))
+    .catch(e => { console.warn('no people art, using the stand-ins:', e.message); return null; });
 
   status('BAKING TEXTURES', 0.05); await breathe();
   const textures = bakeTextures();
@@ -154,30 +160,40 @@ async function boot() {
      muzzle, the pilot and the flames on the wood are the flame strip */
   const streamAtlas = { texture: fxAtlases.fireball, frames: 8 };
 
-  /* THE STAFF ARE NOT DRAWN BY THIS PROGRAM. They are Freedoom's player
-     sprite with a smiley face over the visor and a SellWrong apron on,
-     LOADED rather than baked. If the art is not there this quietly does
-     nothing and the game runs on the figures in sprites.js. */
-  status('THE STAFF', 0.45); await breathe();
-  const employee = browserDecoder('assets/sprites/employee');
-  const loaded = (await Promise.all([
-    loadDoomSprites(sprites, { sprite: 'PLAY', as: 'ASSO', decode: employee }),
-    loadDoomSprites(sprites, { sprite: 'PLYC', as: 'STKR', decode: employee }),
-  ])).reduce((a, b) => a + b, 0);
-  if (loaded) console.log(`staff: ${loaded} frames of real art`);
+  /* THE PEOPLE ARE NOT DRAWN BY THIS PROGRAM. Every one of them lands on
+     top of a stand-in of the same name that sprites.js has already
+     baked, so a missing file costs the game its faces and nothing else.
+     The pieces stay a picture rather than becoming bank frames: they are
+     particles, and a particle wants one atlas, not eleven textures. */
+  status('THE CROWD', 0.45); await breathe();
+  const peopleImgs = await peopleP;
+  let gibAtlases = null;
+  if (peopleImgs) {
+    const [shopperImg, gibletImg, splatImg, blastImg] = peopleImgs;
+    const people = addStandees(sprites, imageData(shopperImg));
+    const splats = addSplats(sprites, imageData(splatImg));
+    const blast = addStrip(sprites, BLAST_SPRITE, imageData(blastImg), CELLS.blast.w, { fullbright: true });
+    gibAtlases = {
+      giblets: { texture: imageTexture(gibletImg), frames: GIBLETS },
+      /* the fire on a piece in the air is the same fireball the gun
+         fires, so a burning hand and the stream that lit it are made of
+         the same paint */
+      trail: { texture: fxAtlases.fireball, frames: 8 },
+    };
+    console.log(`the crowd: ${people} shoppers, ${splats} splats, ${blast} frames of fireball`);
+  }
 
   status('THE FIRE', 0.50);
   const fireImgs = await fireP;
   let flameAtlas;
   if (fireImgs) {
     const [flameImg, blazeImg, emberImg] = fireImgs;
-    const pixOf = img => { const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight; const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height); return { w: d.width, h: d.height, data: d.data }; };
     /* the store's three fire sets, replaced frame for frame: a round
        base, so a shelf alight is a fire sitting on a shelf and not a fire
        sawn off flat at the shelf's edge */
-    addStrip(sprites, 'FIRE', pixOf(flameImg), 48, { fullbright: true, scale: 1.0 });
-    addStrip(sprites, 'BLAZ', pixOf(blazeImg), 96, { fullbright: true, scale: 1.1 });
-    addStrip(sprites, 'EMBR', pixOf(emberImg), 16, { fullbright: true, scale: 1.6 });
+    addStrip(sprites, 'FIRE', imageData(flameImg), 48, { fullbright: true, scale: 1.0 });
+    addStrip(sprites, 'BLAZ', imageData(blazeImg), 96, { fullbright: true, scale: 1.1 });
+    addStrip(sprites, 'EMBR', imageData(emberImg), 16, { fullbright: true, scale: 1.6 });
     flameAtlas = { texture: imageTexture(flameImg), frames: 20 };
   } else flameAtlas = { texture: atlasTexture(fireFrames(24, 32, 8, 19, { taper: 0.7 })), frames: 8 };
 
@@ -193,7 +209,8 @@ async function boot() {
   const hud = new Hud(null);
   const audio = new Audio();
   const input = new Input(renderer.domElement);
-  const game = new Game({ level, scene, camera, textures, sprites, hud, audio, input, sky: skyImage, flameAtlas: streamAtlas, fxAtlases });
+  const game = new Game({ level, scene, camera, textures, sprites, hud, audio, input, sky: skyImage,
+                         flameAtlas: streamAtlas, fxAtlases, gibAtlases });
   hud.game = game;
   const touch = new TouchControls(input, { root: $('touch'), prefs, onPause: () => pause(true) });
 
@@ -388,7 +405,8 @@ async function boot() {
   requestAnimationFrame(frame);
 
   /* let the console poke at it */
-  window.SELLWRONG = { game, pipeline, renderer, scene, camera, textures, sprites, world, level, input, touch, weapon3d, responders: game.responders };
+  window.SELLWRONG = { game, pipeline, renderer, scene, camera, textures, sprites, world, level, input, touch, weapon3d,
+                       responders: game.responders, giblets: game.giblets };
 }
 
 boot().catch(e => {

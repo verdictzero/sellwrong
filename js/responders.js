@@ -1,5 +1,5 @@
 /* =====================================================================
-   SELLWRONG — who comes when a supermarket is on fire at 2am
+   GROCERY STORE SIMULATOR — who comes when a supermarket is on fire at 2am
    =====================================================================
 
    A PLACEHOLDER, and an honest one: this file is the SHAPE of the thing

@@ -1,5 +1,5 @@
 /* =====================================================================
-   SELLWRONG — the game
+   GROCERY STORE SIMULATOR — the game
    =====================================================================
 
    Holds the level, the actors, the fire and the player, and runs the
@@ -36,10 +36,11 @@ import { buildSky, followSky } from './sky.js';
 import { Forest } from './forest.js';
 import { FlameStream } from './flame.js';
 import { Effects } from './effects.js';
+import { Giblets } from './people.js';
 import { Responders } from './responders.js';
 
 const THING_TO_ACTOR = {
-  ASSOCIATE: 'ASSOCIATE', STOCKER: 'STOCKER',
+  SHOPPER: 'SHOPPER',
   TROLLEY: 'TROLLEY', BOLLARD: 'BOLLARD',
   FUELCAN: 'FUELCAN', CRATE: 'CRATE', LAMP: 'LAMP',
 };
@@ -52,7 +53,7 @@ const LAMP_RANGE = 340;
 const LAMP_GAIN = 0.30;
 
 export class Game {
-  constructor({ level, scene, camera, textures, sprites, hud, audio, input, sky, flameAtlas, fxAtlases }) {
+  constructor({ level, scene, camera, textures, sprites, hud, audio, input, sky, flameAtlas, fxAtlases, gibAtlases }) {
     this.level = level;
     this.scene = scene;
     this.camera = camera;
@@ -95,8 +96,11 @@ export class Game {
     this.forest = new Forest(level);
     this.flame = new FlameStream(this, flameAtlas || null);
     this.fx = new Effects(this, fxAtlases || null);
+    /* and what comes off a person: the pieces and the fire on them */
+    this.giblets = new Giblets(this, gibAtlases || null);
     if (flameAtlas) this.flame.attach(scene);
     if (fxAtlases) this.fx.attach(scene);
+    if (gibAtlases) this.giblets.attach(scene);
     this.weapon3d = null;
     /* who the night brings — the escalation is real, the arrivals are
        not yet; see js/responders.js */
@@ -313,6 +317,7 @@ export class Game {
     this.forest.tic();
     this.flame.tic();
     this.fx.tic();
+    this.giblets.tic();
     this.applyChar();
     this.hud.ticMessages();
 
@@ -464,19 +469,11 @@ export class Game {
      Not Actors. A projectile lives for under a second, moves in a
      straight line or an arc, and hits one thing — none of which the
      state machine helps with, and all of which it would make slower.
-     ------------------------------------------------------------------ */
-  spawnMissile(from, target, kind) {
-    const speed = kind === 'TIN' ? 22 : 26;
-    const a = Math.atan2(target.y - from.y, target.x - from.x);
-    const z = from.z + from.height * 0.62;
-    const dz = ((target.z + target.height * 0.5) - z) / Math.max(1, dist(from.x, from.y, target.x, target.y) / speed);
-    this.projectiles.push({
-      kind, x: from.x, y: from.y, z,
-      vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, vz: dz,
-      gravity: 0, owner: from, life: 140, sprite: 'TINS', mesh: null, damage: 10,
-    });
-  }
 
+     Two kinds left: the bottle you throw and the sparks off a light
+     going out. There was a third, a tin thrown at your head by a member
+     of staff, and it left with him.
+     ------------------------------------------------------------------ */
   spawnMolotov(player) {
     const speed = 30;
     /* Thrown, not fired: it arcs, and the pitch you are looking at
@@ -687,6 +684,7 @@ export class Game {
     this.forest.render(p.x, p.y, billboardRot, this.tics / TICRATE + now * 0.0002);
     this.flame.render(billboardRot);
     this.fx.render(billboardRot);
+    this.giblets.render(billboardRot);
     this.renderProjectiles(billboardRot);
 
     /* the red mist of being nearly dead */

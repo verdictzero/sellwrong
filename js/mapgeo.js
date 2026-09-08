@@ -1,5 +1,5 @@
 /* =====================================================================
-   SELLWRONG — turning a floor plan into triangles
+   GROCERY STORE SIMULATOR — turning a floor plan into triangles
    =====================================================================
 
    A two-sided line is a hole between two sectors, and what you actually

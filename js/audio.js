@@ -1,5 +1,5 @@
 /* =====================================================================
-   SELLWRONG — noises
+   GROCERY STORE SIMULATOR — noises
    =====================================================================
 
    Synthesised, not sampled. Same reason as the textures: nothing to
@@ -8,9 +8,9 @@
    click, a thud, a hiss and a crackle — and every sound in the game is
    some arrangement of those.
 
-   Sounds are POSITIONED. A zombie groaning two aisles over is quieter
-   than one behind you, and that is most of what a Doom soundscape does
-   for you: it tells you what is in the room before you can see it.
+   Sounds are POSITIONED. A fire two aisles over is quieter than one
+   behind you, and that is most of what a Doom soundscape does for you:
+   it tells you what is in the room before you can see it.
    Distance attenuation only — no panning — because Doom did not pan
    either and stereo separation on a thing you cannot see turns out to be
    less useful than it sounds.
@@ -30,18 +30,8 @@ const DEFS = {
   cut:       { kind: 'noise', dur: 0.10, f0: 2600, f1: 700,  gain: 0.26 },
 
   /* the staff */
-  assoSee:   { kind: 'sweep', dur: 0.42, f0: 210,  f1: 130,  gain: 0.30, wave: 'sawtooth' },
-  assoPain:  { kind: 'sweep', dur: 0.22, f0: 330,  f1: 170,  gain: 0.30, wave: 'square' },
-  assoDie:   { kind: 'sweep', dur: 0.72, f0: 260,  f1: 60,   gain: 0.34, wave: 'sawtooth' },
-  assoIdle:  { kind: 'sweep', dur: 0.34, f0: 165,  f1: 120,  gain: 0.14, wave: 'sawtooth' },
-  assoShoot: { kind: 'noise', dur: 0.09, f0: 3000, f1: 900,  gain: 0.34 },
-  stkrSee:   { kind: 'sweep', dur: 0.50, f0: 150,  f1: 95,   gain: 0.34, wave: 'sawtooth' },
-  stkrPain:  { kind: 'sweep', dur: 0.24, f0: 240,  f1: 120,  gain: 0.32, wave: 'square' },
-  stkrDie:   { kind: 'sweep', dur: 0.95, f0: 190,  f1: 42,   gain: 0.38, wave: 'sawtooth' },
-  stkrIdle:  { kind: 'sweep', dur: 0.40, f0: 120,  f1: 88,   gain: 0.15, wave: 'sawtooth' },
-  stkrThrow: { kind: 'sweep', dur: 0.16, f0: 420,  f1: 700,  gain: 0.20, wave: 'triangle' },
-  stkrHit:   { kind: 'thud',  dur: 0.16, f0: 220,  f1: 70,   gain: 0.36 },
   gib:       { kind: 'noise', dur: 0.42, f0: 1500, f1: 180,  gain: 0.44 },
+  shopper:   { kind: 'sweep', dur: 0.30, f0: 620,  f1: 240,  gain: 0.26, wave: 'triangle' },
   bodyfall:  { kind: 'thud',  dur: 0.28, f0: 130,  f1: 44,   gain: 0.30 },
 
   /* you */

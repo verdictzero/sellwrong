@@ -1,5 +1,5 @@
 /* =====================================================================
-   SELLWRONG — the forest, and it burns
+   GROCERY STORE SIMULATOR — the forest, and it burns
    =====================================================================
 
    The parade stands in the middle of a wood that runs for miles: a

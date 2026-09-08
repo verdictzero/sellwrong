@@ -1,5 +1,5 @@
 /* =====================================================================
-   SELLWRONG — the sky
+   GROCERY STORE SIMULATOR — the sky
    =====================================================================
 
    A sky sector in this engine draws nothing and lets the background

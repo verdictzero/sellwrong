@@ -1,144 +1,38 @@
 /* =====================================================================
-   SELLWRONG — the sprites somebody drew
+   GROCERY STORE SIMULATOR — the pictures somebody else drew
    =====================================================================
 
    Everything else the game draws it draws itself, from ramps and noise,
-   at start-up. The staff do not: they are Freedoom's player sprite with
-   a smiley face painted over the visor and a blue SellWrong apron
-   painted onto the armour, and they live in assets/sprites/employee as
-   PNGs with tools/build_employee.sh to regenerate them.
+   at start-up. Four things it does not: the wood, the sky, the fire and
+   THE PEOPLE, which are painted art from other projects and arrive as
+   files. This is the small amount of code that turns those files into
+   frames in the sprite bank.
 
-   They are loaded rather than embedded, and that is a deliberate
-   difference from the logo and the weapon. Those two are baked into
-   source because they are single small images that will never change
-   again. A hundred and two sprite frames that somebody is still
-   iterating on want to stay as files: change the apron, re-run the
-   build script, reload the page. Turning them into a wall of base64
-   would cost that.
+   A STRIP is the whole format. One picture, N cells wide, every cell the
+   same size, laid out left to right in the order they play or the order
+   they are chosen from. The fire strips out of the golf project are
+   twenty frames of a looping flame; the strips out of the galvarius
+   project are seventeen shoppers, eleven pieces of one, three splats and
+   twenty-six frames of a fireball. Same cutter for all of them.
 
-   WHAT DOOM'S FILENAMES MEAN, since the whole loader is built on it:
+   Cell sizes are NOT guessed from the file. The caller says how wide a
+   cell is and the count falls out of the width, because a strip whose
+   cell size is inferred is a strip that silently comes apart the day
+   somebody adds a frame. js/people.js holds the numbers for the people
+   and shares them with the tool that writes the files.
 
-     PLAYA1      sprite PLAY, frame A, rotation 1 — the front view
-     PLAYA2A8    the same picture serves rotation 2 and rotation 8,
-                   with 8 MIRRORED, because a person is symmetrical
-                   enough and it halves the artist's work
-     PLAYH0      rotation 0: one picture, seen the same from everywhere,
-                   which is what a corpse on the floor is
-
-   Rotation 1 is the front, and this engine's view 0 is also the front —
-   `rot` in Actor.render is 0 when the thing is facing the camera — so
-   Doom rotation N is view N-1 and there is nothing else to reconcile.
-
-   EVERY VIEW OF A SPRITE GETS THE SAME CANVAS. Doom stored a per-patch
-   offset with every frame so that the feet line up when the widths do
-   not; these PNGs have no offsets, so instead each frame is padded into
-   one canvas the size of the widest and tallest in the set, centred
-   across and sitting on the bottom. Without that a walk cycle whose
-   frames are 26, 29 and 36 across slides sideways as it plays, and a
-   death frame twenty pixels tall floats at the height of a standing man.
+   EVERY CELL FACES EVERY WAY. Nothing loaded here has rotations: a fire
+   looks the same from all sides because it is a fire, and a shopper does
+   because there is one drawing of them. Doom would have called that
+   rotation 0, and the bank stores it as the same Pix in all eight slots.
    ===================================================================== */
 
 import { Pix } from './pixel.js';
 
-/* The frames that have eight rotations, and the ones that are the same
-   from every angle. This is Doom's own layout for a player: walk, two
-   for the attack, one for pain, seven for dying and nine for coming
-   apart. */
-export const DOOM_ROTATED = 'ABCDEFG';
-export const DOOM_FLAT    = 'HIJKLMNOPQRSTUVW';
-
-/**
- * Every file one sprite set is made of, and what each is for.
- *
- * Returns [{ file, letter, views: [[index, mirrored], ...] }], which is
- * everything the loader needs to know without a manifest to keep in step
- * with the directory.
- */
-export function frameFiles(sprite) {
-  const out = [];
-  for (const letter of DOOM_ROTATED) {
-    /* 1 and 5 face you and face away, so they are nobody's mirror. */
-    out.push({ file: `${sprite}${letter}1`, letter, views: [[0, false]] });
-    out.push({ file: `${sprite}${letter}2${letter}8`, letter, views: [[1, false], [7, true]] });
-    out.push({ file: `${sprite}${letter}3${letter}7`, letter, views: [[2, false], [6, true]] });
-    out.push({ file: `${sprite}${letter}4${letter}6`, letter, views: [[3, false], [5, true]] });
-    out.push({ file: `${sprite}${letter}5`, letter, views: [[4, false]] });
-  }
-  for (const letter of DOOM_FLAT)
-    out.push({ file: `${sprite}${letter}0`, letter, views: [[0, true], [1, true], [2, true],
-                                                           [3, true], [4, true], [5, true],
-                                                           [6, true], [7, true]].map(([i]) => [i, false]) });
-  return out;
-}
-
-/** One decoded image into a Pix, optionally mirrored, placed in a canvas
- *  of (w, h): centred across, standing on the bottom. */
-function place(img, w, h, mirror) {
-  const p = new Pix(w, h, 1, false);
-  p.clear();
-  const ox = Math.round((w - img.w) / 2), oy = h - img.h;
-  for (let y = 0; y < img.h; y++) {
-    for (let x = 0; x < img.w; x++) {
-      const s = (y * img.w + (mirror ? img.w - 1 - x : x)) * 4;
-      if (img.data[s + 3] < 8) continue;
-      p.set(ox + x, oy + y, img.data[s], img.data[s + 1], img.data[s + 2], img.data[s + 3]);
-    }
-  }
-  return p;
-}
-
-/**
- * Load one Doom-style sprite set into a bank, under a name of your
- * choosing — so the same pictures can be the Associate standing up and
- * the Stocker bent over a pallet.
- *
- * `decode(name)` returns { w, h, data } for a frame, and is injected
- * because the two places this runs decode a PNG completely differently:
- * a browser hands it to the platform, and the test harness reads it off
- * disk. Neither belongs in here.
- *
- * Returns the number of frames installed, or 0 if the art is not there —
- * in which case the caller keeps whatever was in the bank already, and
- * the game runs on the drawn-by-code placeholders it has always had.
- */
-export async function loadDoomSprites(bank, { sprite, as, decode }) {
-  const files = frameFiles(sprite);
-  let images;
-  try {
-    images = await Promise.all(files.map(f => decode(f.file)));
-  } catch (e) {
-    console.warn(`sprite set ${sprite} did not load, keeping the placeholders:`, e.message);
-    return 0;
-  }
-
-  /* one canvas for the whole set — see the note at the top */
-  let W = 0, H = 0;
-  for (const im of images) { if (im.w > W) W = im.w; if (im.h > H) H = im.h; }
-
-  const byLetter = new Map();
-  files.forEach((f, i) => {
-    let views = byLetter.get(f.letter);
-    if (!views) byLetter.set(f.letter, views = new Array(8).fill(null));
-    for (const [index, mirrored] of f.views) views[index] = place(images[i], W, H, mirrored);
-  });
-
-  let n = 0;
-  for (const [letter, views] of byLetter) {
-    /* A hole here would render as the missing-sprite placeholder in the
-       middle of a fight, once, and never again — so fill from the front
-       view rather than shipping a gap. */
-    for (let i = 0; i < 8; i++) if (!views[i]) views[i] = views[0];
-    bank.addFrame(as, letter, views, { w: W, h: H });
-    n++;
-  }
-  return n;
-}
-
-/** A decoder for a browser: the platform already has one. */
-/* A horizontal strip of equal cells — the fire from assets/fire — cut
-   into frames and given to the bank as one set, lettered A onward. Each
-   frame is the same from every side, like every other fire here. */
+/* A frame is a letter, and the letters stop at Z. */
 export const STRIP_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+/** Cut a strip of equal cells into Pix frames. */
 export function stripFrames(img, cell) {
   const n = Math.floor(img.w / cell);
   const out = [];
@@ -155,22 +49,23 @@ export function stripFrames(img, cell) {
   }
   return out;
 }
+
+/** A strip as one sprite set, lettered A onward — an animation. */
 export function addStrip(bank, name, img, cell, opts = {}) {
   const frames = stripFrames(img, cell);
   frames.forEach((p, i) => bank.addFrame(name, STRIP_LETTERS[i], new Array(8).fill(p), opts));
   return frames.length;
 }
 
-export function browserDecoder(dir) {
-  return async (name) => {
-    const img = new Image();
-    img.src = `${dir}/${name}.png`;
-    await img.decode();
-    const c = document.createElement('canvas');
-    c.width = img.naturalWidth; c.height = img.naturalHeight;
-    const g = c.getContext('2d', { willReadFrequently: true });
-    g.drawImage(img, 0, 0);
-    const d = g.getImageData(0, 0, c.width, c.height);
-    return { w: d.width, h: d.height, data: d.data };
-  };
+/** What a browser's decoded <img> looks like to the cutter above. The
+ *  platform has a PNG decoder and it is better than any we would write;
+ *  this is only the plumbing that gets the bytes back out of it. */
+export function imageData(img) {
+  const c = document.createElement('canvas');
+  c.width = img.naturalWidth || img.width;
+  c.height = img.naturalHeight || img.height;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.drawImage(img, 0, 0);
+  const d = g.getImageData(0, 0, c.width, c.height);
+  return { w: d.width, h: d.height, data: d.data };
 }

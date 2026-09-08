@@ -1,6 +1,6 @@
 #!/bin/sh
 # =====================================================================
-# SELLWRONG — assemble the deployable site into public/
+# GROCERY STORE SIMULATOR — assemble the deployable site into public/
 # =====================================================================
 #
 #   tools/build-site.sh [outdir]
@@ -22,7 +22,7 @@ OUT="${1:-public}"
 cd "$(dirname "$0")/.."
 
 rm -rf "$OUT"
-mkdir -p "$OUT/assets/sprites"
+mkdir -p "$OUT/assets"
 
 cp index.html "$OUT/"
 # The two files a phone reads before the game: what to call it and what
@@ -30,12 +30,10 @@ cp index.html "$OUT/"
 cp manifest.webmanifest icon.png "$OUT/"
 cp -r css js vendor "$OUT/"
 
-# The staff are loaded at run time rather than generated, so the frames
-# go and the originals they were painted over do not. So are the wood,
-# the fire, the sky and the gun: art that came from outside and stays as
-# files.
-cp -r assets/sprites/employee "$OUT/assets/sprites/"
-cp -r assets/forest assets/fire assets/sky assets/models assets/fonts "$OUT/assets/"
+# The wood, the fire, the people, the sky and the gun: art that came from
+# outside, is loaded at run time rather than generated, and stays as
+# files. Everything else the page needs it draws for itself.
+cp -r assets/forest assets/fire assets/people assets/sky assets/models assets/fonts "$OUT/assets/"
 
 printf 'built %s: ' "$OUT"
 find "$OUT" -type f | wc -l | tr -d ' '

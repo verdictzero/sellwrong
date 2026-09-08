@@ -1,5 +1,5 @@
 /* =====================================================================
-   SELLWRONG — the level: sectors, lines, and what you can walk into
+   GROCERY STORE SIMULATOR — the level: sectors, lines, and what you can walk into
    =====================================================================
 
    This is Doom's data model, because Doom's data model is right and

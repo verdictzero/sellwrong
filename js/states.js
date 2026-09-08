@@ -1,5 +1,5 @@
 /* =====================================================================
-   SELLWRONG — state tables
+   GROCERY STORE SIMULATOR — state tables
    =====================================================================
 
    Doom's monsters are a linked list of states. Each one says which
@@ -19,20 +19,27 @@
    walk. A_Chase runs on every one of those eight, so the monster gets
    eight chances a cycle to notice you have moved.
 
-   TIMING IS IN TICS, always. 35 to the second, exactly as Doom, and the
-   numbers below are Doom's own numbers wherever there was an equivalent
-   monster to steal from — which for these two there was.
+   TIMING IS IN TICS, always. 35 to the second, exactly as Doom.
 
-   THE TWO OF THEM
+   WHAT IS IN THE SHOP NOW is not a monster. The staff used to be: two
+   of them, the Zombieman and the Imp with the numbers filed off, with
+   walk cycles, pain frames, attacks and two ways of dying each. They are
+   gone. What stands in the aisles instead is a crowd of SHOPPERS, and a
+   shopper has exactly one state and one frame, because a shopper is one
+   drawing seen from every side (see js/people.js for why that is the
+   right way to use this art rather than a corner cut).
 
-     ASSOCIATE   the Zombieman. 20 health, painchance 200 (so he flinches
-                 at nearly anything), a slow ranged attack, speed 8.
-                 Dies in one shell. He is the tutorial.
+   So most of this file is now fire, fittings and the things a fire
+   leaves behind, and the only run of states with any length to it is the
+   fireball a person turns into.
 
-     STOCKER     the Imp. 60 health, painchance 200, a melee AND a thrown
-                 attack, speed 8 but a longer stride so he closes faster.
-                 Three of these in one aisle is a real problem.
+   THE MACHINERY UNDER IT IS UNTOUCHED. A_Look, A_Chase and the rest of
+   Doom's chase are still in js/actor.js with nothing calling them,
+   because the responders in js/responders.js will, and forty lines of
+   P_NewChaseDir is not something to delete and write again.
    ===================================================================== */
+
+import { SHOPPERS, SPLATS, BLASTS } from './people.js';
 
 /* Every state: [sprite, frame, tics, action, next]. -1 tics means stay
    here forever, which is what a corpse does. */
@@ -42,99 +49,19 @@ function S(name, sprite, frame, tics, action, next, opts = {}) {
   STATES[name] = { name, sprite, frame, tics, action, next, ...opts };
 }
 
-/* Helper for a run of alternating held frames — the walk cycles below
-   are all this shape, and writing them out longhand invites a typo that
-   makes one monster limp for reasons nobody can find. */
-function walkCycle(prefix, sprite, tics, action, loopTo) {
-  const letters = ['A', 'A', 'B', 'B', 'C', 'C', 'D', 'D'];
-  letters.forEach((L, i) => {
-    const name = `${prefix}${i + 1}`;
-    const next = i === letters.length - 1 ? loopTo : `${prefix}${i + 2}`;
-    S(name, sprite, L, tics, action, next);
-  });
-}
-
 /* ---------------------------------------------------------------------
-   THE ASSOCIATE
+   THE SHOPPERS
+
+   Standing there is the whole animation, and it is one frame held for
+   ever. `variants` on the actor turns the sprite name SHOP into SHO0,
+   SHO1 ... SHO16 — the same hook the cars will use — so seventeen
+   different people share one state and one line of table.
+
+   There is no death sequence because there is nothing left to animate:
+   one tic in which A_Gib throws the pieces, and then the actor is gone.
    ------------------------------------------------------------------- */
-/* Standing still is walk frames A and B held long, which is what Doom's
-   own zombieman does. There used to be a dedicated idle pose at W; the
-   real sprites use every letter from A to W for something else, and the
-   art wins. */
-S('ASSO_STAND',  'ASSO', 'A', 10, 'A_Look', 'ASSO_STAND2');
-S('ASSO_STAND2', 'ASSO', 'B', 10, 'A_Look', 'ASSO_STAND');
-walkCycle('ASSO_RUN', 'ASSO', 4, 'A_Chase', 'ASSO_RUN1');
-
-/* Aim, fire, recover. The long first state is the tell — you get ten
-   tics of seeing him raise the thing before it goes off, which is what
-   makes the attack fair. */
-S('ASSO_ATK1', 'ASSO', 'E', 10, 'A_FaceTarget', 'ASSO_ATK2');
-S('ASSO_ATK2', 'ASSO', 'F',  8, 'A_PosAttack',  'ASSO_ATK3');
-S('ASSO_ATK3', 'ASSO', 'E',  8, null,           'ASSO_RUN1');
-
-S('ASSO_PAIN',  'ASSO', 'G', 3, null,     'ASSO_PAIN2');
-S('ASSO_PAIN2', 'ASSO', 'G', 3, 'A_Pain', 'ASSO_RUN1');
-
-S('ASSO_DIE1', 'ASSO', 'H', 5, null,       'ASSO_DIE2');
-S('ASSO_DIE2', 'ASSO', 'I', 5, 'A_Scream', 'ASSO_DIE3');
-S('ASSO_DIE3', 'ASSO', 'J', 5, 'A_Fall',   'ASSO_DIE4');
-S('ASSO_DIE4', 'ASSO', 'K', 5, null,       'ASSO_DIE5');
-S('ASSO_DIE5', 'ASSO', 'L', 5, null,       'ASSO_DIE6');
-S('ASSO_DIE6', 'ASSO', 'M', 5, null,       'ASSO_DIE7');
-S('ASSO_DIE7', 'ASSO', 'N', -1, null,      null);
-
-S('ASSO_XDIE1', 'ASSO', 'O', 5, 'A_XScream', 'ASSO_XDIE2');
-S('ASSO_XDIE2', 'ASSO', 'P', 5, null,        'ASSO_XDIE3');
-S('ASSO_XDIE3', 'ASSO', 'Q', 5, 'A_Fall',    'ASSO_XDIE4');
-S('ASSO_XDIE4', 'ASSO', 'R', 5, null,        'ASSO_XDIE5');
-S('ASSO_XDIE5', 'ASSO', 'S', 5, null,        'ASSO_XDIE6');
-S('ASSO_XDIE6', 'ASSO', 'T', 5, null,        'ASSO_XDIE7');
-S('ASSO_XDIE7', 'ASSO', 'U', 5, null,        'ASSO_XDIE8');
-S('ASSO_XDIE8', 'ASSO', 'V', 5, null,        'ASSO_XDIE9');
-S('ASSO_XDIE9', 'ASSO', 'W', -1, null,       null);
-
-/* ---------------------------------------------------------------------
-   THE STOCKER
-
-   Three tics a frame instead of four, so the same eight-state cycle
-   takes 24 tics rather than 32. He does not move much faster than the
-   Associate; he just looks like he means it, which turns out to matter
-   more.
-   ------------------------------------------------------------------- */
-S('STKR_STAND',  'STKR', 'A', 10, 'A_Look', 'STKR_STAND2');
-S('STKR_STAND2', 'STKR', 'B', 10, 'A_Look', 'STKR_STAND');
-walkCycle('STKR_RUN', 'STKR', 3, 'A_Chase', 'STKR_RUN1');
-
-/* Wind up, throw, recover — three states over the two attack frames, the
-   recovery landing back on the wind-up picture. The Stocker used to have
-   a third attack frame of its own at G, which pushed every letter after
-   it up by one; sharing Doom's layout with the Associate is what lets
-   both of them be the same sprite set with different letters on the
-   filenames. */
-S('STKR_ATK1', 'STKR', 'E', 8, 'A_FaceTarget', 'STKR_ATK2');
-S('STKR_ATK2', 'STKR', 'F', 8, 'A_StockAttack', 'STKR_ATK3');
-S('STKR_ATK3', 'STKR', 'E', 6, null,           'STKR_RUN1');
-
-S('STKR_PAIN',  'STKR', 'G', 2, null,     'STKR_PAIN2');
-S('STKR_PAIN2', 'STKR', 'G', 2, 'A_Pain', 'STKR_RUN1');
-
-S('STKR_DIE1', 'STKR', 'H', 8, null,       'STKR_DIE2');
-S('STKR_DIE2', 'STKR', 'I', 8, 'A_Scream', 'STKR_DIE3');
-S('STKR_DIE3', 'STKR', 'J', 6, null,       'STKR_DIE4');
-S('STKR_DIE4', 'STKR', 'K', 6, 'A_Fall',   'STKR_DIE5');
-S('STKR_DIE5', 'STKR', 'L', 6, null,       'STKR_DIE6');
-S('STKR_DIE6', 'STKR', 'M', 6, null,       'STKR_DIE7');
-S('STKR_DIE7', 'STKR', 'N', -1, null,      null);
-
-S('STKR_XDIE1', 'STKR', 'O', 5, 'A_XScream', 'STKR_XDIE2');
-S('STKR_XDIE2', 'STKR', 'P', 5, null,        'STKR_XDIE3');
-S('STKR_XDIE3', 'STKR', 'Q', 5, 'A_Fall',    'STKR_XDIE4');
-S('STKR_XDIE4', 'STKR', 'R', 5, null,        'STKR_XDIE5');
-S('STKR_XDIE5', 'STKR', 'S', 5, null,        'STKR_XDIE6');
-S('STKR_XDIE6', 'STKR', 'T', 5, null,        'STKR_XDIE7');
-S('STKR_XDIE7', 'STKR', 'U', 5, null,        'STKR_XDIE8');
-S('STKR_XDIE8', 'STKR', 'V', 5, null,        'STKR_XDIE9');
-S('STKR_XDIE9', 'STKR', 'W', -1, null,       null);
+S('SHOP_STAND', 'SHOP', 'A', -1, null, null);
+S('SHOP_GIB',   'SHOP', 'A',  1, 'A_Gib', null);      // null next: remove me
 
 /* ---------------------------------------------------------------------
    Things that are not monsters
@@ -143,6 +70,9 @@ S('TRLY_STAND',  'TRLY', 'A', -1, null, null);
 S('BOLL_STAND',  'BOLL', 'A', -1, null, null);
 S('GCAN_STAND',  'GCAN', 'A', -1, null, null);
 S('CRAT_STAND',  'CRAT', 'A', -1, null, null);
+/* What is left where somebody was. Three paintings, picked per actor
+   the same way the shoppers are, so a floor covered in these does not
+   read as one stamp repeated. */
 S('BLUD_REST',   'BLUD', 'A', -1, null, null);
 
 /* The lights. Lit until something breaks them, then dark for ever — the
@@ -164,6 +94,16 @@ S('SPARK3', 'SPRK', 'C', 4, null, null);
 ['A', 'B', 'C', 'D', 'E', 'F'].forEach((L, i, arr) =>
   S(`EMBR${i + 1}`, 'EMBR', L, 3, null, `EMBR${(i + 1) % arr.length + 1}`, { fullbright: true }));
 
+/* THE FIREBALL a person becomes. Twenty-six frames at a tic each is
+   three quarters of a second: a flash at the floor, a column of fire up
+   past head height, and then eight frames of it going to smoke and
+   coming apart. It is the longest animation in the game and the only one
+   that is worth watching. */
+const BLAST_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.slice(0, BLASTS);
+[...BLAST_LETTERS].forEach((L, i, arr) =>
+  S(`BLAST${i + 1}`, 'BLST', L, 1, null,
+    i === arr.length - 1 ? null : `BLAST${i + 2}`, { fullbright: true }));
+
 /* Blood in the air, which then is not. */
 S('PUFF1', 'PUFF', 'A', 4, null, 'PUFF2');
 S('PUFF2', 'PUFF', 'B', 4, null, 'PUFF3');
@@ -177,28 +117,25 @@ S('PUFF3', 'PUFF', 'C', 4, null, null);      // null next = remove me
    Doom's numbers because Doom's numbers are correct.
    ===================================================================== */
 export const ACTORS = {
-  ASSOCIATE: {
-    name: 'SellWrong Associate',
-    spawn: 'ASSO_STAND', see: 'ASSO_RUN1', pain: 'ASSO_PAIN',
-    missile: 'ASSO_ATK1', death: 'ASSO_DIE1', xdeath: 'ASSO_XDIE1',
-    health: 20, radius: 20, height: 56, speed: 8, mass: 100,
-    painchance: 200, reaction: 8,
-    /* Below this much damage in one hit there is no gib — you have to
-       really mean it. Doom used the corpse health going past -spawnhealth. */
-    gibHealth: -20,
-    monster: true, flammable: true, dropItem: null,
-    sightRange: 2400, missileRange: 1600,
-    seeSound: 'assoSee', painSound: 'assoPain', deathSound: 'assoDie', activeSound: 'assoIdle',
-  },
-  STOCKER: {
-    name: 'Night Stocker',
-    spawn: 'STKR_STAND', see: 'STKR_RUN1', pain: 'STKR_PAIN',
-    melee: 'STKR_ATK1', missile: 'STKR_ATK1', death: 'STKR_DIE1', xdeath: 'STKR_XDIE1',
-    health: 60, radius: 20, height: 56, speed: 8, mass: 100,
-    painchance: 200, reaction: 8, gibHealth: -60,
-    monster: true, flammable: true,
-    sightRange: 2400, missileRange: 2000, meleeRange: 64,
-    seeSound: 'stkrSee', painSound: 'stkrPain', deathSound: 'stkrDie', activeSound: 'stkrIdle',
+  /* A SHOPPER. Twelve health, which is less than one tic of the
+     flamethrower delivers, so anything you point the stream at comes
+     apart at once — the weapon is the verb and there is no wrestling
+     with a health bar. Solid, so a crowd is something you have to get
+     through; flammable, so a fire that reaches one takes it; and worth
+     ninety of fuel to the floor underneath, because a person on fire in
+     an aisle is how the aisle catches.
+
+     No speed, no sight range, no attack: they are not fighting you. The
+     things that will fight you come up the road later. */
+  SHOPPER: {
+    name: 'Shopper', spawn: 'SHOP_STAND', death: 'SHOP_GIB',
+    health: 12, radius: 18, height: 56, mass: 100, painchance: 0,
+    monster: true, flammable: true, fuel: 90, painSound: 'shopper',
+    variants: SHOPPERS,
+    /* one drawing, so every side of them is the front */
+    flat: true,
+    /* and it leans where it stands — see swayOf in js/people.js */
+    sway: true,
   },
 
   /* Scenery. Solid, mostly, and most of it burns. */
@@ -221,7 +158,10 @@ export const ACTORS = {
   BLAZE:   { name: 'Blaze',   spawn: 'BLAZ1', radius: 20, height: 80, noclip: true, fullbright: true },
   EMBER:   { name: 'Ember',   spawn: 'EMBR1', radius: 8,  height: 24, noclip: true, fullbright: true },
   PUFF:    { name: 'Blood',   spawn: 'PUFF1', radius: 4,  height: 8,  noclip: true },
-  GORE:    { name: 'Gore',    spawn: 'BLUD_REST', radius: 4, height: 2, noclip: true, flat: true },
+  GORE:    { name: 'Gore',    spawn: 'BLUD_REST', radius: 4, height: 2, noclip: true, flat: true,
+             variants: SPLATS },
+  BLAST:   { name: 'Fireball', spawn: 'BLAST1', radius: 8, height: 96, noclip: true,
+             flat: true, fullbright: true },
 };
 
 export function stateOf(name) {

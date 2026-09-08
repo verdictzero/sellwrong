@@ -1,12 +1,12 @@
 /* =====================================================================
-   SELLWRONG — the sprite bank
+   GROCERY STORE SIMULATOR — the sprite bank
    =====================================================================
 
    Doom's sprite naming, because it is a good scheme and because every
    piece of documentation about how Doom animates its monsters is written
    in it:
 
-     ASSOA1   four letters of sprite name, one frame letter, one rotation
+     BLSTA1   four letters of sprite name, one frame letter, one rotation
               digit. Rotation 1 is head-on, 2 through 8 go round, and 0
               means "this frame looks the same from everywhere".
 
@@ -18,22 +18,20 @@
 
    is both the documentation and the code.
 
-   TWO MONSTERS, and they are the two Doom opens with.
+   NOBODY IN THIS FILE IS A PERSON ANY MORE. There were two monsters
+   built here out of a jointed figure — a rig, a walk cycle, eight
+   rotations rendered per frame, faces projected onto a sphere so they
+   turned with the head — and they are gone, along with js/figure.js and
+   the Freedoom frames that ended up replacing them. The people in the
+   shop now are painted standees from the galvarius project, and they
+   arrive as a strip; js/people.js cuts it up and hands it to this bank.
 
-     THE ASSOCIATE is the Zombieman. Slow, weak, common, still wearing
-     the polo shirt, and shoots at you with a price gun. He is here to
-     be the thing you are not frightened of, so that the other one lands.
-
-     THE STOCKER is the Imp. Bigger, hunched, faster, throws a tin of
-     something at your head from across the shop floor and hurts if it
-     catches you. Brown apron over the same skeleton, and a longer,
-     lower stride so it reads as a different animal at fifty units.
-
-   Both are PLACEHOLDERS in the sense that the drawing is provisional,
-   and NOT placeholders in the sense that the animation is real. The
-   state tables, the timings, the rotations and the anchor points are all
-   final. When the art arrives it drops into the same eight slots per
-   frame and nothing else in the game changes.
+   What is left here is everything the game draws ITSELF: the fire, the
+   trolleys, the crates, the light fittings, the blood, the weapons in
+   your hands and the placeholders that stand in for any of the outside
+   art that has not arrived. The placeholders matter more than they look
+   — the game has to run with an empty assets/ directory, because that
+   is what the headless test does.
    ===================================================================== */
 
 import * as THREE from 'three';
@@ -41,7 +39,7 @@ import { Pix, fbm, valueNoise, speckle, drawTextCentred } from './pixel.js';
 import { makeRng, pRandom } from './util.js';
 import { ramp, PALETTE } from './palette.js';
 import { WEAPON_TILE, WEAPON_TOP, CLEAR_INDEX } from './art-data.js';
-import * as F from './figure.js';
+import { CELLS, ADULT, SHOPPERS, SPLATS, BLASTS, SHOPPER_SPRITE, SPLAT_SPRITE, BLAST_SPRITE } from './people.js';
 
 export class SpriteBank {
   constructor() { this.frames = new Map(); this.warned = new Set(); this.counts = new Map(); }
@@ -92,199 +90,6 @@ export class SpriteBank {
     return t;
   }
 }
-
-/* ====================================================================
-   Which pose goes with which frame letter
-
-   Doom's zombie and imp share a shape of animation, so this describes it
-   once and both monsters instantiate it. Read alongside states.js: the
-   letters here are the letters there.
-   ==================================================================== */
-/**
- * Every frame a humanoid needs, under the letters its STATE TABLE asks
- * for.
- *
- * The letters are an argument and not a constant, because the two
- * monsters do not use the same ones — and they do not because Doom's
- * two do not. The Zombieman's attack is two frames so its pain is G; the
- * Imp's is three so its pain is H and everything after it shifts by one.
- * Hard-coding G for pain and M-onwards for gibs produced a Stocker whose
- * pain frame did not exist and whose attack ended on a picture of it
- * flinching — and, quietly, a gib frame at S that overwrote something
- * else. The letters live in one place now, next to the table that names
- * them.
- */
-function humanoidFrames(bank, name, skin, gait, opts = {}) {
-  /* DOOM'S OWN LAYOUT FOR A PLAYER, exactly: four to walk on, two for
-     the attack, one for pain, seven for dying and nine for coming apart.
-     It used to differ — a dedicated idle frame at W, five death frames
-     and the gibs starting at M — and that was fine while these pictures
-     were drawn by this file. They are not any more: the staff are
-     Freedoom's player sprite with an apron on, they arrive with Doom's
-     letters on their filenames, and the tables that name the frames are
-     shared between the real art and the placeholders. So the
-     placeholders moved to match the art rather than the other way round.
-
-     What that cost: the dedicated standing pose. There is no spare
-     letter for one — A through W is all of them — so a thing standing
-     still uses walk frames A and B, alternating slowly, which is what
-     Doom's own zombieman does. */
-  const L = {
-    walk: ['A', 'B', 'C', 'D'], attack: ['E', 'F'], pain: 'G',
-    death: ['H', 'I', 'J', 'K', 'L', 'M', 'N'],
-    xdeath: ['O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W'],
-    ...(opts.letters || {}),
-  };
-
-  const walk = F.walkKeys(gait);
-  const attack = F.attackPoses(opts.attack || {});      // [wind, cock, release]
-  const deaths = F.deathPoses();
-  const ro = { rig: opts.rig || F.RIG, scaleX: opts.scaleX || 1, scaleY: opts.scaleY || 1 };
-
-  L.walk.forEach((ltr, i) => bank.addFrame(name, ltr, F.renderAllRotations(walk[i], skin, ro)));
-
-  /* Two attack frames take the wind-up and the release; three take the
-     extra beat in between. */
-  const chosen = L.attack.length >= 3 ? attack : [attack[0], attack[2]];
-  L.attack.forEach((ltr, i) => bank.addFrame(name, ltr, F.renderAllRotations(chosen[i], skin, ro)));
-
-  bank.addFrame(name, L.pain, F.renderAllRotations(F.painPose(), skin, ro));
-
-  /* Death, single-rotation, exactly as Doom stored it. Driven by the
-     LETTERS rather than by the poses, and clamped, so a table asking for
-     seven frames out of five poses holds the last one — which is what
-     the end of a death animation is anyway. */
-  L.death.forEach((ltr, i) => bank.addFrame(name, ltr,
-    F.renderAllRotations(deaths[Math.min(i, deaths.length - 1)], skin, { ...ro, only: 2 })));
-
-  /* And the other way out. */
-  gibFrames(skin, L.xdeath.length).forEach((views, i) => bank.addFrame(name, L.xdeath[i], views));
-}
-
-/* --------------------------------------------------------------------
-   Coming apart
-
-   Not a posed figure — a posed figure cannot do this. A burst of chunks
-   thrown outward under gravity, drawn as one sprite per tic of the
-   throw, settling into a spread on the floor. The last frame is what
-   stays there, so it is drawn wettest.
-   ------------------------------------------------------------------ */
-function gibFrames(skin, n) {
-  const rng = makeRng(4242);
-  const chunks = [];
-  for (let i = 0; i < 26; i++) {
-    const a = rng() * Math.PI * 2;
-    const sp = 0.7 + rng() * 2.6;
-    chunks.push({
-      x: 32 + (rng() - 0.5) * 6, y: 34 + (rng() - 0.5) * 16,
-      vx: Math.cos(a) * sp, vy: -(1.2 + rng() * 3.4),
-      r: 1 + rng() * 2.6,
-      key: rng() < 0.68 ? 'red' : (rng() < 0.5 ? skin.body : 'flesh'),
-      t: 0.18 + rng() * 0.4,
-      rest: 0,
-    });
-  }
-  const out = [];
-  for (let f = 0; f < n; f++) {
-    const p = new Pix(64, 64, 900 + f, false);
-    /* the pool underneath, which only grows */
-    const pool = Math.min(1, f / (n - 1));
-    for (let i = 0; i < 60 * pool; i++) {
-      const a = rng() * Math.PI * 2, d = rng() * 22 * pool;
-      p.disc(32 + Math.cos(a) * d, 60 + Math.sin(a) * d * 0.28, 1 + rng() * 2, 'red', 0.10 + rng() * 0.14);
-    }
-    for (const c of chunks) {
-      p.disc(Math.round(c.x), Math.round(c.y), c.r, c.key, c.t);
-      p.ink(Math.round(c.x - 1), Math.round(c.y - 1), c.key, Math.min(0.95, c.t + 0.3));
-      /* advance the throw for the next frame */
-      c.x += c.vx; c.y += c.vy; c.vy += 0.85;
-      if (c.y > 60 - c.r) { c.y = 60 - c.r; c.vy *= -0.24; c.vx *= 0.55; }
-    }
-    p.snap(0.3);
-    const one = p;
-    out.push(new Array(8).fill(one));       // rotation 0: same from everywhere
-  }
-  return out;
-}
-
-/* ====================================================================
-   The two of them
-   ==================================================================== */
-
-/** A name badge, a lanyard, an apron — the bits that are painted on top
- *  of a finished figure rather than built into the skeleton. */
-function associateDecor(pix, ctx) {
-  const { P, sk, facingUs } = ctx;
-  const C = P(sk.chest);
-  if (facingUs) {
-    /* the badge, still on. This is the only thing on the sprite that is
-       not red, grey or skin, so it is what your eye lands on. */
-    pix.ink(Math.round(C[0] + 4), Math.round(C[1] + 1), 'bone', 0.9);
-    pix.ink(Math.round(C[0] + 5), Math.round(C[1] + 1), 'bone', 0.9);
-    pix.ink(Math.round(C[0] + 4), Math.round(C[1] + 2), 'bone', 0.7);
-    pix.ink(Math.round(C[0] + 5), Math.round(C[1] + 2), 'blue', 0.6);
-    /* the collar */
-    pix.ink(Math.round(C[0] - 1), Math.round(C[1] - 4), 'red', 0.72);
-    pix.ink(Math.round(C[0] + 1), Math.round(C[1] - 4), 'red', 0.72);
-  }
-}
-
-function stockerDecor(pix, ctx) {
-  const { P, sk, facingUs } = ctx;
-  const C = P(sk.chest);
-  if (facingUs) {
-    /* the apron, hanging off the front of it */
-    for (let y = -2; y < 9; y++)
-      for (let x = -4; x <= 4; x++)
-        if (Math.abs(x) < 5 - Math.max(0, y - 5))
-          pix.ink(Math.round(C[0] + x), Math.round(C[1] + y), 'brown', 0.42 + (x < 0 ? 0.08 : -0.06));
-    pix.hline(Math.round(C[0] - 4), Math.round(C[0] + 4), Math.round(C[1] - 2), 'brown', 0.58);
-  }
-}
-
-/* SellWrong issues its staff a mask, and nobody has taken one off. See
-   drawFace in figure.js for what makes an eleven-pixel smile unpleasant.
-
-   The two differ by about six numbers, and it is enough. The Associate's
-   is the corporate one: level eyes, an even smile, exactly as printed on
-   the carrier bags. The Stocker's has been out the back for a while — a
-   duller yellow, eyes set wider and lower, and a smile that goes further
-   round the head than the Associate's does. Same mask, worse. */
-export const ASSOCIATE_FACE = {
-  shell: 'yellow', shellT: 0.80,
-  ink: 'grey', inkT: 0.04,
-  rim: 'yellow', rimT: 0.44,
-  strap: 'grey', strapT: 0.12, strapBeta: 0.05,
-  eyeLam: 0.46, eyeBeta: 0.20,
-  mouthLam: 0.76, mouthBeta: -0.40, mouthLift: 0.24,
-  bigEyes: false,
-};
-
-export const STOCKER_FACE = {
-  shell: 'yellow', shellT: 0.60,
-  ink: 'grey', inkT: 0.03,
-  rim: 'olive', rimT: 0.30,
-  strap: 'grey', strapT: 0.10, strapBeta: 0.02,
-  eyeLam: 0.56, eyeBeta: 0.12,
-  mouthLam: 0.92, mouthBeta: -0.34, mouthLift: 0.30,
-  bigEyes: true,
-};
-
-export const ASSOCIATE_SKIN = {
-  legs: 'grey', legsT: 0.20, shoes: 'grey', shoesT: 0.09,
-  body: 'red', bodyT: 0.42, sleeve: 'red', sleeveT: 0.48,
-  skin: 'flesh', skinT: 0.42, eye: 'yellow', eyeT: 0.95,
-  face: ASSOCIATE_FACE,
-  decorate: associateDecor,
-};
-
-export const STOCKER_SKIN = {
-  legs: 'olive', legsT: 0.22, shoes: 'grey', shoesT: 0.08,
-  body: 'brown', bodyT: 0.34, sleeve: 'olive', sleeveT: 0.30,
-  skin: 'flesh', skinT: 0.30, eye: 'red', eyeT: 0.90,
-  face: STOCKER_FACE,
-  decorate: stockerDecor,
-};
 
 /* ====================================================================
    Fire
@@ -374,19 +179,36 @@ export function bakeSprites() {
     bank.addFrame('MISS', 'A', new Array(8).fill(p));
   }
 
-  /* --- the Associate: a shuffle, arms hanging, one leg dragging --- */
-  humanoidFrames(bank, 'ASSO', ASSOCIATE_SKIN,
-    { stride: 22, lean: 13, armSwing: 13, drag: 0.7, headTilt: 12, headSide: -8, splay: 9, armSplay: 15 },
-    { attack: { windSh: -30, windElb: 70, relSh: 74, relElb: 10, relSpread: 18 } });
-
-  /* --- the Stocker: longer, lower, arms already out in front --- */
-  humanoidFrames(bank, 'STKR', STOCKER_SKIN,
-    { stride: 30, lean: 26, armSwing: 7, drag: 0.25, headTilt: 20, headSide: 0, splay: 13, armSplay: 26,
-      armBase: 46, elbowBase: 40 },
-    {
-      rig: { ...F.RIG, thigh: 13, shin: 13, upperArm: 12, foreArm: 12, torsoR: 6.2, headR: 5.6, limbR: 3.0, armR: 2.5 },
-      attack: { lean: 16, windSh: -18, windElb: 96, windSpread: 40, releaseLean: 26, relSh: 96, relElb: 6, relSpread: 30 },
-    });
+  /* --- the crowd, when the crowd has not arrived ------------------
+     A person-shaped hole in seventeen colours. It is not meant to be
+     mistaken for the art in assets/people; it is meant to be a body of
+     the right height standing in the right place, so that the map, the
+     collision, the fire and the gibbing can all be tested with nothing
+     on disk. Real standees land on top of these under the same names. */
+  {
+    const COATS = ['red', 'blue', 'green', 'olive', 'brown', 'purple', 'pink', 'cyan', 'yellow', 'rust'];
+    for (let v = 0; v < SHOPPERS; v++) {
+      const rng = makeRng(820 + v);
+      const coat = COATS[v % COATS.length];
+      const legs = ['grey', 'blue', 'brown', 'olive'][v % 4];
+      const H = CELLS.shoppers.h, W = CELLS.shoppers.w;
+      /* a shade under the adult height, and a shade of build, so a row
+         of them is not a row of one person */
+      const tall = Math.round(ADULT * (0.9 + rng() * 0.1));
+      const wide = 5 + Math.round(rng() * 3);
+      bank.addFrame(SHOPPER_SPRITE + v, 'A', radial(p => {
+        const cx = W >> 1, foot = H - 1, head = H - tall;
+        for (let y = foot - Math.round(tall * 0.42); y <= foot; y++)          // legs
+          for (let x = -wide + 2; x <= wide - 2; x++)
+            if (Math.abs(x) > 1) p.ink(cx + x, y, legs, 0.30 + (x < 0 ? 0.08 : 0));
+        for (let y = head + 9; y < foot - Math.round(tall * 0.4); y++)        // coat
+          for (let x = -wide; x <= wide; x++)
+            p.ink(cx + x, y, coat, 0.34 + (x < 0 ? 0.10 : -0.04));
+        p.disc(cx, head + 5, 4.4, 'flesh', 0.40);                              // head
+        p.disc(cx - 1, head + 4, 2.0, 'flesh', 0.52);
+      }, W, H, 820 + v));
+    }
+  }
 
   /* --- fire, in three sizes --- */
   fireFrames(32, 48, 8, 7).forEach((p, i) =>
@@ -451,14 +273,37 @@ export function bakeSprites() {
     }
   }, 32, 42, 604), { scale: 1.4 });
 
-  /* --- what is left where somebody was --- */
-  bank.addFrame('BLUD', 'A', radial(p => {
-    const rng = makeRng(605);
-    for (let i = 0; i < 40; i++) {
-      const a = rng() * Math.PI * 2, d = rng() * 13;
-      p.disc(16 + Math.cos(a) * d, 20 + Math.sin(a) * d * 0.4, 1 + rng() * 2.6, 'red', 0.10 + rng() * 0.12);
-    }
-  }, 32, 32, 605));
+  /* --- what is left where somebody was ---
+     Squashed four to one, because it is lying on the floor and this is
+     a billboard standing up on it: a circle drawn on a standing quad
+     reads as a ball, and an ellipse a quarter as tall reads as a stain
+     seen from eye level. Three of them, picked per actor. */
+  for (let v = 0; v < SPLATS; v++) {
+    const rng = makeRng(605 + v);
+    bank.addFrame(SPLAT_SPRITE + v, 'A', radial(p => {
+      const cx = CELLS.splat.w / 2, cy = CELLS.splat.h - 4;
+      for (let i = 0; i < 60; i++) {
+        const a = rng() * Math.PI * 2, d = rng() * (12 + v * 5);
+        p.disc(cx + Math.cos(a) * d, cy + Math.sin(a) * d * 0.28,
+               1 + rng() * 2.6, 'red', 0.10 + rng() * 0.12);
+      }
+    }, CELLS.splat.w, CELLS.splat.h, 605 + v));
+  }
+
+  /* --- and the fireball, drawn by the fire routine so that the
+         stand-in for an explosion is at least made of fire.
+
+         Shorter than the picture it stands in for: everything this file
+         DRAWS is 64 pixels or under, which is the rule the whole look
+         rests on, and the painted fireball that lands on top of it is 96
+         because it came from outside and outside art arrives as it is.
+         A placeholder two thirds the height is a placeholder. --- */
+  {
+    const frames = fireFrames(CELLS.blast.w, 64, BLASTS, 77, { taper: 0.5 });
+    frames.forEach((p, i) =>
+      bank.addFrame(BLAST_SPRITE, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[i], new Array(8).fill(p),
+                    { fullbright: true }));
+  }
 
   /* --- the lights, which are objects and not paint -----------------
      Hung below the ceiling rather than flush in it, because a Y-billboard
@@ -523,14 +368,7 @@ export function bakeSprites() {
     }, 16, 16, 640 + i), { fullbright: true });
   });
 
-  /* --- things thrown at you, and things you throw --- */
-  bank.addFrame('TINS', 'A', radial(p => {
-    for (let y = 8; y < 22; y++) for (let x = 9; x < 19; x++)
-      p.ink(x, y, 'grey', 0.42 + (x < 13 ? 0.16 : -0.06));
-    p.hline(9, 18, 8, 'grey', 0.66); p.hline(9, 18, 21, 'grey', 0.14);
-    for (let y = 12; y < 18; y++) p.hline(9, 18, y, 'red', 0.38 + (y === 12 ? 0.2 : 0));
-  }, 28, 28, 606), { lift: 24 });
-
+  /* --- the one thing you throw --- */
   bank.addFrame('MOLO', 'A', radial(p => {
     for (let y = 12; y < 26; y++) for (let x = 11; x < 19; x++)
       p.ink(x, y, 'green', 0.26 + (x < 15 ? 0.12 : -0.04));

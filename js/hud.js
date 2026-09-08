@@ -1,5 +1,5 @@
 /* =====================================================================
-   SELLWRONG — what is written on the picture
+   GROCERY STORE SIMULATOR — what is written on the picture
    =====================================================================
 
    All of this is drawn INTO the low-resolution buffer, at the same chunk

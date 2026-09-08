@@ -14,7 +14,7 @@ that burns too.
 Open index.html in a browser. No install, no build step. Every texture,
 every sprite, every sound and the whole level are generated in the page
 at start-up, in about half a second. What it loads is what was made
-somewhere else: the staff, the trees, the sky, and the gun.
+somewhere else: the people, the trees, the sky, and the gun.
 
   .gitlab-ci.yml        test, then publish to GitLab Pages
   .github/workflows/    the same two jobs, for GitHub Pages
@@ -25,14 +25,15 @@ somewhere else: the staff, the trees, the sky, and the gun.
   vendor/three.module.js  three r160, local so the game runs off a memory stick
   js/                   the game
   art/                  the logo and the old sprite weapon, as PNGs
-  assets/sprites/       the staff: Freedoom's player, aproned
+  assets/people/        the crowd, and what is left of one: seventeen
+                          shoppers, eleven pieces, three splats, a fireball
   assets/forest/        the wood: ten plants with their burn maps, two grounds
   assets/sky/night.png  the night, baked from a Polyhaven panorama
   assets/models/        the flamethrower, prepared from the user's .glb
   assets/fire/          four looping fire strips from the golf project
   assets/fonts/         Michroma (SIL OFL), the title face
   tools/bake-art.mjs    node tools/bake-art.mjs — turns art/ into source
-  tools/build_employee.sh  re-paints the apron and the face onto the sprites
+  tools/prep-people.mjs the crowd's art, crunched down from galvarius
   tools/prep-forest.sh  copies the wood's art over from the golf project
   tools/bake-sky.mjs    the sky: 8k panorama to 1024 palette pixels
   tools/prep-model.mjs  strips the marker spheres out of a .glb, keeps their positions
@@ -65,7 +66,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         269 checks, no install and no browser
+  the smoke test         293 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -211,10 +212,13 @@ seconds. Your flamethrower is roughly ten times faster than that, which is
 the point of carrying it — you are not starting the fire so much as
 deciding where it starts and how long the store has.
 
-A BURNING ASSOCIATE is the third way it travels. It keeps chasing you, sets
-light to what it walks over, and dies on its feet somewhere in the frozen
-goods. Set one alight at the end of an aisle and it will do more damage to
-the store than you will.
+THE CROWD is the third way it travels, and the fastest. A shopper has
+twelve health, which is under a fifth of what one tic of the stream
+delivers, so anything you point it at comes apart at once: a fireball
+where they were, thirteen pieces of them thrown sixty or seventy units on
+fire, and a little heat in the floor wherever each lands. Torch the queue
+at the tills and you have not started one fire, you have started nine, in
+a fan, in the part of the shop with the most cardboard in it.
 
 The car park has no fuel at all and never burns, which makes it the safe
 room: the one place you can stand and watch what you have done.
@@ -342,7 +346,7 @@ and no tree stands on it.
 js/responders.js is the PLACEHOLDER for what comes down it: the shape of
 the thing, with nothing in it that can hurt you yet. One number, the
 ALARM, climbs with how much of the store and the wood has gone, how many
-of the staff, and how long anything has been alight. Six tiers — the
+people you have killed, and how long anything has been alight. Six tiers — the
 night manager, security, the police, the fire brigade, riot police, the
 helicopter — each have an alarm they are dispatched at (you hear about
 it) and a delay before they arrive, at one end of the road. Arrival
@@ -405,7 +409,7 @@ piece of architecture in the store is one of those two pieces:
                       walls carrying the sign. A freestanding object built
                       out of an absence, which is the only kind a sector
                       engine can make without a new primitive.
-  the staff door    a sector whose ceiling is on the floor and rises
+  the back door     a sector whose ceiling is on the floor and rises
 
 WALLS ARE THE GAPS. Two rectangles that touch become an opening between two
 rooms — that is what touching means. A wall is drawn by NOT putting a
@@ -426,8 +430,8 @@ slides it into the thickness of the wall, where there is nothing to draw and
 nothing to z-fight with. What they share with a Doom door is the only part
 that matters: a shut one sets `blocking` on the lines across the opening and
 the collision system treats them as wall. Nothing else in the engine knows
-they exist. They open for the staff as well as for you, and once the fire
-has been through the entrance they jam part open and stop being a door.
+they exist. They open for anybody, not just for you, and once the fire has
+been through the entrance they jam part open and stop being a door.
 
 THE MAP'S Y IS THE RENDERER'S MINUS Z. A map with x east and y north laid
 onto a renderer with x east and z north is LEFT-handed, and everything
@@ -447,7 +451,7 @@ So every vertex carries a `sky` term alongside its light — 1 outdoors, 0
 indoors, 0.55 under the canopy — and the shader stretches the falloff and
 lifts its floor by it. Nothing indoors changed at all.
 
-MONSTERS ARE STATE TABLES. Each state says which sprite frame, how many
+ACTORS ARE STATE TABLES. Each state says which sprite frame, how many
 tics, one function to call, and which state comes next. Read a run of them
 out loud and you have the animation:
 
@@ -456,6 +460,12 @@ out loud and you have the animation:
 Eight states, four drawings, 32 tics — a bit under a second, which is the
 pace of a walk. A_Chase runs on every one of the eight, so the monster gets
 eight chances a cycle to notice you have moved.
+
+NOTHING WALKS AT THE MOMENT. The two staff monsters that used that run of
+states are gone and the responders that will use it are not written, so
+the next two paragraphs describe a machine with nobody in it. It stays
+exactly as it is, because it is correct and because getting it correct a
+second time from the same source would take longer than reading it does.
 
 THE CHASE IS P_NewChaseDir. A monster does not path-find. It picks whichever
 of eight compass directions points most nearly at you, tries to walk that
@@ -584,19 +594,6 @@ top third left empty, and that empty third is where the muzzle flame is
 drawn, in code, per frame: one still gun and a separate flash, exactly
 how Doom's weapons worked and why they only ever needed one drawing.
 
-THE MONSTERS ARE A SKELETON. Doom's are eight photographs of a clay model,
-which is why they turn convincingly: the rotations agree because they are
-the same object. So js/figure.js poses a small articulated figure in 3D and
-flattens it to eight views. A walk is four keys — contact, pass, contact,
-pass — with the arms answering the legs, and the whole cycle costs one set
-of joint angles rather than thirty-two drawings.
-
-Limbs also SPLAY, a few degrees, changing across the cycle. A limb that only
-swings forward and back vanishes when the figure walks straight at you: the
-swing is entirely toward the camera, so four walk frames come out as four
-drawings of standing still. Doom's artists drew their front-view frames more
-bow-legged than their side views for exactly this reason.
-
 THE FIRE is the PSX Doom routine, which is thirty lines and still the best
 looking fire anyone has put in a game of this shape. Seed the bottom row
 hot; for every cell above, take the one below, subtract a small random
@@ -604,45 +601,52 @@ amount, and shift it sideways by the SAME random amount. The shared random
 value is the part that matters — it correlates the flicker with the decay,
 so the flame licks instead of dissolving.
 
-The two monsters are Doom's opening two. The ASSOCIATE is the Zombieman: 20
-health, painchance 200, a slow ranged attack, still wearing the polo shirt.
-He is there to be the thing you are not frightened of, so that the other one
-lands. The STOCKER is the Imp: 60 health, hunched, faster, and it throws a
-tin of something at your head from across the shop floor.
+THE PEOPLE ARE STANDEES, and there used to be a whole machine here for
+making them something else. Two staff monsters, the Zombieman and the Imp
+with the numbers filed off, built by posing a small articulated figure in
+3D and flattening it to eight views per frame, then replaced by Freedoom's
+player sprite with a smiley face over the visor and an apron painted onto
+the armour. All of it is gone — the figure, the rig, the walk cycles, the
+hundred and two frames, the two Python scripts that painted them — and
+what stands in the aisles now is seventeen painted characters out of
+github.com/verdictzero/galvarius, one drawing each.
 
-THE REAL ART ARRIVED AND DROPPED STRAIGHT IN, which is the whole reason the
-placeholders were built the way they were. The staff are Freedoom's player
-sprite now — a smiley face painted over the visor, a blue SellWrong apron
-over the armour — and switching to them changed the state tables' LETTERS
-and nothing else. Not one timing, not one action function, not one anchor
-point.
+One drawing each is the whole design and not a corner cut. Eight rotations
+faked by mirroring one view look wrong from seven of the eight. A walk
+cycle faked by sliding one drawing about looks wrong from all of them. So a
+shopper does not walk, and every side of one is the front — which is how
+Doom drew anything it only had one picture of, and it is what the actor's
+`flat` flag has always meant. They SWAY instead: two sines phased off the
+actor's own id, an inch and a half of lean and half an inch of bob, in a
+direction that also comes off the id so that no two of them move together.
+It is a drawing offset and nothing in the simulation moves. On the title
+screen, where the world is not being stepped at all, they are perfectly
+still, which is what the title screen is for.
 
-Both monsters come out of the same pictures. Freedoom ships the player
-standing (PLAY) and crouching (PLYC); the Associate is the standing set and
-the Stocker is the crouching one, which is the same employee bent over a
-pallet — exactly the difference between them that the placeholders were
-faking with a lower, longer walk.
+Seventeen people, thirteen pieces of one, three splats and twenty-six
+frames of fireball come over in four STRIPS: one picture per kind, equal
+cells, laid out left to right. tools/prep-people.mjs writes them and
+js/people.js declares the cell sizes both sides agree on, so there is one
+set of numbers rather than two that have to match.
 
-They are LOADED, not baked into source like the logo and the weapon. Those
-two are single images that will never change again; a hundred and two sprite
-frames somebody is still iterating on want to stay as files, so that changing
-the apron is a re-run of tools/build_employee.sh and a reload. If the files
-are not there the game falls back to the drawn-by-code figures without
-complaint, which is why js/figure.js is still here.
+Getting somebody else's art down to this game's scale is mostly one
+decision and one trap. The decision is to scale every character by the SAME
+factor — worked out from the 575 pixels a standing adult is drawn at over
+there — rather than stretching each to a common height: three of these
+drawings are of somebody crouching or sitting, and normalising by height
+would stand them up into giants. The trap is the filter. A box filter that
+averages colour and alpha separately drags the colour of every transparent
+pixel into its neighbours, and at ten to one that puts a halo of whatever
+was in the margins around every character; multiplying by coverage first
+and dividing back out afterwards is the fix, and the alpha then gets a
+small gain because a limb four pixels wide arrives as four tenths of one.
 
-Doom's filenames carry the whole loading rule and there is no manifest:
-PLAYA1 is frame A rotation 1, PLAYA2A8 is one picture serving rotations 2
-and 8 with 8 mirrored, PLAYH0 is one picture seen the same from everywhere.
-Rotation 1 is the front and this engine's view 0 is the front, so Doom
-rotation N is view N-1 and there is nothing to reconcile. The smoke test
-checks the rule against the directory in both directions.
-
-One thing the PNGs do not carry is Doom's per-patch OFFSET, which is what
-made the feet line up when the frames were 26, 29 and 36 across. So every
-view of a set is padded into one canvas the size of the widest and tallest
-in it, centred across and standing on the bottom. Without that a walk cycle
-slides sideways as it plays and a twenty-pixel death frame floats at the
-height of a standing man.
+The fireball is the one set that is NOT trimmed to its contents. Its thirty
+frames are one drawing moving inside a fixed window — the ball leaves the
+ground, climbs, spreads — so the window IS the animation, and trimming each
+frame would scale them all back to the same size and turn a rising mushroom
+into a flickering still. It is resampled to twenty-six because a frame is a
+letter and the letters stop at Z.
 
 
 THE TEST
@@ -652,14 +656,17 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-269 checks. Every one of them earns its place by having caught something
+293 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
     drawn off the bottom appeared in the sky, at a fixed point on screen,
     in every shot
-  a monster state naming a frame letter the bakery never made, so the
-    Stocker's pain frame did not exist
+  a state naming a frame letter the bakery never made, so a monster's
+    pain frame did not exist — and its descendant, which is that an actor
+    with `variants` never draws the sprite its state names at all, so the
+    check expands SHOP into SHO0 through SHO16 and a missing sixteenth
+    shopper cannot hide as one magenta person in a crowd
   a wall texture chosen by whichever sector was DECLARED first, so an aisle
     had shelving down one side and blank plaster down the other
   a move long enough to step clean through a wall with nothing noticing it
@@ -695,15 +702,26 @@ that had already reached a screenshot:
     would have fallen back to its baked flames without a word — the check
     now assembles the site and holds every asset path the page loads
     against what was copied
+  four strips of somebody else's art whose cell sizes live in two places
+    at once — the tool that writes them and the game that cuts them up.
+    They now live in ONE place, js/people.js, and the check holds the
+    files on disk against it: a strip one pixel narrow cuts every shopper
+    after the first in half, silently, at load time
 
 
 WHAT IS NOT DONE
 ----------------
 
-  the staff, the logo and the weapon are the art a person made; every
-    other surface in the game is still procedural and still provisional
-  js/figure.js still builds the placeholder monsters, and they are now
-    only ever seen if the sprite files are missing
+  the people, the wood, the sky, the logo and the weapon are the art a
+    person made; every other surface in the game is still procedural and
+    still provisional
+  the shoppers do not react. They do not run from the fire, they do not
+    get out of your way, and they do not scream until they are alight.
+    They are scenery with blood in it, and making them flee is the next
+    thing worth doing to them
+  a shopper is drawn from one angle, so a crowd seen from the side is a
+    crowd all facing you. At Doom's sprite scale in a dark shop this
+    reads; in daylight it would not
   there are no cars. The placeholders are gone and what is left is
     `level.carSlots` — a position, a heading and a variant for each, off
     the same arithmetic that drew the bay lines, so every slot is IN a bay
@@ -715,7 +733,9 @@ WHAT IS NOT DONE
   no music
   no second level, and no level-to-level flow
   the boxcutter and the molotov are built and switched off
-  the Stocker's thrown tin has no trail and is easy to miss
+  nothing in the game fights back yet. Doom's chase — A_Look, A_Chase and
+    P_NewChaseDir — is still in js/actor.js with nothing calling it, kept
+    for the responders coming up the road
   the touch controls were proven on an emulated phone — real touch
     events through Chromium, both thumbs at once — and not yet on glass;
     the look speed, the dead zone and the button sizes want a real thumb
@@ -729,7 +749,7 @@ WHAT IS NOT DONE
   nobody comes down the road yet: js/responders.js escalates, announces
     and records the waves, and spawn() is one function waiting for
     actors and art
-  the staff do not follow you into the wood, and the wood's fire and the
+  nothing follows you into the wood, and the wood's fire and the
     store's do not cross the car park to each other; the flamethrower is
     the bridge
   the trees are 128 and 256 pixels, the sky 1024, the gun's paint 1024:

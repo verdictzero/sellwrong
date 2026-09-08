@@ -1,5 +1,5 @@
 /* =====================================================================
-   SELLWRONG — the automatic doors
+   GROCERY STORE SIMULATOR — the automatic doors
    =====================================================================
 
    Doom had exactly one door: a ceiling that goes up. Every "door" in the

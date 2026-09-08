@@ -1,5 +1,5 @@
 /* =====================================================================
-   SELLWRONG — actors: the state machine, and Doom's chase
+   GROCERY STORE SIMULATOR — actors: the state machine, and Doom's chase
    =====================================================================
 
    An actor is a position, a state, and a countdown. Every tic the
@@ -23,17 +23,25 @@
    oscillating in a doorway, and is the detail most reimplementations
    drop.
 
+   NOTHING CHASES YOU YET. The two staff monsters that used to are gone
+   and the responders that will are not written, so at the moment every
+   line about the chase below runs for nobody. It stays exactly as it is,
+   for two reasons: it is correct, and getting it correct a second time
+   from the same source would take longer than reading it does. When a
+   fire crew walks up the road it will walk on this.
+
    BURNING is this game's own addition and it is deliberately not a
-   status effect on a health bar. A burning zombie keeps chasing you,
-   takes damage on a timer, LIGHTS WHAT IT WALKS OVER, and dies on its
-   feet somewhere in the frozen goods. Set one alight at the end of an
-   aisle and it will do more damage to the store than you will.
+   status effect on a health bar. Anything alight takes damage on a
+   timer and LIGHTS WHAT IT IS STANDING ON, so a shopper who catches at
+   the end of an aisle does more damage to the store than the shot that
+   lit them.
    ===================================================================== */
 
 import * as THREE from 'three';
 import { createSpriteMaterial } from './material.js';
 import { STATES, ACTORS, stateOf } from './states.js';
-import { angleNorm, angleDiff, pRandom, pRandomSpread, pChance, dist, dist2, TICRATE } from './util.js';
+import { angleNorm, angleDiff, pRandom, dist, dist2 } from './util.js';
+import { swayOf } from './people.js';
 
 /* Doom's eight, in Doom's order. Index 8 is "nowhere to go". */
 export const DI = { EAST: 0, NORTHEAST: 1, NORTH: 2, NORTHWEST: 3, WEST: 4, SOUTHWEST: 5, SOUTH: 6, SOUTHEAST: 7, NODIR: 8 };
@@ -325,6 +333,8 @@ export class Actor {
     this.burning = Math.max(this.burning, tics);
     if (!wasAlight) {
       this.game.sound?.play('ignite', this);
+      /* and anything with a voice uses it */
+      if (this.info.painSound) this.game.sound?.play(this.info.painSound, this);
       /* Whatever this thing is worth as fuel goes into the floor under
          it the moment it catches — a pallet of stock alight is a fire in
          the AISLE, not a fire on a prop. */
@@ -394,7 +404,16 @@ export class Actor {
        tarmac under it does, or it turns into a silhouette while the bay
        around it stays lit. */
     if (u.sky) u.sky.value = this.sector ? (this.sector.sky ?? (this.sector.outdoor ? 1 : 0)) : 0;
-    this.mesh.position.set(this.x, this.z + (entry.lift || 0), -this.y);
+    /* A standee leans where it stands, or a shop floor of them is a shop
+       floor of cardboard. Two sines, phased off the actor's own id, and
+       nothing in the simulation moves — this is a drawing offset and the
+       thing itself is exactly where the collision says it is. */
+    if (this.info.sway) {
+      const s = swayOf(this, this.game.tics);
+      this.mesh.position.set(this.x + s.dx, this.z + (entry.lift || 0) + s.dz, -(this.y + s.dy));
+    } else {
+      this.mesh.position.set(this.x, this.z + (entry.lift || 0), -this.y);
+    }
   }
 }
 
@@ -466,35 +485,16 @@ export const ACTIONS = {
     a.angle = Math.atan2(a.target.y - a.y, a.target.x - a.x);
   },
 
-  /* The Associate's price gun: a hitscan with a spread, one shot. */
-  A_PosAttack(a) {
-    if (!a.target) return;
-    ACTIONS.A_FaceTarget(a);
-    a.game.sound?.play('assoShoot', a);
-    const spread = (pRandomSpread() / 255) * 0.14;
-    const damage = ((pRandom() % 5) + 1) * 3;
-    a.game.hitscan(a, a.angle + spread, 2200, damage);
-  },
-
-  /* The Stocker throws a tin. Slow enough to dodge if you see it leave
-     his hand, which is what the two 8-tic wind-up frames are for. */
-  A_StockAttack(a) {
-    if (!a.target) return;
-    ACTIONS.A_FaceTarget(a);
-    if (a.checkMeleeRange()) {
-      a.game.sound?.play('stkrHit', a);
-      a.target.damage(((pRandom() % 8) + 1) * 3, a);
-      return;
-    }
-    a.game.sound?.play('stkrThrow', a);
-    a.game.spawnMissile(a, a.target, 'TIN');
-  },
-
   /* Glass, a pop, and a shower of sparks that falls. */
   A_LampBurst(a) {
     a.game.sound?.play('lampbreak', a);
     a.game.spawnSparks(a.x, a.y, a.z + 10, 10 + (pRandom() & 7));
   },
+
+  /* A person, briefly, becomes thirteen things and a fireball. All of
+     it is in js/people.js; this is the one line of state table that sets
+     it off. */
+  A_Gib(a) { a.game.giblets?.burst(a); },
 
   A_Pain(a) { a.game.sound?.play(a.info.painSound, a); },
   A_Scream(a) { a.game.sound?.play(a.info.deathSound, a); },
