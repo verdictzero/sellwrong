@@ -49,14 +49,23 @@ gets copied is not the whole repository: the untouched Freedoom frames
 the apron is painted over, the source PNGs for art already baked into
 js/art-data.js, the tools and this file are all repository, not site.
 tools/build-site.sh is the one definition of the difference, and both CI
-files call it rather than each keeping a list that can drift.
+files call it rather than each keeping a list that can drift. The smoke
+test assembles the site the same way into a scratch directory and checks
+that every asset path the page's own source loads is in it, so a copy
+that leaves something out fails the test rather than the live game.
+
+The repository setting has to agree with all this: Settings > Pages >
+Source must be GitHub Actions. Set to deploy from a branch instead,
+GitHub builds the branch with Jekyll and publishes the whole tree, this
+file and the tools included, over the top of the artifact the workflow
+uploaded — the site works, but it is not the site the script defines.
 
 Both pipelines run the same two checks first, and the deploy DEPENDS on
 them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         263 checks, no install and no browser
+  the smoke test         269 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -643,7 +652,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-263 checks. Every one of them earns its place by having caught something
+269 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -682,6 +691,10 @@ that had already reached a screenshot:
   a store fire quartered to please the ear, which stopped the footway
     carrying it along the parade; the neighbours never caught. The
     slowing moved to the fire's clock, which is what the clock is for
+  a copy of the site that left out the fire strips, so the published game
+    would have fallen back to its baked flames without a word — the check
+    now assembles the site and holds every asset path the page loads
+    against what was copied
 
 
 WHAT IS NOT DONE

@@ -765,6 +765,56 @@ section('the gun');
   check('every buffer view is used', json.bufferViews.every((bv, i) => json.accessors.some(x => x.bufferView === i) || json.images.some(im => im.bufferView === i)));
 }
 
+/* ---------- the site ---------- */
+section('the site');
+{
+  /* The deploy is a copy, and a copy can leave something out. The fire
+     strips were loaded by main.js and absent from the build for a
+     commit, and the game fell back to its baked flames on the live site
+     without a word — so this assembles the site into a scratch
+     directory exactly as CI does and checks that every asset path the
+     page can load is in it. Paths are read out of the page's own source,
+     so a new asset is covered the day it is referenced. */
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const os = await import('node:os');
+  const { fileURLToPath } = await import('node:url');
+  const { execFileSync } = await import('node:child_process');
+  const root = fileURLToPath(new URL('..', import.meta.url));
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'sellwrong-site-'));
+  let built = '';
+  try { built = execFileSync('sh', ['tools/build-site.sh', out], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim(); }
+  catch (e) { built = ''; }
+  note('build', built || 'FAILED');
+  check('the site assembles', !!built);
+
+  const sources = [path.join(root, 'index.html'), path.join(root, 'manifest.webmanifest')];
+  const walk = d => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walk(p); else if (/\.(js|css)$/.test(e.name)) sources.push(p);
+    }
+  };
+  walk(path.join(root, 'js')); walk(path.join(root, 'css'));
+  const dirs = new Set(), files = new Set();
+  for (const f of sources) {
+    for (const m of fs.readFileSync(f, 'utf8').matchAll(/assets\/[\w./-]+/g)) {
+      const ref = m[0].replace(/[./]+$/, '');
+      if (/\.\w+$/.test(ref)) { files.add(ref); dirs.add(path.posix.dirname(ref)); }
+      else dirs.add(ref);
+    }
+  }
+  note('asset paths in the page', `${dirs.size} directories, ${files.size} files named outright`);
+  const missingDirs = [...dirs].filter(d => !fs.existsSync(path.join(out, d)));
+  const missingFiles = [...files].filter(f => !fs.existsSync(path.join(out, f)));
+  check('every asset directory the page loads from is in the built site', missingDirs.length === 0, missingDirs.join());
+  check('and every file it names outright', missingFiles.length === 0, missingFiles.join());
+  check('the fire strips are in it', ['flame', 'blaze', 'ember'].every(k => fs.existsSync(path.join(out, 'assets/fire', k + '.png'))));
+  check('the page, its icon and its manifest are', ['index.html', 'icon.png', 'manifest.webmanifest'].every(f => fs.existsSync(path.join(out, f))));
+  check('and the source tree is not', !fs.existsSync(path.join(out, 'tools')) && !fs.existsSync(path.join(out, 'README.txt')) && !fs.existsSync(path.join(out, 'art')));
+  fs.rmSync(out, { recursive: true, force: true });
+}
+
 /* ---------- verdict ---------- */
 console.log(`\n  ${fail === 0 ? 'PASS' : 'FAIL'}  ${pass} checks passed, ${fail} failed`);
 if (fail) { console.log('\n' + problems.map(p => '    ! ' + p).join('\n')); process.exit(1); }
