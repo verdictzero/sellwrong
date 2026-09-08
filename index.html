@@ -2,26 +2,19 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<!-- viewport-fit=cover: the page owns the whole screen, notch and all,
-     and decides for itself what to keep out of the notch. -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#05060a">
-<!-- Added to a home screen, it opens without the browser around it. -->
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="SellWrong">
+<meta name="apple-mobile-web-app-title" content="Grocery Sim">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon.png">
-<title>SELLWRONG</title>
-<!-- Inline, so the game still downloads exactly nothing. -->
+<title>Grocery Store Simulator</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%2308090d'/%3E%3Cpath d='M8 2c1 3 3 3 3 6a3 3 0 0 1-6 0c0-2 1-2 1-4 1 1 1 2 2 2 0-2-1-3 0-4z' fill='%23e8621a'/%3E%3Cpath d='M8 7c.6 1.4 1.4 1.6 1.4 3A1.4 1.4 0 0 1 6.6 10c0-1.2.8-1.4 1.4-3z' fill='%23ffe07a'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="css/style.css">
-<!-- Three r160, vendored rather than fetched from a CDN. This game
-     generates every one of its textures and sprites at start-up and
-     downloads nothing, and a CDN import would have made that untrue for
-     the one file it could least afford: no network, no renderer, blank
-     page. Local, pinned, and it runs off a memory stick. -->
+<!-- Three r160, vendored rather than fetched from a CDN, so the game
+     runs off a memory stick. -->
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.js" } }
 </script>
@@ -31,9 +24,7 @@
 <div id="game"></div>
 
 <!-- The phone's controls. Hidden until the game is being played by
-     touch; touch.js does everything else. The two thumb zones are not
-     elements — the whole layer is one, and which half a finger lands in
-     decides what it does — so all that is here is what can be seen. -->
+     touch; touch.js does everything else. -->
 <div id="touch" hidden>
   <div class="hint hint-move"><span>MOVE</span></div>
   <div class="hint hint-look">DRAG TO LOOK</div>
@@ -47,34 +38,28 @@
 
 <div id="rotate">TURN YOUR PHONE SIDEWAYS FOR THE FULL VIEW</div>
 
+<!-- Loading: the name, a line, and a bar. -->
 <div id="loading">
   <div class="panel">
-    <h1>SELLWRONG</h1>
+    <div class="logo-slot small" id="logo-loading"></div>
     <div id="load-status">STARTING</div>
     <div class="bar"><div id="load-bar"></div></div>
   </div>
 </div>
 
+<!-- The title: the name over the car park, and a way in. The picture
+     behind it is the game itself, standing still. -->
 <div id="title" class="gone">
   <div class="panel">
-    <h1>SELLWRONG</h1>
+    <div class="logo-slot" id="logo-title"></div>
     <p class="tag">EVERY LITTLE HURTS</p>
-    <p class="prompt"><span class="desk-only">CLICK OR PRESS SPACE TO START</span><span class="touch-only">TAP TO START</span></p>
-    <table class="keys desk-only">
-      <tr><td>WASD</td><td>move</td><td>MOUSE</td><td>look</td></tr>
-      <tr><td>LMB / CTRL</td><td>flamethrower</td><td>SHIFT</td><td>run</td></tr>
-      <tr><td>SPACE / F</td><td>open, use</td><td>ESC</td><td>pause</td></tr>
-      <tr><td>[ ]</td><td>chunkiness</td><td>N</td><td>palette on/off</td></tr>
-    </table>
-    <table class="keys touch-only">
-      <tr><td>LEFT THUMB</td><td>move</td><td>RIGHT THUMB</td><td>drag to look</td></tr>
-      <tr><td>HOLD FLAME</td><td>burn</td><td>DRAG IT</td><td>sweep the aisle</td></tr>
-    </table>
-    <p class="brief">Burn 60% of the store, then get back to the car park.<br>
-       Fire spreads on its own. It just spreads faster if you help.</p>
+    <p class="prompt"><span class="desk-only">CLICK TO START</span><span class="touch-only">TAP TO START</span></p>
+    <p class="hint-line desk-only">WASD MOVE &middot; MOUSE LOOK &middot; HOLD LMB TO BURN &middot; ESC PAUSE</p>
+    <p class="hint-line touch-only">LEFT THUMB MOVE &middot; RIGHT THUMB LOOK &middot; HOLD THE FLAME</p>
   </div>
 </div>
 
+<!-- Paused: a short column of small words. -->
 <div id="pause" class="gone">
   <div class="panel menu">
     <h2>PAUSED</h2>
@@ -93,13 +78,13 @@
       <button id="opt-haptic" class="btn tog touch-only" aria-pressed="true">VIBRATION</button>
     </div>
     <div class="row">
-      <button id="opt-detail" class="btn">DETAIL 200P</button>
+      <button id="opt-detail" class="btn">DETAIL 400P</button>
       <button id="opt-full" class="btn" hidden>FULLSCREEN</button>
     </div>
   </div>
 </div>
 
-<div id="fps"></div>
+<div id="fps" hidden></div>
 
 <script type="module" src="js/main.js"></script>
 </body>

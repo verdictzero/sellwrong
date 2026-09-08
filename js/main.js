@@ -1,14 +1,17 @@
 /* =====================================================================
-   SELLWRONG — boot
+   GROCERY STORE SIMULATOR — boot
    =====================================================================
 
-   Bake the art, build the shop, wire it up, and hand the frame loop over
-   to Game.
+   Bake the art, fetch the few things that are files, build the shop
+   and the wood round it, wire it up, and hand the frame loop over to
+   Game.
 
-   Nothing is downloaded. Every texture and every sprite in the game is
-   generated in this process, at start-up, in about half a second, which
-   is why there is a loading bar at all and why it only ever says four
-   things.
+   Almost nothing is downloaded. Every texture and sprite of the STORE
+   is generated in this process, at start-up, in about half a second.
+   What does arrive as files is what was made elsewhere: the staff, the
+   trees and their burn maps, the sky, and the gun — and if any of
+   those fails to arrive the game runs without it rather than not at
+   all, which is why each load is a step of its own with a fallback.
 
    This file also owns THE PAGE AROUND THE GAME: the title, the pause
    menu, which kind of machine this is and what that changes. The rule
@@ -19,7 +22,7 @@
 import * as THREE from 'three';
 import { LofiPipeline } from './lofi.js';
 import { bakeTextures } from './textures.js';
-import { bakeSprites, bakeWeapons } from './sprites.js';
+import { bakeSprites, bakeWeapons, fireFrames } from './sprites.js';
 import { loadDoomSprites, browserDecoder } from './spriteload.js';
 import { buildSellWrong } from './maps/sellwrong.js';
 import { Game } from './game.js';
@@ -28,7 +31,11 @@ import { Audio } from './audio.js';
 import { Input } from './input.js';
 import { TouchControls } from './touch.js';
 import { world } from './material.js';
-import { TICRATE } from './util.js';
+import { atlasTexture } from './particles.js';
+import { bakeEffectAtlases } from './effects.js';
+import { Weapon3D } from './weapon3d.js';
+import { KINDS } from './forest.js';
+import { drawLogo } from './logo.js';
 
 const $ = id => document.getElementById(id);
 const status = (text, pct) => {
@@ -39,29 +46,33 @@ const status = (text, pct) => {
 
 /* How chunky. The vertical resolution of the internal buffer — width
    follows the window's shape, so a wider monitor shows more store rather
-   than the same store stretched. */
-const DETAIL = [120, 150, 200, 240, 300, 400];
+   than the same store stretched. 400 is the default: twice what it was,
+   at the user's request, and still very much a buffer you can see the
+   pixels of. */
+const DETAIL = [120, 150, 200, 240, 300, 400, 480, 600];
+const DEFAULT_DETAIL = 5;
 
 /* ---- what the player has chosen, remembered ------------------------
    Look speed, inversion, handedness, vibration, chunkiness. Kept in
    localStorage, which may be absent or refused, in which case the game
-   simply does not remember and nothing else changes. */
+   simply does not remember and nothing else changes. The version is
+   bumped when a default changes, so a saved setting from before does
+   not quietly keep the old default alive. */
 const PREF_KEY = 'sellwrong.prefs';
-const DEFAULT_PREFS = { sens: 1, invert: false, lefty: false, haptics: true, detail: 2 };
+const PREF_VERSION = 2;
+const DEFAULT_PREFS = { v: PREF_VERSION, sens: 1, invert: false, lefty: false, haptics: true, detail: DEFAULT_DETAIL };
 function loadPrefs() {
-  try { return { ...DEFAULT_PREFS, ...JSON.parse(localStorage.getItem(PREF_KEY) || '{}') }; }
-  catch (e) { return { ...DEFAULT_PREFS }; }
+  try {
+    const saved = JSON.parse(localStorage.getItem(PREF_KEY) || '{}');
+    if (saved.v !== PREF_VERSION) { delete saved.detail; saved.v = PREF_VERSION; }
+    return { ...DEFAULT_PREFS, ...saved };
+  } catch (e) { return { ...DEFAULT_PREFS }; }
 }
 function savePrefs(p) {
   try { localStorage.setItem(PREF_KEY, JSON.stringify(p)); } catch (e) { /* not remembered, that is all */ }
 }
 
-/* ---- fullscreen, where the browser allows it -----------------------
-   A phone game lives in fullscreen: the browser's bars are a fifth of
-   the screen and its edge gestures are a hazard next to a stick. Asked
-   for on the start tap, and asked for landscape once in — both refused
-   on iPhone, where "add to home screen" is the way to get it, and a
-   refusal is not an error. */
+/* ---- fullscreen, where the browser allows it ----------------------- */
 const fullscreenAllowed = () => !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
 const inFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
 function enterFullscreen() {
@@ -79,10 +90,45 @@ function exitFullscreen() {
   try { const p = ex.call(document); if (p && p.catch) p.catch(() => {}); } catch (e) { /* nothing to leave */ }
 }
 
+/* ---- files ------------------------------------------------------- */
+function loadImage(url) {
+  return new Promise((resolve, reject) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = () => reject(new Error('could not load ' + url));
+    im.src = url;
+  });
+}
+
+/** The wood's pictures: every kind of plant with its burn map, and the
+ *  two grounds. All or nothing — a forest with one kind of tree missing
+ *  is a forest with holes in it. */
+async function loadForestArt() {
+  const sprites = {};
+  await Promise.all(KINDS.map(async k => {
+    const [albedo, burn] = await Promise.all([loadImage(`assets/forest/${k.name}.png`), loadImage(`assets/forest/${k.name}_burn.png`)]);
+    sprites[k.name] = { albedo, burn };
+  }));
+  const [ground, groundBurnt] = await Promise.all([loadImage('assets/forest/ground.png'), loadImage('assets/forest/ground_burnt.png')]);
+  return { sprites, ground, groundBurnt };
+}
+
+/* ---- the title ---------------------------------------------------- */
+function placeLogo(slot) {
+  const c = drawLogo().toCanvas();
+  c.className = 'logo';
+  c.setAttribute('role', 'img');
+  c.setAttribute('aria-label', 'Grocery Store Simulator');
+  $(slot).appendChild(c);
+}
+
 async function boot() {
   const prefs = loadPrefs();
   let detailIndex = Math.max(0, Math.min(DETAIL.length - 1, prefs.detail | 0));
   let started = false;
+
+  placeLogo('logo-loading');
+  placeLogo('logo-title');
 
   const container = $('game');
   const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false, powerPreference: 'high-performance' });
@@ -93,37 +139,34 @@ async function boot() {
   renderer.domElement.id = 'view';
 
   const scene = new THREE.Scene();
-  /* Sky sectors draw nothing, so what shows through is this. A night
-     that is not quite black, so a silhouette against it still reads. */
   scene.background = new THREE.Color(0x0a0c14);
 
-  const camera = new THREE.PerspectiveCamera(72, 1.6, 4, 6000);
+  /* Far enough to see across the wood: the forest floor runs sixteen
+     thousand units before the sky's own dark ground takes over. */
+  const camera = new THREE.PerspectiveCamera(72, 1.6, 4, 16000);
 
   /* yield to the browser between steps so the loading bar can move */
   const breathe = () => new Promise(r => setTimeout(r, 0));
 
+  /* The files start arriving now, behind the baking. */
+  const forestArtP = loadForestArt().catch(e => { console.warn('no forest art:', e.message); return null; });
+  const skyP = loadImage('assets/sky/night.png').catch(e => { console.warn('no sky:', e.message); return null; });
+
   status('BAKING TEXTURES', 0.05); await breathe();
   const textures = bakeTextures();
 
-  status('BAKING SPRITES', 0.35); await breathe();
+  status('BAKING SPRITES', 0.30); await breathe();
   const sprites = bakeSprites();
   const weapons = bakeWeapons();
+  /* the flame the gun makes, as an atlas the particles and the muzzle share */
+  const flameAtlas = { texture: atlasTexture(fireFrames(24, 32, 8, 19, { taper: 0.7 })), frames: 8 };
+  const fxAtlases = bakeEffectAtlases();
 
-  /* THE STAFF ARE THE ONE THING NOT DRAWN BY THIS PROGRAM. They are
-     Freedoom's player sprite with a smiley face over the visor and a
-     SellWrong apron on, and they are LOADED rather than baked — the
-     apron is still being iterated on and files you can re-export beat a
-     wall of base64 you have to re-generate.
-
-     Both monsters come out of the same pictures: the Associate is the
-     standing set and the Stocker is the crouching one, which is the same
-     employee bent over a pallet, and is exactly the difference the two
-     of them were always meant to have.
-
-     If the art is not there this quietly does nothing and the game runs
-     on the figures in sprites.js, which is why those are still built
-     above rather than deleted. */
-  status('THE STAFF', 0.55); await breathe();
+  /* THE STAFF ARE NOT DRAWN BY THIS PROGRAM. They are Freedoom's player
+     sprite with a smiley face over the visor and a SellWrong apron on,
+     LOADED rather than baked. If the art is not there this quietly does
+     nothing and the game runs on the figures in sprites.js. */
+  status('THE STAFF', 0.45); await breathe();
   const employee = browserDecoder('assets/sprites/employee');
   const loaded = (await Promise.all([
     loadDoomSprites(sprites, { sprite: 'PLAY', as: 'ASSO', decode: employee }),
@@ -131,17 +174,32 @@ async function boot() {
   ])).reduce((a, b) => a + b, 0);
   if (loaded) console.log(`staff: ${loaded} frames of real art`);
 
-  status('BUILDING SELLWRONG', 0.70); await breathe();
+  status('THE WOOD', 0.55);
+  const forestArt = await forestArtP;
+  status('THE SKY', 0.62);
+  const skyImage = await skyP;
+
+  status('BUILDING SELLWRONG', 0.68); await breathe();
   const level = buildSellWrong();
 
-  status('OPENING', 0.90); await breathe();
+  status('THE FLAMETHROWER', 0.78);
   const hud = new Hud(null);
   const audio = new Audio();
   const input = new Input(renderer.domElement);
-  const game = new Game({ level, scene, camera, textures, sprites, hud, audio, input });
+  const game = new Game({ level, scene, camera, textures, sprites, hud, audio, input, sky: skyImage, flameAtlas, fxAtlases });
   hud.game = game;
   const touch = new TouchControls(input, { root: $('touch'), prefs, onPause: () => pause(true) });
 
+  const weapon3d = new Weapon3D({ aspect: 1.6 });
+  await weapon3d.load('assets/models/flamethrower.glb', flameAtlas);
+  game.weapon3d = weapon3d.ready ? weapon3d : null;
+  hud.showWeaponSprite = !weapon3d.ready;
+
+  status('PLANTING THE WOOD', 0.88); await breathe();
+  if (forestArt) game.forest.build(scene, forestArt);
+  console.log(`wood: ${game.forest.treeCount} trees, ${game.forest.plantCount} plants`);
+
+  status('OPENING', 0.95); await breathe();
   const pipeline = new LofiPipeline(renderer, { height: DETAIL[detailIndex], dither: 1.0, snap: 1.0 });
 
   function resize() {
@@ -150,10 +208,11 @@ async function boot() {
     const r = pipeline.resize(w, h);
     camera.aspect = r.width / r.height;
     camera.updateProjectionMatrix();
+    weapon3d.setAspect(camera.aspect);
     hud.resize(r.width, r.height);
-    /* how tall the status bar is on the glass, for the controls to keep
-       above: 32 of the buffer's rows, however many rows there are */
-    $('touch').style.setProperty('--bar', ((32 / r.height) * h).toFixed(1) + 'px');
+    /* nothing is drawn along the bottom of the picture any more, so the
+       controls sit on the edge */
+    $('touch').style.setProperty('--bar', '0px');
   }
   addEventListener('resize', resize);
   resize();
@@ -171,9 +230,7 @@ async function boot() {
   loading.classList.add('gone');
   title.classList.remove('gone');
 
-  /* ---- which kind of machine this is, right now --------------------
-     Stamped on <html> so the page can show the right legend, and the
-     controls only exist while a game is being played by touch. */
+  /* ---- which kind of machine this is, right now -------------------- */
   function applyMode(mode) {
     document.documentElement.classList.toggle('touch', mode === 'touch');
     touch.setEnabled(started && mode === 'touch' && game.state === 'play');
@@ -212,10 +269,7 @@ async function boot() {
   document.addEventListener('fullscreenchange', syncMenu);
   document.addEventListener('webkitfullscreenchange', syncMenu);
 
-  /* ---- pause ---------------------------------------------------------
-     One switch, in the game; the menu, the key and the button on the
-     phone all throw it. Losing the mouse throws it too, because the
-     alternative is a game running unattended behind a browser dialog. */
+  /* ---- pause --------------------------------------------------------- */
   function pause(on) {
     if (!started || game.state !== 'play') return;
     game.setPaused(on);
@@ -223,7 +277,6 @@ async function boot() {
   game.onPauseChange = on => {
     pauseEl.classList.toggle('gone', !on);
     $('touch').classList.toggle('paused', on);
-    /* a menu you cannot point at is not a menu: let go of the mouse */
     if (on) { touch.releaseAll(); input.exitLock(); syncMenu(); }
   };
   $('btn-resume').addEventListener('click', () => {
@@ -231,7 +284,6 @@ async function boot() {
     audio.resume();
     if (input.mode === 'desktop') input.requestLock();
   });
-  /* restarting throws the night away, so it asks once */
   const restartBtn = $('btn-restart');
   let restartArmed = 0;
   restartBtn.addEventListener('click', () => {
@@ -252,33 +304,28 @@ async function boot() {
       navigator.vibrate(Math.min(60, 12 + amount * 2));
   };
 
-  /* dead or out: the controls go, and after a moment's grace — so the
-     thumb that was still firing does not restart the night — any touch
-     or click goes again */
   game.onStateChange = () => {
     touch.setEnabled(false);
     setTimeout(() => addEventListener('pointerdown', () => location.reload(), { once: true }), 1500);
   };
 
-  /* ---- start ----------------------------------------------------- */
+  /* ---- start ------------------------------------------------------- */
   function start() {
     if (started) return;
     started = true;
+    game.idle = false;
     title.classList.add('gone');
     audio.resume();
     audio.startAmbience();
     if (input.mode === 'touch') { enterFullscreen(); touch.setEnabled(true); }
     else input.requestLock();
-    /* Space starts the game and Space is also Use, so without this the
-       first thing that ever happens is NOTHING TO USE. */
     input.keys.clear();
-    game.message('SELLWRONG SUPERSTORE');
-    game.message('BURN ' + game.burnTarget + '% AND GET OUT');
+    game.message('BURN ' + game.burnTarget + '% OF THE STORE. GET OUT.');
   }
   title.addEventListener('click', start);
+  let debug = false;
   addEventListener('keydown', e => {
     if (!started && (e.code === 'Space' || e.code === 'Enter')) { start(); return; }
-    /* dead, and asked to try again */
     if (started && game.state !== 'play' && e.code === 'Space') location.reload();
     if (e.code === 'BracketLeft') setDetail(Math.max(0, detailIndex - 1));
     if (e.code === 'BracketRight') setDetail(Math.min(DETAIL.length - 1, detailIndex + 1));
@@ -286,6 +333,7 @@ async function boot() {
       const u = pipeline.material.uniforms.uSnap;
       u.value = u.value > 0.5 ? 0 : 1;
     }
+    if (e.code === 'Backquote') { debug = !debug; $('fps').hidden = !debug; }
   });
   renderer.domElement.addEventListener('mousedown', () => { if (!started) start(); else audio.resume(); });
 
@@ -300,30 +348,40 @@ async function boot() {
   }
 
   /* ---- the loop ---------------------------------------------------- */
+  const overlays = [
+    { scene: weapon3d.scene, camera: weapon3d.camera, visible: false },
+    { scene: hud.scene, camera: hud.camera, visible: false },
+  ];
   let last = performance.now();
   let fpsAccum = 0, fpsFrames = 0;
+  game.idle = true;
   function frame(now) {
     requestAnimationFrame(frame);
     const dt = Math.min(0.25, (now - last) / 1000);
     last = now;
 
     if (started) game.update(dt);
-    game.render();
-    hud.update(game.player, weapons);
-    pipeline.render(scene, camera, hud.scene, hud.camera);
+    game.render(now);
+    const p = game.player;
+    if (started) weapon3d.update(p, p.firing, game.tics, dt);
+    hud.update(p, weapons);
+    overlays[0].visible = started && weapon3d.ready && !p.dead;
+    overlays[1].visible = started;
+    pipeline.render(scene, camera, overlays);
 
     fpsAccum += dt; fpsFrames++;
     if (fpsAccum > 0.5) {
       const el = $('fps');
-      if (el) el.textContent = `${Math.round(fpsFrames / fpsAccum)} FPS  ${pipeline.width}x${pipeline.height}  ` +
-        `${game.actors.length} things  ${game.fire.burningCells} alight`;
+      if (el && debug) el.textContent = `${Math.round(fpsFrames / fpsAccum)} FPS  ${pipeline.width}x${pipeline.height}  ` +
+        `${game.actors.length} things  ${game.fire.burningCells} alight  ${game.forest.burningCells} wood  ` +
+        `${game.flame.liveCount + game.fx.liveCount} particles`;
       fpsAccum = 0; fpsFrames = 0;
     }
   }
   requestAnimationFrame(frame);
 
   /* let the console poke at it */
-  window.SELLWRONG = { game, pipeline, renderer, scene, camera, textures, sprites, world, level, input, touch };
+  window.SELLWRONG = { game, pipeline, renderer, scene, camera, textures, sprites, world, level, input, touch, weapon3d };
 }
 
 boot().catch(e => {

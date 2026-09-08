@@ -1,7 +1,7 @@
 {
-  "name": "SellWrong",
-  "short_name": "SellWrong",
-  "description": "Burn down the supermarket. A lo-fi Doom that runs in the browser and downloads nothing.",
+  "name": "Grocery Store Simulator",
+  "short_name": "Grocery Sim",
+  "description": "Burn down a supermarket at night. Then the forest.",
   "start_url": "./",
   "scope": "./",
   "display": "fullscreen",

@@ -33,6 +33,9 @@ import { assignLineTextures } from './level.js';
 import { createSpriteMaterial } from './material.js';
 import { buildSlideDoors } from './slidedoor.js';
 import { buildSky, followSky } from './sky.js';
+import { Forest } from './forest.js';
+import { FlameStream } from './flame.js';
+import { Effects } from './effects.js';
 
 const THING_TO_ACTOR = {
   ASSOCIATE: 'ASSOCIATE', STOCKER: 'STOCKER',
@@ -48,7 +51,7 @@ const LAMP_RANGE = 340;
 const LAMP_GAIN = 0.30;
 
 export class Game {
-  constructor({ level, scene, camera, textures, sprites, hud, audio, input }) {
+  constructor({ level, scene, camera, textures, sprites, hud, audio, input, sky, flameAtlas, fxAtlases }) {
     this.level = level;
     this.scene = scene;
     this.camera = camera;
@@ -81,9 +84,23 @@ export class Game {
     this.relight();
     this.geo.rebuildStatic();          // with the lamps' light in it
     this.slideDoors = buildSlideDoors(this);
-    this.sky = buildSky(textures);
-    scene.add(this.sky);
+    /* the sky is a picture that arrives from outside; without one (the
+       smoke test) there is simply no sky, and nothing else minds */
+    this.sky = sky ? buildSky(sky) : null;
+    if (this.sky) scene.add(this.sky);
     this.fire = new FireSystem(this);
+
+    /* The wood round the outside, the flame out of the gun, and what
+       rises off anything burning. All three simulate without a renderer;
+       they only draw once handed the pictures to draw with. */
+    this.forest = new Forest(level);
+    this.flame = new FlameStream(this, flameAtlas || null);
+    this.fx = new Effects(this, fxAtlases || null);
+    if (flameAtlas) this.flame.attach(scene);
+    if (fxAtlases) this.fx.attach(scene);
+    this.weapon3d = null;
+    this.idle = false;                 // the title: the world stands still and the eye wanders
+    this._nozzle = { x: 0, y: 0, z: 0 };
 
     /* the flame the player is holding, and everything else that needs a
        quad but is not an actor */
@@ -92,6 +109,21 @@ export class Game {
   }
 
   get burnPercent() { return this.fire ? this.fire.burnFraction * 100 : 0; }
+  get forestPercent() { return this.forest ? this.forest.burnFraction * 100 : 0; }
+
+  /** Where the flame is born: the end of the gun as drawn, if there is
+   *  one, else a point low and right of the eye — which is where the
+   *  drawn one is anyway. Game coordinates. */
+  nozzle() {
+    const o = this._nozzle;
+    if (this.weapon3d && this.weapon3d.nozzleWorld(this.camera, o)) return o;
+    const p = this.player;
+    const c = Math.cos(p.angle), s = Math.sin(p.angle);
+    o.x = p.x + c * 18 + s * 9;
+    o.y = p.y + s * 18 - c * 9;
+    o.z = p.viewZ - 9;
+    return o;
+  }
 
   /* ------------------------------------------------------------------
      Populating
@@ -276,6 +308,9 @@ export class Game {
     this.ticDoors();
     for (let i = 0; i < this.slideDoors.length; i++) this.slideDoors[i].tic();
     this.fire.tic();
+    this.forest.tic();
+    this.flame.tic();
+    this.fx.tic();
     this.applyChar();
     this.hud.ticMessages();
 
@@ -361,7 +396,7 @@ export class Game {
 
   win() {
     this.state = 'won';
-    this.setBigMessage(`SELLWRONG IS CLOSED\n${Math.round(this.burnPercent)}% BURNED  ${this.player.kills} STAFF\n${this.retryPrompt}`, 100000);
+    this.setBigMessage(`SELLWRONG IS CLOSED\n${Math.round(this.burnPercent)}% OF THE STORE  ${Math.round(this.forestPercent)}% OF THE WOOD  ${this.player.kills} STAFF\n${this.retryPrompt}`, 100000);
     this.onStateChange?.(this.state);
   }
 
@@ -633,11 +668,25 @@ export class Game {
   /* ------------------------------------------------------------------
      Drawing
      ------------------------------------------------------------------ */
-  render() {
+  render(now = 0) {
     const p = this.player;
-    this.camera.position.set(p.x, p.viewZ, -p.y);
-    followSky(this.sky, this.camera);
-    this.camera.rotation.set(p.pitch, p.angle - Math.PI / 2, 0, 'YXZ');
+    let yaw = p.angle, pitch = p.pitch, ex = p.x, ey = p.y, ez = p.viewZ;
+    if (this.idle) {
+      /* THE TITLE. Nothing moves — the world is not being stepped — but
+         the eye does, a little, the way a person standing still is never
+         quite still. Sines at rates that never line up, so it does not
+         repeat, and small enough that it reads as breathing rather than
+         as a camera move. */
+      const t = now * 0.001;
+      yaw   += 0.030 * Math.sin(t * 0.23) + 0.016 * Math.sin(t * 0.61 + 1.3) + 0.007 * Math.sin(t * 1.37 + 0.4);
+      pitch += 0.014 * Math.sin(t * 0.31 + 2.1) + 0.006 * Math.sin(t * 0.83 + 0.7);
+      ex += 3.0 * Math.sin(t * 0.19 + 0.5); ey += 2.4 * Math.cos(t * 0.27);
+      ez += 1.4 * Math.sin(t * 0.47 + 1.1);
+    }
+    this.camera.position.set(ex, ez, -ey);
+    if (this.sky) followSky(this.sky, this.camera);
+    this.camera.rotation.set(pitch, yaw - Math.PI / 2, 0, 'YXZ');
+    this.camera.updateMatrixWorld(true);
 
     /* Every billboard in the scene is spun to the same yaw — they face
        the camera PLANE, not the camera point, which is what stops
@@ -646,6 +695,9 @@ export class Game {
 
     for (const a of this.actors) a.render(p.x, p.y, billboardRot);
     this.fire.render(p.x, p.y, billboardRot);
+    this.forest.render(p.x, p.y, billboardRot, this.tics / TICRATE + now * 0.0002);
+    this.flame.render(billboardRot);
+    this.fx.render(billboardRot);
     this.renderProjectiles(billboardRot);
 
     /* the red mist of being nearly dead */

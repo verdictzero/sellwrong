@@ -37,6 +37,12 @@
 import { PLAYER_RADIUS, PLAYER_HEIGHT, PLAYER_EYE, MAX_STEP, TICRATE,
          angleNorm, clamp, pRandom, pRandomSpread, dist2 } from './util.js';
 
+/* FOR NOW: the player cannot be hurt and the tank never empties. Both
+   are one flag here rather than a hundred missing checks, so switching
+   them back on is switching them back on. */
+export const INVULNERABLE = true;
+export const INFINITE_FUEL = true;
+
 const FRICTION   = 0.90625;
 const WALK_FWD   = 25 / 32,  RUN_FWD  = 50 / 32;
 const WALK_SIDE  = 24 / 32,  RUN_SIDE = 40 / 32;
@@ -62,10 +68,10 @@ export const WEAPONS = {
     slot: 1, name: 'FLAMER', sprite: 'FLMG',
     ready: 'A', fire: ['B', 'C'], fireTics: [2, 2],
     ammo: 'fuel', ammoPerShot: 1, autofire: true,
-    /* 400 units of reach and a 45-degree cone. An aisle is 160 across
-       and 600 long, so one sweep from the end of it lights most of one
-       side — which is exactly the feeling being aimed for. */
-    range: 400, arc: 0.78,
+    /* A STREAM, not a cone: every tic the trigger is down, js/flame.js
+       sends a few particles out of the nozzle and they fly, drop, and
+       light whatever they land on. The reach is theirs to decide. */
+    stream: true,
     damage: () => (pRandom() % 9) + 8,
     sound: 'flame',
   },
@@ -116,6 +122,7 @@ export class Player {
     this.refire = false;
 
     this.bob = 0; this.bobPhase = 0;
+    this.lookRate = 0; this.pitchRate = 0;     // how fast the view is turning, smoothed, for the gun to lag
     this.viewZ = this.z + PLAYER_EYE;
     this.damageFlash = 0;
     this.pickupFlash = 0;
@@ -146,6 +153,8 @@ export class Player {
     this.angle -= input.look.x;
     this.angle = angleNorm(this.angle);
     this.pitch = clamp(this.pitch - input.look.y, -MAX_PITCH, MAX_PITCH);
+    this.lookRate += (input.look.x - this.lookRate) * 0.3;
+    this.pitchRate += (input.look.y - this.pitchRate) * 0.3;
   }
 
   move(input) {
@@ -164,13 +173,22 @@ export class Player {
     if (Math.abs(this.momy) < STOP_SPEED) this.momy = 0;
 
     const lv = this.game.level;
-    const [nx, ny] = lv.slideMove(this.x, this.y, this.momx, this.momy,
-                                  this.radius, this.z, this.height, false);
+    let [nx, ny] = lv.slideMove(this.x, this.y, this.momx, this.momy,
+                                this.radius, this.z, this.height, false);
+    /* Trees stop you too, and you slide round them the way you slide
+       along a wall: the whole move, then each axis alone. */
+    const forest = this.game.forest;
+    if (forest && forest.blocks(nx, ny, this.radius)) {
+      if (!forest.blocks(nx, this.y, this.radius)) ny = this.y;
+      else if (!forest.blocks(this.x, ny, this.radius)) nx = this.x;
+      else { nx = this.x; ny = this.y; }
+    }
     /* Bumping into a monster stops you the same way a wall does — and
        being able to shove past them would make every corridor free. */
     const blocked = this.thingInWay(nx, ny);
     if (!blocked) { this.x = nx; this.y = ny; }
     else { this.momx *= 0.2; this.momy *= 0.2; }
+    forest?.clampInside(this);
 
     const sec = lv.sectorAt(this.x, this.y, this.sector);
     if (sec) {
@@ -214,8 +232,8 @@ export class Player {
   get def() { return WEAPONS[this.weapon]; }
   get firing() { return this.fireIndex >= 0; }
 
-  ammoFor(w) { const d = WEAPONS[w]; return d.ammo ? this.ammo[d.ammo] : Infinity; }
-  hasAmmo(w) { const d = WEAPONS[w]; return !d.ammo || this.ammo[d.ammo] >= (d.ammoPerShot || 1); }
+  ammoFor(w) { const d = WEAPONS[w]; return d.ammo && !(INFINITE_FUEL && d.ammo === 'fuel') ? this.ammo[d.ammo] : Infinity; }
+  hasAmmo(w) { const d = WEAPONS[w]; return !d.ammo || (INFINITE_FUEL && d.ammo === 'fuel') || this.ammo[d.ammo] >= (d.ammoPerShot || 1); }
 
   selectSlot(n) {
     for (const [k, d] of Object.entries(WEAPONS))
@@ -233,8 +251,10 @@ export class Player {
     if (input.weaponCycle) this.cycleWeapon(input.weaponCycle > 0 ? 1 : -1);
 
     if (this.firing) {
-      if (--this.fireTics > 0) return;
       const d = this.def;
+      /* a stream pours every tic the trigger is down, not once a frame */
+      if (d.stream) this.flameTic(d);
+      if (--this.fireTics > 0) return;
       /* the frame we are ABOUT to leave is the one that does the damage */
       this.fireIndex++;
       if (this.fireIndex === d.hitAt) this.meleeSwing(d);
@@ -246,7 +266,6 @@ export class Player {
         return;
       }
       this.fireTics = d.fire ? d.fireTics[Math.min(this.fireIndex, d.fireTics.length - 1)] : 4;
-      if (d.autofire) this.flameTic(d);
       return;
     }
 
@@ -265,11 +284,10 @@ export class Player {
 
   startFire() {
     const d = this.def;
-    if (d.ammo) this.ammo[d.ammo] -= d.ammoPerShot || 1;
+    if (d.ammo && !(INFINITE_FUEL && d.ammo === 'fuel')) this.ammo[d.ammo] -= d.ammoPerShot || 1;
     this.fireIndex = 0;
     this.fireTics = d.fireTics[0];
     this.game.sound?.play(d.sound, this);
-    if (d.autofire) this.flameTic(d);
     /* Being shot at wakes the store up, and so does setting fire to it. */
     this.game.noise(this, d.autofire ? 900 : 700);
   }
@@ -284,30 +302,13 @@ export class Player {
     this.game.spawnPuff(a.x, a.y, a.z + a.height * 0.6);
   }
 
-  /** The flamer: a cone of ignition, which is a different thing from a
-   *  cone of damage and the reason this weapon is interesting. The cone
-   *  is walked in rings, and each ring stops at the first wall it meets,
-   *  so the flame goes round corners no better than you can see round
-   *  them. */
+  /** The flamer: one tic of stream out of the nozzle. Where the nozzle
+   *  is on screen is the gun's business (js/weapon3d.js), and where the
+   *  flame goes after that is js/flame.js's. */
   flameTic(d) {
-    const step = 32;
-    for (let r = 24; r <= d.range; r += step) {
-      const spread = (r / d.range) * d.arc * 0.5;
-      for (let k = -2; k <= 2; k++) {
-        const a = this.angle + k * spread * 0.5;
-        const fx = this.x + Math.cos(a) * r;
-        const fy = this.y + Math.sin(a) * r;
-        /* Stop at the first wall — a flamethrower that reaches through
-           the frozen aisle into the stockroom is not a weapon, it is a
-           cheat code. */
-        if (this.game.level.rayHitWall(this.x, this.y, this.viewZ - 12, fx, fy, this.viewZ - 12)) break;
-        this.game.fire.ignite(fx, fy, 150 - (r / d.range) * 40, 26);
-      }
-    }
-    for (const a of this.game.actorsInCone(this, d.range, d.arc, true)) {
-      a.damage(d.damage(), this, { fire: true });
-      if (a.flammable) a.ignite(300);
-    }
+    const g = this.game;
+    if (!g.flame) return;
+    g.flame.fire(g.nozzle(), this.angle, this.pitch);
   }
 
   throwBottle() {
@@ -324,6 +325,7 @@ export class Player {
      ------------------------------------------------------------------ */
   damage(amount, source, opts = {}) {
     if (this.dead) return;
+    if (INVULNERABLE) return;
     if (this.armour > 0) {
       const soak = Math.min(this.armour, Math.floor(amount / 3));
       this.armour -= soak; amount -= soak;

@@ -25,6 +25,13 @@
    climbs and the far end of every aisle goes grey, which is both the
    atmosphere and an honest gameplay signal: when you can no longer see
    the checkouts from Aisle 6, it is time to leave.
+
+   THE SHADING IS EXPORTED AS GLSL, not only as materials. The forest,
+   the particles and the flame all draw with their own vertex paths —
+   instanced, animated, burning — but every one of them has to sit in
+   the same light as the walls or it reads as a sticker on the picture.
+   So the lighting is two GLSL strings any shader can splice in, and the
+   three materials below are only the plain ways of using them.
    ===================================================================== */
 
 import * as THREE from 'three';
@@ -59,6 +66,74 @@ export const world = {
   fireLight:      { value: 0.0 },
   fireLightColor: { value: new THREE.Color(1.0, 0.55, 0.18) },
 };
+
+/* The uniform declarations every lit fragment shader needs, matching
+   `worldUniforms()` below one for one. */
+export const WORLD_UNIFORMS_GLSL = /* glsl */`
+uniform float globalLight;
+uniform float lightFalloff;
+uniform float minLight;
+uniform vec3  fogColor;
+uniform float fogNear;
+uniform float fogFar;
+uniform float fogDensity;
+uniform vec3  tint;
+uniform vec3  fireLightPos;
+uniform float fireLightRange;
+uniform float fireLight;
+uniform vec3  fireLightColor;
+`;
+
+/* The two halves of the lighting, as functions.
+
+   worldBand: a surface's own light, diminished by distance and snapped
+   to Doom's 32 steps. `sky` is how much of the light arrives from the
+   sky rather than a fitting (stretches the falloff, lifts its floor);
+   `fullbright` short-circuits the lot for things that are their own
+   light.
+
+   worldShade: the banded light applied to a colour, then the fire glow
+   on top of the banding, then the smoke. */
+export const WORLD_SHADE_GLSL = /* glsl */`
+float worldBand(float lightIn, float depth, float sky, float fullbright) {
+  /* Distance diminishing. Linear in depth, because Doom's was too, and
+     because an inverse-square falloff in a corridor lit by nothing in
+     particular just looks broken.
+
+     Under the sky the same curve is stretched and its floor lifted, so
+     the far end of the car park stays a car park. */
+  float fall = lightFalloff * mix(1.0, 3.4, sky);
+  float mn   = min(0.85, minLight + 0.32 * sky);
+  float dim = 1.0 - clamp(depth / fall, 0.0, 1.0);
+  float l = lightIn * mix(mn, 1.0, dim) * globalLight;
+
+  /* THE STEP. 32 levels, same as Doom's 32 colormaps. Everything above is
+     continuous maths; this is the line that makes it look right. */
+  l = floor(l * 32.0 + 0.5) * (1.0 / 32.0);
+  return mix(l, 1.0, fullbright);
+}
+
+vec3 worldShade(vec3 albedo, float l, float depth, vec3 world, float fullbright) {
+  vec3 c = albedo * l * tint;
+
+  /* Firelight, added on top of the banded light rather than folded into
+     it — a smooth glow crossing the steps is what a real light in a
+     stepped-lighting room looks like. Falls off as the square of the
+     distance and is clamped, so standing in it does not blow out to
+     white. */
+  if (fireLight > 0.0) {
+    float fd = distance(world, fireLightPos);
+    float fa = clamp(1.0 - fd / fireLightRange, 0.0, 1.0);
+    fa *= fa;
+    c += albedo * fireLightColor * (fa * fireLight * (1.0 - fullbright * 0.7));
+  }
+
+  /* Smoke. Multiplied by fogDensity so a store that is not yet on fire has
+     no haze at all rather than a permanent grey wash. */
+  float f = clamp((depth - fogNear) / max(1.0, fogFar - fogNear), 0.0, 1.0) * fogDensity;
+  return mix(c, fogColor * max(l, 0.35), f);
+}
+`;
 
 const COMMON_VERT = /* glsl */`
 varying vec2  vUv;
@@ -127,18 +202,7 @@ const COMMON_FRAG = /* glsl */`
 uniform sampler2D map;
 uniform float alphaTest;
 uniform float fullbright;      // 1.0 = ignore distance and sector light entirely
-uniform float globalLight;
-uniform float lightFalloff;
-uniform float minLight;
-uniform vec3  fogColor;
-uniform float fogNear;
-uniform float fogFar;
-uniform float fogDensity;
-uniform vec3  tint;
-uniform vec3  fireLightPos;
-uniform float fireLightRange;
-uniform float fireLight;
-uniform vec3  fireLightColor;
+${WORLD_UNIFORMS_GLSL}
 
 varying vec2  vUv;
 varying float vLight;
@@ -146,55 +210,19 @@ varying float vDepth;
 varying vec3  vWorld;
 varying float vSky;
 
+${WORLD_SHADE_GLSL}
+
 void main() {
   vec4 t = texture2D(map, vUv);
   if (t.a < alphaTest) discard;
-
-  /* Distance diminishing. Linear in depth, because Doom's was too, and
-     because an inverse-square falloff in a corridor lit by nothing in
-     particular just looks broken.
-
-     Under the sky the same curve is stretched and its floor lifted, so
-     the far end of the car park stays a car park. See the sky
-     attribute above. */
-  float fall = lightFalloff * mix(1.0, 3.4, vSky);
-  float mn   = min(0.85, minLight + 0.32 * vSky);
-  float dim = 1.0 - clamp(vDepth / fall, 0.0, 1.0);
-  float l = vLight * mix(mn, 1.0, dim) * globalLight;
-
-  /* THE STEP. 32 levels, same as Doom's 32 colormaps. Everything above is
-     continuous maths; this is the line that makes it look right. */
-  l = floor(l * 32.0 + 0.5) * (1.0 / 32.0);
-
-  l = mix(l, 1.0, fullbright);
-  vec3 c = t.rgb * l * tint;
-
-  /* Firelight, added on top of the banded light rather than folded into
-     it — a smooth glow crossing the steps is what a real light in a
-     stepped-lighting room looks like. Falls off as the square of the
-     distance and is clamped, so standing in it does not blow out to
-     white. */
-  if (fireLight > 0.0) {
-    float fd = distance(vWorld, fireLightPos);
-    float fa = clamp(1.0 - fd / fireLightRange, 0.0, 1.0);
-    fa *= fa;
-    c += t.rgb * fireLightColor * (fa * fireLight * (1.0 - fullbright * 0.7));
-  }
-
-  /* Smoke. Multiplied by fogDensity so a store that is not yet on fire has
-     no haze at all rather than a permanent grey wash. */
-  float f = clamp((vDepth - fogNear) / max(1.0, fogFar - fogNear), 0.0, 1.0) * fogDensity;
-  c = mix(c, fogColor * max(l, 0.35), f);
-
-  gl_FragColor = vec4(c, t.a);
+  float l = worldBand(vLight, vDepth, vSky, fullbright);
+  gl_FragColor = vec4(worldShade(t.rgb, l, vDepth, vWorld, fullbright), t.a);
 }
 `;
 
-function baseUniforms(texture, opts) {
+/** The shared uniform objects, for a shader that splices the GLSL above. */
+export function worldUniforms() {
   return {
-    map:          { value: texture },
-    alphaTest:    { value: opts.alphaTest ?? 0.0 },
-    fullbright:   { value: opts.fullbright ? 1.0 : 0.0 },
     globalLight:  world.globalLight,
     lightFalloff: world.lightFalloff,
     minLight:     world.minLight,
@@ -207,6 +235,15 @@ function baseUniforms(texture, opts) {
     fogFar:       world.fogFar,
     fogDensity:   world.fogDensity,
     tint:         world.tint,
+  };
+}
+
+function baseUniforms(texture, opts) {
+  return {
+    map:          { value: texture },
+    alphaTest:    { value: opts.alphaTest ?? 0.0 },
+    fullbright:   { value: opts.fullbright ? 1.0 : 0.0 },
+    ...worldUniforms(),
   };
 }
 

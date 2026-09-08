@@ -1,2 +1,3 @@
 # a local run of tools/build-site.sh; CI builds its own
 public/
+node_modules

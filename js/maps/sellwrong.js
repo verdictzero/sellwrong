@@ -620,6 +620,49 @@ export function buildSellWrong() {
     }));
   }
 
+  /* =================================================================
+     THE WOOD
+
+     Everything past the kerb of the car park and the back wall of the
+     parade is forest, for nine thousand units in every direction. As
+     far as the MAP is concerned it is eight big outdoor rectangles
+     that abut the lot and each other, so every edge between them is an
+     opening and you can walk out of the car park and keep walking. No
+     floor is drawn for them — js/forest.js draws a floor that chars —
+     and they carry a `forest` flag so the store's fuel grid stops at
+     their edge and leaves the fire in the wood to the wood.
+
+     THE SHAPE IS A RING WITH THE PARADE CUT OUT: strips along all four
+     sides of the lot, two flanks running back beside the wings, two
+     pockets behind the wings beside the anchor, and a strip behind the
+     lot. Every one of them stops a WALL short of a building, which is
+     what makes the building's outside walls exist — a one-sided line
+     is drawn from whichever side has a sector on it, and out here that
+     side is the wood. */
+  const FOREST_REACH = 9000;
+  const forestRects = [];
+  const wood = name => ({
+    floor: FLOOR_OUT, ceil: CEIL_SKY, light: 0.52, outdoor: true, sky: 1,
+    floorTex: 'NONE', ceilTex: 'SKY', wallTex: 'STORWALL', upperTex: 'STORWALL', lowerTex: 'KERB',
+    fuel: FUEL.none, forest: true, name,
+  });
+  const woodRect = (x0, y0, x1, y1, name) => {
+    rm.add(x0, y0, x1, y1, wood(name));
+    forestRects.push({ x0, y0, x1, y1 });
+  };
+  const MALL_Y1 = UNIT_Y1 + WALL;              // behind the in-line units
+  const BACK_Y = ANCHOR_Y1 + WALL;             // behind the anchor
+  const OX0 = LOT_X0 - FOREST_REACH, OX1 = LOT_X1 + FOREST_REACH;
+  const OY0 = LOT_Y0 - FOREST_REACH, OY1 = BACK_Y + FOREST_REACH;
+  woodRect(OX0, OY0, OX1, LOT_Y0, 'wood, the road side');
+  woodRect(OX0, LOT_Y0, LOT_X0, OY1, 'wood, west');
+  woodRect(LOT_X1, LOT_Y0, OX1, OY1, 'wood, east');
+  woodRect(LOT_X0, CANOPY_Y, PARADE_X0 - 2 * WALL, MALL_Y1, 'wood, west flank');
+  woodRect(PARADE_X1 + 2 * WALL, CANOPY_Y, LOT_X1, MALL_Y1, 'wood, east flank');
+  woodRect(LOT_X0, MALL_Y1, ANCHOR_X0 - WALL, BACK_Y, 'wood, behind the west wing');
+  woodRect(ANCHOR_X1 + WALL, MALL_Y1, LOT_X1, BACK_Y, 'wood, behind the east wing');
+  woodRect(LOT_X0, BACK_Y, LOT_X1, OY1, 'wood, behind the store');
+
   rm.build();
 
   /* -----------------------------------------------------------------
@@ -832,5 +875,9 @@ export function buildSellWrong() {
      out into the lot, past the fire lane. */
   level.escapeY = FIRELANE_Y - 40;
   level.title = 'SELLWRONG — SUPERSTORE';
+  /* the wood, for js/forest.js: where it is, and the hole in it */
+  level.forestRects = forestRects;
+  level.forestBounds = [OX0, OY0, OX1, OY1];
+  level.clearing = level.fireBounds;
   return level;
 }

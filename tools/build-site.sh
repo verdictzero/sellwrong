@@ -30,9 +30,11 @@ cp index.html "$OUT/"
 cp manifest.webmanifest icon.png "$OUT/"
 cp -r css js vendor "$OUT/"
 
-# The staff are the one thing loaded at run time rather than generated,
-# so the frames go and the originals they were painted over do not.
+# The staff are loaded at run time rather than generated, so the frames
+# go and the originals they were painted over do not. So are the wood,
+# the sky and the gun: art that came from outside and stays as files.
 cp -r assets/sprites/employee "$OUT/assets/sprites/"
+cp -r assets/forest assets/sky assets/models "$OUT/assets/"
 
 printf 'built %s: ' "$OUT"
 find "$OUT" -type f | wc -l | tr -d ' '

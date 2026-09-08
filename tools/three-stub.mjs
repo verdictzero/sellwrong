@@ -28,6 +28,8 @@ export class Object3D extends Group {}
 export class Mesh extends Stub { constructor(g, m) { super(); this.geometry = g; this.material = m; this.position = new Vector3(); this.scale = new Vector3(1, 1, 1); this.rotation = new Vector3(); } }
 export class BufferGeometry { setAttribute() {} computeBoundingSphere() {} dispose() {} translate() { return this; } }
 export class PlaneGeometry extends BufferGeometry {}
+export class SphereGeometry extends BufferGeometry {}
+export class Texture extends Stub { constructor(img) { super(); this.image = img; this.isTexture = true; } }
 export class CylinderGeometry extends BufferGeometry {}
 export class Float32BufferAttribute { constructor(a, n) { this.array = a; this.itemSize = n; } }
 export class BufferAttribute extends Float32BufferAttribute {}

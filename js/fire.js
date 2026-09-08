@@ -148,7 +148,7 @@ export class FireSystem {
   constructor(game) {
     this.game = game;
     const lv = game.level;
-    const [minx, miny, maxx, maxy] = lv.bounds;
+    const [minx, miny, maxx, maxy] = lv.fireBounds || lv.bounds;
     this.originX = Math.floor(minx / CELL) * CELL - CELL;
     this.originY = Math.floor(miny / CELL) * CELL - CELL;
     this.cols = Math.ceil((maxx - this.originX) / CELL) + 2;
@@ -424,7 +424,11 @@ export class FireSystem {
    *  itself in the middle of whatever is burning nearest the player. */
   _updateAtmosphere() {
     const burn = this.burnFraction;
-    world.fogDensity.value = Math.min(0.92, burn * 2.4);
+    /* The wood adds its smoke too, but a forest is big and its fraction
+       stays small: what you see of a forest fire is the smoke standing
+       over the trees (js/effects.js), not a haze over everything. */
+    const wood = this.game.forest ? this.game.forest.burnFraction : 0;
+    world.fogDensity.value = Math.min(0.92, burn * 2.4 + wood * 0.9);
     world.fogColor.value.setRGB(0.16 + burn * 0.12, 0.14 + burn * 0.07, 0.13);
 
     /* A gutted store lit only by embers is, accurately, almost pitch
@@ -451,12 +455,18 @@ export class FireSystem {
       const w = h / 255;
       sx += x * w; sy += y * w; sw += w; near++;
     }
+    /* The one light is shared: what is burning in the wood nearby and
+       the flame leaving the gun pull it toward themselves too. */
+    const acc = { sx: sx * step, sy: sy * step, sw: sw * step, n: near };
+    this.game.forest?.glowInto(acc, p.x, p.y);
+    this.game.flame?.glowInto(acc);
+    sx = acc.sx; sy = acc.sy; sw = acc.sw;
     if (sw > 0.01) {
       world.fireLightPos.value.set(sx / sw, this.game.level.sectorAt(sx / sw, sy / sw)?.floor + 48 || 48, sy / sw);
       /* flicker, keyed to the tic so it is the same for everything */
       const flick = 0.86 + 0.14 * Math.sin(this.tics * 0.7) * Math.cos(this.tics * 0.31);
-      world.fireLight.value = Math.min(1.5, Math.sqrt(sw * step) * 0.30) * flick;
-      world.fireLightRange.value = 380 + Math.min(700, sw * step * 26);
+      world.fireLight.value = Math.min(1.5, Math.sqrt(sw) * 0.30) * flick;
+      world.fireLightRange.value = 380 + Math.min(700, sw * 26);
     } else {
       world.fireLight.value *= 0.86;
     }

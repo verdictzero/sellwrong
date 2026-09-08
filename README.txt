@@ -1,16 +1,20 @@
-SELLWRONG
-=========
+GROCERY STORE SIMULATOR
+=======================
 
-A Doom-style shooter in which you invade a supermarket and burn it down.
+A Doom-style game in which you walk into a supermarket at night with a
+flamethrower and burn it down. Then the forest it stands in.
 
-SellWrong is the anchor of a strip mall — one long shed cut into tenancies,
-with the big one in the middle paying most of the rent and six small ones
-either side hanging on. Two of those you can walk into. All of them burn.
+The store is SellWrong, the anchor of a strip mall — one long shed cut
+into tenancies, with the big one in the middle paying most of the rent
+and six small ones either side hanging on. Two of those you can walk
+into. All of them burn. Round the whole parade, for nine thousand units
+in every direction, is a wood of fifty thousand firs and bushes, and
+that burns too.
 
-Open index.html in a browser. No install, no build step, no network. Every
-texture, every sprite, every sound and the whole level are generated in the
-page at start-up, in about half a second. The only file it loads is a
-vendored copy of three.js sitting next to it.
+Open index.html in a browser. No install, no build step. Every texture,
+every sprite, every sound and the whole level are generated in the page
+at start-up, in about half a second. What it loads is what was made
+somewhere else: the staff, the trees, the sky, and the gun.
 
   .gitlab-ci.yml        test, then publish to GitLab Pages
   .github/workflows/    the same two jobs, for GitHub Pages
@@ -20,10 +24,16 @@ vendored copy of three.js sitting next to it.
   icon.png              and what it draws there — node tools/bake-icons.mjs
   vendor/three.module.js  three r160, local so the game runs off a memory stick
   js/                   the game
-  art/                  the logo and the weapon, as PNGs
+  art/                  the logo and the old sprite weapon, as PNGs
   assets/sprites/       the staff: Freedoom's player, aproned
+  assets/forest/        the wood: ten plants with their burn maps, two grounds
+  assets/sky/night.png  the night, baked from a Polyhaven panorama
+  assets/models/        the flamethrower, prepared from the user's .glb
   tools/bake-art.mjs    node tools/bake-art.mjs — turns art/ into source
   tools/build_employee.sh  re-paints the apron and the face onto the sprites
+  tools/prep-forest.sh  copies the wood's art over from the golf project
+  tools/bake-sky.mjs    the sky: 8k panorama to 1024 palette pixels
+  tools/prep-model.mjs  strips the marker spheres out of a .glb, keeps their positions
   tools/build-site.sh   assembles public/ — what actually gets published
   tools/bake-icons.mjs  the home-screen icon, out of the game's own fire
   tools/smoke-test.mjs  node tools/smoke-test.mjs — no install, no browser
@@ -44,7 +54,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         219 checks, no install and no browser
+  the smoke test         257 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -65,22 +75,27 @@ You start at the mouth of the car park at night, under the pylon sign. The
 parade is in front of you, the automatic doors open when you get near them,
 and the night crew are still inside.
 
-Burn 60% of it, then get back out past the fire lane into the lot.
+Burn 60% of it, then get back out past the fire lane into the lot. Or
+walk off the edge of the car park into the wood and see what a forest
+does when you put a match to it.
 
   WASD          move            MOUSE     look
   SHIFT         run             LMB/CTRL  flamethrower
   SPACE / F     open, use       ESC       pause
   [  ]          chunkiness      N         palette on / off
+  `             the frame-rate readout, off by default
 
 Gamepad works. Mouse look needs a click to grab the pointer. On a phone
 none of that applies and the next section is the one that does.
 
-One weapon, and it is a flamethrower: four metres of reach, a
-forty-five degree cone, and a tank that holds five hundred with cans
-scattered over the whole store. A boxcutter and a molotov are written,
-tested and switched off — a boxcutter is a more interesting weapon than
-a flamethrower in almost every game ever made, and in this one it is the
-wrong verb.
+One weapon, and it is a flamethrower: a STREAM. Hold the trigger and a
+few particles a tic leave the nozzle at a thousand units a second, slow
+in the air, drop, and set fire to whatever they land on — a shelf four
+hundred units off, the floor a dozen metres out if you fire level, a
+tree. It goes where you point it and no further, which is the whole
+feel of the thing. FOR NOW the player cannot be hurt and the tank never
+empties; both are one flag each at the top of js/player.js. A boxcutter
+and a molotov are written, tested and switched off.
 
 
 ON A PHONE
@@ -219,6 +234,84 @@ The ambient light also lifts as the store goes — partly embers, partly the
 roof no longer being entirely there. A gutted store lit only by embers is
 accurately almost pitch black, and you still have to find the way out of
 it, so accuracy loses that one on purpose.
+
+
+THE WOOD
+--------
+
+Everything past the kerb of the car park is forest: a flat plain of firs,
+bushes, ferns and grass, fifty-four thousand plants, nine thousand units
+deep on every side. It is eight big outdoor rectangles in the map, so you
+walk out of the car park and keep walking, and it is one module,
+js/forest.js, that keeps two things deliberately apart.
+
+THE SIMULATION is a grid of 64-unit cells with a byte of state each —
+green, alight, gone — and a list of the ones burning. Every cell is fuel
+(the floor is dry litter) and a cell with a tree in it burns longer and
+throws fire further; there is a wind from the west and the fire moves
+with it three times as readily as against it. It percolates: one match,
+left alone, has a twentieth of the wood gone in about four minutes and a
+quarter in eight, downwind faster than across. The smoke test runs that
+match in Node and holds it to those numbers.
+
+THE DRAWING is instanced billboards: every plant is one entry in a buffer
+and each kind of plant is one draw call, so the whole wood is ten calls
+and a ground plane. The plants and their fire are the golf project's
+(github.com/verdictzero/golf): each sprite comes with a BURN MAP baked
+from its own pixels — where the coals sit, how black it ends, WHEN each
+texel catches, how leafy it is — and one number per plant swept across
+that map takes it from green through scorched, alight and charred with
+no second set of art. The shader is that mechanism ported. The ground
+under it crossfades forest floor into charred dirt from one texel of
+burn per cell, so a burnt patch is black to the ground and stays black.
+
+WHAT COMES OFF IT. Embers and smoke are two pools of a few hundred
+instanced quads, in two draw calls, and they spawn from a handful of
+burning cells sampled near the player each tic — never from every
+burning cell, because with a forest alight that is thousands and a
+spark two thousand units off is a pixel. The flame out of the gun is
+the same class with the fire's own frames on it.
+
+
+THE GUN IN YOUR HANDS
+---------------------
+
+The flamethrower is the user's model, loaded from assets/models/ by a
+loader that reads exactly what Blender exported and nothing more
+(js/glb.js), and drawn in its own little scene in front of the world —
+low and hard right, the body off the bottom of the frame, the barrel
+coming in across the lower right quarter. It is drawn into the same
+low-res buffer as everything else, so the painted diffuse goes chunky
+with the walls and the palette eats it with the floor.
+
+The model arrived with two marker spheres in it saying where the pilot
+light burns and where the flame comes out. tools/prep-model.mjs takes
+them out of the mesh and writes their positions into the file's own
+extras; the pilot is a small flame sprite parked on one, the muzzle
+flame grows out of the other along the barrel, and the stream that
+flies into the world is born at that same nozzle — projected as a ray
+out of the gun's scene and back into the world's, so it always leaves
+the end of the gun you can see, whatever the two fields of view are.
+The same tool drops the maps an unlit renderer cannot use, which was a
+third of the download.
+
+
+THE SKY AND THE NAME
+--------------------
+
+The sky is a Polyhaven panorama (moonless_golf, CC0), baked by
+tools/bake-sky.mjs to 1024 palette pixels round the horizon, on a sphere
+that follows the camera. Stars survive the 8:1 downsample because a
+block that holds a pixel far brighter than its average is pulled toward
+that pixel — and only then, because doing it everywhere turns a night
+into speckle.
+
+The name is set in the game's own 4x6 face by js/logo.js: GROCERY STORE
+at four times, SIMULATOR at six, the bottom line justified with
+whole-pixel gaps so both lines are exactly one width, and the pair
+sheared per pixel row so they lean together. The title screen is that,
+over the car park standing still, with the eye wandering very slightly
+so the picture breathes.
 
 
 HOW IT IS BUILT
@@ -402,9 +495,9 @@ banding instead of fighting it.
 THE ART
 -------
 
-There is not an image file in this project. Two reasons, and the second is
-the real one: it loads instantly, and everything comes out of the same box
-of parts so it all matches. The light comes from the top left in every
+The store's own art is not an image file anywhere. Two reasons, and the
+second is the real one: it loads instantly, and everything comes out of
+the same box of parts so it all matches. The light comes from the top left in every
 texture and every sprite — a rule, not a parameter, because a rivet lit from
 the left next to a panel lit from the right is the loudest way to make a
 wall look wrong.
@@ -502,7 +595,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-219 checks. Every one of them earns its place by having caught something
+257 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -529,6 +622,16 @@ that had already reached a screenshot:
     fuse that takes the fire along the parade to the neighbours. The
     check is now the invariant the map is actually written against: a
     sector with no fuel never burns, whatever else is true about it
+  a flame that stopped dead a hand's width from the nozzle, because the
+    tree hit test took a fir's whole sprite width as solid down to the
+    ground — every particle "hit a tree" beside the player and the splash
+    embers spawned in the camera's face as thirty-pixel squares. The
+    check now fires beside a trunk and demands the stream pass it
+  a forest fire whose pace was a guess; the check runs one match for
+    forty minutes of game time and holds it between a flash and an
+    afternoon
+  a logo whose two lines could be a pixel off flush; the check holds the
+    justified gap to a whole number and both lines to one width
 
 
 WHAT IS NOT DONE
@@ -554,4 +657,16 @@ WHAT IS NOT DONE
     events through Chromium, both thumbs at once — and not yet on glass;
     the look speed, the dead zone and the button sizes want a real thumb
     on them, which is what the LOOK SPEED slider is for in the meantime
+  the wood, the gun and the particles were proven in software-rendered
+    Chromium, which draws them correctly and slowly; fifty-four thousand
+    instances at 400 rows is well inside any real GPU, but nobody has
+    yet watched it on one
+  the player cannot be hurt and the tank never empties — asked for, for
+    now, and one flag each in js/player.js
+  the staff do not follow you into the wood, and the wood's fire and the
+    store's do not cross the car park to each other; the flamethrower is
+    the bridge
+  the trees are 128 and 256 pixels, the sky 1024, the gun's paint 1024:
+    art that came from outside was left as it came, and the 64-pixel rule
+    stands for everything the game draws itself
   no save

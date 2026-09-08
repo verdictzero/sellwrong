@@ -175,6 +175,7 @@ export class Actor {
     const lv = this.game.level;
     const [rx, ry, hit] = lv.slideMove(this.x, this.y, nx - this.x, ny - this.y, this.radius, this.z, this.height, true);
     if (hit || Math.abs(rx - nx) > 0.01 || Math.abs(ry - ny) > 0.01) return false;
+    if (this.game.forest && this.game.forest.blocks(nx, ny, this.radius)) return false;
     /* and nothing solid already standing there */
     for (const o of this.game.actors) {
       if (o === this || o.removed || !o.solid || o.dead) continue;

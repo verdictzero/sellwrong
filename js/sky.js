@@ -5,66 +5,75 @@
    A sky sector in this engine draws nothing and lets the background
    through, which is exactly what Doom did and is fine as long as the
    only thing outdoors is a courtyard. It stopped being fine when the
-   store got a car park six thousand units across: a flat clear colour
-   behind a strip mall does not read as night, it reads as the level
-   having run out.
+   store got a car park six thousand units across, and it stopped being
+   a cylinder when the car park got a forest round it: a strip of
+   painted cloud is a horizon, and a forest at night wants a whole sky —
+   stars overhead, a glow where the town is, nothing at all where there
+   is nothing.
 
-   So the background gets a cylinder, and it is a cylinder for the same
-   reason Doom's was. A sphere needs a projection and a cube needs six
-   textures and a seam policy; a cylinder needs one strip of pixels and
-   turning your head does the right thing for free, because turning your
-   head IS the texture's u coordinate. Pitching up and down slides v,
-   which is wrong in a way nobody has ever noticed in thirty years.
+   So the background is a SPHERE now, wearing a real night: a Polyhaven
+   panorama, baked down to 512 palette pixels round the horizon by
+   tools/bake-sky.mjs so it is made of the same paint as everything else.
+   An equirectangular picture on a sphere needs no projection maths at
+   all — the sphere's own u is longitude and its v is latitude, and
+   turning your head does the right thing for free. Looking up now shows
+   sky rather than the top of a strip, which is the only thing the
+   cylinder could never do.
 
    Two rules and it is convincing:
 
    IT IS AT INFINITY. Every frame it is moved to sit on the camera, so
    walking never gets you nearer to it. That is the whole trick — a sky
-   you can approach is a wall with clouds on it.
+   you can approach is a wall with stars on it.
 
    IT IS NOT LIT. Fullbright, no fog, no distance diminishing, drawn
-   first with depth writes off so everything in the world lands in front
-   of it whatever the far plane is doing.
+   first with depth off so everything in the world lands in front of it
+   whatever the far plane is doing. That includes the far plane cutting
+   the forest floor off at a distance — what shows past that cut is the
+   bottom of the sphere, which is the panorama's own dark ground, and at
+   night that is indistinguishable from more forest.
    ===================================================================== */
 
 import * as THREE from 'three';
-import { createSpriteMaterial } from './material.js';
 
 const RADIUS = 4200;          // inside the camera's far plane, always
-const BOTTOM = -1400, TOP = 3000;
-const REPEATS = 3;            // times the strip goes round the horizon
 
-export function buildSky(bank) {
-  /* Not cloned: NIGHTSKY is on nothing else in the game, so the wrap and
-     repeat settings it needs can just be its own. */
-  const tex = bank.get('NIGHTSKY').texture;
+/**
+ * @param {THREE.Texture|HTMLImageElement} src  the baked equirect, as a
+ *   texture or the image it should be made from
+ */
+export function buildSky(src) {
+  const tex = src.isTexture ? src : new THREE.Texture(src);
+  /* Nearest: the texels are the point. Mipmaps off: there are 512 of
+     them round the whole horizon and a mip would be a blur. */
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false;
   tex.wrapS = THREE.RepeatWrapping;
-  /* Clamped vertically: repeating would put a second horizon overhead. */
   tex.wrapT = THREE.ClampToEdgeWrapping;
-  tex.repeat.set(REPEATS, 1);
+  tex.colorSpace = THREE.SRGBColorSpace;
   tex.needsUpdate = true;
 
-  const g = new THREE.CylinderGeometry(RADIUS, RADIUS, TOP - BOTTOM, 24, 1, true);
-  g.translate(0, (TOP + BOTTOM) / 2, 0);
-
-  const mat = createSpriteMaterial(tex, { fullbright: true });
-  mat.side = THREE.BackSide;
-  mat.depthWrite = false;
-  mat.depthTest = false;
-  /* The sprite material's billboard vertex path would spin this to face
-     the camera, which for a cylinder you are standing inside is not a
-     thing that means anything. Take the plain path instead. */
-  delete mat.defines.BILLBOARD;
-  mat.needsUpdate = true;
-
+  /* The sphere's u runs the wrong way round when seen from inside —
+     SphereGeometry is authored to be looked at from outside — so the
+     picture is mirrored. A negative x scale on the mesh puts west back
+     on the left, which matters for a photograph of somewhere real even
+     when nobody could say which way the golf course faced. */
+  const g = new THREE.SphereGeometry(RADIUS, 48, 24);
+  const mat = new THREE.MeshBasicMaterial({
+    map: tex, side: THREE.BackSide, depthWrite: false, depthTest: false, fog: false, toneMapped: false,
+  });
   const mesh = new THREE.Mesh(g, mat);
+  mesh.scale.x = -1;
   mesh.frustumCulled = false;
   mesh.renderOrder = -1000;
   mesh.name = 'sky';
   return mesh;
 }
 
-/** Park it on the camera, so it can never be walked towards. */
+/** Park it on the camera, so it can never be walked towards. The eye is
+ *  the horizon: the sphere's equator sits at the camera's own height,
+ *  which is where the horizon of a flat world is. */
 export function followSky(mesh, camera) {
-  mesh.position.set(camera.position.x, 0, camera.position.z);
+  mesh.position.copy(camera.position);
 }

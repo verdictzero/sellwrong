@@ -149,6 +149,10 @@ export class MapBuilder {
          doorway with daylight coming through it. */
       sky: props.sky ?? (props.outdoor ? 1 : 0),
       dynamic: !!props.dynamic,       // a door or lift — geometry rebuilt at runtime
+      /* The wood round the outside. Walkable and outdoors like the lot,
+         but no floor is drawn for it (js/forest.js draws its own, one
+         that can char) and the store's fuel grid stops at its edge. */
+      forest: !!props.forest,
       special: props.special ?? null,
       bbox: null,
     };
@@ -269,6 +273,17 @@ export class Level {
 
     this._buildBounds();
     this._buildBlockmap();
+
+    /* Where the STORE is, for the systems that only care about the
+       store: the fuel grid is laid over this and not over nine thousand
+       units of wood on every side, which has its own fire. */
+    let fb = [Infinity, Infinity, -Infinity, -Infinity], any = false;
+    for (const s of this.sectors) {
+      if (s.forest) continue;
+      any = true;
+      fb = [Math.min(fb[0], s.bbox[0]), Math.min(fb[1], s.bbox[1]), Math.max(fb[2], s.bbox[2]), Math.max(fb[3], s.bbox[3])];
+    }
+    this.fireBounds = any ? fb : this.bounds;
   }
 
   /** Redo every wall's texture after some sectors changed their skins. */

@@ -16,12 +16,15 @@
    rather than the same store stretched, which is how a widescreen port
    ought to behave.
 
-   WHY THE HUD GOES IN THE SAME BUFFER. If the status bar and the weapon
-   in your hands are drawn at native resolution over a chunky world, the
-   whole illusion collapses — you get a crisp modern overlay sitting on a
-   retro photograph. So the overlay scene renders into the same low-res
-   target, at the same chunk size, and the palette snap eats all of it
-   together.
+   WHY THE HUD AND THE GUN GO IN THE SAME BUFFER. If the numbers and the
+   weapon in your hands are drawn at native resolution over a chunky
+   world, the whole illusion collapses — you get a crisp modern overlay
+   sitting on a retro photograph. So every overlay scene renders into the
+   same low-res target, at the same chunk size, and the palette snap eats
+   all of it together. There can be several: the flamethrower is a 3D
+   model with its own perspective camera, the readout is a flat quad
+   with an orthographic one, and they draw in order, each clearing depth
+   so it lands over whatever came before.
 
    THE ORDER MATTERS. Dither, then snap. Dithering after the snap would
    just put colours back that the palette does not contain. Dither first
@@ -111,7 +114,7 @@ export class LofiPipeline {
   constructor(renderer, opts = {}) {
     this.renderer = renderer;
     this.height = opts.height ?? 200;
-    this.maxWidth = opts.maxWidth ?? 1024;
+    this.maxWidth = opts.maxWidth ?? 2048;
 
     this.target = new THREE.WebGLRenderTarget(320, this.height, {
       minFilter: THREE.NearestFilter,
@@ -188,19 +191,26 @@ export class LofiPipeline {
   get aspect() { return this.width / this.height; }
 
   /**
-   * World first, then the overlay on top of it, both into the low-res
-   * buffer; then the whole buffer through the palette and onto the screen.
-   * The overlay clears depth but not colour, so the weapon draws over the
-   * world without the world's depth values fighting it.
+   * World first, then each overlay on top of it in turn, all into the
+   * low-res buffer; then the whole buffer through the palette and onto
+   * the screen. Every overlay clears depth but not colour, so the gun
+   * draws over the world and the readout over the gun without anybody's
+   * depth values fighting.
+   *
+   * `overlays` is a list of { scene, camera }; a null entry, or one
+   * marked visible: false, is skipped — which is how a scene that has
+   * not finished loading stays out of the frame without a branch at the
+   * call site.
    */
-  render(scene, camera, overlayScene, overlayCamera) {
+  render(scene, camera, overlays = []) {
     const r = this.renderer;
     r.setRenderTarget(this.target);
     r.clear(true, true, true);
     r.render(scene, camera);
-    if (overlayScene && overlayCamera) {
+    for (const o of overlays) {
+      if (!o || !o.scene || !o.camera || o.visible === false) continue;
       r.clearDepth();
-      r.render(overlayScene, overlayCamera);
+      r.render(o.scene, o.camera);
     }
     r.setRenderTarget(null);
     r.clear(true, true, true);

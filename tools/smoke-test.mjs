@@ -640,6 +640,140 @@ section('touch');
   check('look speed scales the swipe', Math.abs(t.lookDelta(100, 0, 2).x - 2 * t.lookDelta(100, 0, 1).x) < 1e-12);
 }
 
+/* ---------- the wood ---------- */
+section('the wood');
+{
+  /* The forest simulates without a renderer, which is the point of
+     keeping the simulation and the drawing apart: a spark in a typed
+     array either takes the wood or it does not, and that can be watched
+     for an hour in Node in a second. */
+  const F = await import('../js/forest.js');
+  const forest = new F.Forest(level);
+  note('cells / fuel cells', `${forest.cols}x${forest.rows} / ${forest.fuelCells}`);
+  note('trees / plants', `${forest.treeCount} / ${forest.plantCount}`);
+  check('the wood is huge', forest.fuelCells > 100000, `${forest.fuelCells} cells`);
+  check('and full of trees', forest.treeCount > 20000, `${forest.treeCount}`);
+  const c = level.clearing;
+  let inClearing = 0;
+  for (let i = 0; i < forest.treeCount; i++) {
+    const x = forest.trees.x[i], y = forest.trees.y[i];
+    if (x > c[0] && x < c[2] && y > c[1] && y < c[3]) inClearing++;
+  }
+  check('no tree stands in the car park or the store', inClearing === 0, `${inClearing} did`);
+  check('the store has no forest fuel under it', !forest.fuel[forest.idx(forest.cellX(2000), forest.cellY(1000))]);
+  check('the fuel grid stops at the store', level.fireBounds[3] === 3400 && level.fireBounds[1] === -2496, level.fireBounds.join());
+
+  /* a plant is a trunk to the flame, not a billboard */
+  const fir = F.KINDS[0];
+  check('a fir is narrow at the foot and widest a third of the way up',
+    F.plantRadius(fir, 0.02) < 0.1 && F.plantRadius(fir, 0.3) === 0.5 && F.plantRadius(fir, 0.99) < 0.05);
+  let ti = 0;
+  while (forest.trees.kind[ti] !== 0) ti++;               // a tall fir
+  const tx = forest.trees.x[ti], ty = forest.trees.y[ti], th = fir.h * forest.trees.scale[ti];
+  check('the flame passes beside a trunk it would have hit at canopy width',
+    forest.hitsTree(tx, ty, th * 0.02) && !forest.hitsTree(tx + 40, ty, th * 0.02) && forest.hitsTree(tx + 40, ty, th * 0.3));
+  check('you cannot walk through a trunk', forest.blocks(tx, ty, 16));
+
+  /* one match */
+  const sx = forest.worldX(forest.cellX(c[0] - 800)), sy = forest.worldY(forest.cellY(c[1] - 800));
+  check('a match lights the wood', forest.ignite(sx, sy, 40) > 0);
+  for (let k = 0; k < 90; k++) forest.tic();
+  const acc = { sx: 0, sy: 0, sw: 0, n: 0 };
+  forest.glowInto(acc, sx, sy, 900);
+  const out = [];
+  forest.emitters(sx, sy, 1200, 4, out);
+  check('what is burning near you lights you and throws sparks', acc.n > 0 && out.length > 0, `${acc.n} / ${out.length}`);
+  let tics = 90, t25 = 0, t5 = 0;
+  while (forest.burnFraction < 0.25 && tics < 35 * 60 * 40) {
+    forest.tic(); tics++;
+    if (!t5 && forest.burnFraction >= 0.05) t5 = tics;
+  }
+  t25 = tics;
+  note('5% / 25% of the wood, left alone', `${(t5 / 35 / 60).toFixed(1)} min / ${(t25 / 35 / 60).toFixed(1)} min`);
+  check('the fire takes the wood on its own', forest.burnFraction >= 0.25, `${(forest.burnFraction * 100).toFixed(1)}% after ${tics} tics`);
+  check('but not in a flash', t5 > 35 * 60, `${(t5 / 35).toFixed(0)}s to 5%`);
+  check('nor in an afternoon', t25 < 35 * 60 * 30, `${(t25 / 35 / 60).toFixed(0)} min to 25%`);
+  check('burnt cells stay burnt', forest.state[forest.idx(forest.cellX(sx), forest.cellY(sy))] === 2);
+}
+
+/* ---------- the flame ---------- */
+section('the flame');
+{
+  const FL = await import('../js/flame.js');
+  const reach = FL.streamReach();
+  const drop = FL.streamDrop(28);
+  note('reach / on the floor at', `${reach.toFixed(0)} / ${drop.toFixed(0)} units`);
+  check('the stream reaches across an aisle and a half', reach > 380 && reach < 520, reach.toFixed(0));
+  check('and lands on the floor before it runs out', drop > 200 && drop < reach, drop.toFixed(0));
+  check('the heat stays below the accelerant line', FL.STREAM.heat < 40, `${FL.STREAM.heat}`);
+
+  /* particles: a pool, not an allocator */
+  const P = await import('../js/particles.js');
+  const pool = new P.Particles({ max: 4, frames: 1 });
+  const ids = [pool.spawn({ x: 0, y: 0, z: 0, life: 2 }), pool.spawn({ x: 0, y: 0, z: 0, life: 5 }), pool.spawn({ x: 0, y: 0, z: 0, life: 5 }), pool.spawn({ x: 0, y: 0, z: 0, life: 5 })];
+  check('a full pool refuses politely', pool.spawn({ x: 0, y: 0, z: 0 }) === -1 && ids.every(i => i >= 0));
+  pool.tic(); pool.tic();
+  check('a particle dies when its life runs out', pool.count === 3);
+  check('and its slot is reused', pool.spawn({ x: 0, y: 0, z: 0, life: 9 }) === ids[0]);
+  const s = pool.spawn({ x: 0, y: 0, z: 10, vx: 2, life: 9, drag: 0.5, gravity: -1 });
+  check('the pool is full again', s === -1);
+  let landed = 0;
+  pool.tic((i, nx, ny, nz) => nz < 0 ? (landed++, true) : false);
+  check('a collision hook can stop one', landed === 0 && pool.count === 4);
+
+  /* the stream in the actual game: born at the nozzle, dying on the floor */
+  const { Game } = await import('../js/game.js');
+  const THREE = await import('three');
+  const hudStub = { message() {}, ticMessages() {}, resize() {}, update() {} };
+  const inputStub = { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 }, attack: false, use: false, run: false, sample() {}, sensitivity: 0 };
+  const g = new Game({ level, scene: new THREE.Scene(), camera: {}, textures: tex.bakeTextures(), sprites: spr.bakeSprites(), hud: hudStub, audio: null, input: inputStub });
+  const p = g.player;
+  const o = g.nozzle();
+  check('without a model the flame is born low and right of the eye', o.z < p.viewZ && Math.hypot(o.x - p.x, o.y - p.y) > 10);
+  for (let k = 0; k < 6; k++) { g.flame.fire(o, p.angle, 0); g.flame.tic(); }
+  check('the stream is in the air', g.flame.liveCount >= 12, `${g.flame.liveCount}`);
+  for (let k = 0; k < 40; k++) g.flame.tic();
+  check('and every particle has landed', g.flame.liveCount === 0 && g.flame._hits > 0, `${g.flame.liveCount} live, ${g.flame._hits} hits`);
+  check('the player cannot be hurt for now', (p.damage(50, null), p.health === 100));
+  check('and the tank never empties', p.hasAmmo('FLAMER') && p.ammoFor('FLAMER') === Infinity);
+}
+
+/* ---------- the name ---------- */
+section('the name');
+{
+  const L = await import('../js/logo.js');
+  const lay = L.layoutLogo();
+  note('logo', `${lay.w}x${lay.h}, bottom line gap ${lay.line2.gap}px, leans ${lay.extra}px`);
+  check('both lines are exactly one width', lay.line1.w === lay.line2.w, `${lay.line1.w} vs ${lay.line2.w}`);
+  check('the justified gap is a whole number of pixels', Number.isInteger(lay.line2.gap) && lay.line2.gap > 0, `${lay.line2.gap}`);
+  const pix = L.drawLogo();
+  check('the picture is the layout plus the lean', pix.w === lay.w + 2 + lay.extra && pix.h === lay.h + 2, `${pix.w}x${pix.h}`);
+  /* the lean: the top row starts further right than the bottom row */
+  const first = y => { for (let x = 0; x < pix.w; x++) if (pix.alphaAt(x, y) > 8) return x; return -1; };
+  check('it leans right as a group', first(0) > first(pix.h - 3) + lay.extra - 3, `${first(0)} vs ${first(pix.h - 3)}`);
+}
+
+/* ---------- the gun ---------- */
+section('the gun');
+{
+  const fs = await import('node:fs');
+  const G = await import('../js/glb.js');
+  const buf = fs.readFileSync(new URL('../assets/models/flamethrower.glb', import.meta.url));
+  const { json, bin } = G.parseGLB(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+  const names = json.nodes.map(n => n.name);
+  note('model', `${json.nodes.length} nodes, ${json.images.length} image, ${(buf.length / 1024 / 1024).toFixed(1)} MB`);
+  check('the marker spheres are gone', !names.some(n => /CLAUDE/i.test(n)), names.join());
+  check('the gun and its readout remain', names.includes('flame_thrower') && names.includes('FT_hud'));
+  const a = json.asset.extras?.anchors;
+  check('their positions are kept as anchors', !!a && a.pilot.length === 3 && a.nozzle.length === 3);
+  check('the nozzle is at the end of the barrel, the pilot just under it',
+    a.nozzle[2] > 0.6 && a.pilot[2] > 0.6 && a.pilot[1] < a.nozzle[1]);
+  check('only the diffuse survives', json.images.length === 1 && json.materials.length === 1 && !json.materials[0].normalTexture);
+  const pos = G.readAccessor(json, bin, json.meshes[0].primitives[0].attributes.POSITION);
+  check('the mesh is intact', pos.array.length === 11689 * 3 && pos.itemSize === 3, `${pos.array.length / 3} vertices`);
+  check('every buffer view is used', json.bufferViews.every((bv, i) => json.accessors.some(x => x.bufferView === i) || json.images.some(im => im.bufferView === i)));
+}
+
 /* ---------- verdict ---------- */
 console.log(`\n  ${fail === 0 ? 'PASS' : 'FAIL'}  ${pass} checks passed, ${fail} failed`);
 if (fail) { console.log('\n' + problems.map(p => '    ! ' + p).join('\n')); process.exit(1); }
