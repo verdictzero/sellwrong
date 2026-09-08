@@ -738,21 +738,6 @@ section('the flame');
   check('and the tank never empties', p.hasAmmo('FLAMER') && p.ammoFor('FLAMER') === Infinity);
 }
 
-/* ---------- the name ---------- */
-section('the name');
-{
-  const L = await import('../js/logo.js');
-  const lay = L.layoutLogo();
-  note('logo', `${lay.w}x${lay.h}, bottom line gap ${lay.line2.gap}px, leans ${lay.extra}px`);
-  check('both lines are exactly one width', lay.line1.w === lay.line2.w, `${lay.line1.w} vs ${lay.line2.w}`);
-  check('the justified gap is a whole number of pixels', Number.isInteger(lay.line2.gap) && lay.line2.gap > 0, `${lay.line2.gap}`);
-  const pix = L.drawLogo();
-  check('the picture is the layout plus the lean', pix.w === lay.w + 2 + lay.extra && pix.h === lay.h + 2, `${pix.w}x${pix.h}`);
-  /* the lean: the top row starts further right than the bottom row */
-  const first = y => { for (let x = 0; x < pix.w; x++) if (pix.alphaAt(x, y) > 8) return x; return -1; };
-  check('it leans right as a group', first(0) > first(pix.h - 3) + lay.extra - 3, `${first(0)} vs ${first(pix.h - 3)}`);
-}
-
 /* ---------- the gun ---------- */
 section('the gun');
 {

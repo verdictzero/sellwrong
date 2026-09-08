@@ -29,6 +29,7 @@ somewhere else: the staff, the trees, the sky, and the gun.
   assets/forest/        the wood: ten plants with their burn maps, two grounds
   assets/sky/night.png  the night, baked from a Polyhaven panorama
   assets/models/        the flamethrower, prepared from the user's .glb
+  assets/fonts/         Michroma (SIL OFL), the title face
   tools/bake-art.mjs    node tools/bake-art.mjs — turns art/ into source
   tools/build_employee.sh  re-paints the apron and the face onto the sprites
   tools/prep-forest.sh  copies the wood's art over from the golf project
@@ -54,7 +55,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         257 checks, no install and no browser
+  the smoke test         253 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -306,12 +307,13 @@ block that holds a pixel far brighter than its average is pulled toward
 that pixel — and only then, because doing it everywhere turns a night
 into speckle.
 
-The name is set in the game's own 4x6 face by js/logo.js: GROCERY STORE
-at four times, SIMULATOR at six, the bottom line justified with
-whole-pixel gaps so both lines are exactly one width, and the pair
-sheared per pixel row so they lean together. The title screen is that,
+The name is set in Michroma — the open-licensed cousin of the extended
+square sans the Flight Simulator wordmark uses, bundled in assets/fonts
+so nothing is fetched — as two SVG text lines held to one width by
+textLength, GROCERY STORE small over SIMULATOR large, the pair skewed
+together so they lean as one. The title screen is that and a way in,
 over the car park standing still, with the eye wandering very slightly
-so the picture breathes.
+so the picture breathes. Nothing else on it.
 
 
 HOW IT IS BUILT
@@ -595,7 +597,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-257 checks. Every one of them earns its place by having caught something
+253 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -630,8 +632,6 @@ that had already reached a screenshot:
   a forest fire whose pace was a guess; the check runs one match for
     forty minutes of game time and holds it between a flash and an
     afternoon
-  a logo whose two lines could be a pixel off flush; the check holds the
-    justified gap to a whole number and both lines to one width
 
 
 WHAT IS NOT DONE

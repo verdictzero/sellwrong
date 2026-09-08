@@ -34,7 +34,7 @@ cp -r css js vendor "$OUT/"
 # go and the originals they were painted over do not. So are the wood,
 # the sky and the gun: art that came from outside and stays as files.
 cp -r assets/sprites/employee "$OUT/assets/sprites/"
-cp -r assets/forest assets/sky assets/models "$OUT/assets/"
+cp -r assets/forest assets/sky assets/models assets/fonts "$OUT/assets/"
 
 printf 'built %s: ' "$OUT"
 find "$OUT" -type f | wc -l | tr -d ' '

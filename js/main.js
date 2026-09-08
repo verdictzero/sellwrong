@@ -35,7 +35,6 @@ import { atlasTexture } from './particles.js';
 import { bakeEffectAtlases } from './effects.js';
 import { Weapon3D } from './weapon3d.js';
 import { KINDS } from './forest.js';
-import { drawLogo } from './logo.js';
 
 const $ = id => document.getElementById(id);
 const status = (text, pct) => {
@@ -113,22 +112,10 @@ async function loadForestArt() {
   return { sprites, ground, groundBurnt };
 }
 
-/* ---- the title ---------------------------------------------------- */
-function placeLogo(slot) {
-  const c = drawLogo().toCanvas();
-  c.className = 'logo';
-  c.setAttribute('role', 'img');
-  c.setAttribute('aria-label', 'Grocery Store Simulator');
-  $(slot).appendChild(c);
-}
-
 async function boot() {
   const prefs = loadPrefs();
   let detailIndex = Math.max(0, Math.min(DETAIL.length - 1, prefs.detail | 0));
   let started = false;
-
-  placeLogo('logo-loading');
-  placeLogo('logo-title');
 
   const container = $('game');
   const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false, powerPreference: 'high-performance' });

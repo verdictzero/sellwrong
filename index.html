@@ -41,21 +41,32 @@
 <!-- Loading: the name, a line, and a bar. -->
 <div id="loading">
   <div class="panel">
-    <div class="logo-slot small" id="logo-loading"></div>
+    <div class="logo-slot small">
+    <svg class="logo" viewBox="0 0 700 190" role="img" aria-label="Grocery Store Simulator">
+      <g transform="skewX(-11)">
+        <text class="l1" x="60" y="64" textLength="600" lengthAdjust="spacing">GROCERY STORE</text>
+        <text class="l2" x="60" y="164" textLength="600" lengthAdjust="spacing">SIMULATOR</text>
+      </g>
+    </svg>
+    </div>
     <div id="load-status">STARTING</div>
     <div class="bar"><div id="load-bar"></div></div>
   </div>
 </div>
 
 <!-- The title: the name over the car park, and a way in. The picture
-     behind it is the game itself, standing still. -->
+     behind it is the game itself, standing still. Nothing else. -->
 <div id="title" class="gone">
   <div class="panel">
-    <div class="logo-slot" id="logo-title"></div>
-    <p class="tag">EVERY LITTLE HURTS</p>
+    <div class="logo-slot">
+    <svg class="logo" viewBox="0 0 700 190" role="img" aria-label="Grocery Store Simulator">
+      <g transform="skewX(-11)">
+        <text class="l1" x="60" y="64" textLength="600" lengthAdjust="spacing">GROCERY STORE</text>
+        <text class="l2" x="60" y="164" textLength="600" lengthAdjust="spacing">SIMULATOR</text>
+      </g>
+    </svg>
+    </div>
     <p class="prompt"><span class="desk-only">CLICK TO START</span><span class="touch-only">TAP TO START</span></p>
-    <p class="hint-line desk-only">WASD MOVE &middot; MOUSE LOOK &middot; HOLD LMB TO BURN &middot; ESC PAUSE</p>
-    <p class="hint-line touch-only">LEFT THUMB MOVE &middot; RIGHT THUMB LOOK &middot; HOLD THE FLAME</p>
   </div>
 </div>
 
