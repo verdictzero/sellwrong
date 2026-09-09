@@ -1062,188 +1062,424 @@ section('the crowd');
 
 /* ---------- the gun ---------- */
 /* ---------- the van ---------- */
-section('the van');
+section('the fleet');
 {
-  const { CAR_ATLAS, CAR_VIEWS, CAR_SHAPE } = await import('../js/car-data.js');
+  const { CAR_ATLAS, VEHICLES, VEHICLE_IDS, CIVILIAN } = await import('../js/car-data.js');
   const car = await import('../js/car.js');
+  const veh = await import('../js/vehicles.js');
   const { readPNG } = await import('./png-read.mjs');
   const fs = await import('node:fs');
   const path = await import('node:path');
   const { fileURLToPath } = await import('node:url');
   const root = fileURLToPath(new URL('..', import.meta.url));
 
-  /* THE SHEET IS OVER-DETERMINED and that is the only reason to trust
+  /* --- six sheets, six vehicles ------------------------------------- */
+  note('the fleet', VEHICLE_IDS.map(id => `${id} (${VEHICLES[id].use})`).join(', '));
+  check('every vehicle in the index is in the fleet',
+    VEHICLE_IDS.length === Object.keys(VEHICLES).length &&
+    VEHICLE_IDS.every(id => VEHICLES[id] && VEHICLES[id].id === id));
+  check('and the civilian list is the vehicles a shopper might own',
+    CIVILIAN.length > 0 && CIVILIAN.every(id => VEHICLES[id].use === 'civil') &&
+    VEHICLE_IDS.filter(id => VEHICLES[id].use === 'civil').length === CIVILIAN.length,
+    CIVILIAN.join(', '));
+  check('and there is a riot van and an APC that are not on it',
+    VEHICLE_IDS.some(id => VEHICLES[id].use === 'police') &&
+    VEHICLE_IDS.some(id => VEHICLES[id].use === 'military'));
+
+  /* EACH SHEET IS OVER-DETERMINED and that is the only reason to trust
      it. Three of the four views claim a width — the front, the rear and
      the plan — and if they did not agree, nothing measured off any of
-     them would mean anything. tools/prep-car.mjs records the residual. */
-  note('the three views on the width', `agree to ${(CAR_SHAPE.agree * 100).toFixed(1)}%`);
-  check('the sheet agrees with itself about how wide the vehicle is', CAR_SHAPE.agree < 0.03,
-    `${(CAR_SHAPE.agree * 100).toFixed(1)}%`);
-  const ratio = 1 / CAR_SHAPE.width, tall = CAR_SHAPE.height / CAR_SHAPE.width;
-  note('proportions', `${ratio.toFixed(2)} : 1 : ${tall.toFixed(2)} (length : width : height)`);
-  check('and the proportions are a vehicle', ratio > 1.8 && ratio < 3.2 && tall > 0.8 && tall < 1.5);
-  check('it stands on the ground with its body clear of it',
-    CAR_SHAPE.sill > 0.04 && CAR_SHAPE.sill < 0.2 && CAR_SHAPE.wheels.length === 2);
-  /* the roof line is what the head-on views were anchored on, so the top
-     of the body has to BE it, or the anchoring was against something
-     else — see the pale band this once painted along the nose */
-  const bodyTop = Math.max(...CAR_SHAPE.layers.slice(0, -1).map(l => l.z1));
-  check('the top of the body is the roof line the views were lined up on',
-    Math.abs(bodyTop - CAR_SHAPE.roof) < 0.02, `${bodyTop} vs ${CAR_SHAPE.roof}`);
-  check('and there is something above it, which is the light bar',
-    CAR_SHAPE.height > CAR_SHAPE.roof + 0.01);
+     them would mean anything. tools/prep-car.mjs records the residual;
+     the riot van manages one percent and the pickup, whose side view
+     draws it taller for its length than its own head-on views do, eleven
+     and a half. */
+  const worst = VEHICLE_IDS.reduce((a, b) => VEHICLES[a].shape.agree > VEHICLES[b].shape.agree ? a : b);
+  note('the views on the width', VEHICLE_IDS.map(id =>
+    `${id} ${(VEHICLES[id].shape.agree * 100).toFixed(1)}%`).join(', '));
+  check('every sheet agrees with itself about how wide its vehicle is',
+    VEHICLE_IDS.every(id => VEHICLES[id].shape.agree < 0.14),
+    `worst is ${worst} at ${(VEHICLES[worst].shape.agree * 100).toFixed(1)}%`);
 
-  /* the atlas on disk is the one the numbers were written against */
+  for (const id of VEHICLE_IDS) {
+    const v = VEHICLES[id], s = v.shape;
+    const ratio = 1 / s.width, tall = s.height / s.width;
+    check(`the ${id} has the proportions of a vehicle`,
+      ratio > 1.7 && ratio < 3.2 && tall > 0.6 && tall < 1.5,
+      `${ratio.toFixed(2)} : 1 : ${tall.toFixed(2)} (length : width : height)`);
+    check(`the ${id} stands on the ground with its body clear of it`,
+      s.sill >= 0 && s.sill < 0.2 && s.layers.length >= 3 && s.layers[0].z0 === s.sill);
+    /* a wheel is a wheel and not a slab across the underside — which is
+       what the custom van's bull bar was read as until the tyre stopped
+       being "the longest run at the bottom of the front view" */
+    check(`the ${id}'s tyres are tyres`,
+      s.tyre > 0.06 * s.width && s.tyre < 0.45 * s.width,
+      `${(s.tyre / s.width).toFixed(2)} of the width`);
+    /* the roof line is what the head-on views were anchored on, so the
+       body has to reach it and stop somewhere at or below the top — see
+       the pale band this once painted along the nose */
+    const top = Math.max(...s.layers.map(l => l.z1));
+    check(`the ${id}'s layers reach its full height`, Math.abs(top - s.height) < 0.005,
+      `${top} vs ${s.height}`);
+    check(`and its roof line is inside its own height`,
+      s.roof > 0.6 * s.height && s.roof <= s.height + 1e-9,
+      `${s.roof} of ${s.height}`);
+  }
+  /* four wheels each, except the one on tracks */
+  note('wheels', VEHICLE_IDS.map(id => `${id} ${VEHICLES[id].shape.wheels.length * 2}`).join(', '));
+  check('every wheeled vehicle has four wheels and the tracked one has none',
+    VEHICLE_IDS.every(id => VEHICLES[id].shape.wheels.length === (VEHICLES[id].use === 'military' ? 0 : 2)));
+  /* and nothing parked is longer than the bay it goes in */
+  check('every civilian vehicle fits in a bay', CIVILIAN.every(id => VEHICLES[id].length <= 180),
+    CIVILIAN.map(id => `${id} ${VEHICLES[id].length}`).join(', '));
+
+  /* --- one atlas for the lot ---------------------------------------- */
   const atlasFile = path.join(root, CAR_ATLAS.file);
   check('the atlas is where the data says', fs.existsSync(atlasFile), CAR_ATLAS.file);
+  const allRects = [];
+  for (const id of VEHICLE_IDS)
+    for (const [k, r] of Object.entries(VEHICLES[id].views)) allRects.push({ id, k, ...r });
   if (fs.existsSync(atlasFile)) {
     const img = readPNG(atlasFile);
     check('and it is the size the data says', img.w === CAR_ATLAS.w && img.h === CAR_ATLAS.h,
       `${img.w}x${img.h} against ${CAR_ATLAS.w}x${CAR_ATLAS.h}`);
-    /* NO CHROMA KEY SURVIVES. Every pixel outside the vehicle was filled
+    /* NO CHROMA KEY SURVIVES. Every pixel outside a vehicle was filled
        with the nearest paint, so a face that overhangs the silhouette by
        a pixel lands on the van rather than on a green screen. One green
        pixel anywhere means the fill missed. */
-    let green = 0;
+    let green = 0, tint = 0, clear = 0;
     for (let i = 0; i < img.w * img.h; i++) {
       const r = img.data[i * 4], g = img.data[i * 4 + 1], b = img.data[i * 4 + 2];
       if (g > r + 28 && g > b + 28) green++;
+      if (g > Math.max(r, b)) tint++;
+      if (img.data[i * 4 + 3] !== 255) clear++;
     }
     check('and not one pixel of it is still chroma key', green === 0, `${green} green pixels`);
-    let clear = 0;
-    for (let i = 0; i < img.w * img.h; i++) if (img.data[i * 4 + 3] !== 255) clear++;
+    /* AND NONE OF IT IS EVEN GREENISH. The screen throws green light on
+       what stands in front of it and white paint takes it: the panel van
+       came out six units greener than red or blue everywhere, which
+       reads as white against the green field of the sheet and as a pale
+       green van once it is parked on tarmac. No pixel may be greener
+       than its own strongest other channel. */
+    check('and none of it is so much as tinted green', tint === 0, `${tint} pixels`);
     check('and none of it is transparent, because the boxes are the silhouette', clear === 0);
-    for (const [k, v] of Object.entries(CAR_VIEWS))
-      check(`the ${k} view fits inside the atlas`,
-        v.x >= 0 && v.y >= 0 && v.x + v.w <= CAR_ATLAS.w && v.y + v.h <= CAR_ATLAS.h);
   }
-
-  /* --- the model ---------------------------------------------------- */
-  const L = car.CAR_LENGTH;
-  const g = car.carGeometry({ angle: 0.4 });
-  const tris = g.position.length / 9;
-  note('the van', `${tris} triangles, ${CAR_SHAPE.layers.length} layers and ${CAR_SHAPE.wheels.length * 2} wheels`);
-  check('the model is a handful of boxes, not a mesh', tris > 60 && tris < 400);
-  check('every vertex has a uv, a light and a sky',
-    g.uv.length === g.position.length / 3 * 2 && g.light.length === g.position.length / 3 &&
-    g.sky.length === g.light.length && g.charred.length === g.light.length);
-
-  /* it has to fit in its own bounding box, because the projection maps
-     that box onto the pictures and nothing outside it has any paint */
-  let lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
-  for (let i = 0; i < g.position.length / 3; i++)
-    for (let k = 0; k < 3; k++) {
-      const v = g.position[i * 3 + k];
-      if (v < lo[k]) lo[k] = v; if (v > hi[k]) hi[k] = v;
-    }
-  const near = (a, b) => Math.abs(a - b) < 0.6;
-  check('the van is as long, as wide and as tall as the sheet says',
-    near(hi[0] - lo[0], L) && near(hi[2] - lo[2], car.CAR_WIDTH) && near(hi[1] - lo[1], car.CAR_HEIGHT),
-    `${(hi[0] - lo[0]).toFixed(1)} x ${(hi[2] - lo[2]).toFixed(1)} x ${(hi[1] - lo[1]).toFixed(1)}`);
-  check('and the wheels are on the tarmac', near(lo[1], 0), `${lo[1].toFixed(2)}`);
-
-  /* EVERY UV LANDS IN A VIEW. A stray one is a face reading the gutter
-     between two pictures, or reading another picture entirely, which is
-     how a projection quietly paints the roof onto a wheel. */
-  const rects = Object.entries(CAR_VIEWS).map(([k, r]) => ({ k,
-    u0: r.x / CAR_ATLAS.w, u1: (r.x + r.w) / CAR_ATLAS.w,
-    v0: 1 - (r.y + r.h) / CAR_ATLAS.h, v1: 1 - r.y / CAR_ATLAS.h }));
-  const used = new Set();
-  let stray = 0;
-  for (let i = 0; i < g.uv.length / 2; i++) {
-    const u = g.uv[i * 2], v = g.uv[i * 2 + 1];
-    const r = rects.find(r => u >= r.u0 - 1e-9 && u <= r.u1 + 1e-9 && v >= r.v0 - 1e-9 && v <= r.v1 + 1e-9);
-    if (r) used.add(r.k); else stray++;
-  }
-  check('every uv on the van lands inside one of the four views', stray === 0, `${stray} strays`);
-  check('and all four of them get used', used.size === 4, [...used].join(' '));
-
-  /* EVERY FACE POINTS OUT. The material is single sided, so a box wound
-     inside out is a hole you can see the inside of the van through, and
-     that is the one fault in this file that looks like a rendering bug
-     rather than a modelling one. Step a little way along each triangle's
-     own normal and off the solid: if that lands INSIDE, it is inside
-     out. */
-  const insideSolid = (x, y, z) => {
-    for (let i = 0; i < CAR_SHAPE.layers.length; i++) {
-      const l = CAR_SHAPE.layers[i];
-      const z0 = (i === 0 ? l.z0 : l.z0 - 0.005) * L;
-      if (z < z0 || z > l.z1 * L || Math.abs(y) > l.half * L) continue;
-      for (const [a, b] of l.runs) if (x >= a * L && x <= b * L) return true;
-    }
-    const yOut = CAR_SHAPE.width / 2 * L - 0.005 * L, yIn = yOut - CAR_SHAPE.tyre * L;
-    for (const w of CAR_SHAPE.wheels) {
-      const r = w.r * L, cz = r * Math.cos(Math.PI / 8), ay = Math.abs(y);
-      if (ay < yIn || ay > yOut) continue;
-      let all = true;
-      for (let k = 0; k < 8 && all; k++) {
-        const th = (k + 0.5) * 2 * Math.PI / 8;
-        if ((x - w.x * L) * Math.cos(th) + (z - cz) * Math.sin(th) > r * Math.cos(Math.PI / 8) + 1e-6) all = false;
+  check('all twenty-four views fit inside the atlas', allRects.every(r =>
+    r.x >= 0 && r.y >= 0 && r.x + r.w <= CAR_ATLAS.w && r.y + r.h <= CAR_ATLAS.h),
+    `${allRects.length} views`);
+  /* AND NO TWO OF THEM OVERLAP. With one vehicle in the atlas a packing
+     bug showed up as a vehicle painted with itself; with six it shows up
+     as a hatchback painted with an APC, which is worth a test. */
+  let clash = null;
+  for (let i = 0; i < allRects.length && !clash; i++)
+    for (let j = i + 1; j < allRects.length; j++) {
+      const a = allRects[i], b = allRects[j];
+      if (a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h) {
+        clash = `${a.id}.${a.k} over ${b.id}.${b.k}`; break;
       }
-      if (all) return true;
     }
-    return false;
+  check('and no two of them overlap', !clash, clash || 'none');
+
+  /* --- the models --------------------------------------------------- */
+  const LIP = 0.005;
+  /* Is this point inside the solid the layers and wheels describe? Used
+     to decide which way a triangle faces; see below. */
+  const solidOf = (v) => {
+    const s = v.shape, L = v.length;
+    const flank = Math.min(s.width / 2, s.layers[0].half) * L;
+    return (x, y, z) => {
+      for (let i = 0; i < s.layers.length; i++) {
+        const l = s.layers[i];
+        const z0 = (i === 0 ? (s.wheels.length ? l.z0 : 0) : l.z0 - LIP) * L;
+        if (z < z0 || z > l.z1 * L || Math.abs(y) > l.half * L) continue;
+        for (const [a, b] of l.runs) if (x >= a * L && x <= b * L) return true;
+      }
+      const yOut = flank - LIP * L, yIn = yOut - s.tyre * L;
+      for (const w of s.wheels) {
+        const r = w.r * L, cz = r * Math.cos(Math.PI / 8), ay = Math.abs(y);
+        if (ay < yIn || ay > yOut) continue;
+        /* A wheel is an eight-sided polygon whose CORNERS are at
+           (k + 0.5) steps, so its EDGES — and therefore the normals that
+           bound it — are at whole ones. Testing it with the corner
+           directions instead describes a polygon turned an eighth of a
+           step, and every point just inside a real corner reads as
+           outside it: which is thirty-two triangles per vehicle
+           pronounced inside out that are wound perfectly well. */
+        let all = true;
+        for (let k = 0; k < 8 && all; k++) {
+          const th = k * 2 * Math.PI / 8;
+          if ((x - w.x * L) * Math.cos(th) + (z - cz) * Math.sin(th) > r * Math.cos(Math.PI / 8) + 1e-6) all = false;
+        }
+        if (all) return true;
+      }
+      return false;
+    };
   };
-  const flat = car.carGeometry({ angle: 0 });          // model space, so the solid above is comparable
-  let decided = 0, wrong = 0;
-  for (let t = 0; t < flat.position.length / 3; t += 3) {
-    const p = k => [flat.position[(t + k) * 3], -flat.position[(t + k) * 3 + 2], flat.position[(t + k) * 3 + 1]];
-    const a = p(0), b = p(1), c = p(2);
-    const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
-    let nx = u[1] * v[2] - u[2] * v[1], ny = u[2] * v[0] - u[0] * v[2], nz = u[0] * v[1] - u[1] * v[0];
-    const m = Math.hypot(nx, ny, nz) || 1;
-    nx /= m; ny /= m; nz /= m;
-    const mx = (a[0] + b[0] + c[0]) / 3, my = (a[1] + b[1] + c[1]) / 3, mz = (a[2] + b[2] + c[2]) / 3;
-    const out = insideSolid(mx + nx * 0.35, my + ny * 0.35, mz + nz * 0.35);
-    const inn = insideSolid(mx - nx * 0.35, my - ny * 0.35, mz - nz * 0.35);
-    if (out === inn) continue;
-    decided++; if (out) wrong++;
+
+  let triTotal = 0, strayTotal = 0, wrongTotal = 0, decidedTotal = 0;
+  for (const id of VEHICLE_IDS) {
+    const v = VEHICLES[id], L = v.length;
+    const g = car.carGeometry(v, { angle: 0.4 });
+    const tris = g.position.length / 9;
+    triTotal += tris;
+    check(`the ${id} is a handful of boxes, not a mesh`, tris > 40 && tris < 400, `${tris} triangles`);
+    check(`and every vertex of it has a uv, a light, a sky and a char`,
+      g.uv.length === g.position.length / 3 * 2 && g.light.length === g.position.length / 3 &&
+      g.sky.length === g.light.length && g.charred.length === g.light.length);
+
+    /* it has to fit in its own bounding box, because the projection maps
+       that box onto the pictures and nothing outside it has any paint */
+    let lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
+    for (let i = 0; i < g.position.length / 3; i++)
+      for (let k = 0; k < 3; k++) {
+        const t = g.position[i * 3 + k];
+        if (t < lo[k]) lo[k] = t; if (t > hi[k]) hi[k] = t;
+      }
+    const near = (a, b) => Math.abs(a - b) < 0.8;
+    /* THE WIDTH A MODEL HAS IS THE WIDTH ITS LAYERS DRAW, which is not
+       quite `shape.width`: that is the reconciled average of what three
+       views claim, and it is what SCALES the front view. The layers are
+       what the front view actually draws at each height. On the riot van
+       the two agree to a thousandth; on the hatchback, whose sheet
+       agrees with itself to only five percent, they differ by two and a
+       half — so the box is checked against the drawing and the two
+       numbers are then checked against each other. */
+    const drawn = 2 * Math.max(...v.shape.layers.map(l => l.half)) * L;
+    check(`the ${id} is as long, as wide and as tall as its own layers say`,
+      near(hi[0] - lo[0], L) && near(hi[2] - lo[2], drawn) && near(hi[1] - lo[1], car.carHeight(v)),
+      `${(hi[0] - lo[0]).toFixed(1)} x ${(hi[2] - lo[2]).toFixed(1)} x ${(hi[1] - lo[1]).toFixed(1)}`);
+    check(`and that is the width the three views reconciled to`,
+      Math.abs(drawn - car.carWidth(v)) / car.carWidth(v) < 0.08,
+      `${drawn.toFixed(1)} drawn against ${car.carWidth(v).toFixed(1)} measured`);
+    check(`and it stands on the tarmac`, near(lo[1], 0), `${lo[1].toFixed(2)}`);
+
+    /* EVERY UV LANDS IN ONE OF THIS VEHICLE'S OWN FOUR VIEWS. A stray
+       one is a face reading the gutter between two pictures; a uv in
+       ANOTHER vehicle's rectangle is a hatchback painted with an APC,
+       which is the failure a shared atlas makes possible and a
+       per-vehicle one did not. */
+    const rects = Object.entries(v.views).map(([k, r]) => ({ k,
+      u0: r.x / CAR_ATLAS.w, u1: (r.x + r.w) / CAR_ATLAS.w,
+      v0: 1 - (r.y + r.h) / CAR_ATLAS.h, v1: 1 - r.y / CAR_ATLAS.h }));
+    const used = new Set();
+    let stray = 0;
+    for (let i = 0; i < g.uv.length / 2; i++) {
+      const u = g.uv[i * 2], w = g.uv[i * 2 + 1];
+      const r = rects.find(r => u >= r.u0 - 1e-9 && u <= r.u1 + 1e-9 && w >= r.v0 - 1e-9 && w <= r.v1 + 1e-9);
+      if (r) used.add(r.k); else stray++;
+    }
+    strayTotal += stray;
+    check(`every uv on the ${id} lands inside one of ITS OWN four views`, stray === 0, `${stray} strays`);
+    check(`and all four of them get used`, used.size === 4, [...used].join(' '));
+
+    /* EVERY FACE POINTS OUT. The material is single sided, so a box
+       wound inside out is a hole you can see the inside of the van
+       through, and that is the one fault in this file that looks like a
+       rendering bug rather than a modelling one. Step a little way along
+       each triangle's own normal and off the solid: if that lands
+       INSIDE, it is inside out. */
+    const inside = solidOf(v);
+    const flat = car.carGeometry(v, { angle: 0 });     // model space, so the solid is comparable
+    let decided = 0, wrong = 0;
+    for (let t = 0; t < flat.position.length / 3; t += 3) {
+      const p = k => [flat.position[(t + k) * 3], -flat.position[(t + k) * 3 + 2], flat.position[(t + k) * 3 + 1]];
+      const a = p(0), b = p(1), c = p(2);
+      const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], w = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+      let nx = u[1] * w[2] - u[2] * w[1], ny = u[2] * w[0] - u[0] * w[2], nz = u[0] * w[1] - u[1] * w[0];
+      const m = Math.hypot(nx, ny, nz) || 1;
+      nx /= m; ny /= m; nz /= m;
+      const mx = (a[0] + b[0] + c[0]) / 3, my = (a[1] + b[1] + c[1]) / 3, mz = (a[2] + b[2] + c[2]) / 3;
+      const out = inside(mx + nx * 0.35, my + ny * 0.35, mz + nz * 0.35);
+      const inn = inside(mx - nx * 0.35, my - ny * 0.35, mz - nz * 0.35);
+      if (out === inn) continue;
+      decided++; if (out) wrong++;
+    }
+    decidedTotal += decided; wrongTotal += wrong;
+    check(`and every face of the ${id} that can be decided faces out`,
+      wrong === 0 && decided > 30, `${wrong} inside out of ${decided} decided`);
+
+    /* AND EVERY FACE IS WOUND THE WAY IT SAYS IT IS. The test above can
+       only decide a face with air on one side of it, which leaves every
+       tyre's tread — buried under a wheel arch — unexamined, and all
+       sixty-four of them were inside out for as long as there was one
+       van. This one is exact and covers the lot: the builder records
+       which way it meant each face to point, and the winding has to
+       agree with it. */
+    let flipped = 0;
+    for (let t = 0; t < flat.position.length / 3; t += 3) {
+      const q = k => [flat.position[(t + k) * 3], flat.position[(t + k) * 3 + 1], flat.position[(t + k) * 3 + 2]];
+      const a = q(0), b = q(1), c = q(2);
+      const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], w = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+      const gx = u[1] * w[2] - u[2] * w[1], gy = u[2] * w[0] - u[0] * w[2], gz = u[0] * w[1] - u[1] * w[0];
+      /* the declared normal is in model space; the mesh is (x, z, -y) */
+      const n = [flat.normal[t * 3], flat.normal[t * 3 + 1], flat.normal[t * 3 + 2]];
+      if (gx * n[0] + gy * n[2] + gz * -n[1] <= 0) flipped++;
+    }
+    check(`and every face of the ${id} is wound the way it says it is`,
+      flipped === 0, `${flipped} of ${flat.position.length / 9} flipped`);
+
+    /* LIGHT. Doom's fake contrast, so a box has visible corners in a
+       renderer that does no shading. */
+    const lights = [...new Set(g.light.map(t => +t.toFixed(4)))];
+    check(`the ${id}'s faces are not all the same brightness`, lights.length >= 4, `${lights.length}`);
+    check(`and its roof is the brightest of them and its underside the darkest`,
+      Math.max(...lights) > 0.74 && Math.min(...lights) < 0.74 * 0.5);
   }
-  note('faces on the outside of the van', `${decided} of ${flat.position.length / 9} decide it`);
-  check('and every one of them faces out', wrong === 0 && decided > 40, `${wrong} inside out`);
+  note('the whole fleet', `${triTotal} triangles, ${strayTotal} stray uvs, ${wrongTotal} of ${decidedTotal} faces inside out`);
 
-  /* LIGHT. Doom's fake contrast, so a box has visible corners in a
-     renderer that does no shading: no two faces of a box may come out
-     the same brightness, and the roof and the underside are the two
-     extremes. */
-  const lights = [...new Set(g.light.map(v => +v.toFixed(4)))];
-  note('face brightnesses', lights.length);
-  check('the faces are not all the same brightness', lights.length >= 4);
-  check('the roof is the brightest of them and the underside the darkest',
-    Math.max(...lights) > 0.74 && Math.min(...lights) < 0.74 * 0.5);
+  /* --- a piece torn off one ----------------------------------------- */
+  {
+    const v = VEHICLES.van, cut = { x0: -0.1, x1: 0.02, y0: -0.06, y1: 0.05, z0: 0.2, z1: 0.3 };
+    const c = car.chunkGeometry(v, cut, { angle: 0, light: 0.7, sky: 1, charred: 0.85 });
+    check('a torn-off chunk is one box', c.position.length / 9 === 12);
+    check('and it is charred', c.charred.every(t => t === 0.85));
+    /* it turns about its own middle, so its vertices straddle zero */
+    let lo = 1e9, hi = -1e9;
+    for (let i = 0; i < c.position.length; i += 3) { lo = Math.min(lo, c.position[i]); hi = Math.max(hi, c.position[i]); }
+    check('and it is centred on itself, so it tumbles about its middle',
+      Math.abs(lo + hi) < 1e-6, `${lo.toFixed(2)}..${hi.toFixed(2)}`);
+    /* AND IT IS PAINTED WITH THE PART OF THE VAN IT CAME OFF, because it
+       goes through the same projection at the same model coordinates */
+    const rects = Object.values(v.views).map(r => ({
+      u0: r.x / CAR_ATLAS.w, u1: (r.x + r.w) / CAR_ATLAS.w,
+      v0: 1 - (r.y + r.h) / CAR_ATLAS.h, v1: 1 - r.y / CAR_ATLAS.h }));
+    let stray = 0;
+    for (let i = 0; i < c.uv.length / 2; i++) {
+      const u = c.uv[i * 2], w = c.uv[i * 2 + 1];
+      if (!rects.some(r => u >= r.u0 - 1e-9 && u <= r.u1 + 1e-9 && w >= r.v0 - 1e-9 && w <= r.v1 + 1e-9)) stray++;
+    }
+    check('and every uv on it is still the van it came off', stray === 0, `${stray} strays`);
+  }
 
-  /* --- and one of it, parked ---------------------------------------- */
+  /* --- the arithmetic the tumble stands on -------------------------- */
+  {
+    const v = VEHICLES.van, corners = car.carCorners(v);
+    check('a vehicle has eight corners', corners.length === 8);
+    const mesh = corners.map(p => [(p[0] - 0) * v.length, (p[2] - v.shape.height / 2) * v.length, -(p[1] - 0) * v.length]);
+    const half = car.carHeight(v) / 2;
+    const flatE = veh.extentOf(mesh, 0, 0);
+    check('sitting flat, its middle is half its height off the ground',
+      Math.abs(flatE.lo + half) < 1e-6 && Math.abs(flatE.hi - half) < 1e-6,
+      `${flatE.lo.toFixed(2)}..${flatE.hi.toFixed(2)}`);
+    /* THE WHOLE FLIGHT TIME RESTS ON THIS: a box turned half a turn
+       about its own length is exactly as tall as it was, so a car that
+       leaves the ground upright and lands on its roof has its middle
+       back where it started, and the flight lasts 2v/g. */
+    const overE = veh.extentOf(mesh, Math.PI, 0);
+    check('and turned onto its roof it is exactly as tall as it was',
+      Math.abs(overE.lo - flatE.lo) < 1e-9 && Math.abs(overE.hi - flatE.hi) < 1e-9);
+    /* and turning about the up axis cannot change a height */
+    const spun = veh.turn([10, 20, 30], 1.1, 0, 0);
+    check('yawing something does not move it up or down', Math.abs(spun[1] - 20) < 1e-9);
+    check('and turning by nothing leaves it where it was',
+      veh.turn([3, 4, 5], 0, 0, 0).every((t, i) => Math.abs(t - [3, 4, 5][i]) < 1e-9));
+  }
+
+  /* --- and seventy-seven of them, parked ---------------------------- */
   const { Game } = await import('../js/game.js');
   const THREE2 = await import('three');
+  const scene2 = new THREE2.Scene();
   const gm = new Game({
-    level, scene: new THREE2.Scene(), camera: {},
+    level, scene: scene2, camera: {},
     textures: tex.bakeTextures(), sprites: spr.bakeSprites(),
-    hud: { message() {}, ticMessages() {} }, audio: null, input: { sample() {} },
+    hud: { message() {}, ticMessages() {} }, audio: null,
+    input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
+             attack: false, use: false, run: false, sample() {}, sensitivity: 0 },
     carAtlas: {},                                   // it never draws in here
   });
-  check('one van is parked', gm.cars.length === 1, `${gm.cars.length}`);
-  const parked = gm.cars[0];
-  const bay = level.sectorAt(parked.slot.x, parked.slot.y);
-  check('and it is in a bay', bay && (bay.name === 'bays' || bay.name === 'fire lane'),
-    bay ? bay.name : 'nothing');
-  check('and it was added to the scene', gm.scene.children.includes(parked.mesh));
-  /* it is put at the nearest slot the player is FACING, so the first
-     thing anybody sees when the level opens is the thing that is new */
-  const p0 = gm.player;
-  const dx = parked.slot.x - p0.x, dy = parked.slot.y - p0.y, dd = Math.hypot(dx, dy);
-  const facing = (dx * Math.cos(p0.angle) + dy * Math.sin(p0.angle)) / dd;
-  note('the van from the start', `${Math.round(dd)} units away, ${(Math.acos(facing) * 57.3).toFixed(0)} degrees off straight ahead`);
-  check('the van is in front of the player when the level opens', facing > 0.6 && dd < 1600);
+  const V = gm.vehicles;
+  note('the car park', `${V.count} vehicles in ${(level.carSlots || []).length} bays`);
+  check('every bay in the lot has something in it', V.count === (level.carSlots || []).length && V.count > 20);
+  /* THE ASK WAS FOR A CUSTOMER CAR PARK. The riot van and the APC are
+     measured, packed and ready and neither of them is out there. */
+  check('and none of it is police or military',
+    V.all.every(v => v.def.use === 'civil'),
+    [...new Set(V.all.map(v => v.def.id))].join(', '));
+  check('and all four civilian types are represented',
+    new Set(V.all.map(v => v.def.id)).size === CIVILIAN.length);
 
-  /* AND YOU CANNOT WALK THROUGH IT. Doom's things are cylinders, so the
-     van is three of them; the test is the player's own predicate. */
+  /* ONE MESH, not seventy-seven. */
+  const carMeshes = scene2.children.filter(o => o.name === 'cars');
+  check('the whole car park is one mesh', carMeshes.length === 1);
+  check('and it holds every parked vehicle',
+    carMeshes[0].geometry.getAttribute('position').array.length ===
+    V.all.reduce((n, v) => n + v.slab.position.length, 0));
+
+  /* AND YOU CANNOT WALK THROUGH ONE. Doom's things are cylinders, so a
+     vehicle is three of them, each carrying a pointer back to it. */
   const blocks = gm.actors.filter(a => a.type === 'CARBODY');
-  check('the van is three of Doom cylinders', blocks.length === 3 && blocks.every(a => a.solid));
+  check('each vehicle is three of Doom cylinders', blocks.length === V.count * 3 && blocks.every(a => a.solid));
   check('and none of them has a state or a sprite to draw', blocks.every(a => !a.state && !a.mesh));
-  const ends = car.carBlockers(parked.slot.x, parked.slot.y, parked.slot.angle);
-  check('you cannot walk into the middle of it', p0.thingInWay(parked.slot.x, parked.slot.y));
-  check('nor into either end of it', ends.every(b => p0.thingInWay(b.x, b.y)));
-  check('and you can walk past it', !p0.thingInWay(parked.slot.x + 220, parked.slot.y + 220));
+  check('and every one of them knows which vehicle it is part of',
+    blocks.every(a => a.vehicle && V.all.includes(a.vehicle)));
+  check('and a hatchback gets a smaller cylinder than a van',
+    car.carBlockRadius(VEHICLES.hatchback) < car.carBlockRadius(VEHICLES.van),
+    `${car.carBlockRadius(VEHICLES.hatchback)} against ${car.carBlockRadius(VEHICLES.van)}`);
+  const p0 = gm.player, one = V.all[0];
+  check('you cannot walk into the middle of one', p0.thingInWay(one.x, one.y));
+  check('nor into either end of it',
+    car.carBlockers(one.def, one.x, one.y, one.yaw).every(b => p0.thingInWay(b.x, b.y)));
+
+  /* --- and what happens to one -------------------------------------- */
+  {
+    /* the loneliest one in the lot, so the chain reaction does not make
+       the arithmetic below somebody else's */
+    let target = V.all[0], far = -1;
+    for (const v of V.all) {
+      let near = Infinity;
+      for (const o of V.all) if (o !== v) near = Math.min(near, Math.hypot(o.x - v.x, o.y - v.y));
+      if (near > far) { far = near; target = v; }
+    }
+    const startHealth = target.health, ground = target.ground;
+    target.ignite();
+    check('a vehicle you set light to is on fire', target.burning > 0);
+    check('and the tarmac under it is too', gm.fire.heatAt(target.x, target.y) > 0);
+
+    const seen = [];
+    let blasts = 0;
+    const realExplode = gm.explode.bind(gm);
+    gm.explode = (a, o) => { blasts++; return realExplode(a, o); };
+    for (let i = 0; i < 500 && target.state !== 'wreck'; i++) {
+      gm.tic();
+      if (seen[seen.length - 1] !== target.state) seen.push(target.state);
+    }
+    note('one vehicle, lit', seen.join(' -> '));
+    check('being on fire eventually takes it apart',
+      target.health < startHealth && target.state === 'wreck');
+    check('and it went up, flew, and came down', seen.join(',') === 'parked,air,settle,wreck', seen.join(','));
+    /* TWO BANGS: one as it leaves and one as it lands. */
+    check('it exploded twice, not once', blasts >= 2, `${blasts} explosions`);
+
+    /* IT LANDS ON ITS ROOF. That is the whole point of aiming the roll
+       rate at the flight time rather than picking one and hoping. */
+    const over = Math.abs(((target.rx / Math.PI) % 2) - 1);
+    check('and it is lying on its roof', over < 0.06,
+      `${(target.rx / Math.PI).toFixed(3)} half-turns`);
+    /* and its lowest corner is on the tarmac, whatever angle it stopped at */
+    const low = veh.extentOf(target.corners, target.rx, target.rz).lo;
+    check('and its lowest corner is exactly on the tarmac',
+      Math.abs((target.cz + low) - ground) < 1e-6, `${(target.cz + low - ground).toFixed(4)} off`);
+    check('and it is still in the way', target.blockers.length === 3 &&
+      gm.player.thingInWay(target.x, target.y));
+    check('and it is burnt, so js/material.js puts coals on it',
+      V.restSlabs.some(s => s.charred.every(c => c === 1)));
+
+    /* DEBRIS: pieces off it, which fly, land and lie there smouldering. */
+    note('what came off it', `${V.flying.length} still in the air, ${V.resting.length} on the tarmac`);
+    check('it threw pieces of itself', V.flying.length + V.resting.length > 8);
+    for (let i = 0; i < 400 && V.flying.length; i++) gm.tic();
+    check('and every one of them came to rest', V.flying.length === 0);
+    check('and each is lying on the ground rather than in it',
+      V.resting.every(c => Math.abs(c.z - (c.ground - veh.extentOf(c.corners, c.rx, c.rz).lo)) < 1e-6));
+    check('and they are all in the one wreckage mesh',
+      scene2.children.filter(o => o.name === 'cars').length === 2 &&
+      V.restSlabs.length >= V.resting.length);
+
+    /* THE CHAIN REACTION, which is not a feature anybody wrote: cars are
+       flammable and explosions light what they reach. */
+    const gone = V.all.filter(v => v.state !== 'parked').length;
+    note('the lot after one went up', `${gone} of ${V.count} vehicles`);
+    check('and the bang set light to whatever was near enough', gone >= 1);
+  }
 }
 
 section('the gun');

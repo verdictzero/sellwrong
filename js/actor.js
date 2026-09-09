@@ -64,8 +64,12 @@ export class Actor {
     this.angle = angle;
     this.momx = 0; this.momy = 0; this.momz = 0;
 
-    this.radius = info.radius ?? 16;
-    this.height = info.height ?? 56;
+    /* A thing may be given its own size at spawn time. Nothing did
+       until the car park filled up: the fleet is six vehicles of five
+       different widths, and one radius in a table cannot be all of
+       them. */
+    this.radius = opts.radius ?? info.radius ?? 16;
+    this.height = opts.height ?? info.height ?? 56;
     this.health = info.health ?? 1000;
     this.speed = info.speed ?? 0;
     this.mass = info.mass ?? 100;
@@ -293,6 +297,12 @@ export class Actor {
 
   damage(amount, source, opts = {}) {
     if (this.dead || this.removed || !this.shootable) return;
+    /* THREE CYLINDERS ARE ONE VAN. A vehicle is too long to be one of
+       Doom's things, so it is three of them in a row (see carBlockers),
+       and a shot into any third of it is a shot into the vehicle — the
+       health lives there, not here, or a van would take three times as
+       much punishment as it should and come apart in thirds. */
+    if (this.vehicle) { this.vehicle.damage(amount, source, opts); return; }
     this.health -= amount;
 
     if (this.health <= 0) { this.die(source, amount, opts); return; }
@@ -336,6 +346,7 @@ export class Actor {
      ------------------------------------------------------------------ */
   ignite(tics = 350) {
     if (!this.flammable || this.removed) return;
+    if (this.vehicle) { this.vehicle.ignite(tics); return; }
     const wasAlight = this.burning > 0;
     this.burning = Math.max(this.burning, tics);
     if (!wasAlight) {

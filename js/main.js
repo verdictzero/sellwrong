@@ -149,7 +149,7 @@ async function boot() {
   /* and the van in the car park: four orthographic views of it on one
      sheet, packed by tools/prep-car.mjs and projected back onto boxes by
      js/car.js */
-  const carP = loadImage('assets/cars/riotvan.png').catch(e => { console.warn('no cars:', e.message); return null; });
+  const carP = loadImage('assets/cars/vehicles.png').catch(e => { console.warn('no cars:', e.message); return null; });
 
   status('BAKING TEXTURES', 0.05); await breathe();
   const textures = bakeTextures();

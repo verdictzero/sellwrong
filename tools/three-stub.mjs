@@ -23,10 +23,30 @@ export class DataTexture extends Stub { constructor(d, w, h) { super(); this.ima
 export class Vector2 { constructor(x = 0, y = 0) { this.x = x; this.y = y; } set(x, y) { this.x = x; this.y = y; return this; } }
 export class Vector3 extends Vector2 { constructor(x = 0, y = 0, z = 0) { super(x, y); this.z = z; } set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; } }
 export class Color { constructor() {} setRGB() { return this; } setHex() { return this; } }
-export class Group { constructor() { this.children = []; } add(o) { this.children.push(o); } clear() { this.children.length = 0; } traverse() {} }
+export class Group {
+  constructor() { this.children = []; }
+  add(o) { this.children.push(o); }
+  remove(o) { const i = this.children.indexOf(o); if (i >= 0) this.children.splice(i, 1); }
+  clear() { this.children.length = 0; }
+  traverse() {}
+}
 export class Object3D extends Group {}
-export class Mesh extends Stub { constructor(g, m) { super(); this.geometry = g; this.material = m; this.position = new Vector3(); this.scale = new Vector3(1, 1, 1); this.rotation = new Vector3(); } }
-export class BufferGeometry { setAttribute() {} computeBoundingSphere() {} dispose() {} translate() { return this; } }
+/* rotation is a Vector3 rather than an Euler, which is enough: the
+   game only ever sets x, y, z and an order, and nothing headless reads
+   a matrix back out of it. */
+export class Mesh extends Stub { constructor(g, m) { super(); this.geometry = g; this.material = m; this.position = new Vector3(); this.scale = new Vector3(1, 1, 1); this.rotation = new Vector3(); this.rotation.order = 'XYZ'; } }
+/* It keeps its attributes, because things that read one back —
+   js/slidedoor.js relights a door by rewriting its light attribute —
+   cannot be exercised headless otherwise, and because it lets a test
+   hold a built vehicle's UVs against the atlas without a GPU. */
+export class BufferGeometry {
+  constructor() { this.attributes = {}; }
+  setAttribute(name, attr) { this.attributes[name] = attr; return this; }
+  getAttribute(name) { return this.attributes[name]; }
+  computeBoundingSphere() {}
+  dispose() {}
+  translate() { return this; }
+}
 export class PlaneGeometry extends BufferGeometry {}
 export class SphereGeometry extends BufferGeometry {}
 export class Texture extends Stub { constructor(img) { super(); this.image = img; this.isTexture = true; } }

@@ -199,8 +199,16 @@ export const ACTORS = {
      No `spawn`, so no state, so Actor.render and Actor.tic both fall out
      on their first line. The alternative was a one-frame sprite that
      never gets drawn, which is a lie in the sprite bank and an entry in
-     every table that walks it. */
-  CARBODY: { name: 'Vehicle', radius: 38, height: 86, solid: true, shootable: false, flammable: false },
+     every table that walks it.
+
+     Shootable and flammable, but the health here is a number nothing
+     ever reaches: a blocker carries a pointer to its vehicle and hands
+     everything done to it straight over, so the vehicle's own hundred
+     and fifty is what decides when it goes up. Radius and height come
+     from the vehicle too — see the note in Actor's constructor — because
+     a hatchback and an APC are not the same cylinder. */
+  CARBODY: { name: 'Vehicle', radius: 38, height: 86, solid: true,
+             shootable: true, flammable: true, health: 100000 },
 };
 
 export function stateOf(name) {
