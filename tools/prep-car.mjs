@@ -308,11 +308,8 @@ function measure(spec) {
     for (let y = 0; y < h; y++) { push(0, y); push(w - 1, y); }
     while (st2.length) { const y = st2.pop(), x = st2.pop(); push(x + 1, y); push(x - 1, y); push(x, y + 1); push(x, y - 1); }
 
-    const solid = new Uint8Array(n), glass = new Uint8Array(n);
-    for (let i = 0; i < n; i++) {
-      solid[i] = (blob[i] || !outside[i]) ? 1 : 0;
-      glass[i] = (!paint[i] && !outside[i] && !blob[i]) ? 1 : 0;
-    }
+    const solid = new Uint8Array(n);
+    for (let i = 0; i < n; i++) solid[i] = (blob[i] || !outside[i]) ? 1 : 0;
     /* THE RAW SILHOUETTE WITH ITS HOLES FILLED, for the outline. The
        opened mask is the ruler and it is right for the box, but its
        erosion thins a pillar to nothing and then a window reaches the
@@ -335,8 +332,15 @@ function measure(spec) {
     while (st3.length) { const y = st3.pop(), x = st3.pop(); push3(x + 1, y); push3(x - 1, y); push3(x, y + 1); push3(x, y - 1); }
     const filled = new Uint8Array(n);
     for (let i = 0; i < n; i++) filled[i] = reach[i] ? 0 : 1;
+    /* GLASS IS KEY THE RAW PAINT ENCLOSES, for the same reason. Against
+       the opened blob a side window whose pillars are thinner than the
+       ruler reaches the border through the gap and is filled as
+       BACKGROUND — body colour at full strength — so the hatchback's
+       side windows came out painted over in red. The raw pillars hold. */
+    const glass = new Uint8Array(n);
+    for (let i = 0; i < n; i++) glass[i] = (!paint[i] && filled[i]) ? 1 : 0;
     return {
-      cell: { x: x0, y: y0, w, h }, solid, glass, paint,
+      cell: { x: x0, y: y0, w, h }, solid, glass, paint, filled,
       box: { x: a, y: c, w: b - a + 1, h: d - c + 1 },   // relative to the cell
       at: (x, y) => solid[(y + c) * w + (x + a)],        // relative to the box
       rawAt: (x, y) => filled[(y + c) * w + (x + a)],    // the same, off the raw paint
@@ -971,6 +975,17 @@ for (const m of built) {
   console.log(`  sill ${sillZ}px; ${wheels.length} wheels${wheels.length ? ` of radius ${wheels.map(w => (w.r * LEN).toFixed(1)).join(' and ')}px at x=${wheels.map(w => w.x).join(', ')}` : ''}; tyre ${tyre.toFixed(1)}px`);
   console.log(`  profile: ${profile.length} points, half-widths ${Math.min(...profile.map(p => p.half)).toFixed(3)}..${Math.max(...profile.map(p => p.half)).toFixed(3)}`);
   console.log('    ' + profile.map(p => `(${p.x.toFixed(2)}, ${p.z.toFixed(2)})`).join(' '));
+  /* HOW MUCH OF EACH VIEW IS KEY THE VEHICLE ENCLOSES — glass the renderer
+     let through to the green, plus the gap between a wheel and its arch.
+     Every such pixel is painted as dark glass (GLASS above), which is a
+     stopgap: a sheet rendered with opaque windows reads ~0% here and
+     gets its windows exactly as drawn. */
+  const through = Object.entries(m.V).map(([k, v]) => {
+    let g = 0, s = 0;
+    for (let i = 0; i < v.filled.length; i++) { s += v.filled[i]; g += v.glass[i]; }
+    return `${k} ${pct(g / s)}`;
+  });
+  console.log(`  see-through glass, painted dark: ${through.join(', ')}`);
 }
 const used = rects.reduce((a, r) => a + r.w * r.h, 0);
 console.log(`${OUT_PNG}  ${ATLAS_W}x${AH}, ${rects.length} views, ${pct(used / (ATLAS_W * AH))} of it used`);

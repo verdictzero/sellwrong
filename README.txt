@@ -997,6 +997,15 @@ screen; glass gets the same colour, darkened. The colour is taken from two
 pixels IN from the edge, because every edge in a JPEG is fringed and
 against a green screen the fringe is green — filled from the pixel next
 door, a windscreen slit comes out dark green.
+That fill is a STOPGAP and the tool says how much of each view it covers
+("see-through glass, painted dark"): a fifth of the hatchback's side view,
+an eighth of the pickup's front. Nothing about a vehicle is drawn with
+alpha — the atlas is opaque to the last pixel and the body uses the plain
+wall material — but a windscreen the renderer let the seats and the green
+through still looks like one you can see into, because those seats are
+pixels in the sheet. The cure is upstream: a sheet rendered with opaque
+glass, in the same four views on the same green, reads ~0% here and gets
+its windows exactly as drawn.
 
 AND THE GREEN COMES BACK OFF THE PAINT. A green screen throws green light
 on what is standing in front of it, and white paint takes it: the panel
@@ -1273,6 +1282,12 @@ WHAT IS NOT DONE
     the lot thirty-one times and only its heading is different — no
     colour variation, no dents, nothing that would break the repeat.
     The atlas has room and the tool takes a sheet a line
+  the windows are the renderer's, not the game's. The four civilian
+    sheets were rendered with see-through glass, so a windscreen shows
+    the seats and, past them, the green screen; the tool paints the
+    green as dark glass and leaves the seats. There is no alpha anywhere
+    in a vehicle, but the look wants sheets rendered with opaque glass,
+    which drop straight in
   a wrecked car never cools past smoking, and never goes away. The
     particles stop after twenty seconds and the coals in the shader do
     not, which is right for the ten minutes anybody plays and would be
