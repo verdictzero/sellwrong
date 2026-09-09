@@ -141,10 +141,11 @@ const OPEN = 2;          // radius of the measuring opening: kills anything unde
 const GLASS = 0.42;      // how much of the bled body colour glass keeps
 const PAD = 1;           // gutter around each view in the atlas
 const ATLAS_W = 512;
-const PROFILE_TOL = 0.008; // an outline point closer than this to the line through its neighbours goes, in lengths
+const PROFILE_TOL = 0.012; // an outline point closer than this to the line through its neighbours goes, in lengths
 const PROFILE_MAX = 24;    // and at most this many points survive
-const LEDGE_LEN = 0.035;   // an edge shorter than this, in lengths, that interrupts a line is a ledge
+const LEDGE_LEN = 0.05;    // an edge shorter than this, in lengths, that interrupts a line is a ledge
 const LEDGE_TURN = Math.PI / 4;   // and a line is two neighbours within this of each other
+const CHAMFER_TURN = Math.PI * 0.6; // up to this much of a turn, a short edge is a corner cut off, and goes to the corner
 const BLOB_MIN = 0.03;   // a piece this much of the biggest one is part of the vehicle
 const WHEEL_TOL = 0.018; // how far below the sill counts as a wheel
 /* How far the three views may disagree about the width before a sheet
@@ -642,8 +643,23 @@ function measure(spec) {
         if (b[0] === xMin || b[0] === xMax || c[0] === xMin || c[0] === xMax) continue;
         const t1 = Math.atan2(b[1] - a[1], b[0] - a[0]), t2 = Math.atan2(d[1] - c[1], d[0] - c[0]);
         let turn = Math.abs(t2 - t1); if (turn > Math.PI) turn = 2 * Math.PI - turn;
-        if (turn > LEDGE_TURN) continue;
-        poly.splice(i, 2, [(b[0] + c[0]) / 2, (b[1] + c[1]) / 2]);
+        if (turn > CHAMFER_TURN) continue;
+        /* a LEDGE — the neighbours run the same way — goes to its
+           midpoint. A CHAMFER — the neighbours meet at a corner and this
+           short edge cuts it off, which is what a rounded windscreen
+           header is at this scale — goes to the corner itself: where the
+           two neighbouring lines cross. It is what a person draws. */
+        let at = [(b[0] + c[0]) / 2, (b[1] + c[1]) / 2];
+        if (turn > LEDGE_TURN) {
+          const r1 = [b[0] - a[0], b[1] - a[1]], r2 = [d[0] - c[0], d[1] - c[1]];
+          const den = r1[0] * r2[1] - r1[1] * r2[0];
+          if (Math.abs(den) > 1e-9) {
+            const t = ((c[0] - a[0]) * r2[1] - (c[1] - a[1]) * r2[0]) / den;
+            const x = [a[0] + r1[0] * t, a[1] + r1[1] * t];
+            if (Math.hypot(x[0] - at[0], x[1] - at[1]) <= LEDGE) at = x; else continue;
+          } else continue;
+        }
+        poly.splice(i, 2, at);
         done = false; break;
       }
       if (done) break;

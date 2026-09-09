@@ -1199,7 +1199,9 @@ section('the fleet');
     const g = car.carGeometry(v, { angle: 0.4 });
     const tris = g.position.length / 9;
     triTotal += tris;
-    check(`the ${id} is a handful of boxes, not a mesh`, tris > 40 && tris < 400, `${tris} triangles`);
+    /* a lofted outline of a dozen points and four wheels is under two
+       hundred triangles; a tracked one with no wheels is forty */
+    check(`the ${id} is a handful of polygons, not a mesh`, tris >= 36 && tris < 400, `${tris} triangles`);
     check(`and every vertex of it has a uv, a light, a sky and a char`,
       g.uv.length === g.position.length / 3 * 2 && g.light.length === g.position.length / 3 &&
       g.sky.length === g.light.length && g.charred.length === g.light.length);

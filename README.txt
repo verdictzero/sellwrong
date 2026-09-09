@@ -874,7 +874,11 @@ where the hatch glass meets the roof and a lip where the windscreen
 does, three pixels tall, and a simplifier keeps them as a short step in
 an otherwise continuous line — so a short edge whose two neighbours run
 within forty-five degrees of each other is interrupting a line, not
-turning a corner, and it goes. Push the outline out to +half on the left
+turning a corner, and it goes to its midpoint. A short edge whose
+neighbours DO turn a corner is a chamfer — a rounded windscreen header,
+at this scale — and it goes to the corner itself, where the two
+neighbouring lines cross, which is what a person draws: the windscreen
+straight up into the roof. Push the outline out to +half on the left
 and -half on the right, join the two copies edge for edge round the
 outside and cap them, and that is the body: one strip of quads and two fans, a
 closed solid whose cross-section follows the front view. A windscreen is
