@@ -614,18 +614,68 @@ section('fire');
      store where the second stage never fired. */
   check('and a burnt-out store is gutted', gutted >= burnable * 0.85, `${gutted} of ${burnable}`);
   {
+    /* WHAT A GUTTED REGION TURNS INTO, asked of the mapping directly —
+       the fire here runs without a Game, so nothing has applied it. */
+    const of = sec => tex.guttedSurfaces(sec, { cells: fire.sectorCells[sec.index] });
     const g0 = level.sectors.find(s => s.gutted && !s.outdoor && s.name === 'aisle');
     check('a gutted aisle exists to look at', !!g0);
     if (g0) {
-      const to = tex.guttedSurfaces(g0);
-      check('its roof has gone', to.ceilTex === 'SKY' && to.sky === 1, JSON.stringify(to));
-      check('its walls are studs and holes', to.wallTex === 'RUINWALL', to.wallTex);
-      check('and its floor is slab and ash', to.floorTex === 'RUINFLR', to.floorTex);
+      const to = of(g0);
+      check('its walls are studs and holes', /^RUINWALL\d$/.test(to.wallTex), to.wallTex);
+      check('and its floor is slab and ash', /^RUINFLR\d$/.test(to.floorTex), to.floorTex);
     }
     const rack = level.sectors.find(s => s.gutted && /SHELF/.test((s.wallTex || '').replace('_B', '')));
-    if (rack) check('a gutted gondola is bare shelving',
-      tex.guttedSurfaces(rack).wallTex === 'RUINRACK', tex.guttedSurfaces(rack).wallTex);
+    if (rack) check('a gutted gondola is bare shelving', /^RUINRACK\d$/.test(of(rack).wallTex),
+      of(rack).wallTex);
+
+    /* THE ROOF DOES NOT ALL GO. A burnt-out store with no ceiling
+       anywhere is a demolition; what is wanted is a roof that has fallen
+       in where the span was long enough to fall and is still up, holed
+       and charred, everywhere else. Both have to happen, and the check
+       is that neither is zero. */
+    const roofs = level.sectors.filter(s => s.gutted && !s.outdoor && s.ceilTex && s.ceilTex !== 'SKY')
+      .map(of).filter(t => t.ceilTex);
+    const open = roofs.filter(t => t.ceilTex === 'SKY').length;
+    const kept = roofs.filter(t => /^RUINDECK\d$/.test(t.ceilTex)).length;
+    note('gutted roofs: fallen in / still up', `${open} / ${kept}`);
+    check('some of the roof falls in', open > 3, `${open}`);
+    check('and most of it is still up, burnt through', kept > open, `${kept} up, ${open} open`);
+    check('every gutted ceiling is one or the other', open + kept === roofs.length,
+      `${roofs.length - open - kept} were neither`);
+
+    /* AND IT IS NOT ALL THE SAME RUIN. One texture across a whole gutted
+       store reads as a pattern, which is the one thing a ruin must not. */
+    const walls = new Set(level.sectors.filter(s => s.gutted).map(s => of(s).wallTex).filter(Boolean));
+    check('the ruin comes in more than one flavour', walls.size >= 3,
+      [...walls].join(' '));
+    /* a region's variant is stable, so a reload looks the same */
+    check('and a region picks the same one every time',
+      g0 ? of(g0).wallTex === of(g0).wallTex && of(g0).floorTex.endsWith(of(g0).wallTex.slice(-1)) : true);
   }
+  /* THE COALS, wired end to end. The burning trees run an eight-colour
+     ember ramp against a clock in their shader; every charred and gutted
+     surface in the store now runs the same ramp on the same clock, and
+     the thing that carries it is a per-vertex char amount off the
+     region. Three links in that chain and all three are checkable
+     without a GPU. */
+  {
+    const mg = await import('../js/mapgeo.js');
+    const mat = await import('../js/material.js');
+    const pal = await import('../js/palette.js');
+    check('an untouched region carries no char', mg.charOf({}) === 0);
+    check('a charred one carries some', mg.charOf({ charred: true }) > 0.4);
+    check('and a gutted one carries all of it', mg.charOf({ gutted: true }) === 1);
+    const u = mat.worldUniforms();
+    check('the world material has the ember clock and the ramp',
+      !!u.emberTime && Array.isArray(u.emberRamp.value) && u.emberRamp.value.length === 8);
+    check('and the shader has the coals in it',
+      /vec3 emberOf\(/.test(mat.WORLD_SHADE_GLSL) && /emberRamp\[/.test(mat.WORLD_SHADE_GLSL));
+    check('the trees and the store share one ramp',
+      pal.EMBER_RAMP.length === 8 && pal.EMBER_RAMP.every(c => c.length === 3));
+    const F = await import('../js/forest.js');
+    check('and the trees take it from the same place', F.EMBER_RAMP === pal.EMBER_RAMP);
+  }
+
   check('every ruin texture is drawn', tex.RUIN.every(n => Object.keys(tex.TEXTURE_GENERATORS).includes(n)),
     tex.RUIN.filter(n => !Object.keys(tex.TEXTURE_GENERATORS).includes(n)).join(', '));
   const bank = new Set(Object.keys(tex.TEXTURE_GENERATORS).map(n => n));

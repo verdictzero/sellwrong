@@ -49,6 +49,7 @@ import { worldUniforms, WORLD_UNIFORMS_GLSL, WORLD_SHADE_GLSL } from './material
 import { Particles } from './particles.js';
 import { pRandom, pChance, dist2, clamp } from './util.js';
 import { fbm } from './pixel.js';
+import { EMBER_RAMP } from './palette.js';
 
 export const CELL = 64;
 export const FIRE_INTERVAL = 9;       // the store's clock, so the two fires keep time
@@ -121,11 +122,10 @@ const PLANT = {
   bushClumpLo: 0.46, bushClumpHi: 0.72,
 };
 
-/* The eight ember colours, cold coal to gold — the golf project's
-   ps1-soft ramp, and the same eight the ground's glow uses so the two
-   fires agree. */
-export const EMBER_RAMP = ['#181008', '#302000', '#503000', '#704000', '#985800', '#c07820', '#e89858', '#f8d0a0']
-  .map(h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255));
+/* The eight ember colours live in js/palette.js now, because the STORE
+   burns in them too — a charred wall and a charred fir have to be the
+   same fire going out, and that means one ramp and one clock. */
+export { EMBER_RAMP } from './palette.js';
 
 /* The fire's numbers. Durations are in fire tics (a sixth of a game
    tic, so 72 is about twelve seconds); chances are out of 256 per fire

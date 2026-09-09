@@ -26,7 +26,7 @@
 import { Particles, atlasTexture } from './particles.js';
 import { Pix, fbm } from './pixel.js';
 import { pRandom, dist2 } from './util.js';
-import { EMBER_RAMP } from './forest.js';
+import { EMBER_RAMP } from './palette.js';
 
 /* The wind. The forest fire leans with it too; see forest.js. */
 const WIND_X = 0.28;

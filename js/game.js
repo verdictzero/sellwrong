@@ -379,7 +379,7 @@ export class Game {
     if (f.newlyGutted.length) {
       for (const si of f.newlyGutted) {
         const s = this.level.sectors[si];
-        const to = guttedSurfaces(s);
+        const to = guttedSurfaces(s, { cells: f.sectorCells[si] });
         for (const k of Object.keys(to)) {
           if (k === 'sky') { s.sky = to.sky; continue; }
           if (to[k] === 'SKY' || this.textures.map.has(to[k])) s[k] = to[k];
@@ -727,9 +727,15 @@ export class Game {
        sprites near the edge of the screen turning to look at you. */
     const billboardRot = p.angle - Math.PI / 2;
 
+    /* ONE CLOCK for everything still glowing after the flame has gone:
+       the trees' burn shader and every charred surface in the store read
+       this, so the coals in an aisle and the coals on a fir are in the
+       same fire. */
+    world.emberTime.value = this.tics / TICRATE + now * 0.0002;
+
     for (const a of this.actors) a.render(p.x, p.y, billboardRot);
     this.fire.render(p.x, p.y, billboardRot);
-    this.forest.render(p.x, p.y, billboardRot, this.tics / TICRATE + now * 0.0002);
+    this.forest.render(p.x, p.y, billboardRot, world.emberTime.value);
     this.flame.render(billboardRot);
     this.fx.render(billboardRot);
     this.giblets.render(billboardRot);

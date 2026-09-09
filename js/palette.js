@@ -265,3 +265,17 @@ export function snapImageData(img, dither = 0) {
   }
   return img;
 }
+
+/* --------------------------------------------------------------------
+   THE EMBER RAMP
+
+   Eight colours, cold coal to gold — the golf project's ps1-soft ramp.
+   Everything in this game that is still glowing after the flame has gone
+   uses these eight and nothing else: the burning trees (js/forest.js),
+   the sparks off a fire (js/effects.js), and every charred and gutted
+   surface in the store (the world material in js/material.js). One ramp
+   and one clock, so a burnt wall and a burnt fir are visibly the same
+   fire going out rather than two effects that happen to be orange.
+   ------------------------------------------------------------------ */
+export const EMBER_RAMP = ['#181008', '#302000', '#503000', '#704000', '#985800', '#c07820', '#e89858', '#f8d0a0']
+  .map(h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255));

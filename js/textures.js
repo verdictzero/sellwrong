@@ -1600,189 +1600,225 @@ export function charVariant(src, seed) {
    through it.
    ===================================================================== */
 
-/* The partition that has burned through: studs standing, panel gone
-   between them, ember light in the gap. */
-T.RUINWALL = () => {
-  const p = new Pix(64, 64, 470);
-  const rng = makeRng(471);
-  const n = fbm(64, 64, 10, 3, 472);
-  const height = new Float32Array(64 * 64);
+/* THREE OF EACH, and the reason is that a ruin is not a material, it is
+   an accident. Two aisles that burned do not char identically — the
+   framing is at a different centre, the deck fell in a different place,
+   a different shelf survived — and one texture repeated across a whole
+   gutted store reads as a pattern, which is the one thing a ruin must
+   not read as. So each of the four is a family of three, and
+   `guttedSurfaces` picks a region's by a hash of its index: stable
+   across a reload, different from its neighbour's. */
+export const RUIN_VARIANTS = 3;
 
-  /* the void behind: what you see through a hole in a wall at night is
-     the next room, which is also on fire somewhere out of sight */
-  for (let y = 0; y < 64; y++)
-    for (let x = 0; x < 64; x++) {
-      p.ink(x, y, 'grey', 0.04 + n[y * 64 + x] * 0.05);
-      height[y * 64 + x] = 0.06;
-    }
+/* ---------------------------------------------------------------------
+   THE WALL
 
-  /* WHERE THE PANEL SURVIVES. A torn edge is not a straight line and it
-     is not noise either — it is a rough diagonal with the middle of the
-     bay gone and the corners hanging on, because a panel burns from the
-     hot side and falls away from its fixings last. */
-  const edge = valueNoise(64, 64, 9, 473);
-  for (let y = 0; y < 64; y++) {
-    for (let x = 0; x < 64; x++) {
-      const bx = (x % 16) / 15;                      // across one stud bay
-      const hold = Math.min(1, Math.abs(bx - 0.5) * 2.3) * (0.55 + edge[y * 64 + x] * 0.9)
-                 + (y > 52 ? 0.45 : 0);              // and it hangs on at the floor
-      if (hold < 0.62) continue;
-      const t = 0.16 + n[y * 64 + x] * 0.12;
-      p.ink(x, y, 'bone', t);
-      height[y * 64 + x] = 0.55 + hold * 0.2;
-      /* soot fading up the surviving face */
-      if (rng() < 0.5) p.wash(x, y, 'grey', 0.05, 0.35);
-    }
-  }
+   THE STRUCTURE SURVIVES AND THE SKIN DOES NOT, which is both what
+   happens and what makes the picture legible. A stud wall that has been
+   through a fire is not a hole: it is a frame, standing, with the board
+   gone between the studs — and the board goes from the TOP DOWN, because
+   fire climbs and because the bottom of a wall is the last place the
+   heat reaches. So there is a survival gradient up the texture, ragged
+   at its edge, and the framing is untouched all the way up.
+   ------------------------------------------------------------------- */
+for (let v = 0; v < RUIN_VARIANTS; v++) {
+  /* stud centres, where the noggin runs, and how much board is left */
+  const PITCH = [16, 21, 13][v];
+  const NOGGIN = [30, 22, 40][v];
+  const HOLD = [0.46, 0.34, 0.56][v];        // how far up the board survives
+  T['RUINWALL' + v] = () => {
+    const p = new Pix(64, 64, 470 + v * 7);
+    const rng = makeRng(471 + v * 13);
+    const n = fbm(64, 64, 10, 3, 472 + v * 11);
+    const edge = valueNoise(64, 64, 9, 473 + v * 17);
+    const height = new Float32Array(64 * 64);
 
-  /* THE STUDS, every sixteen, charred and standing. They are the point
-     of the texture: a hole with nothing behind it is a hole in the
-     world, and a hole with framing behind it is a building. */
-  for (let sx = 2; sx < 64; sx += 16) {
+    /* the dark behind: the next room, which is also burnt */
+    for (let y = 0; y < 64; y++)
+      for (let x = 0; x < 64; x++) {
+        p.ink(x, y, 'grey', 0.035 + n[y * 64 + x] * 0.045);
+        height[y * 64 + x] = 0.06;
+      }
+
+    /* WHAT IS LEFT OF THE BOARD. Certain at the floor, gone at the top,
+       with a torn edge in between — and it hangs on at the studs, which
+       is where its fixings are. */
     for (let y = 0; y < 64; y++) {
-      const flick = valueNoise(1, 1, 1, sx * 31 + y * 7)[0];
-      for (let x = sx; x < sx + 3; x++) {
-        p.ink(x, y, 'brown', 0.10 + flick * 0.07);
-        height[y * 64 + x] = 0.86;
+      const up = 1 - y / 63;                       // 0 at the top, 1 at the floor
+      const near = Math.abs(((y % PITCH) / PITCH) - 0.5);   // unused vertically
+      for (let x = 0; x < 64; x++) {
+        const bx = ((x % PITCH) / (PITCH - 1));
+        const atStud = Math.min(bx, 1 - bx) < 0.22;        // held by its fixings
+        const survive = up * (HOLD + (atStud ? 0.34 : 0)) + edge[y * 64 + x] * 0.42
+                      + (y > 56 ? 0.5 : 0);
+        if (survive < 0.55) continue;
+        p.ink(x, y, 'bone', 0.15 + n[y * 64 + x] * 0.13 + up * 0.05);
+        height[y * 64 + x] = 0.52 + survive * 0.18;
+        if (rng() < 0.45) p.wash(x, y, 'grey', 0.05, 0.34);  // soot up the face
       }
-      /* the alligatored char on the face of it */
-      if (flick > 0.72) p.ink(sx + 1, y, 'grey', 0.05);
     }
-  }
-  /* a noggin across, half burnt through */
-  for (let y = 30; y < 34; y++)
-    for (let x = 0; x < 64; x++)
-      if (valueNoise(1, 1, 1, x * 13 + y * 101)[0] > 0.24) {
-        p.ink(x, y, 'brown', 0.09 + (y === 30 ? 0.05 : 0));
-        height[y * 64 + x] = 0.80;
+
+    /* THE STUDS, standing the whole height. They are the point: a hole
+       with nothing behind it is a hole in the world; a hole with framing
+       behind it is a building. */
+    for (let sx = 2; sx < 64; sx += PITCH) {
+      for (let y = 0; y < 64; y++) {
+        const flick = valueNoise(1, 1, 1, sx * 31 + y * 7 + v * 991)[0];
+        for (let x = sx; x < sx + 3; x++) {
+          if (x > 63) continue;
+          p.ink(x, y, 'brown', 0.095 + flick * 0.075);
+          height[y * 64 + x] = 0.88;
+        }
+        if (flick > 0.72) p.ink(Math.min(63, sx + 1), y, 'grey', 0.05);
       }
-
-  p.emboss(height, 0.42, 0.9);
-
-  /* AND IT IS STILL GOING. Embers along every torn edge and in the
-     bottom of the bays, which is what makes it read as ten minutes ago
-     rather than as a ruin somebody found. */
-  speckle(64, 64, 340, 474, (x, y, a, b) => {
-    const bx = (x % 16) / 15;
-    const inBay = Math.abs(bx - 0.5) < 0.34;
-    if (!inBay && a < 0.86) return;
-    if (a > 0.90) p.ink(x, y, 'fire', 0.42 + b * 0.40);
-    else if (a > 0.62) p.wash(x, y, 'fire', 0.16, 0.42);
-  });
-  for (let x = 0; x < 64; x++) {
-    const g = valueNoise(1, 1, 1, x * 17 + 900)[0];
-    if (g > 0.55) { p.ink(x, 62, 'fire', 0.30 + g * 0.3); p.wash(x, 61, 'fire', 0.14, 0.4); }
-  }
-  return p.snap(0.4);
-};
-
-/* The slab afterwards: ash, fallen bits of everything, and the fire
-   still alive in the cracks. */
-T.RUINFLR = () => {
-  const p = new Pix(64, 64, 480);
-  const rng = makeRng(481);
-  aggregate(p, 481, { baseKey: 'grey', baseLo: 0.07, baseHi: 0.13,
-    grades: [{ count: 220, min: 0.4, max: 1.1, key: 'grey', lo: 0.05, hi: 0.15 }] });
-  /* ash, in drifts rather than evenly */
-  const ash = fbm(64, 64, 7, 3, 482);
-  for (let y = 0; y < 64; y++)
-    for (let x = 0; x < 64; x++) {
-      const a = ash[y * 64 + x];
-      if (a > 0.52) p.wash(x, y, 'bone', 0.30 + (a - 0.52) * 0.7, (a - 0.52) * 1.9);
     }
-  /* what fell: lumps of ceiling, shelf, stock */
-  for (let i = 0; i < 26; i++) {
-    const x = rng() * 64, y = rng() * 64, r = 1 + rng() * 3.2;
-    p.disc(x, y, r, 'grey', 0.05 + rng() * 0.05);
-    p.disc(x - 0.6, y - 0.6, r * 0.6, 'brown', 0.07 + rng() * 0.05);
-  }
-  /* THE CRACKS ARE THE LIGHT. Nothing else in a gutted aisle is lit, so
-     the floor is where the room's light comes from and it has to read
-     from across the shop. */
-  for (const [cx, cy, len, seed] of [[8, 12, 46, 483], [40, 4, 40, 484], [22, 50, 34, 485], [54, 30, 30, 486]]) {
-    crack(p, cx, cy, len, 'fire', 0.34, seed, 1.2);
-    crack(p, cx + 1, cy, len, 'fire', 0.12, seed + 1, 1.2);
-  }
-  speckle(64, 64, 210, 487, (x, y, a, b) => {
-    if (a > 0.93) p.ink(x, y, 'fire', 0.40 + b * 0.4);
-    else if (a > 0.70) p.wash(x, y, 'fire', 0.12, 0.35);
-  });
-  return p.snap(0.45);
-};
+    /* the noggin across, half burnt through */
+    for (let y = NOGGIN; y < NOGGIN + 4; y++)
+      for (let x = 0; x < 64; x++)
+        if (valueNoise(1, 1, 1, x * 13 + y * 101 + v * 77)[0] > 0.22) {
+          p.ink(x, y, 'brown', 0.085 + (y === NOGGIN ? 0.05 : 0));
+          height[y * 64 + x] = 0.80;
+        }
 
-/* Looking up at what is left of a roof, from underneath: deck gone in
-   patches, purlins across, sky beyond the holes. Used on the UPPER of a
-   gutted region, which is the burnt edge round the hole. */
-T.RUINDECK = () => {
-  const p = new Pix(64, 64, 490);
-  const height = new Float32Array(64 * 64);
-  const gone = fbm(64, 64, 8, 3, 491);
-  const n = fbm(64, 64, 14, 2, 492);
-  for (let y = 0; y < 64; y++) {
-    for (let x = 0; x < 64; x++) {
-      /* the profiled deck, as CEILDECK, but most of it has gone */
-      if (gone[y * 64 + x] > 0.46) { p.ink(x, y, 'grey', 0.03); height[y * 64 + x] = 0.02; continue; }
-      const r = x % 16;
-      const t = r < 2 ? 0.05 : r < 4 ? 0.13 : r < 12 ? 0.10 : r < 14 ? 0.07 : 0.05;
-      p.ink(x, y, 'grey', t + n[y * 64 + x] * 0.04);
-      height[y * 64 + x] = r < 4 ? 0.8 : 0.55;
-    }
-  }
-  /* the purlins, which are steel and are the last thing standing */
-  for (let y = 26; y < 33; y++)
-    for (let x = 0; x < 64; x++) {
-      const t = y < 28 ? 0.19 : y < 31 ? 0.13 : 0.06;
-      p.ink(x, y, 'grey', t);
-      height[y * 64 + x] = y < 28 ? 0.95 : 0.78;
-    }
-  for (let x = 6; x < 64; x += 16) p.ink(x, 29, 'rust', 0.16);
-  p.emboss(height, 0.38, 0.85);
-  speckle(64, 64, 150, 493, (x, y, a, b) => {
-    if (gone[y * 64 + x] > 0.46) return;
-    if (a > 0.92) p.ink(x, y, 'fire', 0.30 + b * 0.3);
-  });
-  return p.snap(0.4);
-};
+    p.emboss(height, 0.42, 0.9);
 
-/* A gondola after the fire: uprights, two shelf edges that did not fall,
-   and nothing on any of them. */
-T.RUINRACK = () => {
-  const p = new Pix(64, 64, 500);
-  const n = fbm(64, 64, 10, 3, 501);
-  const height = new Float32Array(64 * 64);
-  for (let y = 0; y < 64; y++)
-    for (let x = 0; x < 64; x++) {
-      p.ink(x, y, 'grey', 0.04 + n[y * 64 + x] * 0.04);
-      height[y * 64 + x] = 0.05;
+    /* A few coals baked in as rubble; the LIVE ones are the shader's,
+       and they land in the dark places this leaves. */
+    speckle(64, 64, 150 + v * 40, 474 + v * 5, (x, y, a, b) => {
+      if (a > 0.94) p.ink(x, y, 'fire', 0.34 + b * 0.34);
+    });
+    return p.snap(0.4);
+  };
+}
+
+/* ---------------------------------------------------------------------
+   THE FLOOR
+
+   A slab does not burn. What is on it is ash, what fell out of the
+   ceiling, and the fire still in the joints — which is where the light
+   in a gutted aisle comes from, so it has to read from across the shop.
+   ------------------------------------------------------------------- */
+for (let v = 0; v < RUIN_VARIANTS; v++) {
+  const DEBRIS = [26, 40, 16][v];
+  const CRACKS = [[[8, 12, 46], [40, 4, 40], [22, 50, 34], [54, 30, 30]],
+                  [[2, 30, 58], [34, 2, 52], [50, 44, 26]],
+                  [[16, 6, 40], [6, 46, 44], [44, 20, 46], [30, 34, 22], [56, 2, 30]]][v];
+  T['RUINFLR' + v] = () => {
+    const p = new Pix(64, 64, 480 + v * 9);
+    const rng = makeRng(481 + v * 3);
+    aggregate(p, 481 + v * 3, { baseKey: 'grey', baseLo: 0.07, baseHi: 0.13,
+      grades: [{ count: 220, min: 0.4, max: 1.1, key: 'grey', lo: 0.05, hi: 0.15 }] });
+    const ash = fbm(64, 64, 7, 3, 482 + v * 19);
+    for (let y = 0; y < 64; y++)
+      for (let x = 0; x < 64; x++) {
+        const a = ash[y * 64 + x];
+        if (a > 0.52) p.wash(x, y, 'bone', 0.30 + (a - 0.52) * 0.7, (a - 0.52) * 1.9);
+      }
+    for (let i = 0; i < DEBRIS; i++) {
+      const x = rng() * 64, y = rng() * 64, r = 1 + rng() * 3.2;
+      p.disc(x, y, r, 'grey', 0.05 + rng() * 0.05);
+      p.disc(x - 0.6, y - 0.6, r * 0.6, 'brown', 0.07 + rng() * 0.05);
     }
-  /* the uprights, bent: the whole run leans a little where the heat was */
-  for (let u = 0; u < 64; u += 21) {
+    CRACKS.forEach(([cx, cy, len], k) => {
+      crack(p, cx, cy, len, 'fire', 0.32, 483 + v * 31 + k, 1.2);
+      crack(p, cx + 1, cy, len, 'fire', 0.11, 484 + v * 31 + k, 1.2);
+    });
+    speckle(64, 64, 160, 487 + v * 7, (x, y, a, b) => {
+      if (a > 0.94) p.ink(x, y, 'fire', 0.38 + b * 0.4);
+    });
+    return p.snap(0.45);
+  };
+}
+
+/* ---------------------------------------------------------------------
+   THE DECK
+
+   Looking up at what is left of a roof. THE PURLINS ALWAYS SURVIVE —
+   they are steel, they are what the roof hangs on, and a ceiling with no
+   structure left in it is a ceiling that would not be there at all. The
+   profiled deck between them goes in patches, and where it has gone you
+   are looking at the sky.
+   ------------------------------------------------------------------- */
+for (let v = 0; v < RUIN_VARIANTS; v++) {
+  const GONE = [0.46, 0.38, 0.55][v];          // how much of the deck is missing
+  const PURLIN = [26, 12, 40][v];              // where the beam crosses
+  T['RUINDECK' + v] = () => {
+    const p = new Pix(64, 64, 490 + v * 11);
+    const height = new Float32Array(64 * 64);
+    const gone = fbm(64, 64, 8, 3, 491 + v * 23);
+    const n = fbm(64, 64, 14, 2, 492 + v * 13);
     for (let y = 0; y < 64; y++) {
-      const lean = Math.round(Math.sin((y / 63) * 2.1) * 2.2);
-      for (let x = u + lean; x < u + lean + 4; x++) {
-        if (x < 0 || x > 63) continue;
-        p.ink(x, y, 'rust', 0.13 + n[y * 64 + x] * 0.06);
-        height[y * 64 + (x & 63)] = 0.9;
+      for (let x = 0; x < 64; x++) {
+        if (gone[y * 64 + x] > GONE) { p.ink(x, y, 'grey', 0.03); height[y * 64 + x] = 0.02; continue; }
+        const r = x % 16;
+        const t = r < 2 ? 0.05 : r < 4 ? 0.13 : r < 12 ? 0.10 : r < 14 ? 0.07 : 0.05;
+        p.ink(x, y, 'grey', t + n[y * 64 + x] * 0.04);
+        height[y * 64 + x] = r < 4 ? 0.8 : 0.55;
       }
     }
-  }
-  /* two shelf edges left, sagging in the middle */
-  for (const sy of [20, 44]) {
-    for (let x = 0; x < 64; x++) {
-      const sag = Math.round(Math.sin((x / 63) * Math.PI) * 2.6);
-      for (let y = sy + sag; y < sy + sag + 3; y++) {
-        p.ink(x, y, 'grey', 0.14 - (y - sy - sag) * 0.03);
-        height[y * 64 + x] = 0.75;
+    for (let y = PURLIN; y < PURLIN + 7; y++)
+      for (let x = 0; x < 64; x++) {
+        const k = y - PURLIN;
+        const t = k < 2 ? 0.19 : k < 5 ? 0.13 : 0.06;
+        p.ink(x, y & 63, 'grey', t);
+        height[(y & 63) * 64 + x] = k < 2 ? 0.95 : 0.78;
+      }
+    for (let x = 6; x < 64; x += 16) p.ink(x, (PURLIN + 3) & 63, 'rust', 0.16);
+    p.emboss(height, 0.38, 0.85);
+    speckle(64, 64, 130, 493 + v * 5, (x, y, a, b) => {
+      if (gone[y * 64 + x] > GONE) return;
+      if (a > 0.93) p.ink(x, y, 'fire', 0.28 + b * 0.3);
+    });
+    return p.snap(0.4);
+  };
+}
+
+/* ---------------------------------------------------------------------
+   THE SHELVING
+
+   Uprights and whatever shelf did not fall. The uprights lean where the
+   heat was worst, which is the one detail that stops a gutted gondola
+   reading as a gondola somebody emptied.
+   ------------------------------------------------------------------- */
+for (let v = 0; v < RUIN_VARIANTS; v++) {
+  const BAY = [21, 16, 26][v];
+  const SHELVES = [[20, 44], [14, 32, 50], [36]][v];
+  const LEAN = [2.2, 1.1, 3.4][v];
+  T['RUINRACK' + v] = () => {
+    const p = new Pix(64, 64, 500 + v * 17);
+    const n = fbm(64, 64, 10, 3, 501 + v * 7);
+    const height = new Float32Array(64 * 64);
+    for (let y = 0; y < 64; y++)
+      for (let x = 0; x < 64; x++) {
+        p.ink(x, y, 'grey', 0.035 + n[y * 64 + x] * 0.04);
+        height[y * 64 + x] = 0.05;
+      }
+    for (let u = 0; u < 64; u += BAY) {
+      for (let y = 0; y < 64; y++) {
+        const lean = Math.round(Math.sin((y / 63) * 2.1 + v) * LEAN);
+        for (let x = u + lean; x < u + lean + 4; x++) {
+          const xx = ((x % 64) + 64) % 64;
+          p.ink(xx, y, 'rust', 0.125 + n[y * 64 + xx] * 0.06);
+          height[y * 64 + xx] = 0.9;
+        }
       }
     }
-  }
-  p.emboss(height, 0.40, 0.9);
-  speckle(64, 64, 200, 502, (x, y, a, b) => {
-    if (a > 0.90) p.ink(x, y, 'fire', 0.34 + b * 0.36);
-    else if (a > 0.66) p.wash(x, y, 'fire', 0.12, 0.34);
-  });
-  return p.snap(0.42);
-};
+    for (const sy of SHELVES) {
+      for (let x = 0; x < 64; x++) {
+        const sag = Math.round(Math.sin((x / 63) * Math.PI) * 2.6);
+        for (let y = sy + sag; y < sy + sag + 3 && y < 64; y++) {
+          p.ink(x, y, 'grey', 0.13 - (y - sy - sag) * 0.03);
+          height[y * 64 + x] = 0.75;
+        }
+      }
+    }
+    p.emboss(height, 0.40, 0.9);
+    speckle(64, 64, 140, 502 + v * 3, (x, y, a, b) => {
+      if (a > 0.93) p.ink(x, y, 'fire', 0.32 + b * 0.36);
+    });
+    return p.snap(0.42);
+  };
+}
 
 /* Everything that can be on fire and is looked at afterwards. Walls and
    ceilings included: smoke blackens a ceiling long before flame reaches
@@ -1813,30 +1849,52 @@ const FIXTURES = new Set([
   'PRODUCE', 'DELICASE', 'CHECKOUT', 'SHELFMIX', 'BAKECASE', 'CARDBOX', 'PALLET',
 ]);
 
-/** The four the ruin converges on. */
-export const RUIN = ['RUINWALL', 'RUINFLR', 'RUINDECK', 'RUINRACK'];
+/** Every ruin texture there is, for whatever wants to check they exist. */
+export const RUIN = ['WALL', 'FLR', 'DECK', 'RACK']
+  .flatMap(k => Array.from({ length: RUIN_VARIANTS }, (_, v) => `RUIN${k}${v}`));
+
+/* A region's own number, stable across a reload and different from its
+   neighbour's. Knuth's multiplicative hash, which is enough for this. */
+const ruinHash = (i, salt) => (Math.imul((i + 1) ^ salt, 2654435761) >>> 8) / 0x1000000;
 
 /**
  * What a region's surfaces become once it has gone completely.
  *
  * Returns only the slots that CHANGE, so the caller can leave the rest
- * alone — and returns the ceiling as SKY rather than as a texture,
- * because the honest answer to "what is the roof made of now" is that
- * there is not one.
+ * alone.
+ *
+ * THE ROOF DOES NOT ALL GO, and getting that wrong made the first cut of
+ * this look like a demolition rather than a fire. Every gutted region
+ * opening straight to the sky meant a burnt-out store had no ceiling
+ * anywhere, which is not what a burnt building looks like and is not
+ * what holds one up: the deck burns through and falls in where the SPAN
+ * is long and there is nothing under it, and over a corridor, a doorway
+ * or a small room it stays exactly where it is, holed and charred and
+ * still a roof.
+ *
+ * So a region needs two things to lose its ceiling: a span big enough to
+ * fall (the caller passes how many cells of fuel grid it covers) and the
+ * luck of the draw. Everything else keeps a burnt deck with its purlins
+ * — which is where the exposed structure people actually see comes from,
+ * because you are looking up at it rather than at a hole.
  */
-export function guttedSurfaces(s) {
+export function guttedSurfaces(s, opts = {}) {
   const bare = n => (n && n.endsWith('_B')) ? n.slice(0, -2) : n;
+  const v = Math.floor(ruinHash(s.index | 0, 0x5bd1) * RUIN_VARIANTS) % RUIN_VARIANTS;
   const out = {};
   const fixture = FIXTURES.has(bare(s.wallTex));
-  if (s.wallTex && s.wallTex !== 'NONE') out.wallTex = fixture ? 'RUINRACK' : 'RUINWALL';
-  if (s.floorTex && s.floorTex !== 'NONE') out.floorTex = fixture ? 'RUINRACK' : 'RUINFLR';
-  /* The roof goes. Whatever was over this region — ceiling tiles, deck,
-     the canopy soffit — is on the floor now and you are looking at the
-     night through the hole where it was. A region that was already open
-     to the sky simply stays open. */
-  if (s.ceilTex && s.ceilTex !== 'SKY') { out.ceilTex = 'SKY'; out.sky = 1; }
-  /* and what a neighbour sees of the roof's edge round that hole */
-  if (s.upperTex && s.upperTex !== 'NONE') out.upperTex = 'RUINDECK';
+  if (s.wallTex && s.wallTex !== 'NONE') out.wallTex = (fixture ? 'RUINRACK' : 'RUINWALL') + v;
+  if (s.floorTex && s.floorTex !== 'NONE') out.floorTex = (fixture ? 'RUINRACK' : 'RUINFLR') + v;
+
+  if (s.ceilTex && s.ceilTex !== 'SKY') {
+    const cells = opts.cells ?? 0;
+    const bigSpan = cells >= 24;                      // about 25,000 square units
+    const collapses = bigSpan && ruinHash(s.index | 0, 0x9e37) < 0.45;
+    if (collapses) { out.ceilTex = 'SKY'; out.sky = 1; }
+    else out.ceilTex = 'RUINDECK' + v;
+  }
+  /* and what a neighbour sees of the roof's edge where the heights step */
+  if (s.upperTex && s.upperTex !== 'NONE') out.upperTex = 'RUINDECK' + v;
   return out;
 }
 

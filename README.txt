@@ -67,7 +67,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         315 checks, no install and no browser
+  the smoke test         342 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -272,26 +272,67 @@ everything in it blackened, which is `_B` twins of the forty textures
 that can burn. A region that has lost nearly all of it is GUTTED, and
 that is not a darker room, it is a room that is no longer there:
 
-  the walls    holes, with charred studs standing in them and the coals
-                 still alive in the gaps
+  the walls    THE FRAME SURVIVES AND THE SKIN DOES NOT. Studs standing
+                 the full height with a noggin across, and the board gone
+                 between them from the top down — because fire climbs,
+                 and because the bottom of a wall is the last place the
+                 heat reaches. A hole with nothing behind it is a hole in
+                 the world; a hole with framing behind it is a building
   the floor    slab, ash, and the bits of the ceiling that came down,
                  with the fire visible in the cracks — which is where
                  the light in a gutted aisle comes from
-  the shelves  bare uprights, leaning, with two shelf edges that did
-                 not fall
-  the roof     GONE. The ceiling becomes sky and you are standing in a
-                 supermarket looking up at the Milky Way
+  the shelves  bare uprights, leaning where the heat was worst, with
+                 whatever shelf did not fall
+  the roof     mostly STILL THERE, and holed. The profiled deck goes in
+                 patches and the steel purlins never do; where the span
+                 was long enough to fall it has fallen and the ceiling is
+                 sky, and you are standing in a supermarket looking up at
+                 the Milky Way
 
-Four textures do all of it, chosen by which SLOT a surface fills rather
+THE ROOF DOES NOT ALL GO, and getting that wrong made the first cut of
+this look like a demolition rather than a fire. Every gutted region
+opening straight to the sky left a burnt-out store with no ceiling
+anywhere, which is neither what a burnt building looks like nor what
+holds one up. A region needs two things to lose its ceiling now: a span
+long enough to fall — how many cells of the fuel grid it covers — and the
+luck of the draw. Corridors, doorways and small rooms keep theirs. About
+two in five of the big ones come down.
+
+FOUR TEXTURES DO ALL OF IT, chosen by which SLOT a surface fills rather
 than by what it used to be, because past a certain point a partition, a
 chiller surround and a shopfront are the same rubble and forty more
-textures would all have had to converge on the same look anyway.
+textures would all have had to converge on the same look anyway. THREE OF
+EACH, though, because a ruin is not a material, it is an accident: two
+aisles that burned do not char identically, and one texture repeated over
+a whole gutted store reads as a pattern, which is the one thing a ruin
+must not read as. A region picks its own by a hash of its index — stable
+across a reload, different from its neighbour's.
 
 IT HAPPENS REGION BY REGION, which is the part worth watching. The roof
 goes in patches, so there is a long stretch where half the shop is still
 a shop and the other half is a shell open to the night with fire in the
 floor of it — and the join between them, a hard edge of ceiling against
 stars, is the best thing in the game.
+
+AND ALL OF IT IS STILL ALIGHT. The burning trees have always run an
+eight-colour ember ramp against a clock in their shader; a charred wall
+was a PICTURE of embers, baked in and dead, at the exact moment the game
+most wants to look alive. Now the world material runs the same ramp on
+the same clock, so a charred aisle and a charred fir are one fire going
+out rather than two effects that happen to be orange. The ramp moved to
+js/palette.js so there is one of it.
+
+WHERE THE COALS SIT, with no second texture to say so: a scatter of
+world-space cells about fourteen units across, kept only where the
+surface is ALREADY DARK — coals live in the recesses of a burnt thing,
+and a burnt texture's own dark places are exactly those recesses, so the
+texture picks the spots and the shader lights them. Two sines beaten
+against each other keep neighbours out of step, the palette index is
+quantised to whole steps so it flips between real colours instead of
+sliding through the gaps, and it costs nothing at all where nothing has
+burnt. The first cut used cells five units across and lit a quarter of
+them, which at a grazing angle put more coals on a ceiling than there
+were pixels to draw them in and read as television static.
 
 The light fittings are taken away rather than switched off when the roof
 over them goes. A dead fitting still draws, and a row of them hanging in
@@ -773,7 +814,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-315 checks. Every one of them earns its place by having caught something
+342 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -835,6 +876,10 @@ that had already reached a screenshot:
     customer does. The map places the crowd through one predicate and
     exports the rectangle it used; the check holds every one of them
     against it from the other side
+  a burnt-out store with no ceiling anywhere, because the first gutting
+    opened every region to the sky. The check now demands BOTH — some of
+    the roof fallen in and most of it still up — since either alone is a
+    different building
 
 
 WHAT IS NOT DONE

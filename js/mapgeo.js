@@ -37,7 +37,7 @@ import { createWallMaterial } from './material.js';
 /* A batch collects triangles for one texture and hands back a mesh. */
 class Batch {
   constructor(name) {
-    this.name = name; this.pos = []; this.uv = []; this.light = []; this.sky = [];
+    this.name = name; this.pos = []; this.uv = []; this.light = []; this.sky = []; this.char = [];
   }
   get empty() { return this.pos.length === 0; }
 
@@ -45,21 +45,26 @@ class Batch {
      anything indoors, 1 out in the car park. The shader stretches the
      distance falloff by it, which is the whole reason a parade six
      thousand units long does not read as a black wall. */
-  tri(ax, ay, az, au, av, bx, by, bz, bu, bv, cx, cy, cz, cu, cv, l, sk = 0) {
+  /* `ch` is how burnt this triangle's region is — 0 untouched, about a
+     half charred, 1 gutted. The shader puts LIVE COALS on it in the same
+     eight colours and on the same clock as the burning trees, so a
+     charred wall and a charred fir are one fire going out. */
+  tri(ax, ay, az, au, av, bx, by, bz, bu, bv, cx, cy, cz, cu, cv, l, sk = 0, ch = 0) {
     this.pos.push(ax, ay, az, bx, by, bz, cx, cy, cz);
     this.uv.push(au, av, bu, bv, cu, cv);
     this.light.push(l, l, l);
     this.sky.push(sk, sk, sk);
+    this.char.push(ch, ch, ch);
   }
 
   /* A quad as two triangles, given four corners in winding order. */
-  quad(p, u, l, sk = 0) {
+  quad(p, u, l, sk = 0, ch = 0) {
     this.tri(p[0][0], p[0][1], p[0][2], u[0][0], u[0][1],
              p[1][0], p[1][1], p[1][2], u[1][0], u[1][1],
-             p[2][0], p[2][1], p[2][2], u[2][0], u[2][1], l, sk);
+             p[2][0], p[2][1], p[2][2], u[2][0], u[2][1], l, sk, ch);
     this.tri(p[0][0], p[0][1], p[0][2], u[0][0], u[0][1],
              p[2][0], p[2][1], p[2][2], u[2][0], u[2][1],
-             p[3][0], p[3][1], p[3][2], u[3][0], u[3][1], l, sk);
+             p[3][0], p[3][1], p[3][2], u[3][0], u[3][1], l, sk, ch);
   }
 
   geometry() {
@@ -68,6 +73,7 @@ class Batch {
     g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
     g.setAttribute('light', new THREE.Float32BufferAttribute(this.light, 1));
     g.setAttribute('sky', new THREE.Float32BufferAttribute(this.sky, 1));
+    g.setAttribute('charred', new THREE.Float32BufferAttribute(this.char, 1));
     g.computeBoundingSphere();
     return g;
   }
@@ -201,7 +207,7 @@ function addFlats(set, level, s, bank) {
         p0.x, s.floor, -p0.y, p0.x / t.w, -p0.y / t.h,
         p1.x, s.floor, -p1.y, p1.x / t.w, -p1.y / t.h,
         p2.x, s.floor, -p2.y, p2.x / t.w, -p2.y / t.h,
-        s.light, skyOf(s));
+        s.light, skyOf(s), charOf(s));
     }
   }
 
@@ -216,7 +222,7 @@ function addFlats(set, level, s, bank) {
         p0.x, s.ceil, -p0.y, p0.x / t.w, -p0.y / t.h,
         p1.x, s.ceil, -p1.y, p1.x / t.w, -p1.y / t.h,
         p2.x, s.ceil, -p2.y, p2.x / t.w, -p2.y / t.h,
-        s.light, skyOf(s));
+        s.light, skyOf(s), charOf(s));
     }
   }
 }
@@ -239,7 +245,7 @@ function addLine(set, level, l, bank) {
     if (tex === 'NONE') return;
     addQuad(set, l, bank, tex, s.floor, s.ceil, facingFront,
             pegOf(l, 'middle', s.floor, s.ceil, s, bank.get(tex).h),
-            s.light + l.contrast, skyOf(s));
+            s.light + l.contrast, skyOf(s), charOf(s));
     return;
   }
 
@@ -251,23 +257,23 @@ function addLine(set, level, l, bank) {
   if (front.ceil > back.ceil && l.upper && l.upper !== 'NONE' && !skyBoth)
     addQuad(set, l, bank, l.upper, back.ceil, front.ceil, true,
             pegOf(l, 'upper', back.ceil, front.ceil, front, bank.get(l.upper).h),
-            front.light + l.contrast, skyOf(front));
+            front.light + l.contrast, skyOf(front), charOf(front));
 
   if (back.floor > front.floor && l.lower && l.lower !== 'NONE')
     addQuad(set, l, bank, l.lower, front.floor, back.floor, true,
             pegOf(l, 'lower', front.floor, back.floor, front, bank.get(l.lower).h),
-            front.light + l.contrast, skyOf(front));
+            front.light + l.contrast, skyOf(front), charOf(front));
 
   /* Back side — the same two pieces, seen the other way round. */
   if (back.ceil > front.ceil && l.upper && l.upper !== 'NONE' && !skyBoth)
     addQuad(set, l, bank, l.upper, front.ceil, back.ceil, false,
             pegOf(l, 'upper', front.ceil, back.ceil, back, bank.get(l.upper).h),
-            back.light + l.contrast, skyOf(back));
+            back.light + l.contrast, skyOf(back), charOf(back));
 
   if (front.floor > back.floor && l.lower && l.lower !== 'NONE')
     addQuad(set, l, bank, l.lower, back.floor, front.floor, false,
             pegOf(l, 'lower', back.floor, front.floor, back, bank.get(l.lower).h),
-            back.light + l.contrast, skyOf(back));
+            back.light + l.contrast, skyOf(back), charOf(back));
 
   /* A middle texture on a two-sided line is the thing IN the hole: a
      grating, a shop window, a wire shelf you can see through. Drawn both
@@ -278,8 +284,8 @@ function addLine(set, level, l, bank) {
     if (top > bot) {
       const th = bank.get(l.middle).h;
       const peg = l.pegMiddle === 'bottom' ? bot + th : top;
-      addQuad(set, l, bank, l.middle, bot, top, true,  peg + l.yoff, front.light + l.contrast, skyOf(front));
-      addQuad(set, l, bank, l.middle, bot, top, false, peg + l.yoff, back.light + l.contrast, skyOf(back));
+      addQuad(set, l, bank, l.middle, bot, top, true,  peg + l.yoff, front.light + l.contrast, skyOf(front), charOf(front));
+      addQuad(set, l, bank, l.middle, bot, top, false, peg + l.yoff, back.light + l.contrast, skyOf(back), charOf(back));
     }
   }
 }
@@ -316,8 +322,12 @@ function pegOf(l, which, zLow, zHigh, sector, texH) {
    can be half way between a car park and a corridor, which is what a
    canopy is; falls back to the plain outdoor/indoor answer. */
 function skyOf(s) { return s ? (s.sky ?? (s.outdoor ? 1 : 0)) : 0; }
+/* Charred is halfway and gutted is all the way, because a gutted region
+   is not a darker charred one — it is the same surface with rather more
+   of it still alight. */
+export function charOf(s) { return s ? (s.gutted ? 1 : s.charred ? 0.55 : 0) : 0; }
 
-function addQuad(set, l, bank, texName, zBot, zTop, facingFront, peg, light, sk = 0) {
+function addQuad(set, l, bank, texName, zBot, zTop, facingFront, peg, light, sk = 0, ch = 0) {
   if (zTop <= zBot) return;
   const t = bank.get(texName);
   const b = set.get(texName);
@@ -349,11 +359,11 @@ function addQuad(set, l, bank, texName, zBot, zTop, facingFront, peg, light, sk 
     b.quad(
       [[x2, zTop, -y2], [x1, zTop, -y1], [x1, zBot, -y1], [x2, zBot, -y2]],
       [[u1, vT],        [u0, vT],        [u0, vB],        [u1, vB]],
-      lit, sk);
+      lit, sk, ch);
   } else {
     b.quad(
       [[x1, zTop, -y1], [x2, zTop, -y2], [x2, zBot, -y2], [x1, zBot, -y1]],
       [[u1, vT],        [u0, vT],        [u0, vB],        [u1, vB]],
-      lit, sk);
+      lit, sk, ch);
   }
 }

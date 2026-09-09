@@ -228,6 +228,9 @@ export class FireSystem {
     /* per-region progress, so a region can be charred when it has gone */
     this.sectorFuel = new Float64Array(this.game.level.sectors.length);
     this.sectorBurnt = new Float64Array(this.game.level.sectors.length);
+    /* how many cells of grid a region covers — its SPAN, which is what
+       decides whether its roof can fall in; see guttedSurfaces */
+    this.sectorCells = new Int32Array(this.game.level.sectors.length);
     this.newlyCharred = [];
     this.newlyGutted = [];
 
@@ -252,6 +255,7 @@ export class FireSystem {
         const s = lv.sectorAt(this.worldX(cx), this.worldY(cy));
         if (!s) continue;
         this.sectorOf[i] = s.index;
+        this.sectorCells[s.index]++;
         const f = s.fuel | 0;
         if (f <= 0) continue;
         /* a little variation, so the burn front is ragged rather than a

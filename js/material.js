@@ -35,6 +35,7 @@
    ===================================================================== */
 
 import * as THREE from 'three';
+import { EMBER_RAMP } from './palette.js';
 
 /* Every material in the game shares these objects. Mutate .value on one
    and the whole store changes on the next frame — no walking a scene
@@ -65,6 +66,12 @@ export const world = {
   fireLightRange: { value: 512.0 },
   fireLight:      { value: 0.0 },
   fireLightColor: { value: new THREE.Color(1.0, 0.55, 0.18) },
+
+  /* THE COALS. One clock for everything in the game that is still
+     glowing after the flame has gone — the burning trees run on it, and
+     so does every charred and gutted surface in the store. Seconds. */
+  emberTime: { value: 0.0 },
+  emberRamp: { value: EMBER_RAMP.map(c => new THREE.Vector3(c[0], c[1], c[2])) },
 };
 
 /* The uniform declarations every lit fragment shader needs, matching
@@ -82,6 +89,8 @@ uniform vec3  fireLightPos;
 uniform float fireLightRange;
 uniform float fireLight;
 uniform vec3  fireLightColor;
+uniform float emberTime;
+uniform vec3  emberRamp[8];
 `;
 
 /* The two halves of the lighting, as functions.
@@ -95,6 +104,67 @@ uniform vec3  fireLightColor;
    worldShade: the banded light applied to a colour, then the fire glow
    on top of the banding, then the smoke. */
 export const WORLD_SHADE_GLSL = /* glsl */`
+/* ---------------------------------------------------------------------
+   THE COALS ON A BURNT SURFACE
+
+   A charred wall used to be a picture of embers: the ash and the little
+   orange specks were baked into the texture and they sat there, dead, at
+   the exact moment the game most wants to look alive. The burning trees
+   have never had that problem — their shader runs the eight-colour ember
+   ramp against a clock — and this is the same maths, on the same ramp,
+   on the same clock, so that a charred aisle and a charred fir are one
+   fire going out rather than two effects that happen to be orange.
+
+   WHERE THE COALS SIT, with no second texture to say so: a scatter of
+   world-space cells about five units across, kept only where the surface
+   is ALREADY DARK. Coals live in the recesses of a burnt thing — the
+   char between the boards, the gap between the studs — and a burnt
+   texture's own dark places are exactly those recesses. So the texture
+   picks the spots and the shader lights them.
+
+   It costs nothing where nothing has burnt, which is most of the game
+   and all of it until you do something.
+   ------------------------------------------------------------------- */
+float emberHash(vec3 c) {
+  return fract(sin(dot(c, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+}
+
+vec3 emberOf(float charAmt, vec3 wpos, float lum, float depth) {
+  if (charAmt <= 0.001) return vec3(0.0);
+  /* CHUNKY, AND THERE ARE NOT MANY. The first cut used cells five units
+     across and lit a quarter of them, which at a grazing angle put more
+     coals on a ceiling than there were pixels to draw them in: it read
+     as television static rather than as a fire going out. Fourteen-unit
+     cells are about the size of a coal you would see across a shop, and
+     one in twelve of them is alight. */
+  vec3 cell = floor(wpos * 0.07);
+  float h = emberHash(cell);
+  float h2 = fract(h * 197.13);
+  /* And they fade out with distance for the same reason. A coal is a
+     small bright thing; small bright things at three thousand units are
+     one pixel of aliasing each. */
+  float near = 1.0 - smoothstep(700.0, 2000.0, depth);
+  if (near <= 0.001) return vec3(0.0);
+  /* a scatter, in the DARK parts — coals live in the recesses, and a
+     burnt texture's own dark places are exactly those recesses */
+  float sit = smoothstep(0.93 - charAmt * 0.05, 0.995 - charAmt * 0.04, h)
+            * (1.0 - smoothstep(0.07, 0.32, lum)) * near;
+  if (sit <= 0.001) return vec3(0.0);
+  /* Two sines beaten against each other so neighbouring coals are out of
+     step — the trees' trick, and the reason a burnt surface breathes
+     instead of pulsing all at once. */
+  float flick = 0.70 + 0.36
+    * sin(emberTime * 9.0 + h * 31.4 + wpos.y * 0.17)
+    * sin(emberTime * 3.7 + h2 * 12.0 + wpos.x * 0.11);
+  float heat = clamp(sit * (0.45 + 0.75 * charAmt), 0.0, 1.0);
+  /* and the palette cycle: quantised to whole steps of the ramp, so it
+     flips between real colours instead of sliding through the gaps */
+  float ph = emberTime * 0.9 + h * 6.28 + h2 * 2.1;
+  float wave = abs(fract(ph) * 2.0 - 1.0) - 0.5;
+  float idx = clamp(heat + wave * 0.40, 0.0, 1.0);
+  return emberRamp[int(floor(idx * 7.0 + 0.5))] * (heat * flick * 0.55);
+}
+
 float worldBand(float lightIn, float depth, float sky, float fullbright) {
   /* Distance diminishing. Linear in depth, because Doom's was too, and
      because an inverse-square falloff in a corridor lit by nothing in
@@ -143,6 +213,7 @@ varying float vLight;
 varying float vDepth;
 varying vec3  vWorld;
 varying float vSky;
+varying float vChar;
 
 #ifdef PER_VERTEX_LIGHT
   attribute float light;
@@ -160,9 +231,13 @@ varying float vSky;
      canopy is. It stretches the falloff and lifts its floor, and nothing
      indoors changes at all. */
   attribute float sky;
+  /* how burnt this surface's region is: 0 untouched, about a half
+     charred, 1 gutted. Set by js/mapgeo.js, read by emberOf. */
+  attribute float charred;
 #else
   uniform float light;
   uniform float sky;
+  uniform float charred;
 #endif
 
 #ifdef BILLBOARD
@@ -175,6 +250,7 @@ void main() {
   vUv = uv;
   vLight = light;
   vSky = sky;
+  vChar = charred;
 
   vec3 p = position;
 
@@ -211,6 +287,7 @@ varying float vLight;
 varying float vDepth;
 varying vec3  vWorld;
 varying float vSky;
+varying float vChar;
 
 ${WORLD_SHADE_GLSL}
 
@@ -218,7 +295,10 @@ void main() {
   vec4 t = texture2D(map, vUv);
   if (t.a < alphaTest) discard;
   float l = worldBand(vLight, vDepth, vSky, fullbright);
-  gl_FragColor = vec4(worldShade(t.rgb, l, vDepth, vWorld, fullbright), t.a);
+  vec3 c = worldShade(t.rgb, l, vDepth, vWorld, fullbright);
+  /* the coals go on AFTER the smoke, so a burnt aisle glows through it */
+  c += emberOf(vChar, vWorld, dot(t.rgb, vec3(0.2126, 0.7152, 0.0722)), vDepth);
+  gl_FragColor = vec4(c, t.a);
 }
 `;
 
@@ -237,6 +317,8 @@ export function worldUniforms() {
     fogFar:       world.fogFar,
     fogDensity:   world.fogDensity,
     tint:         world.tint,
+    emberTime:    world.emberTime,
+    emberRamp:    world.emberRamp,
   };
 }
 
