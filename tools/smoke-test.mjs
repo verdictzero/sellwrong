@@ -182,6 +182,92 @@ const st = await import('../js/states.js');
   check('sprites are 64px or under',
     [...bank.frames.values()].every(f => f.views[0].w <= 64 && f.views[0].h <= 64));
 
+  /* ---------- the fire, which the game draws itself -------------------
+
+     Three things are worth holding to a number here, because all three
+     were wrong before and none of them announces itself:
+
+       THE BOTTOM IS ROUND. Measured the only way that means anything —
+       the lowest lit row of every COLUMN. A flame with a flat foot has
+       every column ending on the same row, whatever its silhouette does
+       from the sides, and that is exactly what the painted strips did
+       and what masking them could not fix. So: how far the bottom edge
+       rises from the deepest column to the shallowest, against how wide
+       the flame is. The old strips scored 0.04 of their width. Anything
+       at or under about a tenth is a flat bottom with the corners taken
+       off.
+
+       IT LOOPS. The last frame hands back to the first for the whole
+       time something is alight, which is most of the game. If the wrap
+       moves more than an ordinary step does, that is a pop, and it is
+       the one animation fault a player will notice every second.
+
+       NOTHING IS CLIPPED BY ITS OWN CELL. A lick that runs off the side
+       of the frame is a vertical straight edge on a fire — the same
+       fault as the flat bottom, turned ninety degrees — and one that
+       runs off the bottom loses the round foot that is the point. The
+       top is allowed: that is where the licks go. */
+  {
+    const art = await import('../js/fireart.js');
+    const sets = {
+      FIRE: art.fireFrames(32, 48, art.FIRE_FRAMES, 7),
+      BLAZ: art.fireFrames(48, 64, art.BLAZE_FRAMES, 19, { taper: 0.8 }),
+      EMBR: art.fireFrames(20, 28, art.EMBER_FRAMES, 31, { taper: 0.62 }),
+      wood: art.fireFrames(64, 64, 20, 11, { taper: 0.7 }),
+    };
+    let flattest = 9, edged = 0, worstWrap = 0;
+    for (const fr of Object.values(sets)) {
+      for (const f of fr) {
+        for (let y = 0; y < f.h; y++)
+          for (let x = 0; x < f.w; x++)
+            if (f.data[(y * f.w + x) * 4 + 3] >= 8 && (x === 0 || x === f.w - 1 || y === f.h - 1)) edged++;
+        const low = [];
+        for (let x = 0; x < f.w; x++) {
+          let b = -1;
+          for (let y = f.h - 1; y >= 0; y--) if (f.data[(y * f.w + x) * 4 + 3] >= 128) { b = y; break; }
+          low.push(b);
+        }
+        const lit = low.filter(v => v >= 0);
+        if (lit.length) flattest = Math.min(flattest, (Math.max(...lit) - Math.min(...lit)) / lit.length);
+      }
+      /* how far the picture moves between one frame and the next, all
+         the way round, including from the last back to the first */
+      const step = [];
+      for (let i = 0; i < fr.length; i++) {
+        const a = fr[i], b = fr[(i + 1) % fr.length];
+        let d = 0;
+        for (let k = 0; k < a.data.length; k += 4)
+          d += Math.abs(a.data[k] * a.data[k + 3] - b.data[k] * b.data[k + 3]);
+        step.push(d);
+      }
+      const wrap = step[step.length - 1];
+      const mid = step.slice(0, -1).sort((a, b) => a - b)[step.length >> 1];
+      worstWrap = Math.max(worstWrap, wrap / mid);
+    }
+    note('round bottom, worst frame', `edge rises ${(flattest * 100).toFixed(0)}% of the flame's width`);
+    note('the loop closes', `the wrap moves ${worstWrap.toFixed(2)}x what a middling frame does`);
+    check('the bottom of every flame is round, not narrowed and flat', flattest > 0.18, flattest.toFixed(3));
+    check('the last frame hands back to the first without a pop', worstWrap < 1.6, worstWrap.toFixed(2));
+    check('no flame touches the side or the bottom of its own cell', edged === 0, String(edged));
+    check('every colour in the fire is already one of the 256',
+      Object.values(sets).every(fr => fr.every(f => {
+        for (let i = 0; i < f.data.length; i += 4) {
+          if (f.data[i + 3] < 8) continue;
+          if (!pal.PALETTE.some(c => c[0] === f.data[i] && c[1] === f.data[i + 1] && c[2] === f.data[i + 2])) return false;
+        }
+        return true;
+      })));
+    /* The bank and the state tables both build on these, from opposite
+       ends; if they disagree the fire either skips frames or asks for a
+       letter nobody drew. */
+    check('the bank holds every frame js/fireart.js says it does',
+      bank.count('FIRE') === art.FIRE_FRAMES && bank.count('BLAZ') === art.BLAZE_FRAMES
+      && bank.count('EMBR') === art.EMBER_FRAMES);
+    check('and the state chains are exactly that long',
+      [['FIRE', art.FIRE_FRAMES], ['BLAZ', art.BLAZE_FRAMES], ['EMBR', art.EMBER_FRAMES]].every(([n, k]) =>
+        st.STATES[`${n}${k}`] && st.STATES[`${n}${k}`].next === `${n}1` && !st.STATES[`${n}${k + 1}`]));
+  }
+
   /* ---------- the people, who are the one thing a person drew ---------
 
      Four strips of painted art in assets/people, written by
@@ -1039,7 +1125,7 @@ section('the site');
   const missingFiles = [...files].filter(f => !fs.existsSync(path.join(out, f)));
   check('every asset directory the page loads from is in the built site', missingDirs.length === 0, missingDirs.join());
   check('and every file it names outright', missingFiles.length === 0, missingFiles.join());
-  check('the fire strips are in it', ['flame', 'blaze', 'ember'].every(k => fs.existsSync(path.join(out, 'assets/fire', k + '.png'))));
+  check('and no fire strips, because the fire is drawn now', !fs.existsSync(path.join(out, 'assets/fire')));
   check('the page, its icon and its manifest are', ['index.html', 'icon.png', 'manifest.webmanifest'].every(f => fs.existsSync(path.join(out, f))));
   check('and the source tree is not', !fs.existsSync(path.join(out, 'tools')) && !fs.existsSync(path.join(out, 'README.txt')) && !fs.existsSync(path.join(out, 'art')));
   fs.rmSync(out, { recursive: true, force: true });

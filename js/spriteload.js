@@ -3,17 +3,22 @@
    =====================================================================
 
    Everything else the game draws it draws itself, from ramps and noise,
-   at start-up. Four things it does not: the wood, the sky, the fire and
-   THE PEOPLE, which are painted art from other projects and arrive as
-   files. This is the small amount of code that turns those files into
-   frames in the sprite bank.
+   at start-up. Three things it does not: the wood, the sky and THE
+   PEOPLE, which are painted art from other projects and arrive as files.
+   This is the small amount of code that turns those files into frames in
+   the sprite bank.
+
+   THE FIRE USED TO BE A FOURTH — four painted strips from the golf
+   project — and js/fireart.js draws it now, for a reason set out at
+   length in that file: those flames were drawn standing on the ground,
+   and no amount of masking gives a picture with a flat bottom edge a
+   round one.
 
    A STRIP is the whole format. One picture, N cells wide, every cell the
    same size, laid out left to right in the order they play or the order
-   they are chosen from. The fire strips out of the golf project are
-   twenty frames of a looping flame; the strips out of the galvarius
-   project are seventeen shoppers, eleven pieces of one, three splats and
-   twenty-six frames of a fireball. Same cutter for all of them.
+   they are chosen from. The strips out of the galvarius project are
+   seventeen shoppers, eleven pieces of one, three splats and twenty-six
+   frames of a fireball. Same cutter for all of them.
 
    Cell sizes are NOT guessed from the file. The caller says how wide a
    cell is and the count falls out of the width, because a strip whose
@@ -21,9 +26,9 @@
    somebody adds a frame. js/people.js holds the numbers for the people
    and shares them with the tool that writes the files.
 
-   EVERY CELL FACES EVERY WAY. Nothing loaded here has rotations: a fire
-   looks the same from all sides because it is a fire, and a shopper does
-   because there is one drawing of them. Doom would have called that
+   EVERY CELL FACES EVERY WAY. Nothing loaded here has rotations: a
+   shopper looks the same from all sides because there is one drawing of
+   them. Doom would have called that
    rotation 0, and the bank stores it as the same Pix in all eight slots.
    ===================================================================== */
 

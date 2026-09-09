@@ -40,6 +40,7 @@
    ===================================================================== */
 
 import { SHOPPERS, SPLATS, BLASTS } from './people.js';
+import { FIRE_FRAMES, BLAZE_FRAMES, EMBER_FRAMES } from './fireart.js';
 import { TICRATE } from './util.js';
 
 /* Every state: [sprite, frame, tics, action, next]. -1 tics means stay
@@ -100,13 +101,17 @@ S('SPARK2', 'SPRK', 'B', 3, null, 'SPARK3');
 S('SPARK3', 'SPRK', 'C', 4, null, null);
 
 /* The flame that sits on something burning. Loops for ever; the fire
-   system removes it when the fuel runs out. */
-['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].forEach((L, i, arr) =>
-  S(`FIRE${i + 1}`, 'FIRE', L, 2, null, `FIRE${(i + 1) % arr.length + 1}`, { fullbright: true }));
-['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].forEach((L, i, arr) =>
-  S(`BLAZ${i + 1}`, 'BLAZ', L, 2, null, `BLAZ${(i + 1) % arr.length + 1}`, { fullbright: true }));
-['A', 'B', 'C', 'D', 'E', 'F'].forEach((L, i, arr) =>
-  S(`EMBR${i + 1}`, 'EMBR', L, 3, null, `EMBR${(i + 1) % arr.length + 1}`, { fullbright: true }));
+   system removes it when the fuel runs out. The lengths come from
+   js/fireart.js, which draws the frames — a chain shorter than the set
+   it plays would simply never show the rest of them, and one longer
+   would ask the bank for a letter nobody drew. */
+const chain = (name, frames, tics) =>
+  Array.from({ length: frames }, (_, i) =>
+    S(`${name}${i + 1}`, name, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[i], tics, null,
+      `${name}${(i + 1) % frames + 1}`, { fullbright: true }));
+chain('FIRE', FIRE_FRAMES, 2);
+chain('BLAZ', BLAZE_FRAMES, 2);
+chain('EMBR', EMBER_FRAMES, 3);
 
 /* THE FIREBALL a person becomes. Twenty-six frames at a tic each is
    three quarters of a second: a flash at the floor, a column of fire up

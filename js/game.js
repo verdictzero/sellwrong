@@ -735,7 +735,7 @@ export class Game {
 
     for (const a of this.actors) a.render(p.x, p.y, billboardRot);
     this.fire.render(p.x, p.y, billboardRot);
-    this.forest.render(p.x, p.y, billboardRot, world.emberTime.value);
+    this.forest.render(p.x, p.y, ez, billboardRot, world.emberTime.value);
     this.flame.render(billboardRot);
     this.fx.render(billboardRot);
     this.giblets.render(billboardRot);

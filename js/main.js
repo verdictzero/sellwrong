@@ -22,7 +22,8 @@
 import * as THREE from 'three';
 import { LofiPipeline } from './lofi.js';
 import { bakeTextures } from './textures.js';
-import { bakeSprites, bakeWeapons, fireFrames } from './sprites.js';
+import { bakeSprites, bakeWeapons } from './sprites.js';
+import { fireFrames } from './fireart.js';
 import { addStrip, imageData } from './spriteload.js';
 import { CELLS, GIBLETS, BLAST_SPRITE, addStandees, addSplats } from './people.js';
 import { buildSellWrong } from './maps/sellwrong.js';
@@ -139,10 +140,6 @@ async function boot() {
   /* The files start arriving now, behind the baking. */
   const forestArtP = loadForestArt().catch(e => { console.warn('no forest art:', e.message); return null; });
   const skyP = loadImage('assets/sky/night.png').catch(e => { console.warn('no sky:', e.message); return null; });
-  /* the fire: the golf project's looping strips — flame, blaze, ember —
-     for the store's fire, the wood's flames and the gun's muzzle alike */
-  const fireP = Promise.all(['flame', 'blaze', 'ember'].map(k => loadImage(`assets/fire/${k}.png`)))
-    .catch(e => { console.warn('no fire strips, drawing our own:', e.message); return null; });
   /* and the crowd: the galvarius project's standees, the pieces they
      come apart into, what is left on the floor and the fireball that
      does it — see js/people.js and tools/prep-people.mjs */
@@ -157,7 +154,7 @@ async function boot() {
   const weapons = bakeWeapons();
   const fxAtlases = bakeEffectAtlases();
   /* the stream out of the gun is fireballs (bakeEffectAtlases); the
-     muzzle, the pilot and the flames on the wood are the flame strip */
+     muzzle, the pilot and the flames on the wood are flame frames */
   const streamAtlas = { texture: fxAtlases.fireball, frames: 8 };
 
   /* THE PEOPLE ARE NOT DRAWN BY THIS PROGRAM. Every one of them lands on
@@ -183,19 +180,16 @@ async function boot() {
     console.log(`the crowd: ${people} shoppers, ${splats} splats, ${blast} frames of fireball`);
   }
 
+  /* THE FIRE ON THE TREES AND ON THE GUN. The store's three fire sets
+     are already in the bank — bakeSprites drew them — and this is the
+     same generator asked for one more, as a particle atlas: the flames
+     the wood carries, the pilot light and the muzzle flash.
+
+     SQUARE, because Particles draws square quads, and js/fireart.js
+     keeps a flame's own proportions inside whatever cell it is given
+     rather than filling it. Twenty frames, and they loop. */
   status('THE FIRE', 0.50);
-  const fireImgs = await fireP;
-  let flameAtlas;
-  if (fireImgs) {
-    const [flameImg, blazeImg, emberImg] = fireImgs;
-    /* the store's three fire sets, replaced frame for frame: a round
-       base, so a shelf alight is a fire sitting on a shelf and not a fire
-       sawn off flat at the shelf's edge */
-    addStrip(sprites, 'FIRE', imageData(flameImg), 48, { fullbright: true, scale: 1.0 });
-    addStrip(sprites, 'BLAZ', imageData(blazeImg), 96, { fullbright: true, scale: 1.1 });
-    addStrip(sprites, 'EMBR', imageData(emberImg), 16, { fullbright: true, scale: 1.6 });
-    flameAtlas = { texture: imageTexture(flameImg), frames: 20 };
-  } else flameAtlas = { texture: atlasTexture(fireFrames(24, 32, 8, 19, { taper: 0.7 })), frames: 8 };
+  const flameAtlas = { texture: atlasTexture(fireFrames(64, 64, 20, 11, { taper: 0.7 })), frames: 20 };
 
   status('THE WOOD', 0.55);
   const forestArt = await forestArtP;

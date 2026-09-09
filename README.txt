@@ -30,12 +30,10 @@ somewhere else: the people, the trees, the sky, and the gun.
   assets/forest/        the wood: ten plants with their burn maps, two grounds
   assets/sky/night.png  the night, baked from a Polyhaven panorama
   assets/models/        the flamethrower, prepared from the user's .glb
-  assets/fire/          four looping fire strips from the golf project
   assets/fonts/         Michroma (SIL OFL), the title face
   tools/bake-art.mjs    node tools/bake-art.mjs — turns art/ into source
   tools/prep-people.mjs the crowd's art, crunched down from galvarius
   tools/prep-forest.sh  copies the wood's art over from the golf project
-  tools/prep-fire.mjs   and gives golf's flames a round bottom to stand on
   tools/bake-sky.mjs    the sky: 8k panorama to 1024 palette pixels
   tools/prep-model.mjs  strips the marker spheres out of a .glb, keeps their positions
   tools/build-site.sh   assembles public/ — what actually gets published
@@ -429,15 +427,24 @@ runs that match in Node and holds it to those numbers.
 AND IT HAS FLAMES ON IT. The burn map chars a tree and puts coals on
 it; a pool of two hundred instanced flame quads, re-parked every frame
 on the hottest burning cells near the eye, puts FIRE on it — carried at
-the height the front has climbed to, so a fir is seen burning from the
-ground up. The flames are the golf project's twenty-frame looping strips
-(assets/fire), which have a ROUND base: that is also why the store's
-three fire sets are now those strips frame for frame, so a shelf alight
-is a fire sitting on a shelf and not a fire sawn off flat at its edge.
+the height the front has climbed to and held to the crown, so a fir is
+seen burning from the ground up rather than carrying a lantern over its
+own head. The flames come from js/fireart.js, like every other flame in
+the game.
+
+EACH ONE IS STEPPED TOWARD THE EYE as it is parked, and shrunk by the
+same fraction. A flame on a fir and the fir itself are both quads yawed
+to face the camera plane, at the same place: two parallel surfaces at
+the same depth, which the depth test cannot separate, so the fire came
+out chopped up by needles in a pattern that changed every time the eye
+moved. Moving it along the line to the eye and scaling it to match lands
+it on exactly the same pixels at exactly the same size — a perspective
+projection is a scaling about the eye — and the only thing that changes
+is the depth it writes, which is the thing that was wrong.
 
 THE DRAWING is instanced billboards: every plant is one entry in a buffer
 and each kind of plant is one draw call, so the whole wood is ten calls
-and a ground plane. The plants and their fire are the golf project's
+and a ground plane. The plants are the golf project's
 (github.com/verdictzero/golf): each sprite comes with a BURN MAP baked
 from its own pixels — where the coals sit, how black it ends, WHEN each
 texel catches, how leafy it is — and one number per plant swept across
@@ -752,12 +759,35 @@ top third left empty, and that empty third is where the muzzle flame is
 drawn, in code, per frame: one still gun and a separate flash, exactly
 how Doom's weapons worked and why they only ever needed one drawing.
 
-THE FIRE is the PSX Doom routine, which is thirty lines and still the best
-looking fire anyone has put in a game of this shape. Seed the bottom row
-hot; for every cell above, take the one below, subtract a small random
-amount, and shift it sideways by the SAME random amount. The shared random
-value is the part that matters — it correlates the flicker with the decay,
-so the flame licks instead of dissolving.
+THE FIRE IS DRAWN, and js/fireart.js is the whole of it: the flame on a
+shelf, the blaze a gondola becomes, the ember guttering afterwards, the
+fire climbing a fir, the pilot light and the muzzle flash. One generator,
+four sizes, so all of it is visibly the same fire.
+
+IT IS A CHAIN OF CIRCLES — a ball at the foot and smaller ones going up
+to a point — with a noise field scrolling upward that eats into the edge
+and pushes tongues out of it, and an axis that sways, anchored at the
+foot and loosest at the tip. Brightness is banded into eight steps, which
+is the difference between a painted flame and an airbrushed one.
+
+THE ROUND BOTTOM IS THE INVARIANT and it is why the file exists. The
+widest circle is the LOWEST one, so every circle above it is smaller and
+sits higher, so nothing in the chain can reach below the foot and the
+underside of the shape is the underside of one circle. It cannot come out
+flat. What was there before was four painted strips from the golf project
+put through a mask that pinched their feet in from the sides — and a mask
+cannot round a bottom, because narrowing a flat edge leaves a narrower
+flat edge. Measured the only way that means anything, column by column,
+the strips' bottom edge rose four per cent of the flame's width from the
+middle to the sides. These rise thirty.
+
+AND IT LOOPS EXACTLY, which the PSX Doom routine that used to be here
+could not: that is a simulation, and a simulation cannot be made to come
+back to where it started. Something is alight for most of the game, so a
+pop once a second is the thing a player would notice about the fire. The
+noise lattice wraps after a whole number of rows and the scroll over a
+loop is exactly that distance, so the last frame hands back to the first
+with nothing moving.
 
 THE PEOPLE ARE STANDEES, and there used to be a whole machine here for
 making them something else. Two staff monsters, the Zombieman and the Imp
@@ -859,8 +889,9 @@ that had already reached a screenshot:
   a copy of the site that left out the fire strips, so the published game
     would have fallen back to its baked flames without a word — the check
     now assembles the site and holds every asset path the page loads
-    against what was copied
-  four strips of somebody else's art whose cell sizes live in two places
+    against what was copied. The fire is drawn now and there is nothing
+    left to leave out, but the check is what found it
+  strips of somebody else's art whose cell sizes live in two places
     at once — the tool that writes them and the game that cuts them up.
     They now live in ONE place, js/people.js, and the check holds the
     files on disk against it: a strip one pixel narrow cuts every shopper

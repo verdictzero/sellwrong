@@ -40,6 +40,10 @@ import { makeRng, pRandom } from './util.js';
 import { ramp, PALETTE } from './palette.js';
 import { WEAPON_TILE, WEAPON_TOP, CLEAR_INDEX } from './art-data.js';
 import { CELLS, ADULT, SHOPPERS, SPLATS, BLASTS, SHOPPER_SPRITE, SPLAT_SPRITE, BLAST_SPRITE } from './people.js';
+import { fireFrames, FIRE_FRAMES, BLAZE_FRAMES, EMBER_FRAMES } from './fireart.js';
+
+/* A frame is a letter, and the letters stop at Z. */
+const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
 export class SpriteBank {
   constructor() { this.frames = new Map(); this.warned = new Set(); this.counts = new Map(); }
@@ -90,71 +94,6 @@ export class SpriteBank {
     return t;
   }
 }
-
-/* ====================================================================
-   Fire
-
-   The PSX Doom fire routine, which is thirty lines and still the best
-   looking fire anybody has put in a game of this shape.
-
-   Seed the bottom row at maximum heat. For every cell above, take the
-   cell below, subtract a small random amount, and shift it sideways by
-   the same random amount. That is the whole algorithm. The subtraction
-   is the cooling, and the sideways shift by the SAME random value is the
-   part that matters — it correlates the flicker with the decay, so the
-   flame licks instead of dissolving.
-
-   Run it forty times before capturing anything so it settles, then grab
-   one frame every few iterations. It never loops perfectly, which is
-   also true of fire.
-   ==================================================================== */
-export function fireFrames(w, h, count, seed = 7, opts = {}) {
-  const rng = makeRng(seed);
-  const MAX = 36;                              // heat levels
-  const grid = new Int16Array(w * h);
-  const taper = opts.taper ?? 0.55;            // how much the base narrows
-
-  const seedRow = () => {
-    for (let x = 0; x < w; x++) {
-      /* narrower at the edges, so the flame is a flame and not a wall */
-      const d = Math.abs(x - (w - 1) / 2) / ((w - 1) / 2);
-      const hot = Math.max(0, 1 - Math.pow(d, 1.6) / taper);
-      grid[(h - 1) * w + x] = Math.round(MAX * hot);
-    }
-  };
-  seedRow();
-
-  const step = () => {
-    for (let y = h - 1; y > 0; y--) {
-      for (let x = 0; x < w; x++) {
-        const src = grid[y * w + x];
-        if (src <= 0) { grid[(y - 1) * w + x] = 0; continue; }
-        const r = Math.floor(rng() * 3);
-        const dst = x - r + 1;
-        if (dst < 0 || dst >= w) continue;
-        grid[(y - 1) * w + dst] = Math.max(0, src - (r & 1) - (rng() < 0.28 ? 1 : 0));
-      }
-    }
-  };
-
-  for (let i = 0; i < 60; i++) step();          // let it settle
-
-  const out = [];
-  for (let f = 0; f < count; f++) {
-    for (let i = 0; i < 3; i++) step();
-    const p = new Pix(w, h, seed + f, false);
-    for (let y = 0; y < h; y++)
-      for (let x = 0; x < w; x++) {
-        const v = grid[y * w + x];
-        if (v <= 0) continue;
-        p.ink(x, y, 'fire', Math.min(1, v / MAX));
-      }
-    p.snap(0);
-    out.push(p);
-  }
-  return out;
-}
-
 
 /** Anything that is the same from every side: barrels, cans, bollards. */
 function radial(draw, w = 32, h = 40, seed = 1) {
@@ -210,16 +149,24 @@ export function bakeSprites() {
     }
   }
 
-  /* --- fire, in three sizes --- */
-  fireFrames(32, 48, 8, 7).forEach((p, i) =>
-    bank.addFrame('FIRE', 'ABCDEFGH'[i], new Array(8).fill(p), { fullbright: true }));
-  /* Scaled up with the ceiling: a fully involved gondola throws a flame
-     about 160 units, which in a 352 room reads as serious and in the old
-     176 one would have been through the tiles. */
-  fireFrames(48, 64, 8, 19, { taper: 0.8 }).forEach((p, i) =>
-    bank.addFrame('BLAZ', 'ABCDEFGH'[i], new Array(8).fill(p), { fullbright: true, scale: 2.5 }));
-  fireFrames(24, 24, 6, 31, { taper: 0.9 }).forEach((p, i) =>
-    bank.addFrame('EMBR', 'ABCDEF'[i], new Array(8).fill(p), { fullbright: true }));
+  /* --- fire, in three sizes -----------------------------------------
+     What is on a shelf, what a whole gondola turns into, and what is
+     left guttering on the floor afterwards. Drawn by js/fireart.js —
+     see that file for why they are drawn rather than painted.
+
+     The SCALES are world units per pixel and are set so these three come
+     out the sizes they have always been: a flame on a shelf is about
+     fifty units, a blaze a hundred, an ember twenty-five. A cell is
+     wider than the flame inside it, deliberately: the licks that break
+     off the top and the sway at the tip need somewhere to go, and a
+     flame that touches the edge of its own cell is a flame with a
+     straight side. */
+  fireFrames(32, 48, FIRE_FRAMES, 7).forEach((p, i) =>
+    bank.addFrame('FIRE', LETTERS[i], new Array(8).fill(p), { fullbright: true }));
+  fireFrames(48, 64, BLAZE_FRAMES, 19, { taper: 0.8 }).forEach((p, i) =>
+    bank.addFrame('BLAZ', LETTERS[i], new Array(8).fill(p), { fullbright: true, scale: 1.65 }));
+  fireFrames(20, 28, EMBER_FRAMES, 31, { taper: 0.62 }).forEach((p, i) =>
+    bank.addFrame('EMBR', LETTERS[i], new Array(8).fill(p), { fullbright: true, scale: 0.92 }));
 
   /* --- a trolley, abandoned mid-aisle --- */
   bank.addFrame('TRLY', 'A', radial(p => {
@@ -301,8 +248,7 @@ export function bakeSprites() {
   {
     const frames = fireFrames(CELLS.blast.w, 64, BLASTS, 77, { taper: 0.5 });
     frames.forEach((p, i) =>
-      bank.addFrame(BLAST_SPRITE, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[i], new Array(8).fill(p),
-                    { fullbright: true }));
+      bank.addFrame(BLAST_SPRITE, LETTERS[i], new Array(8).fill(p), { fullbright: true }));
   }
 
   /* --- the lights, which are objects and not paint -----------------

@@ -617,9 +617,9 @@ export class FireSystem {
       const c = cand[s];
       /* which flame: an ember, a fire, or a proper blaze */
       const set = c.h > 200 ? 'BLAZ' : c.h > 90 ? 'FIRE' : 'EMBR';
-      /* however many frames the set has: eight from the bakery, twenty
-         from the strips in assets/fire when they loaded */
-      const letters = bank.count(set) || (set === 'EMBR' ? 6 : 8);
+      /* however many frames the set has — js/fireart.js decides, and
+         the fallback is only reached if the bank is empty */
+      const letters = bank.count(set) || 8;
       /* Offset by the cell index so neighbouring flames are out of step
          with each other — in phase, a wall of fire pulses like a heart. */
       const frame = String.fromCharCode(65 + ((this.tics >> 1) + c.i * 3) % letters);

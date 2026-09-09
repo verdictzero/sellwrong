@@ -47,6 +47,7 @@
 import * as THREE from 'three';
 import { worldUniforms, WORLD_UNIFORMS_GLSL, WORLD_SHADE_GLSL } from './material.js';
 import { Particles } from './particles.js';
+import { FLAME_FOOT } from './fireart.js';
 import { pRandom, pChance, dist2, clamp } from './util.js';
 import { fbm } from './pixel.js';
 import { EMBER_RAMP } from './palette.js';
@@ -73,6 +74,12 @@ export const KINDS = [
   { name: 'fern',         h: 46,  aspect: 1.0, r: 0,  w: 0, cover: true },
   { name: 'grass',        h: 40,  aspect: 1.0, r: 0,  w: 0, cover: true },
 ];
+
+/* How far a flame steps out of the thing it is burning, toward the eye:
+   a fraction of the flame's own width, and a fraction of the range. See
+   _placeFlames for why either is needed at all. */
+const FLAME_NUDGE = 0.30;
+const FLAME_NUDGE_RANGE = 0.012;
 /* THREE CLASSES, NOT TWO, and they are the golf project's three: firs,
    bushes, ground cover. What changed is that bushes moved out of the
    canopy class and into the understory with the ferns.
@@ -740,7 +747,7 @@ export class Forest {
     for (const ch of touched) ch.burnAttr.needsUpdate = true;
   }
 
-  render(camX, camY, billboardRot, time) {
+  render(camX, camY, camZ, billboardRot, time) {
     if (!this.mesh) { if (this._dirty.length > 4096) this._flush(); return; }
     this.uRot.value = billboardRot;
     this.uTime.value = time;
@@ -756,7 +763,7 @@ export class Forest {
         ch.mesh.visible = dx * dx + dy * dy < c.far * c.far;
       }
     }
-    if (this.flames) { this._placeFlames(camX, camY); this.flames.render(billboardRot); }
+    if (this.flames) { this._placeFlames(camX, camY, camZ); this.flames.render(billboardRot); }
   }
 
   /* ------------------------------------------------------------------
@@ -779,7 +786,7 @@ export class Forest {
     this._flameCand = [];
   }
 
-  _placeFlames(camX, camY) {
+  _placeFlames(camX, camY, camZ) {
     const F = this.flames;
     F.killAll();
     const cand = this._flameCand;
@@ -808,12 +815,52 @@ export class Forest {
       if (ti >= 0) {
         const k = KINDS[this.trees.kind[ti]], th = k.h * this.trees.scale[ti];
         x = this.trees.x[ti]; y = this.trees.y[ti];
-        base = th * clamp(c.t * 1.1, 0.02, 0.86);
         w = Math.max(44, th * (k.aspect < 1 ? 0.40 : 0.85)) * (0.6 + c.heat * 0.6);
+        /* The fire climbs the trunk as the tree goes — and STOPS AT THE
+           CROWN. The foot alone used to be allowed up to six sevenths of
+           the height, and the flame standing on it is most of the tree
+           again, so a fir well alight carried its fire in the air above
+           itself like a paper lantern on a pole. Held to the top of the
+           tree, the flame straddles the crown instead, which is where a
+           fir burns. */
+        base = Math.min(th * clamp(c.t * 1.1, 0.02, 0.86), th * 1.10 - w * (1 - FLAME_FOOT));
       } else w = 30 + c.heat * 26;
-      /* the quad is centred; the art's round base wants to sit on `base` */
+      /* the quad is centred; the art's round foot wants to sit on `base` */
+      let z = base + w * (0.5 - FLAME_FOOT);
+
+      /* TOWARD THE EYE, or the fire is inside the tree.
+
+         A burning fir carries its flame at the tree's own x and y, and
+         both of them are quads yawed to face the camera plane — which
+         makes them PARALLEL SURFACES AT THE SAME DEPTH. The depth test
+         cannot separate two of those: it comes out per pixel, differently
+         every frame as the eye moves, and a fire in a tree turns into a
+         shimmering checkerboard of fire and leaves. Drawing order does
+         not fix it, because the fault is that the depths are equal, not
+         the order they arrive in.
+
+         So the flame is stepped ALONG THE LINE TO THE EYE, and shrunk by
+         the same fraction as it comes. That pair is the whole trick: a
+         perspective projection is a scaling about the eye, so a quad
+         moved a tenth of the way in and made a tenth smaller lands on
+         exactly the same pixels at exactly the same size. Nothing about
+         the picture changes. The only thing that changes is the depth it
+         writes, which is what was wrong.
+
+         How far: a share of the flame's OWN SIZE, so a fire big enough to
+         swallow a fir clears the whole of it and one guttering on the
+         ground barely moves, plus a share of the RANGE, because a depth
+         buffer's resolution falls away with the square of the distance
+         and a step that separates them at fifty units is nothing at two
+         thousand. Never more than halfway, so a flame you are standing
+         in front of cannot arrive behind your head. */
+      const ex = camX - x, ey = camY - y, ez = camZ - z;
+      const range = Math.max(1, Math.sqrt(ex * ex + ey * ey + ez * ez));
+      const pull = Math.min(0.5, (w * FLAME_NUDGE + range * FLAME_NUDGE_RANGE) / range);
+      x += ex * pull; y += ey * pull; z += ez * pull;
+
       F.spawn({
-        x, y, z: base + w * 0.46, life: 2, size: w,
+        x, y, z, life: 2, size: w * (1 - pull),
         c0: [1, 1, 1], a0: 0.5 + c.heat * 0.5,
         frame: ((tics >> 1) + c.i * 7) % F.opts.frames,
       });
