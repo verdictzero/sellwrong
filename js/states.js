@@ -189,6 +189,18 @@ export const ACTORS = {
              variants: SPLATS },
   BLAST:   { name: 'Fireball', spawn: 'BLAST1', radius: 8, height: 96, noclip: true,
              flat: true, fullbright: true },
+
+  /* A PARKED VEHICLE, and the only thing in the game with no state and
+     no sprite. js/car.js draws it — nine boxes with an orthographic
+     turnaround projected onto them — and this is here for the part of a
+     van you cannot walk through. Doom's things are cylinders, so a van
+     is three of these in a row; see carBlockers().
+
+     No `spawn`, so no state, so Actor.render and Actor.tic both fall out
+     on their first line. The alternative was a one-frame sprite that
+     never gets drawn, which is a lie in the sprite bank and an entry in
+     every table that walks it. */
+  CARBODY: { name: 'Vehicle', radius: 38, height: 86, solid: true, shootable: false, flammable: false },
 };
 
 export function stateOf(name) {

@@ -24,6 +24,7 @@ import { LofiPipeline } from './lofi.js';
 import { bakeTextures } from './textures.js';
 import { bakeSprites, bakeWeapons } from './sprites.js';
 import { fireFrames } from './fireart.js';
+import { carTexture } from './car.js';
 import { addStrip, imageData } from './spriteload.js';
 import { CELLS, GIBLETS, BLAST_SPRITE, addStandees, addSplats } from './people.js';
 import { buildSellWrong } from './maps/sellwrong.js';
@@ -145,6 +146,10 @@ async function boot() {
      does it — see js/people.js and tools/prep-people.mjs */
   const peopleP = Promise.all(['shoppers', 'giblets', 'splat', 'blast'].map(k => loadImage(`assets/people/${k}.png`)))
     .catch(e => { console.warn('no people art, using the stand-ins:', e.message); return null; });
+  /* and the van in the car park: four orthographic views of it on one
+     sheet, packed by tools/prep-car.mjs and projected back onto boxes by
+     js/car.js */
+  const carP = loadImage('assets/cars/riotvan.png').catch(e => { console.warn('no cars:', e.message); return null; });
 
   status('BAKING TEXTURES', 0.05); await breathe();
   const textures = bakeTextures();
@@ -198,13 +203,15 @@ async function boot() {
 
   status('BUILDING SELLWRONG', 0.68); await breathe();
   const level = buildSellWrong();
+  const carImage = await carP;
 
   status('THE FLAMETHROWER', 0.78);
   const hud = new Hud(null);
   const audio = new Audio();
   const input = new Input(renderer.domElement);
   const game = new Game({ level, scene, camera, textures, sprites, hud, audio, input, sky: skyImage,
-                         flameAtlas: streamAtlas, fxAtlases, gibAtlases });
+                         flameAtlas: streamAtlas, fxAtlases, gibAtlases,
+                         carAtlas: carImage ? carTexture(carImage) : null });
   hud.game = game;
   const touch = new TouchControls(input, { root: $('touch'), prefs, onPause: () => pause(true) });
 

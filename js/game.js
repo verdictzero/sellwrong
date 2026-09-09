@@ -38,6 +38,7 @@ import { FlameStream } from './flame.js';
 import { Effects } from './effects.js';
 import { Giblets } from './people.js';
 import { Responders } from './responders.js';
+import { buildCar, carBlockers } from './car.js';
 
 const THING_TO_ACTOR = {
   SHOPPER: 'SHOPPER',
@@ -53,7 +54,7 @@ const LAMP_RANGE = 340;
 const LAMP_GAIN = 0.30;
 
 export class Game {
-  constructor({ level, scene, camera, textures, sprites, hud, audio, input, sky, flameAtlas, fxAtlases, gibAtlases }) {
+  constructor({ level, scene, camera, textures, sprites, hud, audio, input, sky, flameAtlas, fxAtlases, gibAtlases, carAtlas }) {
     this.level = level;
     this.scene = scene;
     this.camera = camera;
@@ -83,6 +84,9 @@ export class Game {
     this.spawnThings();
     this.relight();
     this.geo.rebuildStatic();          // with the lamps' light in it
+    /* after relight, because a car's light is baked into it the same way
+       a wall's is, and it should be the light the bay ended up with */
+    this.cars = this.placeCars(carAtlas || null);
     this.slideDoors = buildSlideDoors(this);
     /* the sky is a picture that arrives from outside; without one (the
        smoke test) there is simply no sky, and nothing else minds */
@@ -165,6 +169,48 @@ export class Game {
   }
 
   spawnPuff(x, y, z) { this.spawn('PUFF', x, y, z); }
+
+  /* ------------------------------------------------------------------
+     THE CAR PARK, WITH A CAR IN IT
+
+     `level.carSlots` has held a position, a heading and a variant for
+     every bay in the lot since the day it was laid out, off the same
+     arithmetic that drew the bay lines, and there has never been
+     anything to put in one. There is now — js/car.js — and there is ONE
+     of it, so one bay gets it.
+
+     WHICH BAY: the nearest one the player is actually facing when the
+     level starts, so the first thing they see is the thing that is new.
+     Falling back to the nearest of any, because a map whose start is
+     pointed away from the lot should still park the van.
+
+     The rest of the slots stay empty and stay described. Filling them is
+     a loop over `slots` the day there is more than one vehicle; nothing
+     here assumes there is only ever one. */
+  placeCars(texture) {
+    const slots = this.level.carSlots || [];
+    if (!texture || !slots.length || !this.player) return [];
+    const p = this.player, c = Math.cos(p.angle), s = Math.sin(p.angle);
+    let best = null, bestD = Infinity, ahead = null, aheadD = Infinity;
+    for (const slot of slots) {
+      const dx = slot.x - p.x, dy = slot.y - p.y, d = dx * dx + dy * dy;
+      if (d < bestD) { bestD = d; best = slot; }
+      /* inside about a fifty degree cone, which is what is on the screen */
+      if (d > 1 && (dx * c + dy * s) / Math.sqrt(d) > 0.64 && d < aheadD) { aheadD = d; ahead = slot; }
+    }
+    const slot = ahead || best;
+    const sec = this.level.sectorAt(slot.x, slot.y);
+    const z = sec ? sec.floor : 0;
+    const car = buildCar(texture, {
+      x: slot.x, y: slot.y, z, angle: slot.angle,
+      light: sec ? sec.light : 0.74,
+      sky: sec ? (sec.sky ?? (sec.outdoor ? 1 : 0)) : 1,
+    });
+    this.scene.add(car);
+    /* and the part you cannot walk through: three of Doom's cylinders */
+    for (const b of carBlockers(slot.x, slot.y, slot.angle)) this.spawn('CARBODY', b.x, b.y, z);
+    return [{ slot, mesh: car }];
+  }
 
   /* ------------------------------------------------------------------
      Light that comes from somewhere

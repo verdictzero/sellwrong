@@ -108,7 +108,10 @@ export class Actor {
 
     this.state = null;
     this.stateTics = 0;
-    this.setState(info.spawn);
+    /* A thing with no spawn state never has one: it is a MODEL, drawn by
+       something that is not the sprite bank, and the actor exists for its
+       radius. Everything downstream tests `state` and stops. */
+    if (info.spawn) this.setState(info.spawn);
 
     this.mesh = null;
     this._lastKey = '';
@@ -139,7 +142,7 @@ export class Actor {
   }
 
   tic() {
-    if (this.removed) return;
+    if (this.removed || !this.state) return;
     if (this.burning > 0) this.burnTic();
     if (this.stateTics === -1) return;          // resting for ever
     if (--this.stateTics > 0) return;

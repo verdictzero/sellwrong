@@ -24,7 +24,9 @@ somewhere else: the people, the trees, the sky, and the gun.
   icon.png              and what it draws there — node tools/bake-icons.mjs
   vendor/three.module.js  three r160, local so the game runs off a memory stick
   js/                   the game
-  art/                  the logo and the old sprite weapon, as PNGs
+  art/                  the logo, the old sprite weapon and the van's
+                          four-view sheet, as PNGs
+  assets/cars/          the van, as one packed sheet of its four views
   assets/people/        the crowd, and what is left of one: seventeen
                           shoppers, eleven pieces, three splats, a fireball
   assets/forest/        the wood: ten plants with their burn maps, two grounds
@@ -36,6 +38,7 @@ somewhere else: the people, the trees, the sky, and the gun.
   tools/prep-forest.sh  copies the wood's art over from the golf project
   tools/bake-sky.mjs    the sky: 8k panorama to 1024 palette pixels
   tools/prep-model.mjs  strips the marker spheres out of a .glb, keeps their positions
+  tools/prep-car.mjs    measures a vehicle off a four-view sheet and packs it
   tools/build-site.sh   assembles public/ — what actually gets published
   tools/bake-icons.mjs  the home-screen icon, out of the game's own fire
   tools/smoke-test.mjs  node tools/smoke-test.mjs — no install, no browser
@@ -65,7 +68,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         342 checks, no install and no browser
+  the smoke test         379 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -837,6 +840,102 @@ into a flickering still. It is resampled to twenty-six because a frame is a
 letter and the letters stop at Z.
 
 
+THE VAN IS A PICTURE OF A VAN, FOUR TIMES. What arrived is one image: an
+armoured police truck on a green field, drawn front, rear, side and plan.
+What is in the car park is nine boxes with that image projected back onto
+them. tools/prep-car.mjs does the measuring, js/car.js does the building,
+and js/car-data.js is what one hands the other.
+
+THE FOUR PICTURES ARE MEASUREMENTS AS WELL AS PAINT, and that is the whole
+idea. An orthographic view is a parallel projection, so the side view's
+silhouette is the vehicle's length by its height, the front view's is its
+width by its height, the plan view's is its length by its width. Every pair
+shares an axis with two others — three of the views claim a width — so the
+sheet is OVER-DETERMINED and it can be checked against itself. It agrees
+to one per cent, and the residual is printed, recorded and held by the
+test. Nothing about this vehicle's shape is a number somebody typed in
+after looking at the picture: it is 2.39 long and 1.15 tall for every 1
+wide because that is what the sheet says, which at 32 units to the metre
+makes it five and a half metres of van, and it fills the depth of a bay.
+
+THE SHAPE COMES OUT OF THE SIDE VIEW'S OWN OUTLINE. Its top edge,
+simplified into five steps, is five boxes stacked from the sill; its
+bottom edge dips exactly twice, and those are the wheels. Each box is then
+as wide as the FRONT view is over the band of height that box occupies,
+which is what makes the light bar a bar and the body a body without either
+being named anywhere. Every box sinks a fraction of a unit into the one
+below it and the wheels sit a fraction inside the flanks, because two
+faces at exactly the same depth is not a drawing-order problem, it is a
+tie, and a tie in the depth buffer is the flicker the trees used to have.
+
+THE PAINT IS PROJECTED, not unwrapped. For each triangle: take the axis
+its normal points most nearly along, and read the view that was drawn down
+that axis — forward gets the front, sideways gets the side, up gets the
+plan, and the two views down the same axis from opposite sides share one
+picture, mirrored. There is no atlas laid out by a person and no seam to
+place anywhere. It is the reason a model this crude reads as a vehicle:
+the light bar, the vision slits, the white stripe and the wheel arches are
+all paint that lands where the shape says it should.
+
+MEASURING A SILHOUETTE THAT HAS RUBBISH IN IT is most of the tool. The
+sheet is a render and renders come with specks — a stray three-pixel line
+off the tail, a thin grid of stray rows over the plan view — and taken
+literally they made the side view eleven pixels longer than it is, which
+is five per cent, which is the difference between the three views agreeing
+and not. So each view is measured after a 5x5 morphological opening, which
+deletes anything thinner than five pixels and leaves a boxy vehicle alone,
+and then from the largest connected blob of what survives. The opening is
+a RULER and not an edit: the pixels that get packed are the original ones.
+
+THE WINDOWS ARE HOLES IN THE KEY. Whoever rendered the sheet let the glass
+go through to the green, so "green is background" cuts the windscreen out
+of the van. The rule that works is topological rather than chromatic: key
+you can reach from outside the vehicle is background, key you cannot reach
+is glass. One flood fill from the border separates them. Background gets
+the nearest body colour bled into it, so a face that overhangs the
+silhouette by a pixel lands on paint rather than on a green screen; glass
+gets the same colour, darkened, which is what glass in a dark blue
+armoured van looks like and gets the vision slits right for free. The
+colour is taken from two pixels IN from the edge, because every edge in a
+JPEG is fringed and against a green screen the fringe is green — filled
+from the pixel next door, a windscreen slit comes out dark green.
+
+THE THREE VIEWS AGREE ABOUT THE VEHICLE AND NOT ABOUT THE FRAME. They put
+its proportions within one per cent of each other and then draw it sitting
+in different places inside its own picture: the head-on views give it a
+taller light bar and shallower wheels, which slides everything else three
+per cent of the height down the frame. Map frame to bounding box and have
+done with it, and the model's roof lands up in a band where the head-on
+view has nothing but light bar — which paints a pale stripe along the top
+of the nose and the tail, and that is exactly what it did. So the SCALE
+still comes from the frames, which is the measurement that agrees, and the
+OFFSET comes from the ROOF LINE, which is the one horizontal all three
+views draw unambiguously. Line those up and the sills come out within a
+fifth of a pixel of each other as well. Each view therefore carries the
+window of the model it covers, and the projection is a plain remap.
+
+AND IT IS LIT LIKE A WALL. This renderer does no shading, so a box comes
+out a silhouette — every face the same value, no edge anywhere. The car
+borrows the trick the walls use, Doom's FAKE CONTRAST: a face looking
+north or south reads a notch brighter than one looking east or west, the
+same 0.055 js/level.js uses. The walls take it as a step because Doom's
+walls are mostly on the grid; a van parked at a fifth of a radian never is,
+so here it is the same number interpolated. The roof gets a lift on top of
+that, being the face pointing at the floodlights, and the underside goes
+dark. Four brightnesses on nine boxes is the whole of the shading and it
+is the difference between a vehicle and a black rectangle.
+
+YOU CANNOT WALK THROUGH IT. Doom's things are cylinders — one radius, no
+rotation, however long the thing is — so five and a half metres of van is
+three of them in a row, which is the oldest trick in the format and still
+the right answer. That leaves the corners a few units short and the flanks
+a few units proud, and a shopper brushing past reads it as a van. The
+actor those three are is the only thing in the game with NO STATE and no
+sprite: it has no `spawn`, so Actor.render and Actor.tic both fall out on
+their first line, and the alternative was a one-frame sprite that never
+gets drawn — a lie in the sprite bank and an entry in every table that
+walks it.
+
 THE TEST
 --------
 
@@ -844,7 +943,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-342 checks. Every one of them earns its place by having caught something
+379 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -911,6 +1010,16 @@ that had already reached a screenshot:
     opened every region to the sky. The check now demands BOTH — some of
     the roof fallen in and most of it still up — since either alone is a
     different building
+  a van with four of its faces wound inside out, which in a single-sided
+    material is a hole you see the inside of the van through. The check
+    steps a little way along every triangle's own normal and asks whether
+    that lands inside the solid, which is the only phrasing that does not
+    just restate the code that built it
+  a van painted with a pale band along the top of its nose and its tail,
+    because the head-on views draw it sitting lower in the frame than the
+    side view does and the roof therefore landed in a band of the picture
+    that is nothing but light bar. The views are anchored on the roof line
+    now, and the check holds the top of the body against it
 
 
 WHAT IS NOT DONE
@@ -928,12 +1037,12 @@ WHAT IS NOT DONE
   a shopper is drawn from one angle, so a crowd seen from the side is a
     crowd all facing you. At Doom's sprite scale in a dark shop this
     reads; in daylight it would not
-  there are no cars. The placeholders are gone and what is left is
-    `level.carSlots` — a position, a heading and a variant for each, off
-    the same arithmetic that drew the bay lines, so every slot is IN a bay
-    rather than near one. Put a model at each and the lot is parked.
-    There is deliberately no loader yet: writing one against no models is
-    guessing.
+  there is ONE car. `level.carSlots` still holds seventy-seven of them —
+    a position, a heading and a variant each, off the same arithmetic
+    that drew the bay lines — and the van goes in the nearest one the
+    player is facing when the level opens. Filling the rest is a loop the
+    day there is more than one vehicle; nothing in js/game.js assumes
+    there is only ever one
   four of the six neighbouring units are a shopfront with nothing behind
     it, which is one wall each and buys the whole read of the place
   no music
@@ -958,7 +1067,8 @@ WHAT IS NOT DONE
   nothing follows you into the wood, and the wood's fire and the
     store's do not cross the car park to each other; the flamethrower is
     the bridge
-  the trees are 128 and 256 pixels, the sky 1024, the gun's paint 1024:
-    art that came from outside was left as it came, and the 64-pixel rule
-    stands for everything the game draws itself
+  the trees are 128 and 256 pixels, the sky 1024, the gun's paint 1024,
+    the van's four views 106 to 221: art that came from outside was left
+    as it came, and the 64-pixel rule stands for everything the game
+    draws itself
   no save

@@ -30,11 +30,11 @@ cp index.html "$OUT/"
 cp manifest.webmanifest icon.png "$OUT/"
 cp -r css js vendor "$OUT/"
 
-# The wood, the people, the sky and the gun: art that came from outside,
-# is loaded at run time rather than generated, and stays as files.
+# The wood, the people, the sky, the gun and the van: art that came from
+# outside, is loaded at run time rather than generated, and stays as files.
 # Everything else the page needs it draws for itself — the fire included,
 # since js/fireart.js took that job back off the golf project's strips.
-cp -r assets/forest assets/people assets/sky assets/models assets/fonts "$OUT/assets/"
+cp -r assets/cars assets/forest assets/people assets/sky assets/models assets/fonts "$OUT/assets/"
 
 printf 'built %s: ' "$OUT"
 find "$OUT" -type f | wc -l | tr -d ' '
