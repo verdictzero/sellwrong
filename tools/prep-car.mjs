@@ -101,7 +101,7 @@ import { readPNG, writePNG } from './png-read.mjs';
    car that suddenly has three has been measured wrong.
    --------------------------------------------------------------------- */
 const FLEET = [
-  { id: 'hatchback', name: 'Hatchback',  file: 'art/hatchback.png', metres: 3.70, use: 'civil',    wheels: 2, nose: 'right' },
+  { id: 'hatchback', name: 'Hatchback',  file: 'art/hatchback.png', metres: 3.70, use: 'civil',    wheels: 2, nose: 'left' },
   { id: 'van',       name: 'Panel van',  file: 'art/van.png',       metres: 5.45, use: 'civil',    wheels: 2, nose: 'right' },
   { id: 'pickup',    name: 'Pickup',     file: 'art/pickup.png',    metres: 5.20, use: 'civil',    wheels: 2, nose: 'left' },
   { id: 'muralvan',  name: 'Custom van', file: 'art/muralvan.png',  metres: 5.45, use: 'civil',    wheels: 2, nose: 'right' },
@@ -109,12 +109,21 @@ const FLEET = [
   { id: 'apc',       name: 'APC',        file: 'art/apc.png',       metres: 6.50, use: 'military', wheels: 0, nose: 'left' },
 ];
 /* `nose` is which way the SIDE VIEW faces, and it is declared because
-   nothing in the arithmetic can tell: three of these six were drawn nose
-   to the right and three nose to the left, and a tool that assumed one
-   of those built half the fleet back to front — the bonnet at the tail,
-   and the front view painted over it. The plan views all face left. A
-   nose-right side view is flipped as it goes into the atlas, so from
-   js/car.js onward every side view faces left and there is one rule. */
+   nothing in the arithmetic can tell: two of these six were drawn nose
+   to the right and four nose to the left, and a tool that assumed one
+   of those built a third of the fleet back to front — the bonnet at the
+   tail, and the front view painted over it. The plan views all face
+   left. A nose-right side view is flipped as it goes into the atlas, so
+   from js/car.js onward every side view faces left and there is one
+   rule.
+
+   AND THE DECLARATION IS CHECKED AGAINST THE DRAWING, because the first
+   one was wrong: the hatchback was read as nose-right off a thumbnail
+   and is not, and for a day its grille was painted on its hatch. Run
+   PROFILE_DEBUG=<id> to see a vehicle's top edge column by column: a
+   nose is a long gentle rise into a steep one (bonnet, windscreen), a
+   tail is a slope into a drop. The eye gets a hatchback wrong at a
+   hundred pixels; the numbers do not. */
 
 /* Doom's player is 56 units tall for about a metre and three quarters,
    so the world runs at about 32 units to the metre. A bay is 180 deep,
@@ -132,8 +141,8 @@ const OPEN = 2;          // radius of the measuring opening: kills anything unde
 const GLASS = 0.42;      // how much of the bled body colour glass keeps
 const PAD = 1;           // gutter around each view in the atlas
 const ATLAS_W = 512;
-const PROFILE_TOL = 0.012; // an outline point closer than this to the line through its neighbours goes, in lengths
-const PROFILE_MAX = 18;    // and at most this many points survive
+const PROFILE_TOL = 0.008; // an outline point closer than this to the line through its neighbours goes, in lengths
+const PROFILE_MAX = 24;    // and at most this many points survive
 const BLOB_MIN = 0.03;   // a piece this much of the biggest one is part of the vehicle
 const WHEEL_TOL = 0.018; // how far below the sill counts as a wheel
 /* How far the three views may disagree about the width before a sheet
@@ -301,10 +310,33 @@ function measure(spec) {
       solid[i] = (blob[i] || !outside[i]) ? 1 : 0;
       glass[i] = (!paint[i] && !outside[i] && !blob[i]) ? 1 : 0;
     }
+    /* THE RAW SILHOUETTE WITH ITS HOLES FILLED, for the outline. The
+       opened mask is the ruler and it is right for the box, but its
+       erosion thins a pillar to nothing and then a window reaches the
+       background through the gap and the roof line dives into it: on
+       the hatchback, the rear window took a twenty-pixel bite out of
+       the roof. The raw pixels still have the pillars. So the outline
+       is traced on the raw paint with everything it encloses filled in,
+       and whatever specks that brings back are dealt with in one
+       dimension, on the top edge, where they are cheap to see. */
+    const reach = new Uint8Array(n);
+    const st3 = [];
+    const push3 = (x, y) => {
+      if (x < 0 || y < 0 || x >= w || y >= h) return;
+      const i = y * w + x;
+      if (reach[i] || paint[i]) return;
+      reach[i] = 1; st3.push(x, y);
+    };
+    for (let x = 0; x < w; x++) { push3(x, 0); push3(x, h - 1); }
+    for (let y = 0; y < h; y++) { push3(0, y); push3(w - 1, y); }
+    while (st3.length) { const y = st3.pop(), x = st3.pop(); push3(x + 1, y); push3(x - 1, y); push3(x, y + 1); push3(x, y - 1); }
+    const filled = new Uint8Array(n);
+    for (let i = 0; i < n; i++) filled[i] = reach[i] ? 0 : 1;
     return {
       cell: { x: x0, y: y0, w, h }, solid, glass, paint,
       box: { x: a, y: c, w: b - a + 1, h: d - c + 1 },   // relative to the cell
       at: (x, y) => solid[(y + c) * w + (x + a)],        // relative to the box
+      rawAt: (x, y) => filled[(y + c) * w + (x + a)],    // the same, off the raw paint
     };
   }
 
@@ -488,7 +520,22 @@ function measure(spec) {
      between a bumper and the tyre behind it. A car has no undercut worth
      a polygon point, so everything under the roof line is body. */
   const NOTCH = Math.max(1, Math.round(0.035 * LEN));
-  const rawH = Array.from(topEdge, t => HGT - t);          // the top edge, as a height above ground
+  /* the top edge off the raw silhouette, as a height above ground, with
+     anything narrower than the ruler knocked off it (a one-dimensional
+     opening: the lowest within SPECK either side, then the highest of
+     those — a spike thinner than the window cannot survive it, a roof
+     rack can) */
+  const SPECK = 2;
+  const rawTop = new Int32Array(LEN);
+  for (let px = 0; px < LEN; px++) {
+    let t = -1;
+    for (let y = 0; y < HGT; y++) if (V.side.rawAt(px, y)) { t = y; break; }
+    rawTop[px] = t < 0 ? topEdge[px] : Math.min(t, topEdge[px] + 0) ;
+  }
+  const rawH0 = Array.from(rawTop, t => HGT - t);
+  const ero = rawH0.map((_, px) => Math.min(...rawH0.slice(Math.max(0, px - SPECK), px + SPECK + 1)));
+  const rawH = ero.map((_, px) => Math.max(...ero.slice(Math.max(0, px - SPECK), px + SPECK + 1)));
+  if (process.env.PROFILE_DEBUG === spec.id) console.error(spec.id, 'top edge heights, px 0..LEN-1:', Array.from(rawH).join(' '));
   /* A CLOSING on the top edge — take the highest point within NOTCH
      either side, then the lowest of those — fills any slot narrower
      than the window and leaves anything wider exactly as it was. The
@@ -497,7 +544,7 @@ function measure(spec) {
      bonnet: a slot the depth of the greenhouse, two pixels wide, that
      a body does not have. A pickup's cab-to-bed step is forty pixels
      wide and is untouched. */
-  const closed = rawH.map((h, px) => {
+  const lifted = rawH.map((h, px) => {
     /* only where there is a full window either side: a closing that runs
        off the end of the array fills the step in front of a van's
        windscreen as if it were a slot, and a van has a bonnet */
@@ -505,6 +552,24 @@ function measure(spec) {
     const L = Math.max(...rawH.slice(px - NOTCH, px)), R = Math.max(...rawH.slice(px + 1, px + NOTCH + 1));
     return Math.max(h, Math.min(L, R));
   });
+  /* AND BRIDGED, NOT FILLED. The closing says WHICH columns are a slot;
+     what it fills them to is the lower of the two banks, and the slot
+     that matters sits exactly where a windscreen meets a roof, where the
+     banks are not level: the header is on a slope, so the lower bank is
+     the windscreen several pixels back from the top, and the fill leaves
+     a step up to the roof that the outline then faithfully keeps as a
+     ledge. So every run of raised columns is refilled with the straight
+     line from the last real column before it to the first after it. */
+  const closed = lifted.slice();
+  for (let px = 0; px < LEN;) {
+    if (lifted[px] <= rawH[px]) { px++; continue; }
+    let end = px;
+    while (end + 1 < LEN && lifted[end + 1] > rawH[end + 1]) end++;
+    const a = px - 1, b = end + 1;
+    if (a >= 0 && b < LEN)
+      for (let i = px; i <= end; i++) closed[i] = rawH[a] + (rawH[b] - rawH[a]) * (i - a) / (b - a);
+    px = end + 1;
+  }
   const height = px => closed[px];
   const inM = (px, z) => px >= 0 && px < LEN && z >= sillZ && z < height(px);
   let start = null;

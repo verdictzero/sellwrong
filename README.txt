@@ -888,14 +888,23 @@ hang below it — and sit a fraction inside the flanks, because two faces
 at exactly the same depth is a tie in the depth buffer, and a tie is the
 flicker the trees used to have.
 
-HALF THE SHEETS FACE THE OTHER WAY. Three of the six side views were
-drawn nose to the right and three nose to the left, and a tool that
-assumed one of those built half the fleet back to front: bonnet at the
-tail, and the front view painted over it. Nothing in the arithmetic can
-tell which way a picture of a van faces, so it is declared per sheet, and
-a nose-right side view is flipped as it goes into the atlas — from
+A THIRD OF THE SHEETS FACE THE OTHER WAY. Two of the six side views were
+drawn nose to the right and four nose to the left, and a tool that
+assumed one of those built a third of the fleet back to front: bonnet at
+the tail, and the front view painted over it. Nothing in the arithmetic
+can tell which way a picture of a van faces, so it is declared per sheet,
+and a nose-right side view is flipped as it goes into the atlas — from
 js/car.js onward every side view faces left and there is one rule. (All
 six plan views face left. The head-on views have no way to face.)
+
+AND THE DECLARATION WAS WRONG ONCE, which is the reason it is checked
+against the drawing now. The hatchback was read as nose-right off a
+thumbnail, and for a day its grille was painted on its hatch and its
+hatch glass served as a bonnet — a wedge, from every angle. Its top edge
+column by column says otherwise, unmistakably: a long gentle rise into a
+steep one is a bonnet and a windscreen; a slope into a drop is a hatch
+and a tail. The eye gets a hatchback wrong at a hundred pixels. The
+numbers do not, and PROFILE_DEBUG=<id> prints them.
 
 AND THE RIGHT FLANK WAS PAINTED BACKWARDS. The projection took the side
 view the other way round on the right-hand side, on the theory that a
@@ -1152,11 +1161,15 @@ that had already reached a screenshot:
     winding against that, and every solid must be closed — each edge
     shared by exactly one triangle going the other way — with a positive
     volume about the size of a car. None of that needs air or guessing
-  three of six vehicles built back to front, because three of six sheets
+  a third of the fleet built back to front, because two of six sheets
     were drawn facing the other way and the tool assumed one direction
-    for all of them; and every right-hand flank painted with its tail at
-    its nose, on the theory that a mirrored picture needs mirrored
-    coordinates
+    for all of them; every right-hand flank painted with its tail at its
+    nose, on the theory that a mirrored picture needs mirrored
+    coordinates; and then the hatchback declared the wrong way round by
+    eye, and caught by its own top edge
+  the roof line diving into a rear window, because the opened mask that
+    is the right ruler for the box thins a pillar to nothing, and a
+    window with no pillar reaches the sky
   seventy-seven cars parked on the bay lines instead of between them,
     because the texture that draws those lines tiles from the world
     origin and the car park does not start there
