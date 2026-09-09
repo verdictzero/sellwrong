@@ -1107,7 +1107,23 @@ section('the fleet');
       ratio > 1.7 && ratio < 3.2 && tall > 0.6 && tall < 1.5,
       `${ratio.toFixed(2)} : 1 : ${tall.toFixed(2)} (length : width : height)`);
     check(`the ${id} stands on the ground with its body clear of it`,
-      s.sill >= 0 && s.sill < 0.2 && s.layers.length >= 3 && s.layers[0].z0 === s.sill);
+      s.sill >= 0 && s.sill < 0.2);
+    /* THE OUTLINE IS A POLYGON, not a staircase: a dozen or so points,
+       closed on the sill, reaching the roof, nose at +0.5 and tail at
+       -0.5, anticlockwise seen from the left, none of it wider than the
+       vehicle. Every one of those is something js/car.js leans on. */
+    const O = s.profile;
+    let area = 0;
+    for (let i = 0; i < O.length; i++) { const a = O[i], b = O[(i + 1) % O.length]; area += a[0] * b[1] - b[0] * a[1]; }
+    const onSill = O.filter(p => Math.abs(p[1] - s.sill) < 0.002).length;
+    check(`the ${id}'s outline is a polygon with a handful of points`, O.length >= 6 && O.length <= 20, `${O.length}`);
+    check(`and it is anticlockwise, closed on the sill, and reaches the roof`,
+      area > 0 && onSill >= 2 && Math.abs(Math.max(...O.map(p => p[1])) - s.height) < 0.002,
+      `area ${area.toFixed(3)}, ${onSill} on the sill, top ${Math.max(...O.map(p => p[1]))} of ${s.height}`);
+    check(`and it runs the whole length, nose to tail`,
+      Math.abs(Math.max(...O.map(p => p[0])) - 0.5) < 0.02 && Math.abs(Math.min(...O.map(p => p[0])) + 0.5) < 0.02);
+    check(`and nowhere is it wider than the vehicle`, O.every(p => p[2] > 0.02 && p[2] <= s.width / 2 * 1.06),
+      `${Math.min(...O.map(p => p[2]))}..${Math.max(...O.map(p => p[2]))} of ${s.width / 2}`);
     /* a wheel is a wheel and not a slab across the underside — which is
        what the custom van's bull bar was read as until the tyre stopped
        being "the longest run at the bottom of the front view" */
@@ -1117,9 +1133,6 @@ section('the fleet');
     /* the roof line is what the head-on views were anchored on, so the
        body has to reach it and stop somewhere at or below the top — see
        the pale band this once painted along the nose */
-    const top = Math.max(...s.layers.map(l => l.z1));
-    check(`the ${id}'s layers reach its full height`, Math.abs(top - s.height) < 0.005,
-      `${top} vs ${s.height}`);
     check(`and its roof line is inside its own height`,
       s.roof > 0.6 * s.height && s.roof <= s.height + 1e-9,
       `${s.roof} of ${s.height}`);
@@ -1180,41 +1193,6 @@ section('the fleet');
   check('and no two of them overlap', !clash, clash || 'none');
 
   /* --- the models --------------------------------------------------- */
-  const LIP = 0.005;
-  /* Is this point inside the solid the layers and wheels describe? Used
-     to decide which way a triangle faces; see below. */
-  const solidOf = (v) => {
-    const s = v.shape, L = v.length;
-    const flank = Math.min(s.width / 2, s.layers[0].half) * L;
-    return (x, y, z) => {
-      for (let i = 0; i < s.layers.length; i++) {
-        const l = s.layers[i];
-        const z0 = (i === 0 ? (s.wheels.length ? l.z0 : 0) : l.z0 - LIP) * L;
-        if (z < z0 || z > l.z1 * L || Math.abs(y) > l.half * L) continue;
-        for (const [a, b] of l.runs) if (x >= a * L && x <= b * L) return true;
-      }
-      const yOut = flank - LIP * L, yIn = yOut - s.tyre * L;
-      for (const w of s.wheels) {
-        const r = w.r * L, cz = r * Math.cos(Math.PI / 8), ay = Math.abs(y);
-        if (ay < yIn || ay > yOut) continue;
-        /* A wheel is an eight-sided polygon whose CORNERS are at
-           (k + 0.5) steps, so its EDGES — and therefore the normals that
-           bound it — are at whole ones. Testing it with the corner
-           directions instead describes a polygon turned an eighth of a
-           step, and every point just inside a real corner reads as
-           outside it: which is thirty-two triangles per vehicle
-           pronounced inside out that are wound perfectly well. */
-        let all = true;
-        for (let k = 0; k < 8 && all; k++) {
-          const th = k * 2 * Math.PI / 8;
-          if ((x - w.x * L) * Math.cos(th) + (z - cz) * Math.sin(th) > r * Math.cos(Math.PI / 8) + 1e-6) all = false;
-        }
-        if (all) return true;
-      }
-      return false;
-    };
-  };
-
   let triTotal = 0, strayTotal = 0, wrongTotal = 0, decidedTotal = 0;
   for (const id of VEHICLE_IDS) {
     const v = VEHICLES[id], L = v.length;
@@ -1237,13 +1215,13 @@ section('the fleet');
     const near = (a, b) => Math.abs(a - b) < 0.8;
     /* THE WIDTH A MODEL HAS IS THE WIDTH ITS LAYERS DRAW, which is not
        quite `shape.width`: that is the reconciled average of what three
-       views claim, and it is what SCALES the front view. The layers are
+       views claim, and it is what SCALES the front view. The profile is
        what the front view actually draws at each height. On the riot van
        the two agree to a thousandth; on the hatchback, whose sheet
        agrees with itself to only five percent, they differ by two and a
        half — so the box is checked against the drawing and the two
        numbers are then checked against each other. */
-    const drawn = 2 * Math.max(...v.shape.layers.map(l => l.half)) * L;
+    const drawn = 2 * Math.max(...v.shape.profile.map(p => p[2])) * L;
     check(`the ${id} is as long, as wide and as tall as its own layers say`,
       near(hi[0] - lo[0], L) && near(hi[2] - lo[2], drawn) && near(hi[1] - lo[1], car.carHeight(v)),
       `${(hi[0] - lo[0]).toFixed(1)} x ${(hi[2] - lo[2]).toFixed(1)} x ${(hi[1] - lo[1]).toFixed(1)}`);
@@ -1271,31 +1249,42 @@ section('the fleet');
     check(`every uv on the ${id} lands inside one of ITS OWN four views`, stray === 0, `${stray} strays`);
     check(`and all four of them get used`, used.size === 4, [...used].join(' '));
 
-    /* EVERY FACE POINTS OUT. The material is single sided, so a box
-       wound inside out is a hole you can see the inside of the van
-       through, and that is the one fault in this file that looks like a
-       rendering bug rather than a modelling one. Step a little way along
-       each triangle's own normal and off the solid: if that lands
-       INSIDE, it is inside out. */
-    const inside = solidOf(v);
-    const flat = car.carGeometry(v, { angle: 0 });     // model space, so the solid is comparable
-    let decided = 0, wrong = 0;
-    for (let t = 0; t < flat.position.length / 3; t += 3) {
-      const p = k => [flat.position[(t + k) * 3], -flat.position[(t + k) * 3 + 2], flat.position[(t + k) * 3 + 1]];
-      const a = p(0), b = p(1), c = p(2);
-      const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], w = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
-      let nx = u[1] * w[2] - u[2] * w[1], ny = u[2] * w[0] - u[0] * w[2], nz = u[0] * w[1] - u[1] * w[0];
-      const m = Math.hypot(nx, ny, nz) || 1;
-      nx /= m; ny /= m; nz /= m;
-      const mx = (a[0] + b[0] + c[0]) / 3, my = (a[1] + b[1] + c[1]) / 3, mz = (a[2] + b[2] + c[2]) / 3;
-      const out = inside(mx + nx * 0.35, my + ny * 0.35, mz + nz * 0.35);
-      const inn = inside(mx - nx * 0.35, my - ny * 0.35, mz - nz * 0.35);
-      if (out === inn) continue;
-      decided++; if (out) wrong++;
+    /* EVERY FACE POINTS OUT, and there is an exact way to know. The body
+       is a lofted outline and each wheel a prism, all of them CLOSED: so
+       every edge of every triangle must be shared by exactly one other
+       triangle going the other way, and the signed volume — the
+       divergence sum over the triangles — must come out positive and
+       about the size of a car. A face wound inside out breaks the first
+       (its edges run the same way as its neighbours') and a whole
+       inside-out solid breaks the second. Neither needs air on one side
+       of a face to decide it, which is what let a tyre's tread stay
+       inside out through the test that used to be here. */
+    const flat = car.carGeometry(v, { angle: 0 });
+    const edges = new Map();
+    let vol = 0;
+    const key = (i) => `${flat.position[i * 3].toFixed(4)},${flat.position[i * 3 + 1].toFixed(4)},${flat.position[i * 3 + 2].toFixed(4)}`;
+    for (let t = 0; t < flat.position.length / 9; t++) {
+      const ids = [key(t * 3), key(t * 3 + 1), key(t * 3 + 2)];
+      for (let k = 0; k < 3; k++) {
+        const e = ids[k] + '>' + ids[(k + 1) % 3];
+        edges.set(e, (edges.get(e) || 0) + 1);
+      }
+      const P = flat.position, o = t * 9;
+      vol += (P[o] * (P[o + 4] * P[o + 8] - P[o + 5] * P[o + 7])
+            - P[o + 1] * (P[o + 3] * P[o + 8] - P[o + 5] * P[o + 6])
+            + P[o + 2] * (P[o + 3] * P[o + 7] - P[o + 4] * P[o + 6])) / 6;
     }
+    let open = 0;
+    for (const [e, c] of edges) {
+      const [a, b] = e.split('>');
+      if (c !== 1 || edges.get(b + '>' + a) !== 1) open++;
+    }
+    const box = L * car.carWidth(v) * car.carHeight(v);
+    check(`the ${id} is a closed solid`, open === 0, `${open} unmatched edges`);
+    check(`and it has the volume of a vehicle, the right way out`,
+      vol > 0.25 * box && vol < 0.95 * box, `${(vol / box).toFixed(2)} of its bounding box`);
+    let decided = 1, wrong = open ? 1 : 0;
     decidedTotal += decided; wrongTotal += wrong;
-    check(`and every face of the ${id} that can be decided faces out`,
-      wrong === 0 && decided > 30, `${wrong} inside out of ${decided} decided`);
 
     /* AND EVERY FACE IS WOUND THE WAY IT SAYS IT IS. The test above can
        only decide a face with air on one side of it, which leaves every
@@ -1324,7 +1313,7 @@ section('the fleet');
     check(`and its roof is the brightest of them and its underside the darkest`,
       Math.max(...lights) > 0.74 && Math.min(...lights) < 0.74 * 0.5);
   }
-  note('the whole fleet', `${triTotal} triangles, ${strayTotal} stray uvs, ${wrongTotal} of ${decidedTotal} faces inside out`);
+  note('the whole fleet', `${triTotal} triangles, ${strayTotal} stray uvs, ${wrongTotal} of ${decidedTotal} solids open`);
 
   /* --- a piece torn off one ----------------------------------------- */
   {

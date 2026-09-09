@@ -9,7 +9,7 @@
    four times on a green field — front, rear, side and plan, laid out in
    reading order. What leaves is ONE texture atlas holding every view of
    every vehicle (assets/cars/vehicles.png) and one set of numbers
-   (js/car-data.js) that js/car.js turns into boxes. (The sheets in art/
+   (js/car-data.js) that js/car.js turns into a body. (The sheets in art/
    are as they were handed over, decoded out of their JPEGs once and
    otherwise untouched, because the rest of this repository's tooling
    reads PNG and nothing else.)
@@ -63,13 +63,14 @@
    enclose little strips of green between them, and against the raw
    pixels every one of them would have come out as a window.)
 
-   THE SHAPE COMES OUT OF THE SIDE VIEW'S OWN OUTLINE. Its top edge,
-   simplified into a handful of steps, becomes a stack of LAYERS — one
-   box per step in the roof line, each spanning the height between the
-   step under it and its own — and its bottom edge dips where the wheels
-   are. Each layer is then as wide as the FRONT view is over the band of
-   height that layer occupies, which is what makes a light bar a bar and
-   a body a body without either being named here.
+   THE SHAPE IS THE SIDE VIEW'S OWN OUTLINE, used as it is: the silhouette
+   above the sill as one polygon, simplified to a dozen or so points, and
+   its bottom edge dips where the wheels are. Every point of it carries
+   the vehicle's half width at that height off the FRONT view, so once
+   js/car.js extrudes the polygon across that width it narrows at the
+   roof the way a car does — which is what makes a light bar a bar and a
+   body a body without either being named here. (It was a staircase of
+   boxes once. See THE PROFILE, below, for why it is not.)
 
    WHAT A FLEET CHANGED. One sheet could be measured against itself with
    fractions of its own length: the riot van's roof is "the topmost row
@@ -100,13 +101,20 @@ import { readPNG, writePNG } from './png-read.mjs';
    car that suddenly has three has been measured wrong.
    --------------------------------------------------------------------- */
 const FLEET = [
-  { id: 'hatchback', name: 'Hatchback',  file: 'art/hatchback.png', metres: 3.70, use: 'civil',    wheels: 2 },
-  { id: 'van',       name: 'Panel van',  file: 'art/van.png',       metres: 5.45, use: 'civil',    wheels: 2 },
-  { id: 'pickup',    name: 'Pickup',     file: 'art/pickup.png',    metres: 5.20, use: 'civil',    wheels: 2 },
-  { id: 'muralvan',  name: 'Custom van', file: 'art/muralvan.png',  metres: 5.45, use: 'civil',    wheels: 2 },
-  { id: 'riotvan',   name: 'Riot van',   file: 'art/riotvan.png',   metres: 5.60, use: 'police',   wheels: 2 },
-  { id: 'apc',       name: 'APC',        file: 'art/apc.png',       metres: 6.50, use: 'military', wheels: 0 },
+  { id: 'hatchback', name: 'Hatchback',  file: 'art/hatchback.png', metres: 3.70, use: 'civil',    wheels: 2, nose: 'right' },
+  { id: 'van',       name: 'Panel van',  file: 'art/van.png',       metres: 5.45, use: 'civil',    wheels: 2, nose: 'right' },
+  { id: 'pickup',    name: 'Pickup',     file: 'art/pickup.png',    metres: 5.20, use: 'civil',    wheels: 2, nose: 'left' },
+  { id: 'muralvan',  name: 'Custom van', file: 'art/muralvan.png',  metres: 5.45, use: 'civil',    wheels: 2, nose: 'right' },
+  { id: 'riotvan',   name: 'Riot van',   file: 'art/riotvan.png',   metres: 5.60, use: 'police',   wheels: 2, nose: 'left' },
+  { id: 'apc',       name: 'APC',        file: 'art/apc.png',       metres: 6.50, use: 'military', wheels: 0, nose: 'left' },
 ];
+/* `nose` is which way the SIDE VIEW faces, and it is declared because
+   nothing in the arithmetic can tell: three of these six were drawn nose
+   to the right and three nose to the left, and a tool that assumed one
+   of those built half the fleet back to front — the bonnet at the tail,
+   and the front view painted over it. The plan views all face left. A
+   nose-right side view is flipped as it goes into the atlas, so from
+   js/car.js onward every side view faces left and there is one rule. */
 
 /* Doom's player is 56 units tall for about a metre and three quarters,
    so the world runs at about 32 units to the metre. A bay is 180 deep,
@@ -124,8 +132,8 @@ const OPEN = 2;          // radius of the measuring opening: kills anything unde
 const GLASS = 0.42;      // how much of the bled body colour glass keeps
 const PAD = 1;           // gutter around each view in the atlas
 const ATLAS_W = 512;
-const STEP_TOL = 0.022;  // a step in the roof line worth having, as a fraction of length
-const STEP_MAX = 7;      // and at most this many of them
+const PROFILE_TOL = 0.012; // an outline point closer than this to the line through its neighbours goes, in lengths
+const PROFILE_MAX = 18;    // and at most this many points survive
 const BLOB_MIN = 0.03;   // a piece this much of the biggest one is part of the vehicle
 const WHEEL_TOL = 0.018; // how far below the sill counts as a wheel
 /* How far the three views may disagree about the width before a sheet
@@ -418,55 +426,7 @@ function measure(spec) {
   if (wheelRuns.length !== spec.wheels)
     throw bad(`the side view's underside dips ${wheelRuns.length} times; this one was declared to show ${spec.wheels} wheels`);
 
-  /* ---- the roof line as a staircase --------------------------------
-     Split where it helps most; stop when every step is within STEP_TOL
-     of the outline under it, or when there are enough of them. A step's
-     height is the HIGHEST point under it, so the boxes enclose the
-     silhouette rather than cutting into it. */
-  const height = x => HGT - topEdge[x];                   // above the ground line, in px
-  function segError(i0, i1) {
-    let v = 0;
-    for (let x = i0; x <= i1; x++) v = Math.max(v, height(x));
-    let e = 0;
-    for (let x = i0; x <= i1; x++) e += v - height(x);
-    return { v, e };
-  }
-  let segs = [{ i0: 0, i1: LEN - 1, ...segError(0, LEN - 1) }];
-  while (segs.length < STEP_MAX) {
-    let worst = -1, worstDev = 0;
-    segs.forEach((s, i) => {
-      let dev = 0;
-      for (let x = s.i0; x <= s.i1; x++) dev = Math.max(dev, s.v - height(x));
-      if (dev > worstDev) { worstDev = dev; worst = i; }
-    });
-    if (worst < 0 || worstDev <= STEP_TOL * LEN) break;
-    const s = segs[worst];
-    let bestCut = -1, bestErr = Infinity;
-    for (let c = s.i0; c < s.i1; c++) {
-      const a = segError(s.i0, c), b = segError(c + 1, s.i1);
-      if (a.e + b.e < bestErr) { bestErr = a.e + b.e; bestCut = c; }
-    }
-    segs.splice(worst, 1,
-      { i0: s.i0, i1: bestCut, ...segError(s.i0, bestCut) },
-      { i0: bestCut + 1, i1: s.i1, ...segError(bestCut + 1, s.i1) });
-  }
-  segs.sort((a, b) => a.i0 - b.i0);
-  /* Two steps a pixel apart are one step. Without this the roof comes
-     out as a full-length slab with a one-pixel ridge along it, because
-     the greedy split will happily spend a step on a rounded corner. */
-  {
-    const vs = [...new Set(segs.map(s => s.v))].sort((a, b) => a - b);
-    const to = new Map();
-    for (let i = 0; i < vs.length;) {
-      let j = i;
-      while (j + 1 < vs.length && vs[j + 1] - vs[i] <= STEP_TOL * 0.5 * LEN) j++;
-      for (let k = i; k <= j; k++) to.set(vs[k], vs[j]);
-      i = j + 1;
-    }
-    for (const s of segs) s.v = to.get(s.v);
-  }
-
-  /* ---- how wide is the vehicle between two heights? -----------------
+  /* ---- how wide is the vehicle at a height? --------------------------
      The front view, asked over the rows that match. Its box is the
      model's width by the model's height, by construction, so the
      conversion is a ratio of box sizes and nothing else. */
@@ -474,34 +434,158 @@ function measure(spec) {
     const rowOf = z => (WINDOW.front.z1 - z) / (WINDOW.front.z1 - WINDOW.front.z0) * F.h;
     const r0 = Math.max(0, Math.floor(rowOf(zHi)));
     const r1 = Math.min(F.h - 1, Math.ceil(rowOf(zLo)) - 1);
-    let widest = 0;
-    for (let r = r0; r <= r1; r++) {
-      let a = -1, b = -1;
-      for (let x = 0; x < F.w; x++) if (V.front.at(x, r)) { if (a < 0) a = x; b = x; }
-      if (a >= 0) widest = Math.max(widest, b - a + 1);
+    /* and if the band has nothing in it — the pickup's front view has a
+       gap between its bumper and its tyres — widen it until it has */
+    for (let grow = 0; grow < F.h; grow++) {
+      let widest = 0;
+      for (let r = Math.max(0, r0 - grow); r <= Math.min(F.h - 1, r1 + grow); r++) {
+        let a = -1, b = -1;
+        for (let x = 0; x < F.w; x++) if (V.front.at(x, r)) { if (a < 0) a = x; b = x; }
+        if (a >= 0) widest = Math.max(widest, b - a + 1);
+      }
+      if (widest) return widest / 2 * (WID / F.w);          // front px -> side px
     }
-    return widest / 2 * (WID / F.w);                      // front px -> side px
+    return 0;
   }
 
-  /* ---- the layers --------------------------------------------------
-     One box per distinct step in the roof line, spanning the height
-     between the step below it and its own, over every stretch of the
-     vehicle that reaches that high. */
-  const sillZ = HGT - sillRow;
-  const tops = [...new Set(segs.map(s => s.v))].sort((a, b) => a - b).filter(v => v > sillZ);
-  const layers = [];
-  let zPrev = sillZ;
-  for (const t of tops) {
-    const runs2 = [];
-    for (const s of segs.filter(s => s.v >= t).sort((a, b) => a.i0 - b.i0)) {
-      const last = runs2[runs2.length - 1];
-      if (last && s.i0 <= last[1] + 1) last[1] = Math.max(last[1], s.i1);
-      else runs2.push([s.i0, s.i1]);
+  /* ---- THE PROFILE ---------------------------------------------------
+     The side view's outline above the sill, as one polygon, simplified
+     to a dozen or so points. That polygon extruded across the width is
+     the body; js/car.js does the extruding.
+
+     This used to be a STAIRCASE — the top edge split into steps and each
+     step a box — and it read as a stack of bricks with a car painted on
+     it, because that is what it was: a windscreen is a slope and a
+     bonnet is a slope, and a box has neither. The outline itself is the
+     shape, so it is used as it is: walk up the tail, along the top, down
+     the nose, and back along the sill, then throw away every point that
+     is within PROFILE_TOL of the straight line between its neighbours
+     (Douglas-Peucker). The rounded corners keep two or three points, the
+     flat panels keep none, the windscreen keeps its two ends and its
+     angle, and a pickup keeps the step down to its bed.
+
+     Every point carries the vehicle's HALF WIDTH at its own height, off
+     the front view, so the extrusion narrows at the roof the way a car
+     does — and it is the whole of how the model knows it has a roof at
+     all. The wheels stay separate: the sill is the body's underside and
+     they hang below it. */
+  /* A vehicle with no wheels has nothing else to stand on, so its sill
+     IS the ground: the tracked one's underside is its track, a pixel up
+     in the drawing, and taken literally the whole APC hovers that pixel. */
+  const sillZ = spec.wheels === 0 ? 0 : HGT - sillRow;
+  /* model units, where the LENGTH is 1: x runs +0.5 at the nose to -0.5
+     at the tail. A side view drawn nose to the left runs the other way
+     from the model's x; one drawn nose to the right runs with it. */
+  const mx = spec.nose === 'right' ? (px => px / LEN - 0.5) : (px => 0.5 - px / LEN);
+  /* WALK THE EDGE OF THE SILHOUETTE. Not "the top edge as a function of
+     x plus the nose and tail as functions of z" — that retraces every
+     sloped edge twice, once from each pass, and the outline comes out
+     doubling back on itself. Moore neighbour tracing on the mask above
+     the sill gives the boundary once, in order, whatever shape it is. */
+  /* Filled from the sill to the top edge in every column, because the
+     silhouette has notches the body does not: a side window whose pillar
+     thinned out under the opening reaches the green, and so does the gap
+     between a bumper and the tyre behind it. A car has no undercut worth
+     a polygon point, so everything under the roof line is body. */
+  const NOTCH = Math.max(1, Math.round(0.035 * LEN));
+  const rawH = Array.from(topEdge, t => HGT - t);          // the top edge, as a height above ground
+  /* A CLOSING on the top edge — take the highest point within NOTCH
+     either side, then the lowest of those — fills any slot narrower
+     than the window and leaves anything wider exactly as it was. The
+     hatchback's windscreen header is thinner than the opening's ruler,
+     so for two columns its roof is not there and its top edge is the
+     bonnet: a slot the depth of the greenhouse, two pixels wide, that
+     a body does not have. A pickup's cab-to-bed step is forty pixels
+     wide and is untouched. */
+  const closed = rawH.map((h, px) => {
+    /* only where there is a full window either side: a closing that runs
+       off the end of the array fills the step in front of a van's
+       windscreen as if it were a slot, and a van has a bonnet */
+    if (px < NOTCH || px + NOTCH >= LEN) return h;
+    const L = Math.max(...rawH.slice(px - NOTCH, px)), R = Math.max(...rawH.slice(px + 1, px + NOTCH + 1));
+    return Math.max(h, Math.min(L, R));
+  });
+  const height = px => closed[px];
+  const inM = (px, z) => px >= 0 && px < LEN && z >= sillZ && z < height(px);
+  let start = null;
+  for (let z = sillZ; z < HGT && !start; z++) for (let px = 0; px < LEN; px++) if (inM(px, z)) { start = [px, z]; break; }
+  if (!start) throw bad('nothing of the side view stands above its own sill');
+  const DIRS = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];   // anticlockwise, z up
+  const raw = [];
+  {
+    let [px, z] = start, dir = 0;                          // came in heading +x along the sill
+    for (let guard = 0; guard < LEN * HGT * 4; guard++) {
+      raw.push([px, z]);
+      /* look round from the direction we came in, one step back */
+      let d = (dir + 6) % 8, moved = false;
+      for (let k = 0; k < 8; k++, d = (d + 1) % 8) {
+        const nx = px + DIRS[d][0], nz = z + DIRS[d][1];
+        if (inM(nx, nz)) { px = nx; z = nz; dir = d; moved = true; break; }
+      }
+      if (!moved) break;                                   // a single pixel
+      if (px === start[0] && z === start[1]) break;
     }
-    layers.push({ z0: zPrev, z1: t, runs: runs2, half: halfWidthAt(zPrev, t) });
-    zPrev = t;
   }
-  if (!layers.length) throw bad('the side view has no roof line above its own sill');
+  raw.push(start);                                         // closed, for the simplifier
+  /* the sill closes it; the wheels are below and are not the body */
+  function simplify(pts, tol) {
+    const keep = new Uint8Array(pts.length); keep[0] = keep[pts.length - 1] = 1;
+    const stack = [[0, pts.length - 1]];
+    while (stack.length) {
+      const [i0, i1] = stack.pop();
+      const [ax, ay] = pts[i0], [bx, by] = pts[i1];
+      const len = Math.hypot(bx - ax, by - ay) || 1;
+      let worst = 0, at = -1;
+      for (let i = i0 + 1; i < i1; i++) {
+        const d = Math.abs((bx - ax) * (ay - pts[i][1]) - (ax - pts[i][0]) * (by - ay)) / len;
+        if (d > worst) { worst = d; at = i; }
+      }
+      if (at >= 0 && worst > tol) { keep[at] = 1; stack.push([i0, at], [at, i1]); }
+    }
+    return pts.filter((_, i) => keep[i]);
+  }
+  /* A closed loop simplified as one polyline is a chord from a point to
+     itself, which every other point is zero distance from. So it is cut
+     at the point farthest from the start and simplified as two. */
+  let far = 0, farD = -1;
+  for (let i = 0; i < raw.length; i++) {
+    const d = (raw[i][0] - raw[0][0]) ** 2 + (raw[i][1] - raw[0][1]) ** 2;
+    if (d > farD) { farD = d; far = i; }
+  }
+  const halves = tol => [...simplify(raw.slice(0, far + 1), tol), ...simplify(raw.slice(far), tol).slice(1)];
+  let tol = PROFILE_TOL * LEN, poly = halves(tol);
+  while (poly.length > PROFILE_MAX + 1) { tol *= 1.3; poly = halves(tol); }
+  poly.pop();                                              // the closing point is the first one again
+  /* the two ends of the walk are both on the sill; nothing else should be */
+  const profile = poly.map(([px, z]) => ({
+    x: round(mx(px)), z: round(z / LEN),
+    half: round(Math.max(0.03, halfWidthAt(Math.max(sillZ, z - 1), z + 1) / LEN)),
+  }));
+  if (profile.length < 6) throw bad(`the side view's outline simplified to ${profile.length} points; that is not a vehicle`);
+  /* The trace runs through pixel CENTRES, so it is half a pixel inside
+     the silhouette all the way round: a pixel short in length and a
+     pixel short in height. The box it should fill is known exactly, so
+     stretch it to that — the difference is the width of a pixel and
+     the point is that the model's box is the sheet's. */
+  {
+    const xs = profile.map(p => p.x), zs = profile.map(p => p.z);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), z0 = Math.min(...zs), z1 = Math.max(...zs);
+    const zs0 = sillZ / LEN, zs1 = HGT / LEN;
+    for (const p of profile) {
+      p.x = round(-0.5 + (p.x - x0) / (x1 - x0));
+      p.z = round(zs0 + (p.z - z0) / (z1 - z0) * (zs1 - zs0));
+    }
+  }
+  /* anticlockwise in x-z, seen from the vehicle's left, so the outward
+     side of every edge is the same side and js/car.js can rely on it */
+  {
+    let area = 0;
+    for (let i = 0; i < profile.length; i++) {
+      const a = profile[i], b = profile[(i + 1) % profile.length];
+      area += a.x * b.z - b.x * a.z;
+    }
+    if (area < 0) profile.reverse();
+  }
 
   /* ---- the tyre, off the bottom of the front view -------------------
      A TYRE IS ONE OF THE TWO THINGS AT THE BOTTOM OF A HEAD-ON VIEW.
@@ -530,8 +614,6 @@ function measure(spec) {
      x runs +0.5 at the nose to -0.5 at the tail, y is +width/2 to the
      vehicle's left, z is 0 on the ground. The side view is drawn nose to
      the left, so its x runs the other way from the model's. */
-  const mx = px => 0.5 - px / LEN;
-
   const wheels = wheelRuns.map(([a, b]) => {
     const rWidth = (b - a + 1) / 2;                        // half the tyre the arch shows
     const rDepth = sillZ;                                  // and how far it hangs below the sill
@@ -604,7 +686,7 @@ function measure(spec) {
   return {
     spec, file: inFile, sheet: { w: SW, h: SH },
     V, filled, WINDOW, LEN, HGT, WID, widths, agree,
-    sillZ, sideRoof, tyre, layers, wheels, mx,
+    sillZ, sideRoof, tyre, profile, wheels, mx,
     /* what the roof test saw, for --roof */
     roofRows: {
       front: roofRow(V.front, F, ROOF_SPAN), rear: roofRow(V.rear, R, ROOF_SPAN),
@@ -672,8 +754,11 @@ for (let i = 3; i < atlas.length; i += 4) atlas[i] = 255;
 for (const r of rects) {
   const v = r.m.V[r.k], px = r.m.filled[r.k], cw = v.cell.w;
   /* the gutter is the edge pixel repeated, so nothing bleeds between views */
+  /* and a side view that faces right goes in facing left */
+  const flip = r.k === 'side' && r.m.spec.nose === 'right';
   for (let y = -PAD; y < r.h + PAD; y++) for (let x = -PAD; x < r.w + PAD; x++) {
-    const sx = v.box.x + Math.min(r.w - 1, Math.max(0, x)), sy = v.box.y + Math.min(r.h - 1, Math.max(0, y));
+    const cx = Math.min(r.w - 1, Math.max(0, x));
+    const sx = v.box.x + (flip ? r.w - 1 - cx : cx), sy = v.box.y + Math.min(r.h - 1, Math.max(0, y));
     const s = (sy * cw + sx) * 3, d = ((r.y + y) * ATLAS_W + (r.x + x)) * 4;
     atlas[d] = px[s]; atlas[d + 1] = px[s + 1]; atlas[d + 2] = px[s + 2]; atlas[d + 3] = 255;
   }
@@ -683,7 +768,7 @@ fs.writeFileSync(OUT_PNG, writePNG(ATLAS_W, AH, atlas));
 
 /* ---- and the numbers ----------------------------------------------- */
 function vehicleJS(m) {
-  const { LEN, HGT, WID, WINDOW, layers, wheels, sillZ, sideRoof, tyre, agree, mx, spec } = m;
+  const { LEN, HGT, WID, WINDOW, profile, wheels, sillZ, sideRoof, tyre, agree, spec } = m;
   const views = Object.keys(m.V).map(k => {
     const r = rects.find(r => r.m === m && r.k === k), q = WINDOW[k];
     const f = [`x: ${r.x}`, `y: ${r.y}`, `w: ${r.w}`, `h: ${r.h}`];
@@ -704,8 +789,8 @@ ${views}
       sill: ${round(sillZ / LEN)},
       tyre: ${round(tyre / LEN)},
       roof: ${round(sideRoof / LEN)},
-      layers: [
-${layers.map(l => `        { z0: ${round(l.z0 / LEN)}, z1: ${round(l.z1 / LEN)}, half: ${round(l.half / LEN)}, runs: [${l.runs.map(([a, b]) => `[${round(mx(b + 1))}, ${round(mx(a))}]`).join(', ')}] },`).join('\n')}
+      profile: [
+${profile.map(p => `        [${p.x}, ${p.z}, ${p.half}],`).join('\n')}
       ],
       wheels: [${wheels.map(w => `{ x: ${w.x}, r: ${w.r} }`).join(', ')}],
       agree: ${round(agree)},
@@ -739,11 +824,13 @@ export const CAR_ATLAS = { file: '${OUT_PNG}', w: ${ATLAS_W}, h: ${AH} };
     frame IS the model's bounding box, so it only needs the heights; the
     plan view's frame is the length, so it only needs the half width.
 
-    \`shape.layers\` is the side view's roof line as a stack of boxes,
-    lowest first, each as wide as the front view is at that height;
-    \`runs\` is which stretches of the vehicle reach that high. \`wheels\`
-    are the dips in the underside, and sit on the ground — a tracked
-    vehicle has none. \`roof\` is the height every view was anchored on.
+    \`shape.profile\` is the side view's outline above the sill as one
+    polygon — [x, z, half] per point, anticlockwise seen from the
+    vehicle's left, starting and ending on the sill — where \`half\` is
+    how far the body reaches either side of the middle at that height,
+    off the front view. Extruded across that width it is the body.
+    \`wheels\` are the dips in the underside, and sit on the ground — a
+    tracked vehicle has none. \`roof\` is the height every view was anchored on.
     \`agree\` is how far apart the three views' claims about the width
     were, as a fraction of it: a sheet is over-determined, and this is
     the residual.
@@ -763,7 +850,7 @@ fs.writeFileSync(OUT_JS, js);
 /* ---- what it found ------------------------------------------------- */
 const pct = n => (n * 100).toFixed(1) + '%';
 for (const m of built) {
-  const { spec, LEN, HGT, WID, widths, agree, sillZ, sideRoof, tyre, layers, wheels, WINDOW } = m;
+  const { spec, LEN, HGT, WID, widths, agree, sillZ, sideRoof, tyre, profile, wheels, WINDOW } = m;
   console.log(`${spec.id} — ${spec.file}  ${m.sheet.w}x${m.sheet.h}`);
   for (const k of Object.keys(m.V)) {
     const r = rects.find(r => r.m === m && r.k === k);
@@ -773,9 +860,8 @@ for (const m of built) {
   console.log(`  proportions ${(LEN / WID).toFixed(2)} : 1 : ${(HGT / WID).toFixed(2)} (length : width : height), so ${spec.metres} m long is ${(spec.metres * WID / LEN).toFixed(2)} wide and ${(spec.metres * HGT / LEN).toFixed(2)} tall`);
   console.log(`  roof line ${sideRoof}px up in the side view; head-on frames span ${WINDOW.front.z0.toFixed(1)}..${WINDOW.front.z1.toFixed(1)} against the side's 0..${HGT}`);
   console.log(`  sill ${sillZ}px; ${wheels.length} wheels${wheels.length ? ` of radius ${wheels.map(w => (w.r * LEN).toFixed(1)).join(' and ')}px at x=${wheels.map(w => w.x).join(', ')}` : ''}; tyre ${tyre.toFixed(1)}px`);
-  console.log(`  ${layers.length} layers:`);
-  for (const l of layers)
-    console.log(`    z ${(l.z0 / LEN).toFixed(3)}..${(l.z1 / LEN).toFixed(3)}  half-width ${(l.half / LEN).toFixed(3)}  over ${l.runs.map(([a, b]) => `${m.mx(b + 1).toFixed(3)}..${m.mx(a).toFixed(3)}`).join(', ')}`);
+  console.log(`  profile: ${profile.length} points, half-widths ${Math.min(...profile.map(p => p.half)).toFixed(3)}..${Math.max(...profile.map(p => p.half)).toFixed(3)}`);
+  console.log('    ' + profile.map(p => `(${p.x.toFixed(2)}, ${p.z.toFixed(2)})`).join(' '));
 }
 const used = rects.reduce((a, r) => a + r.w * r.h, 0);
 console.log(`${OUT_PNG}  ${ATLAS_W}x${AH}, ${rects.length} views, ${pct(used / (ATLAS_W * AH))} of it used`);

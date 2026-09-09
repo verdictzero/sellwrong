@@ -69,7 +69,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         493 checks, no install and no browser
+  the smoke test         517 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -864,15 +864,47 @@ carries its own residual into js/car-data.js and the test holds it. The
 one number NOT taken off a picture is the length in metres, because
 nothing in a picture of a van says how big a van is.
 
-THE SHAPE COMES OUT OF THE SIDE VIEW'S OWN OUTLINE. Its top edge,
-simplified into a handful of steps, is a stack of boxes from the sill up;
-its bottom edge dips where the wheels are. Each box is then as wide as the
-FRONT view is over the band of height that box occupies, which is what
-makes a light bar a bar and a body a body without either being named
-anywhere. Every box sinks a fraction of a unit into the one below it and
-the wheels sit a fraction inside the flanks, because two faces at exactly
-the same depth is not a drawing-order problem, it is a tie, and a tie in
-the depth buffer is the flicker the trees used to have.
+THE SHAPE IS THE SIDE VIEW'S OWN OUTLINE, USED AS IT IS. The silhouette
+above the sill is traced round its edge, simplified to a dozen or so
+points (Douglas-Peucker: throw away every point within a percent of the
+length of the straight line through its neighbours), and each point is
+given how far the vehicle reaches either side of its middle at that
+height, off the FRONT view. Push the outline out to +half on the left and
+-half on the right, join the two copies edge for edge round the outside
+and cap them, and that is the body: one strip of quads and two fans, a
+closed solid whose cross-section follows the front view. A windscreen is
+a slope, a bonnet is a slope, the roof narrows the way a roof does, a
+pickup keeps the step down to its bed, and it is what makes a light bar a
+bar without anything naming it.
+
+IT WAS A STAIRCASE FIRST. The roof line split into steps, each step a box
+as wide as the front view over that band of height — and it read as a
+stack of bricks with a car painted on, because that is exactly what it
+was. Every box that rises to a windscreen is a box, however well it is
+painted. The outline was there in the drawing the whole time; the tool
+was throwing it away and rebuilding a worse one out of rectangles.
+The wheels stay separate — the sill is the body's underside and they
+hang below it — and sit a fraction inside the flanks, because two faces
+at exactly the same depth is a tie in the depth buffer, and a tie is the
+flicker the trees used to have.
+
+HALF THE SHEETS FACE THE OTHER WAY. Three of the six side views were
+drawn nose to the right and three nose to the left, and a tool that
+assumed one of those built half the fleet back to front: bonnet at the
+tail, and the front view painted over it. Nothing in the arithmetic can
+tell which way a picture of a van faces, so it is declared per sheet, and
+a nose-right side view is flipped as it goes into the atlas — from
+js/car.js onward every side view faces left and there is one rule. (All
+six plan views face left. The head-on views have no way to face.)
+
+AND THE RIGHT FLANK WAS PAINTED BACKWARDS. The projection took the side
+view the other way round on the right-hand side, on the theory that a
+picture seen from the other side is mirrored. It is; but a face's
+coordinates are its own and do not care which side you are standing on —
+nose is nose — and the effect was the tail's paint on the nose of every
+right flank. On a plain van it is invisible. On a pickup it is the cab at
+the back. The same on the underside, which mattered from the day cars
+started landing on their roofs.
 
 THE PAINT IS PROJECTED, not unwrapped. For each triangle: take the axis
 its normal points most nearly along, and read the view that was drawn down
@@ -974,16 +1006,16 @@ those up and the sills come out within a fifth of a pixel of each other as
 well. Each view therefore carries the window of the model it covers, and
 the projection is a plain remap.
 
-AND IT IS LIT LIKE A WALL. This renderer does no shading, so a box comes
-out a silhouette — every face the same value, no edge anywhere. A car
+AND IT IS LIT LIKE A WALL. This renderer does no shading, so a solid
+comes out a silhouette — every face the same value, no edge anywhere. A car
 borrows the trick the walls use, Doom's FAKE CONTRAST: a face looking
 north or south reads a notch brighter than one looking east or west, the
 same 0.055 js/level.js uses. The walls take it as a step because Doom's
 walls are mostly on the grid; a van parked at a fifth of a radian never is,
 so here it is the same number interpolated. The roof gets a lift on top of
 that, being the face pointing at the floodlights, and the underside goes
-dark. Four brightnesses on nine boxes is the whole of the shading and it
-is the difference between a vehicle and a black rectangle.
+dark. Four brightnesses is the whole of the shading and it is the
+difference between a vehicle and a black rectangle.
 
 THE LOT IS ONE MESH. There are seventy-seven bays and every one of them is
 filled — a car park that is only two-fifths full, thinning towards the
@@ -1000,7 +1032,7 @@ that takes out six cars rebuilds once and nothing is ever drawn twice in
 one frame. The whole car park costs about two hundredths of a millisecond
 a tic, against a budget of 28.6.
 
-AND THEY ARE IN THE BAYS, WHICH TOOK A THIRD THING. The bay lines are
+AND THEY ARE IN THE BAYS, WHICH TOOK ANOTHER THING. The bay lines are
 not geometry: the whole car park is a dozen polygons because one repeat
 of the BAYROW texture IS one bay — 186 across, 180 deep, with the line
 down its left edge — so a row of forty bays is one sector rather than
@@ -1071,8 +1103,9 @@ roof and its bonnet, at whatever height that leaves it.
 
 THE SECOND BANG happens on impact, and with it the bulk of the debris.
 
-THE DEBRIS IS MADE OF THE CAR. A chunk is a small box cut out of that
-vehicle's own model space and put through exactly the same projection, so
+THE DEBRIS IS MADE OF THE CAR. A chunk is a small box cut in around a
+random point on that vehicle's own outline — a bit of roof, a bit of
+bonnet, a bit of door — and put through exactly the same projection, so
 a piece off the tail is painted with the tail on every face and nobody had
 to decide what a torn piece of van looks like. Each one tumbles on the
 same integrator, bounces once if it came down hard, snaps flat to the
@@ -1097,7 +1130,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-493 checks. Every one of them earns its place by having caught something
+517 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -1114,9 +1147,16 @@ that had already reached a screenshot:
     sixty-four triangles a car, shipped, through a test that passed. The
     test could only decide a face with air on one side of it, and a tyre
     is buried under a wheel arch; and a back-facing tyre in a dark car
-    park is a black shape either way. It is decided now by holding each
-    triangle's winding against the normal the builder declared for it,
-    which needs no air and no guessing
+    park is a black shape either way. Now the builder emits every
+    triangle the way round its declared normal says, the test holds the
+    winding against that, and every solid must be closed — each edge
+    shared by exactly one triangle going the other way — with a positive
+    volume about the size of a car. None of that needs air or guessing
+  three of six vehicles built back to front, because three of six sheets
+    were drawn facing the other way and the tool assumed one direction
+    for all of them; and every right-hand flank painted with its tail at
+    its nose, on the theory that a mirrored picture needs mirrored
+    coordinates
   seventy-seven cars parked on the bay lines instead of between them,
     because the texture that draws those lines tiles from the world
     origin and the car park does not start there

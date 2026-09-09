@@ -444,15 +444,18 @@ class Vehicle {
     const d = this.def, s = d.shape, L = d.length;
     for (let k = 0; k < n; k++) {
       if (this.fleet.flying.length >= MAX_FLYING_CHUNKS) return;
-      const layer = s.layers[pRandom() % s.layers.length];
-      const run = layer.runs[pRandom() % layer.runs.length];
+      /* a piece off the OUTSIDE: somewhere along a random edge of the
+         outline, a box cut in around that point, as wide as the body is
+         there — so it is a bit of roof, a bit of bonnet, a bit of door */
+      const O = s.profile, i = pRandom() % O.length, j = (i + 1) % O.length, f = rnd();
+      const px = O[i][0] + (O[j][0] - O[i][0]) * f, pz = O[i][1] + (O[j][1] - O[i][1]) * f;
+      const half = O[i][2] + (O[j][2] - O[i][2]) * f;
       const w = 0.07 + rnd() * 0.10, dp = 0.05 + rnd() * 0.09, t = 0.04 + rnd() * 0.07;
       const cut = {
-        x0: run[0] + rnd() * Math.max(0, (run[1] - run[0]) - w),
-        y0: -layer.half + rnd() * Math.max(0, 2 * layer.half - dp),
-        z0: layer.z0 + rnd() * Math.max(0, (layer.z1 - layer.z0) - t),
+        x0: Math.max(-0.5, px - w / 2), z0: Math.max(0, pz - t / 2),
+        y0: -half + rnd() * Math.max(0, 2 * half - dp),
       };
-      cut.x1 = cut.x0 + w; cut.y1 = cut.y0 + dp; cut.z1 = cut.z0 + t;
+      cut.x1 = Math.min(0.5, cut.x0 + w); cut.y1 = cut.y0 + dp; cut.z1 = cut.z0 + t;
 
       /* where that box is in the world right now, tumble and all */
       const mid = [(cut.x0 + cut.x1) / 2, (cut.y0 + cut.y1) / 2, (cut.z0 + cut.z1) / 2];

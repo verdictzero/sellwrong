@@ -11,12 +11,13 @@
    WHAT ARRIVES is an orthographic turnaround on a green field: front,
    rear, side and plan. tools/prep-car.mjs measures it — see that file
    for how, it is the interesting half — and leaves js/car-data.js: for
-   each vehicle its proportions, a stack of layers off the side view's
-   roof line, its wheels off the underside, and where each of its views
-   sits in the shared atlas.
+   each vehicle its proportions, its outline off the side view, the width
+   it has at every height off the front view, its wheels off the
+   underside, and where each of its views sits in the shared atlas.
 
-   WHAT THIS DOES is build boxes from those numbers and then assign every
-   UV by PROJECTION rather than by hand. For a triangle, look at its
+   WHAT THIS DOES is loft that outline across that width — one strip of
+   quads round the silhouette and a fan on each flank — and then assign
+   every UV by PROJECTION rather than by hand. For a triangle, look at its
    normal, take the axis it points most nearly along, and read the view
    that was drawn down that axis:
 
@@ -30,7 +31,7 @@
    authored by a person: the four views were parallel projections of the
    real thing, so projecting them straight back puts every pixel where it
    came from, and any geometry roughly the right shape gets painted
-   roughly right. It is the reason a model can be nine boxes and still
+   roughly right. It is the reason a model can be forty triangles and still
    read as a vehicle — a light bar, a wheel arch, an eagle airbrushed
    down the flank of a van are all paint that lands where the shape says.
 
@@ -44,9 +45,8 @@
    tail has the tail's paint on it, on every face, without anybody
    deciding what a torn piece of van looks like.
 
-   WHY BOXES OVERLAP RATHER THAN STACK. A layer sits a fraction of a unit
-   INTO the layer below it, and the wheels sit a fraction of a unit
-   inside the body's flanks. Two faces at exactly the same depth is not a
+   WHY THE WHEELS SIT A FRACTION OF A UNIT INSIDE THE FLANKS rather than
+   flush with them. Two faces at exactly the same depth is not a
    drawing order problem, it is a tie, and a tie in the depth buffer is
    the flicker you have already seen on the trees. Nothing here is ever
    exactly coplanar with anything else, so there is nothing to tie.
@@ -138,16 +138,24 @@ function uvOf(views, n, p) {
     iu = (n[0] > 0 ? p[1] + r.half : r.half - p[1]) / (2 * r.half);
     iv = (r.z1 - p[2]) / (r.z1 - r.z0);
   } else if (ay >= az) {
-    /* the side view is drawn nose to the left, so it runs against x */
+    /* The side view is drawn nose to the left (tools/prep-car.mjs turns
+       the ones that were not), so it runs against x — on BOTH flanks.
+       The right flank used to take x the other way round, on the theory
+       that a picture seen from the other side is mirrored. It is, but a
+       face's coordinates are its own and do not care which side you are
+       standing on: nose is nose. Reversed, the right flank of every
+       vehicle had its tail's paint on its nose, which on a van is
+       invisible and on a pickup is the cab at the back. */
     r = views.side;
-    iu = n[1] > 0 ? 0.5 - p[0] : p[0] + 0.5;
+    iu = 0.5 - p[0];
     iv = (r.z1 - p[2]) / (r.z1 - r.z0);
   } else {
     /* and the plan view nose to the left as well, with the vehicle's
-       left hand at the bottom of the picture */
+       left hand at the bottom of the picture — the same on the underside,
+       for the same reason as the flanks */
     r = views.top;
     iu = 0.5 - p[0];
-    iv = (n[2] > 0 ? p[1] + r.half : r.half - p[1]) / (2 * r.half);
+    iv = (p[1] + r.half) / (2 * r.half);
   }
   return [(r.x + clamp01(iu) * r.w) / CAR_ATLAS.w, 1 - (r.y + clamp01(iv) * r.h) / CAR_ATLAS.h];
 }
@@ -199,11 +207,20 @@ function pen(v, opts = {}) {
        sixty-four of them stayed inside out through a passing test. */
     norms.push(n[0], n[1], n[2]);
   };
-  const face = (q, n) => {
+  /* A triangle is emitted the way round that puts its front where the
+     declared normal says. Working that out here, once, from the cross
+     product, is what ended the era of a tyre tread being inside out on
+     one side and the caps on the other: the builder says which way a
+     face points, and the winding follows. */
+  const tri = (a, b, c, n) => {
+    const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+    const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+    const gx = uy * vz - uz * vy, gy = uz * vx - ux * vz, gz = ux * vy - uy * vx;
     const l = faceLight(n);
-    vert(q[0], n, l); vert(q[1], n, l); vert(q[2], n, l);
-    vert(q[0], n, l); vert(q[2], n, l); vert(q[3], n, l);
+    if (gx * n[0] + gy * n[1] + gz * n[2] >= 0) { vert(a, n, l); vert(b, n, l); vert(c, n, l); }
+    else { vert(a, n, l); vert(c, n, l); vert(b, n, l); }
   };
+  const face = (q, n) => { tri(q[0], q[1], q[2], n); tri(q[0], q[2], q[3], n); };
 
   /* six faces, wound so the outside is the front */
   const box = (x0, x1, y0, y1, z0, z1) => {
@@ -215,7 +232,7 @@ function pen(v, opts = {}) {
     face([[x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [x1, y0, z0]], [0, 0, -1]);
   };
 
-  return { box, face, vert, faceLight, arrays: { position: pos, uv, light: lit, sky: skies, charred: chars, normal: norms } };
+  return { box, face, tri, vert, faceLight, arrays: { position: pos, uv, light: lit, sky: skies, charred: chars, normal: norms } };
 }
 
 /**
@@ -232,21 +249,38 @@ export function carGeometry(v, opts = {}) {
   const s = v.shape;
   const P = pen(v, opts);
 
-/* THE BODY: one box per step in the roof line, each as wide as the
-     front view is at the height it occupies, each sinking a lip into the
-     one below so no two horizontal faces ever tie.
+  /* THE BODY: the side view's outline, lofted across the width.
 
-     A VEHICLE WITH NO WHEELS STANDS ON ITS BOTTOM LAYER. The sill is
-     where the body's underside is, and on anything with wheels the
-     wheels carry it from there to the tarmac; on the tracked one there
-     are none, its sill is the top of its own track — one pixel, in the
-     drawing — and taken literally the whole APC hovers that pixel off
-     the ground. Nothing else is holding it up, so the bottom layer is. */
-  const grounded = s.wheels.length === 0;
-  s.layers.forEach((L, i) => {
-    const z0 = i === 0 ? (grounded ? 0 : L.z0) : L.z0 - LIP;
-    for (const [x0, x1] of L.runs) P.box(x0, x1, -L.half, L.half, z0, L.z1);
-  });
+     The profile is a polygon in x and z — the silhouette above the sill,
+     simplified to a dozen points, each carrying how far the vehicle
+     reaches either side of its middle at that height, off the front
+     view. Push every point out to +half on the left and -half on the
+     right and you have two copies of the outline, one per flank; join
+     them edge for edge round the outside and cap them and it is a
+     closed solid whose cross-section follows the front view. A
+     windscreen is a slope, a bonnet is a slope, the roof narrows the way
+     a roof does, and it is one strip of quads and two fans.
+
+     It replaced a staircase of boxes — the roof line split into steps,
+     each step a box — which read as a stack of bricks with a car painted
+     on, because that is what it was. */
+  const O = s.profile, n = O.length;
+  const L = O.map(p => [p[0], p[2], p[1]]), R = O.map(p => [p[0], -p[2], p[1]]);   // left, right
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    /* the outward normal of this edge of the outline, in x and z: the
+       profile runs anticlockwise seen from the left, so it is the edge
+       turned a quarter clockwise */
+    const dx = O[j][0] - O[i][0], dz = O[j][1] - O[i][1], m = Math.hypot(dx, dz) || 1;
+    P.face([L[i], L[j], R[j], R[i]], [dz / m, 0, -dx / m]);
+  }
+  /* the two flanks, off one ear-clipped triangulation of the outline —
+     the same one for both, so the solid stays closed */
+  const ears = THREE.ShapeUtils.triangulateShape(O.map(p => new THREE.Vector2(p[0], p[1])), []);
+  for (const [a, b, c] of ears) {
+    P.tri(L[a], L[b], L[c], [0, 1, 0]);
+    P.tri(R[a], R[b], R[c], [0, -1, 0]);
+  }
 
   /* THE WHEELS: a prism on its side, sitting on the ground, set a lip
      inside the body's flank so the arch hides its top the way an arch
@@ -254,17 +288,17 @@ export function carGeometry(v, opts = {}) {
      exactly there — and its tread gets whichever of the other views it
      happens to point at, which for a black tyre is close enough.
 
-     The flank is the LOWEST LAYER'S half width and not half the
+     The flank is the WIDEST THE PROFILE GETS and not half the
      vehicle's nominal width, because those are not the same number. The
-     nominal width is the average of what three views claim; the layer is
-     what the front view actually draws down at wheel height. On a van
+     nominal width is the average of what three views claim; the profile is
+     what the front view actually draws. On a van
      they agree to a thousandth. On the hatchback the nominal is the
      wider of the two, and taken literally it hangs both wheels a
      fraction of a unit PROUD of the bodywork — which, being a tie in the
      depth buffer along the length of the car, is the one thing this file
      is careful never to do. */
   if (s.wheels.length) {
-    const flank = Math.min(s.width / 2, s.layers[0].half);
+    const flank = Math.min(s.width / 2, Math.max(...s.profile.map(p => p[2])));
     const yOut = flank - LIP, yIn = yOut - s.tyre;
     for (const wheel of s.wheels) {
       const { x: cx, r } = wheel;
