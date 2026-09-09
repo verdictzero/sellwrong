@@ -68,14 +68,17 @@
    raw paint, because the opening erodes a thin pillar to nothing and
    then a side window is background — see view() below.)
 
-   THE SHAPE IS THE SIDE VIEW'S OWN OUTLINE, used as it is: the silhouette
-   above the sill as one polygon, simplified to a dozen or so points, and
-   its bottom edge dips where the wheels are. Every point of it carries
-   the vehicle's half width at that height off the FRONT view, so once
-   js/car.js extrudes the polygon across that width it narrows at the
-   roof the way a car does — which is what makes a light bar a bar and a
-   body a body without either being named here. (It was a staircase of
-   boxes once. See THE PROFILE, below, for why it is not.)
+   THE SHAPE IS THE VISUAL HULL OF THE THREE SILHOUETTES. Each view is a
+   parallel projection, so the vehicle lies inside its own silhouette
+   extruded along the axis that view was drawn down, and inside all three
+   of those at once is the tightest solid the sheet can vouch for. It
+   comes out as three curves — the side view's top edge and the plan
+   view's width along the length, the head-on views' width up the height
+   — and js/car.js puts a vertex at every crossing of them. A nose corner
+   rounds off because the plan view rounds it, a roof shoulder because
+   the front view does, a windscreen slopes because the side view slopes
+   it, and nothing is named. (It was the side outline lofted across one
+   width once, and a staircase of boxes before that. See THE HULL, below.)
 
    WHAT A FLEET CHANGED. One sheet could be measured against itself with
    fractions of its own length: the riot van's roof is "the topmost row
@@ -147,11 +150,10 @@ const OPEN = 2;          // radius of the measuring opening: kills anything unde
 const GLASS = [24, 26, 30]; // what a see-through window is painted: dark dark grey, near black
 const PAD = 1;           // gutter around each view in the atlas
 const ATLAS_W = 512;
-const PROFILE_TOL = 0.012; // an outline point closer than this to the line through its neighbours goes, in lengths
-const PROFILE_MAX = 24;    // and at most this many points survive
-const LEDGE_LEN = 0.05;    // an edge shorter than this, in lengths, that interrupts a line is a ledge
-const LEDGE_TURN = Math.PI / 4;   // and a line is two neighbours within this of each other
-const CHAMFER_TURN = Math.PI * 0.6; // up to this much of a turn, a short edge is a corner cut off, and goes to the corner
+const HULL_TOL = 0.006;    // a point of a curve closer than this to the line through its neighbours goes, in lengths
+const HULL_GAP = 0.10;     // and no two that survive are farther apart than this
+const HULL_MERGE = 0.008;  // or closer than this
+const NOTCH_W = 0.035;     // a slot in an edge narrower than this, in lengths, is a speck and is bridged
 const BLOB_MIN = 0.03;   // a piece this much of the biggest one is part of the vehicle
 const WHEEL_TOL = 0.018; // how far below the sill counts as a wheel
 /* How far the three views may disagree about the width before a sheet
@@ -471,49 +473,46 @@ function measure(spec) {
   if (wheelRuns.length !== spec.wheels)
     throw bad(`the side view's underside dips ${wheelRuns.length} times; this one was declared to show ${spec.wheels} wheels`);
 
-  /* ---- how wide is the vehicle at a height? --------------------------
-     The front view, asked over the rows that match. Its box is the
-     model's width by the model's height, by construction, so the
-     conversion is a ratio of box sizes and nothing else. */
-  function halfWidthAt(zLo, zHi) {                        // heights above ground, in side px
-    const rowOf = z => (WINDOW.front.z1 - z) / (WINDOW.front.z1 - WINDOW.front.z0) * F.h;
-    const r0 = Math.max(0, Math.floor(rowOf(zHi)));
-    const r1 = Math.min(F.h - 1, Math.ceil(rowOf(zLo)) - 1);
-    /* and if the band has nothing in it — the pickup's front view has a
-       gap between its bumper and its tyres — widen it until it has */
-    for (let grow = 0; grow < F.h; grow++) {
-      let widest = 0;
-      for (let r = Math.max(0, r0 - grow); r <= Math.min(F.h - 1, r1 + grow); r++) {
-        let a = -1, b = -1;
-        for (let x = 0; x < F.w; x++) if (V.front.at(x, r)) { if (a < 0) a = x; b = x; }
-        if (a >= 0) widest = Math.max(widest, b - a + 1);
-      }
-      if (widest) return widest / 2 * (WID / F.w);          // front px -> side px
-    }
-    return 0;
-  }
+  /* ---- THE HULL ------------------------------------------------------
+     Three silhouettes, one solid. The side view's silhouette, extruded
+     across the width, is a slab the vehicle lies inside; the plan's,
+     extruded down, is another; the head-on views', extruded along the
+     length, a third. The vehicle is inside all three, and the
+     intersection — the VISUAL HULL — is as tight as three pictures can
+     make it. Three curves say where it is:
 
-  /* ---- THE PROFILE ---------------------------------------------------
-     The side view's outline above the sill, as one polygon, simplified
-     to a dozen or so points. That polygon extruded across the width is
-     the body; js/car.js does the extruding.
+       columns  along the length: the side view's top edge and the plan
+                view's half width at each x
+       levels   up the height: the head-on views' half width at each z
 
-     This used to be a STAIRCASE — the top edge split into steps and each
-     step a box — and it read as a stack of bricks with a car painted on
-     it, because that is what it was: a windscreen is a slope and a
-     bonnet is a slope, and a box has neither. The outline itself is the
-     shape, so it is used as it is: walk up the tail, along the top, down
-     the nose, and back along the sill, then throw away every point that
-     is within PROFILE_TOL of the straight line between its neighbours
-     (Douglas-Peucker). The rounded corners keep two or three points, the
-     flat panels keep none, the windscreen keeps its two ends and its
-     angle, and a pickup keeps the step down to its bed.
+     and js/car.js puts a vertex at every column and level, at
+     z = min(level, top of the column), y = min(plan half, head-on half).
+     That is the whole of it: the nose corners round off because the plan
+     view rounds them, the roof shoulders because the front view rounds
+     them, a windscreen is a slope because the side view draws one, and a
+     riot van's bonnet is narrower than its cab because its plan view
+     says so. Nothing is named. Each curve is simplified to its
+     breakpoints (Douglas-Peucker: throw away every point within HULL_TOL
+     of the straight line through its neighbours) rather than sampled at
+     a pitch, so a straight roof is two columns and a rounded corner is
+     four or five, and the tolerance is half a percent of the length —
+     about a pixel — because tight is the point. Looser than a pixel and
+     the paint that lands on the parts of the solid the picture did not
+     draw is bled body colour; tighter than the drawing and it is nothing.
 
-     Every point carries the vehicle's HALF WIDTH at its own height, off
-     the front view, so the extrusion narrows at the roof the way a car
-     does — and it is the whole of how the model knows it has a roof at
-     all. The wheels stay separate: the sill is the body's underside and
-     they hang below it. */
+     THE OUTLINE IT REPLACES was the side view's silhouette, simplified to
+     a dozen points and lofted across the front view's width at each
+     height: the right silhouette from the side, and a rectangle from
+     above — square nose corners, a crease for a shoulder, and the bled
+     fill painted over every corner the picture had rounded off. And a
+     staircase of boxes before that. The picture had the shape the whole
+     time, in three views; the tool was reading one of them.
+
+     THE WHEELS STAY SEPARATE. A head-on silhouette cannot tell a tyre
+     from the body behind it, so the hull's lower rows are tyre to tyre;
+     the plan view, which sees the body over the tyres, clamps that back
+     to the body — and the body's underside is the sill, with the wheels
+     hanging below it as their own prisms, a lip inside the flank. */
   /* A vehicle with no wheels has nothing else to stand on, so its sill
      IS the ground: the tracked one's underside is its track, a pixel up
      in the drawing, and taken literally the whole APC hovers that pixel. */
@@ -584,28 +583,9 @@ function measure(spec) {
     px = end + 1;
   }
   const height = px => closed[px];
-  const inM = (px, z) => px >= 0 && px < LEN && z >= sillZ && z < height(px);
-  let start = null;
-  for (let z = sillZ; z < HGT && !start; z++) for (let px = 0; px < LEN; px++) if (inM(px, z)) { start = [px, z]; break; }
-  if (!start) throw bad('nothing of the side view stands above its own sill');
-  const DIRS = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];   // anticlockwise, z up
-  const raw = [];
-  {
-    let [px, z] = start, dir = 0;                          // came in heading +x along the sill
-    for (let guard = 0; guard < LEN * HGT * 4; guard++) {
-      raw.push([px, z]);
-      /* look round from the direction we came in, one step back */
-      let d = (dir + 6) % 8, moved = false;
-      for (let k = 0; k < 8; k++, d = (d + 1) % 8) {
-        const nx = px + DIRS[d][0], nz = z + DIRS[d][1];
-        if (inM(nx, nz)) { px = nx; z = nz; dir = d; moved = true; break; }
-      }
-      if (!moved) break;                                   // a single pixel
-      if (px === start[0] && z === start[1]) break;
-    }
-  }
-  raw.push(start);                                         // closed, for the simplifier
-  /* the sill closes it; the wheels are below and are not the body */
+
+  /* Douglas-Peucker: keep the ends, then every point farther than `tol`
+     from the line through the points already kept, until none is. */
   function simplify(pts, tol) {
     const keep = new Uint8Array(pts.length); keep[0] = keep[pts.length - 1] = 1;
     const stack = [[0, pts.length - 1]];
@@ -622,88 +602,125 @@ function measure(spec) {
     }
     return pts.filter((_, i) => keep[i]);
   }
-  /* A closed loop simplified as one polyline is a chord from a point to
-     itself, which every other point is zero distance from. So it is cut
-     at the point farthest from the start and simplified as two. */
-  let far = 0, farD = -1;
-  for (let i = 0; i < raw.length; i++) {
-    const d = (raw[i][0] - raw[0][0]) ** 2 + (raw[i][1] - raw[0][1]) ** 2;
-    if (d > farD) { farD = d; far = i; }
+  /* A CLOSING, ONE-DIMENSIONAL, on any edge: every point is lifted to the
+     lower of the highest points within `win` either side of it, so a
+     slot narrower than the window fills and anything wider is left
+     exactly as it was — the same thing the side view's top edge went
+     through above, because every edge on these sheets has the same
+     specks in it: the gap between a bumper and a wheel arch, seen from
+     above, is a notch in the plan's edge, and the shadow under a mirror
+     is one in the head-on outline. Only where there is a full window
+     either side: at the ends it would fill a rounded nose corner as if
+     it were a slot in a straight edge, and the corner is the point. */
+  const closeEdge = (arr, win) => arr.map((h, i) => {
+    if (i < win || i + win >= arr.length) return h;
+    const L = Math.max(...arr.slice(i - win, i)), R = Math.max(...arr.slice(i + 1, i + win + 1));
+    return Math.max(h, Math.min(L, R));
+  });
+
+  /* the side view's top edge at every pixel EDGE along the length, as a
+     height above the ground in side px: the higher of the two columns
+     either side of the edge, so the hull encloses the pixels */
+  const topAtEdge = e => Math.max(closed[Math.max(0, e - 1)], closed[Math.min(LEN - 1, e)]);
+  /* the plan view's half width at each of its own columns, in side px —
+     its whole extent top edge to bottom edge, halved, the vehicle being
+     symmetric about its own middle. It faces left (nose at column 0)
+     whichever way the side view faces, and its length is the vehicle's. */
+  const planRaw = [];
+  for (let tx = 0; tx < T.w; tx++) {
+    let a = -1, b = -1;
+    for (let ty = 0; ty < T.h; ty++) if (V.top.at(tx, ty)) { if (a < 0) a = ty; b = ty; }
+    planRaw.push(a < 0 ? 0 : (b - a + 1) / 2 * (WID / T.h));
   }
-  const halves = tol => [...simplify(raw.slice(0, far + 1), tol), ...simplify(raw.slice(far), tol).slice(1)];
-  let tol = PROFILE_TOL * LEN, poly = halves(tol);
-  while (poly.length > PROFILE_MAX + 1) { tol *= 1.3; poly = halves(tol); }
-  poly.pop();                                              // the closing point is the first one again
-  /* LEDGES GO. A drawing has a rubber seal where the hatch glass meets
-     the roof and a lip where the windscreen meets it, three pixels
-     tall, and the simplifier keeps them as a short vertical step in an
-     otherwise continuous line — which the model then faithfully builds
-     as a little shelf at each end of the roof. A short edge whose two
-     neighbours run within LEDGE_TURN of each other is interrupting a
-     line, not turning a corner, so both its ends go and its midpoint
-     stays; the nose and the tail keep their extreme points whatever
-     happens. Repeated until nothing qualifies. */
-  {
-    const LEDGE = LEDGE_LEN * LEN;
-    for (let pass = 0; pass < 8; pass++) {
-      let xs = poly.map(p => p[0]), xMin = Math.min(...xs), xMax = Math.max(...xs), done = true;
-      for (let i = 0; i < poly.length; i++) {
-        const n = poly.length, a = poly[(i + n - 1) % n], b = poly[i], c = poly[(i + 1) % n], d = poly[(i + 2) % n];
-        if (Math.hypot(c[0] - b[0], c[1] - b[1]) >= LEDGE) continue;
-        if (b[0] === xMin || b[0] === xMax || c[0] === xMin || c[0] === xMax) continue;
-        const t1 = Math.atan2(b[1] - a[1], b[0] - a[0]), t2 = Math.atan2(d[1] - c[1], d[0] - c[0]);
-        let turn = Math.abs(t2 - t1); if (turn > Math.PI) turn = 2 * Math.PI - turn;
-        if (turn > CHAMFER_TURN) continue;
-        /* a LEDGE — the neighbours run the same way — goes to its
-           midpoint. A CHAMFER — the neighbours meet at a corner and this
-           short edge cuts it off, which is what a rounded windscreen
-           header is at this scale — goes to the corner itself: where the
-           two neighbouring lines cross. It is what a person draws. */
-        let at = [(b[0] + c[0]) / 2, (b[1] + c[1]) / 2];
-        if (turn > LEDGE_TURN) {
-          const r1 = [b[0] - a[0], b[1] - a[1]], r2 = [d[0] - c[0], d[1] - c[1]];
-          const den = r1[0] * r2[1] - r1[1] * r2[0];
-          if (Math.abs(den) > 1e-9) {
-            const t = ((c[0] - a[0]) * r2[1] - (c[1] - a[1]) * r2[0]) / den;
-            const x = [a[0] + r1[0] * t, a[1] + r1[1] * t];
-            if (Math.hypot(x[0] - at[0], x[1] - at[1]) <= LEDGE) at = x; else continue;
-          } else continue;
-        }
-        poly.splice(i, 2, at);
-        done = false; break;
-      }
-      if (done) break;
+  const planCol = closeEdge(planRaw, Math.max(1, Math.round(NOTCH_W * T.w)));
+  const planAt = x => {                                    // model x -> side px
+    const t = (0.5 - x) * T.w - 0.5;
+    const i = Math.max(0, Math.min(T.w - 1, Math.floor(t))), j = Math.min(T.w - 1, i + 1);
+    const f = Math.max(0, Math.min(1, t - i));
+    return planCol[i] + (planCol[j] - planCol[i]) * f;
+  };
+  /* the head-on views' half width at every row, in side px, against the
+     height that row is at in the side view's frame (the frames were
+     anchored on the roof line above, so a row's height is known). The
+     WHOLE extent of the row, tyre to tyre where there are tyres — a
+     head-on silhouette cannot tell a tyre from the body behind it, and
+     the plan view is what clamps those rows back to the body. A row with
+     nothing in it at all (the pickup has daylight between its bumper
+     and its tyres) is not evidence of anything, and takes the row above. */
+  const headCurve = (v, box, win) => {
+    const raw = [];
+    for (let r = 0; r < box.h; r++) {
+      let a = -1, b = -1;
+      for (let x = 0; x < box.w; x++) if (v.at(x, r)) { if (a < 0) a = x; b = x; }
+      raw.push(a < 0 ? (r ? raw[r - 1] : 0) : (b - a + 1) / 2 * (WID / box.w));
     }
-  }
-  /* the two ends of the walk are both on the sill; nothing else should be */
-  const profile = poly.map(([px, z]) => ({
-    x: round(mx(px)), z: round(z / LEN),
-    half: round(Math.max(0.03, halfWidthAt(Math.max(sillZ, z - 1), z + 1) / LEN)),
+    const half = closeEdge(raw, Math.max(1, Math.round(0.06 * box.h)));
+    return half.map((h, r) => [win.z1 - (r + 0.5) / box.h * (win.z1 - win.z0), h]);   // top row first
+  };
+  const headAt = (curve, z) => {
+    if (z >= curve[0][0]) return curve[0][1];
+    for (let i = 1; i < curve.length; i++) if (z >= curve[i][0]) {
+      const f = (z - curve[i][0]) / (curve[i - 1][0] - curve[i][0] || 1);
+      return curve[i][1] + (curve[i - 1][1] - curve[i][1]) * f;
+    }
+    return curve[curve.length - 1][1];
+  };
+  const headFront = headCurve(V.front, F, WINDOW.front), headRear = headCurve(V.rear, R, WINDOW.rear);
+  /* Both head-on views see the same widths — each is the widest the
+     vehicle gets at that height, whichever end it is seen from — so
+     where they differ it is the drawing and not the vehicle: the
+     pickup's rear bumper is a chrome bar thinner than the ruler, and
+     ruled away it leaves the rear view four rows of nothing but tow
+     hitch, which averaged with the front would put a groove round the
+     truck at bumper height. So the WIDER of the two is the measurement:
+     whatever either view vouches for. And nothing is wider than the
+     width the three views reconciled to. */
+  const headHalf = z => Math.min(WID / 2, Math.max(headAt(headFront, z), headAt(headRear, z)));
+
+  /* the breakpoints of each curve, and the union of the two that run
+     along the length */
+  const topMost = Math.max(...Array.from({ length: LEN + 1 }, (_, e) => topAtEdge(e)));
+  const hullTol = HULL_TOL * LEN;
+  const edgesTop = [], edgesPlan = [];
+  for (let e = 0; e <= LEN; e++) { edgesTop.push([e, topAtEdge(e)]); edgesPlan.push([e, planAt(mx(e))]); }
+  const keepE = new Set([0, LEN]);
+  for (const c of [edgesTop, edgesPlan]) for (const [e] of simplify(c, hullTol)) keepE.add(e);
+  const levelsRaw = [];
+  for (let z = sillZ; z < topMost; z += 0.5) levelsRaw.push([z, headHalf(z)]);
+  levelsRaw.push([topMost, headHalf(topMost)]);
+  const keepZ = new Set([sillZ, topMost]);
+  for (const [z] of simplify(levelsRaw, hullTol)) keepZ.add(z);
+  /* No two breakpoints farther apart than HULL_GAP — a long straight roof
+     still gets a column now and then, so the shoulder can follow the
+     plan's slow taper between them — and none closer than HULL_MERGE,
+     which is under two pixels; the ends always stay. */
+  const spread = (keys, integer) => {
+    const ks = [...keys].sort((a, b) => a - b), out = [ks[0]];
+    for (let i = 1; i < ks.length; i++) {
+      const gap = ks[i] - out[out.length - 1], n = Math.ceil(gap / (HULL_GAP * LEN));
+      for (let k = 1; k < n; k++) { const v = out[out.length - 1] + gap / n; out.push(integer ? Math.round(v) : v); }
+      out.push(ks[i]);
+    }
+    const kept = [out[0]];
+    for (let i = 1; i < out.length; i++) {
+      const close = out[i] - kept[kept.length - 1] < HULL_MERGE * LEN;
+      if (!close) kept.push(out[i]);
+      else if (i === out.length - 1) kept[kept.length - 1] = out[i];
+    }
+    return kept;
+  };
+  const columns = spread(keepE, true).map(e => ({
+    x: round(mx(e)), top: round(topAtEdge(e) / LEN), half: round(Math.min(planAt(mx(e)), WID / 2) / LEN),
   }));
-  if (profile.length < 6) throw bad(`the side view's outline simplified to ${profile.length} points; that is not a vehicle`);
-  /* The trace runs through pixel CENTRES, so it is half a pixel inside
-     the silhouette all the way round: a pixel short in length and a
-     pixel short in height. The box it should fill is known exactly, so
-     stretch it to that — the difference is the width of a pixel and
-     the point is that the model's box is the sheet's. */
-  {
-    const xs = profile.map(p => p.x), zs = profile.map(p => p.z);
-    const x0 = Math.min(...xs), x1 = Math.max(...xs), z0 = Math.min(...zs), z1 = Math.max(...zs);
-    const zs0 = sillZ / LEN, zs1 = HGT / LEN;
-    for (const p of profile) {
-      p.x = round(-0.5 + (p.x - x0) / (x1 - x0));
-      p.z = round(zs0 + (p.z - z0) / (z1 - z0) * (zs1 - zs0));
-    }
-  }
-  /* anticlockwise in x-z, seen from the vehicle's left, so the outward
-     side of every edge is the same side and js/car.js can rely on it */
-  {
-    let area = 0;
-    for (let i = 0; i < profile.length; i++) {
-      const a = profile[i], b = profile[(i + 1) % profile.length];
-      area += a.x * b.z - b.x * a.z;
-    }
-    if (area < 0) profile.reverse();
+  if (spec.nose === 'right') columns.reverse();            // nose first, whichever way the sheet faces
+  const levels = spread(keepZ, false).map(z => ({ z: round(z / LEN), half: round(headHalf(z) / LEN) }));
+  for (const c of columns)
+    if (!(c.top > sillZ / LEN + 1 / LEN)) throw bad(`the side view's top edge at x=${c.x} is at the sill; that is not a body`);
+  if (process.env.HULL_DEBUG === spec.id) {
+    console.error(spec.id, 'columns (x, top, plan half):', columns.map(c => `(${c.x}, ${c.top}, ${c.half})`).join(' '));
+    console.error(spec.id, 'levels (z, head-on half):', levels.map(l => `(${l.z}, ${l.half})`).join(' '));
+    console.error(spec.id, 'head-on rows (z, front, rear), in lengths:');
+    for (let z = sillZ; z <= topMost; z += 2) console.error(`  ${round(z / LEN, 3)}  ${round(headAt(headFront, z) / LEN, 3)}  ${round(headAt(headRear, z) / LEN, 3)}`);
   }
 
   /* ---- the tyre, off the bottom of the front view -------------------
@@ -805,7 +822,7 @@ function measure(spec) {
   return {
     spec, file: inFile, sheet: { w: SW, h: SH },
     V, filled, WINDOW, LEN, HGT, WID, widths, agree,
-    sillZ, sideRoof, tyre, profile, wheels, mx,
+    sillZ, sideRoof, tyre, columns, levels, wheels, mx,
     /* what the roof test saw, for --roof */
     roofRows: {
       front: roofRow(V.front, F, ROOF_SPAN), rear: roofRow(V.rear, R, ROOF_SPAN),
@@ -887,7 +904,7 @@ fs.writeFileSync(OUT_PNG, writePNG(ATLAS_W, AH, atlas));
 
 /* ---- and the numbers ----------------------------------------------- */
 function vehicleJS(m) {
-  const { LEN, HGT, WID, WINDOW, profile, wheels, sillZ, sideRoof, tyre, agree, spec } = m;
+  const { LEN, HGT, WID, WINDOW, columns, levels, wheels, sillZ, sideRoof, tyre, agree, spec } = m;
   const views = Object.keys(m.V).map(k => {
     const r = rects.find(r => r.m === m && r.k === k), q = WINDOW[k];
     const f = [`x: ${r.x}`, `y: ${r.y}`, `w: ${r.w}`, `h: ${r.h}`];
@@ -908,8 +925,11 @@ ${views}
       sill: ${round(sillZ / LEN)},
       tyre: ${round(tyre / LEN)},
       roof: ${round(sideRoof / LEN)},
-      profile: [
-${profile.map(p => `        [${p.x}, ${p.z}, ${p.half}],`).join('\n')}
+      columns: [
+${columns.map(c => `        [${c.x}, ${c.top}, ${c.half}],`).join('\n')}
+      ],
+      levels: [
+${levels.map(l => `        [${l.z}, ${l.half}],`).join('\n')}
       ],
       wheels: [${wheels.map(w => `{ x: ${w.x}, r: ${w.r} }`).join(', ')}],
       agree: ${round(agree)},
@@ -943,11 +963,13 @@ export const CAR_ATLAS = { file: '${OUT_PNG}', w: ${ATLAS_W}, h: ${AH} };
     frame IS the model's bounding box, so it only needs the heights; the
     plan view's frame is the length, so it only needs the half width.
 
-    \`shape.profile\` is the side view's outline above the sill as one
-    polygon — [x, z, half] per point, anticlockwise seen from the
-    vehicle's left, starting and ending on the sill — where \`half\` is
-    how far the body reaches either side of the middle at that height,
-    off the front view. Extruded across that width it is the body.
+    \`shape.columns\` runs nose to tail — [x, top, half] per column: how
+    high the side view's top edge is at that x, and how far either side
+    of the middle the plan view reaches there. \`shape.levels\` runs sill
+    to roof — [z, half] per level: how far either side of the middle the
+    head-on views reach at that height. A vertex at every column and
+    level, at the lower of the two heights and the narrower of the two
+    widths, is the body: the visual hull of the three silhouettes.
     \`wheels\` are the dips in the underside, and sit on the ground — a
     tracked vehicle has none. \`roof\` is the height every view was anchored on.
     \`agree\` is how far apart the three views' claims about the width
@@ -969,7 +991,7 @@ fs.writeFileSync(OUT_JS, js);
 /* ---- what it found ------------------------------------------------- */
 const pct = n => (n * 100).toFixed(1) + '%';
 for (const m of built) {
-  const { spec, LEN, HGT, WID, widths, agree, sillZ, sideRoof, tyre, profile, wheels, WINDOW } = m;
+  const { spec, LEN, HGT, WID, widths, agree, sillZ, sideRoof, tyre, columns, levels, wheels, WINDOW } = m;
   console.log(`${spec.id} — ${spec.file}  ${m.sheet.w}x${m.sheet.h}`);
   for (const k of Object.keys(m.V)) {
     const r = rects.find(r => r.m === m && r.k === k);
@@ -979,8 +1001,7 @@ for (const m of built) {
   console.log(`  proportions ${(LEN / WID).toFixed(2)} : 1 : ${(HGT / WID).toFixed(2)} (length : width : height), so ${spec.metres} m long is ${(spec.metres * WID / LEN).toFixed(2)} wide and ${(spec.metres * HGT / LEN).toFixed(2)} tall`);
   console.log(`  roof line ${sideRoof}px up in the side view; head-on frames span ${WINDOW.front.z0.toFixed(1)}..${WINDOW.front.z1.toFixed(1)} against the side's 0..${HGT}`);
   console.log(`  sill ${sillZ}px; ${wheels.length} wheels${wheels.length ? ` of radius ${wheels.map(w => (w.r * LEN).toFixed(1)).join(' and ')}px at x=${wheels.map(w => w.x).join(', ')}` : ''}; tyre ${tyre.toFixed(1)}px`);
-  console.log(`  profile: ${profile.length} points, half-widths ${Math.min(...profile.map(p => p.half)).toFixed(3)}..${Math.max(...profile.map(p => p.half)).toFixed(3)}`);
-  console.log('    ' + profile.map(p => `(${p.x.toFixed(2)}, ${p.z.toFixed(2)})`).join(' '));
+  console.log(`  hull: ${columns.length} columns along the length, ${levels.length} levels up the height; plan half-widths ${Math.min(...columns.map(c => c.half)).toFixed(3)}..${Math.max(...columns.map(c => c.half)).toFixed(3)}, head-on ${Math.min(...levels.map(l => l.half)).toFixed(3)}..${Math.max(...levels.map(l => l.half)).toFixed(3)}`);
   /* HOW MUCH OF EACH VIEW IS KEY THE VEHICLE ENCLOSES — glass the renderer
      let through to the green, plus the gap between a wheel and its arch.
      Every such pixel is painted as dark glass (GLASS above), which is a

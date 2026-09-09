@@ -25,7 +25,15 @@ export const SEC       = 1 / TICRATE;
 /* the body plan, in units */
 export const PLAYER_RADIUS = 16;
 export const PLAYER_HEIGHT = 56;
-export const PLAYER_EYE    = 41;
+/* Doom's eye is 41 units up its 56-unit player — and Doom drew that on
+   a 4:3 monitor at 320x200, every pixel a fifth taller than it was wide,
+   so the eye it SHOWED was 41 stretched by 1.2: 49. This pipeline draws
+   square pixels (js/lofi.js), so 49 here is Doom's eye as Doom showed
+   it. At 41 the roof of a hatchback stood above the player's eye and a
+   van read as a lorry; at 49 a hatchback is looked down on and a van is
+   looked up at, which is what 32 units to the metre says should happen
+   to someone a metre seventy-five tall. */
+export const PLAYER_EYE    = 49;
 export const MAX_STEP      = 24;   // climbed without slowing down
 export const TEXEL         = 64;   // one texture, one wall, one unit each
 

@@ -49,7 +49,7 @@ import * as THREE from 'three';
 import { TICRATE, pRandom } from './util.js';
 import {
   VEHICLES, CIVILIAN, vehicleOf, carGeometry, chunkGeometry, carMesh,
-  carGeom, carCorners, carBlockers, carBlockRadius, carHeight,
+  carGeom, carCorners, carBlockers, carBlockRadius, carHeight, bodyTopAt, bodyHalfAt,
 } from './car.js';
 
 /* ---------------------------------------------------------------------
@@ -444,12 +444,13 @@ class Vehicle {
     const d = this.def, s = d.shape, L = d.length;
     for (let k = 0; k < n; k++) {
       if (this.fleet.flying.length >= MAX_FLYING_CHUNKS) return;
-      /* a piece off the OUTSIDE: somewhere along a random edge of the
-         outline, a box cut in around that point, as wide as the body is
-         there — so it is a bit of roof, a bit of bonnet, a bit of door */
-      const O = s.profile, i = pRandom() % O.length, j = (i + 1) % O.length, f = rnd();
-      const px = O[i][0] + (O[j][0] - O[i][0]) * f, pz = O[i][1] + (O[j][1] - O[i][1]) * f;
-      const half = O[i][2] + (O[j][2] - O[i][2]) * f;
+      /* a piece off the OUTSIDE: a random point on the hull's skin —
+         somewhere along the length, and either on the top or somewhere
+         up a flank — and a box cut in around it, as wide as the body is
+         there, so it is a bit of roof, a bit of bonnet, a bit of door */
+      const px = rnd() - 0.5, top = bodyTopAt(d, px);
+      const pz = rnd() < 0.4 ? top : s.sill + rnd() * (top - s.sill);
+      const half = bodyHalfAt(d, px, pz);
       const w = 0.07 + rnd() * 0.10, dp = 0.05 + rnd() * 0.09, t = 0.04 + rnd() * 0.07;
       const cut = {
         x0: Math.max(-0.5, px - w / 2), z0: Math.max(0, pz - t / 2),

@@ -330,6 +330,7 @@ const st = await import('../js/states.js');
 /* ---------- the map ---------- */
 section('the map');
 const MAP = await import('../js/maps/sellwrong.js');
+const { PLAYER_EYE } = await import('../js/util.js');
 const { buildSellWrong } = MAP;
 const level = buildSellWrong();
 {
@@ -452,10 +453,10 @@ const level = buildSellWrong();
   check('the shopfront is glazed', glass >= 2, `${glass} segments`);
 
   /* A gondola you can see over is not an aisle, it is a low wall. The
-     player is 56 with an eye at 41; anything at 56 exactly is the least
-     useful height there is. */
+     player is 56 with an eye at PLAYER_EYE; anything at 56 exactly is
+     the least useful height there is. */
   check('gondolas are taller than the player', MAP.H_GONDOLA > 56, `${MAP.H_GONDOLA}`);
-  check('front fixtures are below eye level', MAP.H_FIXTURE < 41, `${MAP.H_FIXTURE}`);
+  check('front fixtures are below eye level', MAP.H_FIXTURE < PLAYER_EYE, `${MAP.H_FIXTURE} against ${PLAYER_EYE}`);
   const gond = level.sectors.find(s => s.name === 'gondola');
   check('gondola sectors are at that height', gond && gond.floor === MAP.H_GONDOLA);
 
@@ -1108,22 +1109,32 @@ section('the fleet');
       `${ratio.toFixed(2)} : 1 : ${tall.toFixed(2)} (length : width : height)`);
     check(`the ${id} stands on the ground with its body clear of it`,
       s.sill >= 0 && s.sill < 0.2);
-    /* THE OUTLINE IS A POLYGON, not a staircase: a dozen or so points,
-       closed on the sill, reaching the roof, nose at +0.5 and tail at
-       -0.5, anticlockwise seen from the left, none of it wider than the
+    /* THE HULL IS THREE CURVES: columns nose to tail carrying the side
+       view's top edge and the plan's half width, levels sill to roof
+       carrying the head-on views' half width — each one to a few dozen
+       breakpoints, ordered, reaching the ends, none of it wider than the
        vehicle. Every one of those is something js/car.js leans on. */
-    const O = s.profile;
-    let area = 0;
-    for (let i = 0; i < O.length; i++) { const a = O[i], b = O[(i + 1) % O.length]; area += a[0] * b[1] - b[0] * a[1]; }
-    const onSill = O.filter(p => Math.abs(p[1] - s.sill) < 0.002).length;
-    check(`the ${id}'s outline is a polygon with a handful of points`, O.length >= 6 && O.length <= 20, `${O.length}`);
-    check(`and it is anticlockwise, closed on the sill, and reaches the roof`,
-      area > 0 && onSill >= 2 && Math.abs(Math.max(...O.map(p => p[1])) - s.height) < 0.002,
-      `area ${area.toFixed(3)}, ${onSill} on the sill, top ${Math.max(...O.map(p => p[1]))} of ${s.height}`);
-    check(`and it runs the whole length, nose to tail`,
-      Math.abs(Math.max(...O.map(p => p[0])) - 0.5) < 0.02 && Math.abs(Math.min(...O.map(p => p[0])) + 0.5) < 0.02);
-    check(`and nowhere is it wider than the vehicle`, O.every(p => p[2] > 0.02 && p[2] <= s.width / 2 * 1.06),
-      `${Math.min(...O.map(p => p[2]))}..${Math.max(...O.map(p => p[2]))} of ${s.width / 2}`);
+    const C = s.columns, Lv = s.levels;
+    check(`the ${id}'s hull is a few dozen columns and a handful of levels`,
+      C.length >= 10 && C.length <= 64 && Lv.length >= 4 && Lv.length <= 32, `${C.length} columns, ${Lv.length} levels`);
+    check(`and the columns run nose to tail, the whole length`,
+      Math.abs(C[0][0] - 0.5) < 1e-6 && Math.abs(C[C.length - 1][0] + 0.5) < 1e-6 &&
+      C.every((c, i) => !i || c[0] < C[i - 1][0]));
+    check(`and every column stands above the sill and none above the roof, which one reaches`,
+      C.every(c => c[1] > s.sill && c[1] <= s.height + 1e-9) && Math.abs(Math.max(...C.map(c => c[1])) - s.height) < 0.002,
+      `tops ${Math.min(...C.map(c => c[1]))}..${Math.max(...C.map(c => c[1]))} of ${s.height}`);
+    check(`and the levels run sill to roof`,
+      Math.abs(Lv[0][0] - s.sill) < 1e-6 && Math.abs(Lv[Lv.length - 1][0] - s.height) < 0.002 &&
+      Lv.every((l, i) => !i || l[0] > Lv[i - 1][0]));
+    check(`and nowhere is either curve wider than the vehicle`,
+      C.every(c => c[2] > 0.02 && c[2] <= s.width / 2 * 1.001) && Lv.every(l => l[1] > 0.02 && l[1] <= s.width / 2 * 1.001),
+      `plan ${Math.min(...C.map(c => c[2]))}..${Math.max(...C.map(c => c[2]))}, head-on ${Math.min(...Lv.map(l => l[1]))}..${Math.max(...Lv.map(l => l[1]))} of ${s.width / 2}`);
+    /* and the body is the narrower of the two, everywhere: what the
+       wheels and the debris ask of it */
+    check(`and the body at any point is the narrower of the two`,
+      car.bodyHalfAt(v, 0, s.height) <= car.headHalfAt(v, s.height) + 1e-9 &&
+      car.bodyHalfAt(v, 0.5, s.sill) <= car.planHalfAt(v, 0.5) + 1e-9 &&
+      car.bodyTopAt(v, 0.5) === C[0][1] && car.bodyTopAt(v, -0.5) === C[C.length - 1][1]);
     /* a wheel is a wheel and not a slab across the underside — which is
        what the custom van's bull bar was read as until the tyre stopped
        being "the longest run at the bottom of the front view" */
@@ -1199,9 +1210,10 @@ section('the fleet');
     const g = car.carGeometry(v, { angle: 0.4 });
     const tris = g.position.length / 9;
     triTotal += tris;
-    /* a lofted outline of a dozen points and four wheels is under two
-       hundred triangles; a tracked one with no wheels is forty */
-    check(`the ${id} is a handful of polygons, not a mesh`, tris >= 36 && tris < 400, `${tris} triangles`);
+    /* a grid of a few dozen columns by a handful of levels, capped, and
+       four wheels: some hundreds of triangles, a couple of thousand at
+       the most — a body that follows three pictures, not a scan */
+    check(`the ${id} is a grid of a few hundred polygons, not a scan`, tris >= 200 && tris < 3000, `${tris} triangles`);
     check(`and every vertex of it has a uv, a light, a sky and a char`,
       g.uv.length === g.position.length / 3 * 2 && g.light.length === g.position.length / 3 &&
       g.sky.length === g.light.length && g.charred.length === g.light.length);
@@ -1215,15 +1227,15 @@ section('the fleet');
         if (t < lo[k]) lo[k] = t; if (t > hi[k]) hi[k] = t;
       }
     const near = (a, b) => Math.abs(a - b) < 0.8;
-    /* THE WIDTH A MODEL HAS IS THE WIDTH ITS LAYERS DRAW, which is not
+    /* THE WIDTH A MODEL HAS IS THE WIDTH ITS HULL DRAWS, which is not
        quite `shape.width`: that is the reconciled average of what three
-       views claim, and it is what SCALES the front view. The profile is
-       what the front view actually draws at each height. On the riot van
-       the two agree to a thousandth; on the hatchback, whose sheet
-       agrees with itself to only five percent, they differ by two and a
-       half — so the box is checked against the drawing and the two
-       numbers are then checked against each other. */
-    const drawn = 2 * Math.max(...v.shape.profile.map(p => p[2])) * L;
+       views claim, and it is what SCALES the views. The hull is what the
+       plan and the head-on views actually draw, and the narrower of the
+       two. On the riot van the two agree to a thousandth; on the
+       hatchback, whose sheet agrees with itself to only five percent,
+       they differ by two and a half — so the box is checked against the
+       drawing and the two numbers are then checked against each other. */
+    const drawn = car.carDrawnWidth(v);
     check(`the ${id} is as long, as wide and as tall as its own layers say`,
       near(hi[0] - lo[0], L) && near(hi[2] - lo[2], drawn) && near(hi[1] - lo[1], car.carHeight(v)),
       `${(hi[0] - lo[0]).toFixed(1)} x ${(hi[2] - lo[2]).toFixed(1)} x ${(hi[1] - lo[1]).toFixed(1)}`);
@@ -1252,7 +1264,7 @@ section('the fleet');
     check(`and all four of them get used`, used.size === 4, [...used].join(' '));
 
     /* EVERY FACE POINTS OUT, and there is an exact way to know. The body
-       is a lofted outline and each wheel a prism, all of them CLOSED: so
+       is a capped grid and each wheel a prism, all of them CLOSED: so
        every edge of every triangle must be shared by exactly one other
        triangle going the other way, and the signed volume — the
        divergence sum over the triangles — must come out positive and

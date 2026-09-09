@@ -162,9 +162,15 @@ export const CEIL_SHOP = 352, CEIL_BOH = 416, CEIL_UNIT = 240;
 export const H_GONDOLA = 80;      // taller than you: an aisle is a canyon
 export const H_FIXTURE = 40;      // below eye level: the front stays open
 
-/* the doors */
-const DOOR_TOP = 210;             // how tall a leaf is
-const ENTRY_W = 224;              // clear opening, so a leaf runs 112
+/* THE DOORS. Doom's door is 128 tall — two and a bit of you — and so
+   is this one; it was 210, three and three quarters of you, and read
+   as a hangar. The clear opening is 160, so a leaf runs 80 and stands
+   taller than it is wide, the way a sliding leaf does. Above the leaves
+   the entrance sector's ceiling comes down to the door top, which turns
+   the band between it and the soffit into an upper texture — glazing, a
+   TRANSOM — instead of the open air it was. */
+const DOOR_TOP = 128;             // how tall a leaf is
+const ENTRY_W = 160;              // clear opening, so a leaf runs 80
 
 /* =====================================================================
    THE CAR PARK
@@ -507,9 +513,11 @@ export function buildSellWrong() {
   });
 
   /* --- the way in: two sets of sliders, and the mullion between them - */
-  const ENT_A0 = 1876, ENT_B0 = 2180;
+  const ENT_A0 = 1908, ENT_B0 = 2212;               // centred where they always were
   const entryProps = n => ({
-    floor: FLOOR_WALK, ceil: CEIL_SOFF, light: 0.66,
+    /* the ceiling is the door head: what is above it is the transom,
+       drawn as this sector's upper on both faces of the wall */
+    floor: FLOOR_WALK, ceil: DOOR_TOP, light: 0.66,
     floorTex: 'LINO', ceilTex: 'CEILTILE', wallTex: 'STORGLAS',
     upperTex: 'STORGLAS', lowerTex: 'STORBASE', fuel: FUEL.walk, name: n,
   });

@@ -1,5 +1,5 @@
 /* =====================================================================
-   GROCERY STORE SIMULATOR — vehicles out of boxes, painted by projection
+   GROCERY STORE SIMULATOR — vehicles out of three silhouettes, painted by projection
    =====================================================================
 
    The car park has been waiting for cars since the day it was laid out:
@@ -11,15 +11,18 @@
    WHAT ARRIVES is an orthographic turnaround on a green field: front,
    rear, side and plan. tools/prep-car.mjs measures it — see that file
    for how, it is the interesting half — and leaves js/car-data.js: for
-   each vehicle its proportions, its outline off the side view, the width
-   it has at every height off the front view, its wheels off the
-   underside, and where each of its views sits in the shared atlas.
+   each vehicle its proportions, three curves that between them are the
+   VISUAL HULL of its three silhouettes (the side view's top edge and the
+   plan view's width along the length, the head-on views' width up the
+   height), its wheels off the underside, and where each of its views
+   sits in the shared atlas.
 
-   WHAT THIS DOES is loft that outline across that width — one strip of
-   quads round the silhouette and a fan on each flank — and then assign
-   every UV by PROJECTION rather than by hand. For a triangle, look at its
-   normal, take the axis it points most nearly along, and read the view
-   that was drawn down that axis:
+   WHAT THIS DOES is put a vertex at every crossing of those curves —
+   a grid, nose to tail and sill to roof, each vertex as high as the side
+   view allows and as far out as the narrower of the other two views
+   allows — and then assign every UV by PROJECTION rather than by hand.
+   For a triangle, look at its normal, take the axis it points most
+   nearly along, and read the view that was drawn down that axis:
 
      pointing forward   the front view, at the y and z it is at
      pointing back      the rear view
@@ -30,10 +33,13 @@
    That is the whole of it. No unwrapping, no seams to place, no atlas
    authored by a person: the four views were parallel projections of the
    real thing, so projecting them straight back puts every pixel where it
-   came from, and any geometry roughly the right shape gets painted
-   roughly right. It is the reason a model can be forty triangles and still
-   read as a vehicle — a light bar, a wheel arch, an eagle airbrushed
-   down the flank of a van are all paint that lands where the shape says.
+   came from, and geometry that follows the pictures gets painted with
+   exactly what the pictures had there. A light bar, a wheel arch, an
+   eagle airbrushed down the flank of a van are all paint that lands
+   where the shape says — and the tighter the shape, the less of the
+   paint is the bled body colour from outside the drawing. Which is why
+   the body is a grid of a thousand triangles and not the forty it was:
+   forty was a box with rounded pictures on it.
 
    The two views drawn down the same axis from opposite sides — left and
    right, up and down — share one picture, mirrored. A van is very nearly
@@ -161,6 +167,56 @@ function uvOf(views, n, p) {
 }
 
 /* ---------------------------------------------------------------------
+   THE HULL, AS CURVES
+
+   `shape.columns` runs nose to tail and says, at each x, how high the
+   side view's top edge is and how far out the plan view reaches;
+   `shape.levels` runs sill to roof and says, at each z, how far out the
+   head-on views reach. Between breakpoints each is a straight line, so
+   the body at any x and z is one lookup in each and the narrower of the
+   two. The body, the wheels, the debris and the smoke test all ask that
+   question, so it is answered here, once.
+   --------------------------------------------------------------------- */
+const lerpAt = (pts, t, descending) => {
+  /* pts are [key, ...values]; hold the ends */
+  const n = pts.length;
+  if (descending ? t >= pts[0][0] : t <= pts[0][0]) return pts[0];
+  for (let i = 1; i < n; i++) {
+    const a = pts[i - 1], b = pts[i];
+    if (descending ? t >= b[0] : t <= b[0]) {
+      const f = (t - a[0]) / ((b[0] - a[0]) || 1);
+      return a.map((v, k) => v + (b[k] - v) * f);
+    }
+  }
+  return pts[n - 1];
+};
+/** How high the side view's top edge is at x (nose +0.5, tail -0.5). */
+export const bodyTopAt = (v, x) => lerpAt(v.shape.columns, x, true)[1];
+/** How far out the plan view reaches at x. */
+export const planHalfAt = (v, x) => lerpAt(v.shape.columns, x, true)[2];
+/** How far out the head-on views reach at height z. */
+export const headHalfAt = (v, z) => lerpAt(v.shape.levels, z, false)[1];
+/** And the body's own half width at x and z: the narrower of the two. */
+export const bodyHalfAt = (v, x, z) => Math.min(planHalfAt(v, x), headHalfAt(v, z));
+
+/* Every vertex of the body, by column and level: [x, half, z], with z
+   held down to the column's top so a level above a bonnet lands ON the
+   bonnet, and the half width read at that height. */
+function hullGrid(v) {
+  return v.shape.columns.map(([x, top, w]) => v.shape.levels.map(([z]) => {
+    const zz = Math.min(z, top);
+    return [x, Math.min(w, headHalfAt(v, zz)), zz];
+  }));
+}
+/** The widest the body is actually drawn, in game units — not quite
+ *  `shape.width`, which is the average the three views reconciled to. */
+export function carDrawnWidth(v) {
+  let m = 0;
+  for (const col of hullGrid(v)) for (const p of col) if (p[1] > m) m = p[1];
+  return 2 * m * v.length;
+}
+
+/* ---------------------------------------------------------------------
    THE PEN
 
    Everything drawn here is boxes, so this is the only thing that knows
@@ -221,6 +277,34 @@ function pen(v, opts = {}) {
     else { vert(a, n, l); vert(c, n, l); vert(b, n, l); }
   };
   const face = (q, n) => { tri(q[0], q[1], q[2], n); tri(q[0], q[2], q[3], n); };
+  /* A face of the hull: a quad whose corners may have fallen together.
+     Consecutive duplicates go; three corners left is a triangle, four a
+     quad, fewer nothing at all. Its normal is its own — Newell's method
+     over whatever corners are left — turned to agree with `hint`, which
+     only says which side of the body the face is on. The view a face
+     reads is decided by where it actually points, so a shoulder rounding
+     over from flank to roof reads the side view until it tips past
+     forty-five degrees and the plan view after, which is also the point
+     at which the plan view has the better picture of it. */
+  const same = (a, b) => Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9 && Math.abs(a[2] - b[2]) < 1e-9;
+  const poly = (corners, hint) => {
+    const q = [];
+    for (const p of corners) if (!q.length || !same(q[q.length - 1], p)) q.push(p);
+    while (q.length > 1 && same(q[0], q[q.length - 1])) q.pop();
+    if (q.length < 3) return;
+    let nx = 0, ny = 0, nz = 0;
+    for (let i = 0; i < q.length; i++) {
+      const a = q[i], b = q[(i + 1) % q.length];
+      nx += (a[1] - b[1]) * (a[2] + b[2]);
+      ny += (a[2] - b[2]) * (a[0] + b[0]);
+      nz += (a[0] - b[0]) * (a[1] + b[1]);
+    }
+    const m = Math.hypot(nx, ny, nz);
+    let n = m > 1e-12 ? [nx / m, ny / m, nz / m] : hint;
+    if (n[0] * hint[0] + n[1] * hint[1] + n[2] * hint[2] < 0) n = [-n[0], -n[1], -n[2]];
+    tri(q[0], q[1], q[2], n);
+    if (q.length === 4) tri(q[0], q[2], q[3], n);
+  };
 
   /* six faces, wound so the outside is the front */
   const box = (x0, x1, y0, y1, z0, z1) => {
@@ -232,7 +316,7 @@ function pen(v, opts = {}) {
     face([[x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [x1, y0, z0]], [0, 0, -1]);
   };
 
-  return { box, face, tri, vert, faceLight, arrays: { position: pos, uv, light: lit, sky: skies, charred: chars, normal: norms } };
+  return { box, face, poly, tri, vert, faceLight, arrays: { position: pos, uv, light: lit, sky: skies, charred: chars, normal: norms } };
 }
 
 /**
@@ -249,37 +333,40 @@ export function carGeometry(v, opts = {}) {
   const s = v.shape;
   const P = pen(v, opts);
 
-  /* THE BODY: the side view's outline, lofted across the width.
+  /* THE BODY: the visual hull, as a grid.
 
-     The profile is a polygon in x and z — the silhouette above the sill,
-     simplified to a dozen points, each carrying how far the vehicle
-     reaches either side of its middle at that height, off the front
-     view. Push every point out to +half on the left and -half on the
-     right and you have two copies of the outline, one per flank; join
-     them edge for edge round the outside and cap them and it is a
-     closed solid whose cross-section follows the front view. A
-     windscreen is a slope, a bonnet is a slope, the roof narrows the way
-     a roof does, and it is one strip of quads and two fans.
+     A vertex at every column and level — see hullGrid — and the quads
+     between them: two flanks, the top, the underside, and a cap at each
+     end. A column whose top is below a level puts that level's vertex ON
+     its top, so up a windscreen the levels bunch and across a bonnet
+     they fall together; a quad between fallen-together vertices is
+     nothing and is skipped, and one with a single fallen side is a
+     triangle. The result is closed, because every edge of it is an edge
+     of exactly two quads, or would be but for the ones that vanished in
+     matching pairs.
 
-     It replaced a staircase of boxes — the roof line split into steps,
-     each step a box — which read as a stack of bricks with a car painted
-     on, because that is what it was. */
-  const O = s.profile, n = O.length;
-  const L = O.map(p => [p[0], p[2], p[1]]), R = O.map(p => [p[0], -p[2], p[1]]);   // left, right
-  for (let i = 0; i < n; i++) {
-    const j = (i + 1) % n;
-    /* the outward normal of this edge of the outline, in x and z: the
-       profile runs anticlockwise seen from the left, so it is the edge
-       turned a quarter clockwise */
-    const dx = O[j][0] - O[i][0], dz = O[j][1] - O[i][1], m = Math.hypot(dx, dz) || 1;
-    P.face([L[i], L[j], R[j], R[i]], [dz / m, 0, -dx / m]);
+     Nothing here is a car. The nose corners round off because the plan
+     view rounds them, the shoulders because the head-on views do, the
+     windscreen slopes because the side view slopes it, a pickup steps
+     down to its bed because its top edge does — and the paint, projected
+     back along the axes the views were drawn down, lands on a shape
+     that is where the pictures say it is. It replaced the side view's
+     outline lofted across one width, which was a rectangle from above
+     with square corners and bled body colour painted over each of
+     them, and a staircase of boxes before that. */
+  const G = hullGrid(v), N = G.length, K = G[0].length;
+  const at = (i, k, side) => { const p = G[i][k]; return [p[0], side * p[1], p[2]]; };
+  for (let i = 0; i + 1 < N; i++) {
+    for (let k = 0; k + 1 < K; k++) {
+      P.poly([at(i, k, 1), at(i + 1, k, 1), at(i + 1, k + 1, 1), at(i, k + 1, 1)], [0, 1, 0]);
+      P.poly([at(i, k, -1), at(i, k + 1, -1), at(i + 1, k + 1, -1), at(i + 1, k, -1)], [0, -1, 0]);
+    }
+    P.poly([at(i, K - 1, -1), at(i, K - 1, 1), at(i + 1, K - 1, 1), at(i + 1, K - 1, -1)], [0, 0, 1]);
+    P.poly([at(i, 0, 1), at(i, 0, -1), at(i + 1, 0, -1), at(i + 1, 0, 1)], [0, 0, -1]);
   }
-  /* the two flanks, off one ear-clipped triangulation of the outline —
-     the same one for both, so the solid stays closed */
-  const ears = THREE.ShapeUtils.triangulateShape(O.map(p => new THREE.Vector2(p[0], p[1])), []);
-  for (const [a, b, c] of ears) {
-    P.tri(L[a], L[b], L[c], [0, 1, 0]);
-    P.tri(R[a], R[b], R[c], [0, -1, 0]);
+  for (let k = 0; k + 1 < K; k++) {
+    P.poly([at(0, k, -1), at(0, k, 1), at(0, k + 1, 1), at(0, k + 1, -1)], [1, 0, 0]);
+    P.poly([at(N - 1, k, 1), at(N - 1, k, -1), at(N - 1, k + 1, -1), at(N - 1, k + 1, 1)], [-1, 0, 0]);
   }
 
   /* THE WHEELS: a prism on its side, sitting on the ground, set a lip
@@ -288,20 +375,21 @@ export function carGeometry(v, opts = {}) {
      exactly there — and its tread gets whichever of the other views it
      happens to point at, which for a black tyre is close enough.
 
-     The flank is the WIDEST THE PROFILE GETS and not half the
-     vehicle's nominal width, because those are not the same number. The
-     nominal width is the average of what three views claim; the profile is
-     what the front view actually draws. On a van
-     they agree to a thousandth. On the hatchback the nominal is the
-     wider of the two, and taken literally it hangs both wheels a
-     fraction of a unit PROUD of the bodywork — which, being a tie in the
-     depth buffer along the length of the car, is the one thing this file
-     is careful never to do. */
+     The flank is THE NARROWEST THE BODY GETS OVER THE TYRE'S OWN
+     HEIGHT, at the wheel's own x, and not half the vehicle's nominal
+     width, because those are not the same number: the nominal width is
+     the average of what three views claim, and the hull is what they
+     draw. On a van they agree to a thousandth. On the hatchback the
+     nominal is the wider, and taken literally it hangs both wheels a
+     fraction of a unit PROUD of the bodywork — which, being a tie in
+     the depth buffer along the length of the car, is the one thing this
+     file is careful never to do. */
   if (s.wheels.length) {
-    const flank = Math.min(s.width / 2, Math.max(...s.profile.map(p => p[2])));
-    const yOut = flank - LIP, yIn = yOut - s.tyre;
     for (const wheel of s.wheels) {
       const { x: cx, r } = wheel;
+      let flank = Infinity;
+      for (let z = s.sill; z <= 2 * r + 1e-9; z += (2 * r - s.sill) / 8) flank = Math.min(flank, bodyHalfAt(v, cx, z));
+      const yOut = flank - LIP, yIn = yOut - s.tyre;
       for (const side of [1, -1]) {
         const a = side > 0 ? yIn : -yOut, b = side > 0 ? yOut : -yIn;
         /* A ring of eight, turned half a step so the tyre stands on a

@@ -69,7 +69,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         537 checks, no install and no browser
+  the smoke test         551 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -551,11 +551,23 @@ It is Doom's architecture, on purpose, because Doom's architecture is right
 and because every piece of documentation about how Doom works is written in
 its terms.
 
-UNITS ARE DOOM UNITS. The player is 56 tall with his eye at 41, he is 32
-across, and he steps up anything 24 or under without noticing. A wall
-texture is 64 across and 64 up. That last one is the reason for the choice:
-at 64 units to a 64-pixel texture the mapping between world and art is one
-texel to one unit, everywhere, with no scale factor to carry around.
+UNITS ARE DOOM UNITS. The player is 56 tall, 32 across, and steps up
+anything 24 or under without noticing. A wall texture is 64 across and 64
+up. That last one is the reason for the choice: at 64 units to a 64-pixel
+texture the mapping between world and art is one texel to one unit,
+everywhere, with no scale factor to carry around.
+
+THE EYE IS AT 49, NOT 41. Doom's is 41 — and Doom drew that on a 4:3
+monitor at 320x200, every pixel a fifth taller than it was wide, so the
+eye it SHOWED was 41 stretched by 1.2, which is 49. This pipeline draws
+square pixels (a fixed height, and the width follows the window), so 49
+here is Doom's eye as Doom showed it. It was 41 for a long time and nothing
+in the store said otherwise, because the store is Doom-sized: a gondola
+is taller than you either way. The cars said otherwise. They are drawn at
+32 units to the metre, a hatchback's roof is 45 units up, and from 41 the
+player looked UP at a hatchback and a van read as a lorry. From 49 a
+hatchback is looked down on and a van looked up at, which is what happens
+to someone a metre seventy-five tall in a car park.
 
 THE LEVEL IS SECTORS AND LINEDEFS. A sector is a floor height, a ceiling
 height, a light level and two flats. A line has a sector on one side or on
@@ -601,6 +613,15 @@ that matters: a shut one sets `blocking` on the lines across the opening and
 the collision system treats them as wall. Nothing else in the engine knows
 they exist. They open for anybody, not just for you, and once the fire has
 been through the entrance they jam part open and stop being a door.
+
+THEY ARE 128 TALL, which is Doom's door height, two and a bit of you, and
+the clear opening is 160, so a leaf is 80 wide and stands taller than it
+is wide the way a sliding leaf does. They were 210 by 224 — three and
+three quarters of you, each leaf wider than it was tall — and read as a
+hangar. Above the leaves the entrance sector's ceiling comes down to the
+door head, which turns the band between it and the soffit into that
+sector's upper texture on both faces of the wall: glazing, a transom,
+where there used to be twenty-two units of open air over a 210 door.
 
 THE MAP'S Y IS THE RENDERER'S MINUS Z. A map with x east and y north laid
 onto a renderer with x east and z north is LEFT-handed, and everything
@@ -865,38 +886,56 @@ carries its own residual into js/car-data.js and the test holds it. The
 one number NOT taken off a picture is the length in metres, because
 nothing in a picture of a van says how big a van is.
 
-THE SHAPE IS THE SIDE VIEW'S OWN OUTLINE, USED AS IT IS. The silhouette
-above the sill is traced round its edge, simplified to a dozen or so
-points (Douglas-Peucker: throw away every point within a percent of the
-length of the straight line through its neighbours), and each point is
-given how far the vehicle reaches either side of its middle at that
-height, off the FRONT view. Ledges go too: a drawing has a rubber seal
-where the hatch glass meets the roof and a lip where the windscreen
-does, three pixels tall, and a simplifier keeps them as a short step in
-an otherwise continuous line — so a short edge whose two neighbours run
-within forty-five degrees of each other is interrupting a line, not
-turning a corner, and it goes to its midpoint. A short edge whose
-neighbours DO turn a corner is a chamfer — a rounded windscreen header,
-at this scale — and it goes to the corner itself, where the two
-neighbouring lines cross, which is what a person draws: the windscreen
-straight up into the roof. Push the outline out to +half on the left
-and -half on the right, join the two copies edge for edge round the
-outside and cap them, and that is the body: one strip of quads and two fans, a
-closed solid whose cross-section follows the front view. A windscreen is
-a slope, a bonnet is a slope, the roof narrows the way a roof does, a
-pickup keeps the step down to its bed, and it is what makes a light bar a
-bar without anything naming it.
-
-IT WAS A STAIRCASE FIRST. The roof line split into steps, each step a box
-as wide as the front view over that band of height — and it read as a
-stack of bricks with a car painted on, because that is exactly what it
-was. Every box that rises to a windscreen is a box, however well it is
-painted. The outline was there in the drawing the whole time; the tool
-was throwing it away and rebuilding a worse one out of rectangles.
-The wheels stay separate — the sill is the body's underside and they
-hang below it — and sit a fraction inside the flanks, because two faces
-at exactly the same depth is a tie in the depth buffer, and a tie is the
+THE SHAPE IS THE VISUAL HULL OF THE THREE SILHOUETTES. Each view is a
+parallel projection, so the vehicle lies inside its own silhouette
+extruded along the axis that view was drawn down — the side view's,
+pushed across the width, is a slab the vehicle is inside; the plan's,
+pushed down, is another; the head-on views', pushed along the length, a
+third — and inside all three at once is the tightest solid three pictures
+can vouch for. It comes out as three curves: along the length, the side
+view's top edge and the plan view's half width at each x (the COLUMNS);
+up the height, the head-on views' half width at each z (the LEVELS).
+js/car.js puts a vertex at every column and level, as high as the side
+view allows there and as far out as the narrower of the other two views
+allows, and the grid of them — two flanks, a top, an underside, a cap at
+each end — is the body. A column whose top is below a level puts that
+level's vertex ON its top, so up a windscreen the levels bunch and across
+a bonnet they fall together, and the quads between fallen-together
+vertices are skipped. Nothing is named: the nose corners round off because
+the plan view rounds them, the shoulders because the head-on views do,
+the windscreen slopes because the side view slopes it, a pickup steps down
+to its bed because its top edge does, and the riot van's bonnet is
+narrower than its cab because its plan view says so. Each curve is
+simplified to its breakpoints (Douglas-Peucker: throw away every point
+within half a percent of the length of the straight line through its
+neighbours), so a straight roof is two columns and a rounded corner four
+or five — twenty-odd columns and seven to nine levels per vehicle, a
+thousand-odd triangles. Every edge on these sheets has the same specks in
+it, so every curve goes through the same one-dimensional closing the side
+view's top edge always did: a slot narrower than the window is bridged
+and anything wider is kept exactly. The head-on views are taken as the
+WIDER of the pair at each height, because both see the same widths and
+where they differ it is the drawing — the pickup's rear bumper is a
+chrome bar thinner than the ruler, and ruled away it left four rows of
+nothing but tow hitch, which averaged with the front put a groove round
+the truck at bumper height. A head-on silhouette cannot tell a tyre from
+the body behind it, so the lowest levels are tyre to tyre; the plan view,
+which sees the body over the tyres, clamps them back. The wheels stay
+separate — the sill is the body's underside and they hang below it — and
+sit a fraction inside the flank at their own x, because two faces at
+exactly the same depth is a tie in the depth buffer, and a tie is the
 flicker the trees used to have.
+
+IT WAS THE SIDE OUTLINE LOFTED ACROSS ONE WIDTH BEFORE THAT, and a
+staircase of boxes before that. The loft was the right silhouette from
+the side and a rectangle from above: square nose corners, a crease for a
+shoulder, and — because the projection paints whatever is under a face
+with whatever the picture has at that spot — bled body colour on every
+corner the picture had rounded off, which is what read as stretching. The
+picture had the shape the whole time, in three views; the tool was reading
+one of them. Tight geometry is what lets projected paint land where it
+came from, and it is why the body is a thousand triangles now and not the
+forty it was: forty was a box with rounded pictures on it.
 
 SOME OF THE SHEETS FACE THE OTHER WAY. Two of the seven side views were
 drawn nose to the right and five nose to the left, and a tool that
@@ -1134,7 +1173,7 @@ roof and its bonnet, at whatever height that leaves it.
 THE SECOND BANG happens on impact, and with it the bulk of the debris.
 
 THE DEBRIS IS MADE OF THE CAR. A chunk is a small box cut in around a
-random point on that vehicle's own outline — a bit of roof, a bit of
+random point on that vehicle's own hull — a bit of roof, a bit of
 bonnet, a bit of door — and put through exactly the same projection, so
 a piece off the tail is painted with the tail on every face and nobody had
 to decide what a torn piece of van looks like. Each one tumbles on the
@@ -1160,7 +1199,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-537 checks. Every one of them earns its place by having caught something
+551 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
