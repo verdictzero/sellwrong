@@ -40,6 +40,7 @@
    ===================================================================== */
 
 import { SHOPPERS, SPLATS, BLASTS } from './people.js';
+import { TICRATE } from './util.js';
 
 /* Every state: [sprite, frame, tics, action, next]. -1 tics means stay
    here forever, which is what a corpse does. */
@@ -59,9 +60,22 @@ function S(name, sprite, frame, tics, action, next, opts = {}) {
 
    There is no death sequence because there is nothing left to animate:
    one tic in which A_Gib throws the pieces, and then the actor is gone.
+
+   AND THEY RUN. Standing is A_Watch on an eight-tic clock, which sniffs
+   the fire grid round the actor; anything hot near enough and it goes to
+   SHOP_RUN, which is A_Flee every three tics until the panic runs out
+   and there is nothing hot left nearby. Both states draw the same single
+   frame, because there is only one; the difference is entirely that one
+   of them moves.
    ------------------------------------------------------------------- */
-S('SHOP_STAND', 'SHOP', 'A', -1, null, null);
-S('SHOP_GIB',   'SHOP', 'A',  1, 'A_Gib', null);      // null next: remove me
+S('SHOP_STAND',  'SHOP', 'A', 8, 'A_Watch', 'SHOP_STAND2');
+S('SHOP_STAND2', 'SHOP', 'A', 8, 'A_Watch', 'SHOP_STAND');
+/* Running is the same drawing on a shorter clock. What makes it read as
+   running is not the frame, it is that the thing is moving and leaning
+   harder while it does — see swayOf in js/people.js. */
+S('SHOP_RUN1',   'SHOP', 'A', 3, 'A_Flee', 'SHOP_RUN2');
+S('SHOP_RUN2',   'SHOP', 'A', 3, 'A_Flee', 'SHOP_RUN1');
+S('SHOP_GIB',    'SHOP', 'A', 1, 'A_Gib', null);      // null next: remove me
 
 /* ---------------------------------------------------------------------
    Things that are not monsters
@@ -128,9 +142,17 @@ export const ACTORS = {
      No speed, no sight range, no attack: they are not fighting you. The
      things that will fight you come up the road later. */
   SHOPPER: {
-    name: 'Shopper', spawn: 'SHOP_STAND', death: 'SHOP_GIB',
+    name: 'Shopper', spawn: 'SHOP_STAND', see: 'SHOP_RUN1', death: 'SHOP_GIB',
     health: 12, radius: 18, height: 56, mass: 100, painchance: 0,
+    /* Sixteen units a call at three tics a call: faster than a Doom
+       zombie and slower than you, so a crowd that has decided to leave
+       is something you have to get in front of rather than something you
+       can walk after. */
+    speed: 16,
     monster: true, flammable: true, fuel: 90, painSound: 'shopper',
+    /* how far a fire has to be before it is somebody else's problem, and
+       how long a fright lasts once nothing is chasing it */
+    scareRange: 320, panicTics: 8 * TICRATE,
     variants: SHOPPERS,
     /* one drawing, so every side of them is the front */
     flat: true,

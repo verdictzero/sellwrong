@@ -35,6 +35,7 @@ somewhere else: the people, the trees, the sky, and the gun.
   tools/bake-art.mjs    node tools/bake-art.mjs — turns art/ into source
   tools/prep-people.mjs the crowd's art, crunched down from galvarius
   tools/prep-forest.sh  copies the wood's art over from the golf project
+  tools/prep-fire.mjs   and gives golf's flames a round bottom to stand on
   tools/bake-sky.mjs    the sky: 8k panorama to 1024 palette pixels
   tools/prep-model.mjs  strips the marker spheres out of a .glb, keeps their positions
   tools/build-site.sh   assembles public/ — what actually gets published
@@ -66,7 +67,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         293 checks, no install and no browser
+  the smoke test         315 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -202,15 +203,51 @@ fuel SMOULDERS, never getting hot, burning a unit at a time, staying alight
 long enough to pass the fire on. A bare walkway gets about 1.9 expected
 spreads and a gondola about 25 — both above one, so both go.
 
-What differs is PACE, and that is the whole feel of it:
+What differs is PACE, and that is the whole feel of it. The two ends are
+now a factor of twenty apart rather than a factor of six, because the
+curve from fuel to spread chance is a power law rather than a shift:
 
-  a gondola of stock     a cell every 0.6s — a full run is up in ten
-  bare lino              a cell every 3.4s — an aisle takes twenty to cross
+  a gondola of stock     a cell about every second — a full run is up in
+                           a minute, and it takes the run next to it
+  bare lino              a cell every half a minute — crossing one aisle
+                           is minutes of watching it creep
 
-Left completely alone, one match takes the entire shop in about a hundred
-seconds. Your flamethrower is roughly ten times faster than that, which is
-the point of carrying it — you are not starting the fire so much as
-deciding where it starts and how long the store has.
+Left completely alone, one match takes the entire shop, and takes the
+better part of half an hour to do it. Your flamethrower is very much
+faster than that, which is the point of carrying it — you are not
+starting the fire so much as deciding where it starts and how long the
+store has.
+
+THE TWO TERMS TRADE EXACTLY, which is the thing to know before touching
+either. A fire crossing a region survives only if each burning cell
+lights, on average, more than one new one:
+
+  expected spreads  =  tics alight  x  chance  x  neighbours
+
+so slowing the crawl across bare floor by lowering the chance ALONE puts
+thin fuel under the line and leaves holes in the shop that can never
+burn. That mistake is in the history of this file twice. What happened
+instead is that the chance came down by about three and thin fuel's
+LIFETIME went up by about three: the same fire reaches the same places
+and takes three times as long to creep there. It is also why the fuel
+grid is floats — as integers the smallest burn rate expressible was one
+unit a tic, and for bare lino that floor WAS the burn rate.
+
+AND THEY RUN. A shopper on eight-tic watch samples the fire grid at nine
+points around itself — where it is standing and eight at its scare range
+— which is what tells it both THAT there is a fire and WHICH WAY, and the
+second is the part one sample cannot give you. Then it runs: of the eight
+compass directions, the one that gets furthest from the heat and lands
+somewhere cool, looking two steps ahead so it does not stop one step
+short of noticing a wall of fire. Somebody going off frightens a much
+wider circle than the fire does, so torching one at the tills empties the
+front end before the pieces land.
+
+Not Doom's chase with the sign flipped. P_NewChaseDir walks TOWARD a
+thing and all its cleverness is about not oscillating in a doorway;
+running away is a different problem, because what you are running from is
+a region and the wrong step is not a wasted one, it is a step into the
+fire.
 
 THE CROWD is the third way it travels, and the fastest. A shopper has
 twelve health, which is under a fifth of what one tic of the stream
@@ -222,6 +259,44 @@ a fan, in the part of the shop with the most cardboard in it.
 
 The car park has no fuel at all and never burns, which makes it the safe
 room: the one place you can stand and watch what you have done.
+
+
+AND THEN IT FALLS DOWN
+----------------------
+
+CHARRED IS A SURFACE. GUTTED IS A STRUCTURE. They are two stages and the
+second one is the end the whole fire is for.
+
+A region that has lost half its fuel is CHARRED: the same room with
+everything in it blackened, which is `_B` twins of the forty textures
+that can burn. A region that has lost nearly all of it is GUTTED, and
+that is not a darker room, it is a room that is no longer there:
+
+  the walls    holes, with charred studs standing in them and the coals
+                 still alive in the gaps
+  the floor    slab, ash, and the bits of the ceiling that came down,
+                 with the fire visible in the cracks — which is where
+                 the light in a gutted aisle comes from
+  the shelves  bare uprights, leaning, with two shelf edges that did
+                 not fall
+  the roof     GONE. The ceiling becomes sky and you are standing in a
+                 supermarket looking up at the Milky Way
+
+Four textures do all of it, chosen by which SLOT a surface fills rather
+than by what it used to be, because past a certain point a partition, a
+chiller surround and a shopfront are the same rubble and forty more
+textures would all have had to converge on the same look anyway.
+
+IT HAPPENS REGION BY REGION, which is the part worth watching. The roof
+goes in patches, so there is a long stretch where half the shop is still
+a shop and the other half is a shell open to the night with fire in the
+floor of it — and the join between them, a hard edge of ceiling against
+stars, is the best thing in the game.
+
+The light fittings are taken away rather than switched off when the roof
+over them goes. A dead fitting still draws, and a row of them hanging in
+the open air over a roofless shop is the one thing in the shot that says
+this is a computer program.
 
 
 WHAT IS LEFT AFTERWARDS
@@ -259,10 +334,41 @@ THE WOOD
 --------
 
 Everything past the kerb of the car park is forest: a flat plain of firs,
-bushes, ferns and grass, fifty-four thousand plants, nine thousand units
-deep on every side. It is eight big outdoor rectangles in the map, so you
-walk out of the car park and keep walking, and it is one module,
-js/forest.js, that keeps two things deliberately apart.
+bushes, ferns and grass, a hundred and seventy thousand plants, nine
+thousand units deep on every side. It is eight big outdoor rectangles in
+the map, so you walk out of the car park and keep walking, and it is one
+module, js/forest.js, that keeps two things deliberately apart.
+
+IT IS PLANTED THE WAY THE GOLF PROJECT PLANTS ITS OWN, which is one cell
+of ground deciding what — if anything — grows in it, with the three
+classes as a PRIORITY rather than three independent probabilities. Firs
+take their share first and are never squeezed, because the canopy is the
+forest and thickening the undergrowth must not thin it. Bushes take
+theirs out of what the trunks left, through a THRESHOLDED clump noise, so
+scrub arrives in thickets rather than as an even speckle. Ground cover
+fills whatever is still empty, which is not a demotion: it is the
+definition of a ground layer, and it thins out on its own exactly where
+the trunks and the thickets are dense. The understory is several plants
+per accepted cell, which is the density dial that is nearly free.
+
+AND BUSHES MOVED OUT OF THE CANOPY. They used to be one per cell and they
+BLOCKED, so the only way to thicken the undergrowth was to fill the wood
+with obstacles. As understory they are several per cell and you walk
+through them — the wood reads dense at eye level and is still something
+you can run through with a fire behind you. Only trunks stop you, which
+is the rule the collision code already had.
+
+WHAT PAYS FOR ALL OF IT is that the plants are cut into square chunks of
+ground, one draw per kind per chunk. This forest costs LINEARLY IN
+INSTANCES SUBMITTED and not at all in how much of the screen they cover:
+measured in a software rasteriser, a hundred thousand plants cost a
+second a frame whether they were a wall of green or collapsed to nothing
+by a fade in the vertex shader. Collapsing the quad saves the fill; it
+does not save the vertex, and the vertex was the bill. So a chunk gets a
+real bounding sphere and three.js frustum-culls the two thirds of the
+wood behind you for free, and each class hides the chunks past its own
+range — the fern carpet is submitted for the ground you are standing on
+and nowhere else. Twice the plants, a third of the frame time.
 
 THE SIMULATION is a grid of 64-unit cells with a byte of state each —
 green, alight, gone — and a list of the ones burning. Every cell is fuel
@@ -333,15 +439,26 @@ third of the download.
 THE ROAD, AND WHO COMES DOWN IT
 -------------------------------
 
-A two-lane road runs along the front of the lot, between the fire lane
-and the first row of bays, and carries on out of the lot through the
-wood in both directions until the forest ends — the way you drove in,
-and the way anyone else is going to arrive. It is five strips of sector
-(an edge line, a lane, the centre line, a lane, an edge line), because a
-floor is textured to the world grid and a 64-unit tile cannot hold one
-line across a 300-unit road, but a strip six units wide wearing a tile
-that is line all the way through can. Out in the wood it is a firebreak
-and no tree stands on it.
+THERE ARE TWO ROADS AND THEY ARE DIFFERENT THINGS. The FRONTAGE LANE
+runs along the front of the lot between the fire lane and the first row
+of bays; it is the store's own, you drive along it to reach a row, and
+it stops at the ends of the lot. The TRAVERSAL ROAD is the public one
+and it is at the far end, past the last row of bays, running the whole
+width of the lot and on through the wood in both directions until the
+forest ends — the way you drove in, the way everyone else is going to
+arrive, and the only firebreak in the wood.
+
+Which order they are in is the whole reason the second one moved down
+there. A road, then a car park, then a shop, in that order, is what
+arriving at a supermarket looks like; a road against the shopfront with
+the car park behind it is not a lot, it is a forecourt. You start on the
+verge south of the traversal road, so the opening shot is across a road,
+over a car park, at a supermarket.
+
+Both are five strips of sector (an edge line, a lane, the centre line, a
+lane, an edge line), because a floor is textured to the world grid and a
+64-unit tile cannot hold one line across a 300-unit road, but a strip six
+units wide wearing a tile that is line all the way through can.
 
 js/responders.js is the PLACEHOLDER for what comes down it: the shape of
 the thing, with nothing in it that can hurt you yet. One number, the
@@ -656,7 +773,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-293 checks. Every one of them earns its place by having caught something
+315 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -707,6 +824,17 @@ that had already reached a screenshot:
     They now live in ONE place, js/people.js, and the check holds the
     files on disk against it: a strip one pixel narrow cuts every shopper
     after the first in half, silently, at load time
+  a THIRD attempt to slow the fire that put thin fuel back under the
+    percolation line — the footway stopped carrying the fire east along
+    the parade and three of the neighbouring units could never burn at
+    all. The check that caught it is now two checks, because it was
+    making two claims at once: whether the fire GETS IN to a region is
+    absolute, and whether it then eats the region is a matter of degree
+    that a doorway four cells across cannot express
+  a customer standing in the loading dock, which is not a thing a
+    customer does. The map places the crowd through one predicate and
+    exports the rectangle it used; the check holds every one of them
+    against it from the other side
 
 
 WHAT IS NOT DONE
@@ -715,10 +843,12 @@ WHAT IS NOT DONE
   the people, the wood, the sky, the logo and the weapon are the art a
     person made; every other surface in the game is still procedural and
     still provisional
-  the shoppers do not react. They do not run from the fire, they do not
-    get out of your way, and they do not scream until they are alight.
-    They are scenery with blood in it, and making them flee is the next
-    thing worth doing to them
+  the shoppers run from fire and from each other going off, and from
+    nothing else. They do not get out of your way, they do not use the
+    doors, and they do not know the shop — a panicked one takes the
+    coolest walkable compass direction that is away from what frightened
+    it, which is enough to empty an aisle and is not enough to look like
+    somebody leaving a building
   a shopper is drawn from one angle, so a crowd seen from the side is a
     crowd all facing you. At Doom's sprite scale in a dark shop this
     reads; in daylight it would not

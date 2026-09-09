@@ -582,17 +582,52 @@ section('fire');
     r.cells++;
     if (fire.fuel[i] < fire.fuel0[i]) r.burnt++;
   }
-  const untouched = Object.entries(reached).filter(([, r]) => r.burnt / r.cells < 0.9)
+  /* TWO CLAIMS, NOT ONE, because they need different bars. Whether the
+     fire GOT IN is the invariant the map is written against and it is
+     absolute — a region it never enters is a hole in the map. Whether it
+     then ate the region is a matter of degree, and a doorway four cells
+     across cannot express degrees: three of its four cells is 75%, which
+     under a single 90% bar reads as a failure when what actually
+     happened is that the fire went through the door. So the small ones
+     are held to "reached" and the ones big enough to mean it are held to
+     nearly all of it. */
+  const entries = Object.entries(reached);
+  const never = entries.filter(([, r]) => r.burnt === 0).map(([n]) => n);
+  const partial = entries.filter(([, r]) => r.cells >= 20 && r.burnt / r.cells < 0.9)
     .map(([n, r]) => `${n} ${((r.burnt / r.cells) * 100).toFixed(0)}%`);
-  note('regions reached', `${Object.keys(reached).length - untouched.length}/${Object.keys(reached).length}`);
-  check('the fire reaches every part of the shop', untouched.length === 0, untouched.join(', '));
+  note('regions reached', `${entries.length - never.length}/${entries.length}`);
+  check('the fire reaches every part of the shop', never.length === 0, never.join(', '));
+  check('and eats nearly all of every region worth measuring',
+    partial.length === 0, partial.join(', '));
 
   /* Regions that have burnt should have SAID so — a store that burns down
      and looks identical afterwards is an animation, not a simulation. */
   const charred = level.sectors.filter(s => s.charred).length;
+  const gutted = level.sectors.filter(s => s.gutted).length;
   const burnable = level.sectors.filter(s => s.fuel > 0).length;
-  note('sectors charred', `${charred}/${burnable}`);
+  note('sectors charred / gutted', `${charred} / ${gutted}, of ${burnable}`);
   check('burnt regions get charred surfaces', charred >= burnable * 0.9, `${charred} of ${burnable}`);
+
+  /* AND THE BUILDING COMES DOWN. Charring is a surface; gutting is a
+     structure, and it is the end state the whole fire is for. A store
+     that burns to a hundred per cent and still has its roof on is a
+     store where the second stage never fired. */
+  check('and a burnt-out store is gutted', gutted >= burnable * 0.85, `${gutted} of ${burnable}`);
+  {
+    const g0 = level.sectors.find(s => s.gutted && !s.outdoor && s.name === 'aisle');
+    check('a gutted aisle exists to look at', !!g0);
+    if (g0) {
+      const to = tex.guttedSurfaces(g0);
+      check('its roof has gone', to.ceilTex === 'SKY' && to.sky === 1, JSON.stringify(to));
+      check('its walls are studs and holes', to.wallTex === 'RUINWALL', to.wallTex);
+      check('and its floor is slab and ash', to.floorTex === 'RUINFLR', to.floorTex);
+    }
+    const rack = level.sectors.find(s => s.gutted && /SHELF/.test((s.wallTex || '').replace('_B', '')));
+    if (rack) check('a gutted gondola is bare shelving',
+      tex.guttedSurfaces(rack).wallTex === 'RUINRACK', tex.guttedSurfaces(rack).wallTex);
+  }
+  check('every ruin texture is drawn', tex.RUIN.every(n => Object.keys(tex.TEXTURE_GENERATORS).includes(n)),
+    tex.RUIN.filter(n => !Object.keys(tex.TEXTURE_GENERATORS).includes(n)).join(', '));
   const bank = new Set(Object.keys(tex.TEXTURE_GENERATORS).map(n => n));
   check('every charrable texture has a burnt twin',
     tex.CHARRABLE.every(n => bank.has(n)),
@@ -763,13 +798,26 @@ section('the crowd');
   const inputStub = { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 }, attack: false, use: false, run: false, sample() {}, sensitivity: 0 };
   const g = new Game({ level, scene: new THREE.Scene(), camera: {}, textures: tex.bakeTextures(), sprites: spr.bakeSprites(), hud: hudStub, audio: null, input: inputStub });
 
-  /* --- who is in the shop --- */
+  /* --- who is in the shop, and nobody anywhere else ---
+     A customer is somebody who is IN THE SHOP. The map places them
+     through one predicate and exports the rectangle it used; this holds
+     every one of them against it from the other side, so a coordinate
+     that drifts into the stockroom, out through the front doors or into
+     a neighbouring unit fails here rather than turning up in a
+     screenshot standing in the loading dock. */
+  const SF = level.salesFloor;
   const crowd = g.actors.filter(a => a.type === 'SHOPPER');
-  const inside = crowd.filter(a => a.y > 0 && a.y < 3400 && a.x > 200 && a.x < 4080);
-  const outside = crowd.filter(a => a.y < 0);
-  note('shoppers: in the shop / in the lot', `${inside.length} / ${outside.length}`);
-  check('the shop has a crowd in it', inside.length > 40, `${inside.length}`);
-  check('and so has the car park', outside.length > 8, `${outside.length}`);
+  const inside = crowd.filter(a => a.x > SF.x0 && a.x < SF.x1 && a.y > SF.y0 && a.y < SF.y1);
+  note('shoppers on the sales floor', `${inside.length} of ${crowd.length}`);
+  check('the shop has a crowd in it', inside.length > 60, `${inside.length}`);
+  check('and every one of them is on the sales floor',
+    inside.length === crowd.length,
+    crowd.filter(a => !inside.includes(a)).slice(0, 4).map(a => `${a.x | 0},${a.y | 0}`).join(' '));
+  check('nobody is in the stockroom, the dock or the office',
+    !crowd.some(a => /stock|dock|office/i.test(g.level.sectors[a.sector?.index ?? 0]?.name || '')),
+    crowd.map(a => a.sector?.name).filter(n => /stock|dock|office/i.test(n || '')).slice(0, 3).join(', '));
+  check('and nobody is outdoors', !crowd.some(a => a.sector?.outdoor),
+    crowd.filter(a => a.sector?.outdoor).slice(0, 3).map(a => a.sector.name).join(', '));
   check('nobody is a staff monster any more',
     !g.actors.some(a => a.type === 'ASSOCIATE' || a.type === 'STOCKER'));
   check('every shopper is one of the drawings there are',
@@ -818,18 +866,61 @@ section('the crowd');
   check('and the ones over the cap are taken away',
     g.actors.filter(a => a.type === 'GORE' && !a.removed).length <= ppl.GIB.maxSplats + 2);
 
-  /* --- standing still, but not perfectly --- */
+  /* --- and they run from it ---
+     The whole claim in one measurement: put a fire next to somebody,
+     let the world run, and they should be further from it than they
+     were and no longer standing still. */
+  {
+    const a = g.actors.find(x => x.type === 'SHOPPER' && !x.dead && x.y > 1300 && x.y < 1800);
+    const fx = a.x, fy = a.y - 90;                      // a fire, right there
+    const d0 = Math.hypot(a.x - fx, a.y - fy);
+    g.fire.ignite(fx, fy, 200, 48);
+    /* the actors and the fire, not Game.tic — a whole tic wants slide
+       doors, and a slide door wants a GPU */
+    for (let k = 0; k < 90; k++) {
+      g.tics++;
+      for (const x of g.actors) x.tic();
+      g.fire.tic();
+    }
+    const d1 = Math.hypot(a.x - fx, a.y - fy);
+    check('a shopper notices a fire beside it', a.panic > 0 || a.removed, `panic ${a.panic}`);
+    check('and runs away from it', a.removed || d1 > d0 + 60, `${d0.toFixed(0)} -> ${d1.toFixed(0)}`);
+    note('one shopper, ninety tics', `${d0.toFixed(0)} units from the fire, then ${d1.toFixed(0)}`);
+    /* and the rest of the aisle heard about it */
+    const running = g.actors.filter(x => x.type === 'SHOPPER' && x.panic > 0).length;
+    check('and it is not the only one moving', running > 1, `${running} running`);
+  }
+
+  /* --- standing still, but not perfectly, and moving when it runs --- */
   {
     const a = inside[1];
-    const at = t => { const s2 = ppl.swayOf(a, t); return { ...s2 }; };
-    const p0 = at(0), p1 = at(20);
-    check('a standee sways', Math.hypot(p0.dx - p1.dx, p0.dy - p1.dy, p0.dz - p1.dz) > 0.2);
-    let worst = 0;
-    for (let t = 0; t < 400; t++) { const s2 = at(t); worst = Math.max(worst, Math.hypot(s2.dx, s2.dy), Math.abs(s2.dz)); }
-    check('by less than two units', worst < 2, worst.toFixed(2));
-    const b = ppl.swayOf(inside[2], 0);
+    const swing = () => {
+      let worst = 0, moved = 0, prev = null;
+      for (let t = 0; t < 400; t++) {
+        const s2 = { ...ppl.swayOf(a, t) };
+        worst = Math.max(worst, Math.hypot(s2.dx, s2.dy), Math.abs(s2.dz));
+        if (prev) moved += Math.hypot(s2.dx - prev.dx, s2.dy - prev.dy, s2.dz - prev.dz);
+        prev = s2;
+      }
+      return { worst, moved };
+    };
+    a.panic = 0;
+    const still = swing();
+    check('a standee sways', still.moved > 4, still.moved.toFixed(1));
+    check('by under two units', still.worst < 2, still.worst.toFixed(2));
+    /* swayOf hands back ONE shared object — read it before the next call */
+    const b = { ...ppl.swayOf(inside[2], 0) }, p0 = { ...ppl.swayOf(a, 0) };
     check('and not in step with the next one along',
       Math.hypot(p0.dx - b.dx, p0.dy - b.dy) > 0.01);
+
+    /* and a frightened one is visibly doing something else */
+    a.panic = 60;
+    const running = swing();
+    check('a running one moves a great deal more',
+      running.moved > still.moved * 3, `${running.moved.toFixed(0)} against ${still.moved.toFixed(0)}`);
+    check('and still stays within a few units of where it is',
+      running.worst < 4, running.worst.toFixed(2));
+    a.panic = 0;
   }
 }
 

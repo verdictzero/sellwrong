@@ -72,9 +72,54 @@ export const KINDS = [
   { name: 'fern',         h: 46,  aspect: 1.0, r: 0,  w: 0, cover: true },
   { name: 'grass',        h: 40,  aspect: 1.0, r: 0,  w: 0, cover: true },
 ];
-const TREE_KINDS = KINDS.map((k, i) => i).filter(i => !KINDS[i].cover);
+/* THREE CLASSES, NOT TWO, and they are the golf project's three: firs,
+   bushes, ground cover. What changed is that bushes moved out of the
+   canopy class and into the understory with the ferns.
+
+   THAT IS WHAT MAKES THE WOOD THICKER WITHOUT MAKING IT A WALL. A bush
+   in the canopy class was one per cell and it BLOCKED, so the only way
+   to thicken the undergrowth was to fill the wood with obstacles. In the
+   understory it is several per cell and you walk through it, which is
+   what undergrowth is: the wood reads as dense at eye level and is still
+   something you can run through with a fire behind you. Only trunks stop
+   you, which is the rule the collision code already had — it looks at
+   the canopy class and nothing else. */
+const TREE_KINDS  = KINDS.map((k, i) => i).filter(i => !KINDS[i].cover && KINDS[i].h > 120);
+const BUSH_KINDS  = KINDS.map((k, i) => i).filter(i => !KINDS[i].cover && KINDS[i].h <= 120);
 const COVER_KINDS = KINDS.map((k, i) => i).filter(i => KINDS[i].cover);
 const TREE_WEIGHT = TREE_KINDS.reduce((a, i) => a + KINDS[i].w, 0);
+const BUSH_WEIGHT = BUSH_KINDS.reduce((a, i) => a + KINDS[i].w, 0);
+
+/* THE PLANTING, taken from github.com/verdictzero/golf's own vegetation
+   scatter and its documentation of why it is shaped this way.
+
+   ONE CELL GROWS ONE CLASS, and the three weights are a PRIORITY rather
+   than three independent probabilities. Firs take their share first and
+   are never squeezed — the canopy is the forest, and thickening the
+   undergrowth must not thin it. Bushes take theirs out of what the
+   trunks left, through a THRESHOLDED clump noise, so scrub arrives in
+   thickets rather than as an even speckle over everything. Ground cover
+   fills whatever is still empty, which is not a demotion: it is the
+   definition of a ground layer, and it thins out on its own exactly
+   where the trunks and the thickets are dense.
+
+   AND THE UNDERSTORY IS SEVERAL PLANTS PER CELL. That is the density
+   dial that is nearly free: one accepted cell, one hash, several
+   jittered plants. Over there ferns are twelve to a cell and two thirds
+   of every plant in the world.
+
+   The pairs are (deep in a wood, out in the open), interpolated by the
+   wood mask. Open is near zero for firs and for cover on purpose, so
+   where the wood is and is not is exactly the shape of that contour;
+   bushes stay high in the open because scrub in a clearing is scrub. */
+const PLANT = {
+  treeForest: 0.46, treeOpen: 0.02,
+  bushForest: 0.72, bushOpen: 0.50, bushPerCell: 2,
+  coverForest: 0.86, coverOpen: 0.0, coverPerCell: 3,
+  /* the thicket threshold: below the low end no bush grows at all, above
+     the high end the thicket takes every cell the trunks left */
+  bushClumpLo: 0.46, bushClumpHi: 0.72,
+};
 
 /* The eight ember colours, cold coal to gold — the golf project's
    ps1-soft ramp, and the same eight the ground's glow uses so the two
@@ -122,6 +167,26 @@ export function plantRadius(kind, f) {
 
 /* Per-cell randomness that does not depend on the order cells are
    visited, so the same seed plants the same wood on every machine. */
+/* WHERE EACH CLASS STOPS BEING WORTH DRAWING, as [start fading, gone].
+   Taken from how tall the thing is: a plant is worth drawing while it is
+   still a couple of pixels, and at this game's field of view that is
+   about sixty times its own height, and the band is wide so the change
+   is a thinning rather than a line on the ground. Trees are the horizon
+   and keep the camera's whole range.
+
+   The first cut of these was half as far and it showed: under the
+   distant treeline the ground went bare in a hard ring, because the
+   forest floor is brown and the thing that makes it read as a forest
+   floor is the litter on it. */
+/* How big a piece of ground one draw call covers. Small enough that the
+   understory's short range keeps only a handful of them, big enough that
+   the whole wood is a few hundred meshes rather than thousands. */
+const CHUNK = 2048;
+
+const FADE = k => k.cover ? [2900, 4800]
+                : k.h <= 120 ? [4600, 7200]
+                : [13000, 16000];
+
 function hash2(cx, cy, k) {
   let h = (cx * 374761393 + cy * 668265263 + k * 2246822519) | 0;
   h = Math.imul(h ^ (h >>> 13), 1274126177);
@@ -156,7 +221,10 @@ export class Forest {
     this.state = new Uint8Array(n);       // 0 green, 1 alight, 2 gone
     this.prog = new Uint8Array(n);        // how far through the burn, 0..255
     this.cellTree = new Int32Array(n).fill(-1);
-    this.cellCover = new Int32Array(n).fill(-1);
+    /* The understory is SEVERAL plants a cell, laid down contiguously,
+       so a cell points at a run of them rather than at one. */
+    this.coverStart = new Int32Array(n).fill(-1);
+    this.coverCount = new Uint8Array(n);
     this.active = [];
     this._activeSet = new Uint8Array(n);
     this._dirty = [];
@@ -197,12 +265,27 @@ export class Forest {
      against a car park kerb is a hedge. */
   _plant() {
     const { cols, rows } = this;
+    /* THE WOOD MASK. One field, thresholded, so the wood has a shape
+       with clearings in it rather than being a uniform speckle — and the
+       three classes are read off it together, so the canopy, the scrub
+       and the litter under them can never disagree about what a patch of
+       ground is. */
     const field = fbm(cols, rows, 9, 3, this.seed * 31 + 7);
+    /* one clumping field per class, so a thicket of scrub is not thereby
+       a stand of firs */
+    const treeClumpF = fbm(cols, rows, 5, 2, this.seed * 17 + 101);
+    const bushClumpF = fbm(cols, rows, 6, 2, this.seed * 13 + 211);
+    const coverClumpF = fbm(cols, rows, 4, 2, this.seed * 29 + 307);
     const c = this.level.clearing || [0, 0, 0, 0];
     const MARGIN = 150;
     const tx = [], ty = [], tk = [], ts = [], tf = [], tseed = [], tcell = [];
     const gx = [], gy = [], gk = [], gs = [], gf = [], gseed = [], gcell = [];
     const smooth = (a, b, v) => { const t = clamp((v - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+    const pick = (kinds, weight, r) => {
+      let n = r * weight, out = kinds[0];
+      for (const k of kinds) { n -= KINDS[k].w; if (n <= 0) { out = k; break; } }
+      return out;
+    };
 
     for (let cy = 0; cy < rows; cy++) {
       for (let cx = 0; cx < cols; cx++) {
@@ -210,11 +293,31 @@ export class Forest {
         if (!this.fuel[i]) continue;
         const wx = this.worldX(cx), wy = this.worldY(cy);
         if (wx > c[0] - MARGIN && wx < c[2] + MARGIN && wy > c[1] - MARGIN && wy < c[3] + MARGIN) continue;
-        const d = field[i];
-        const treeP = smooth(0.34, 0.72, d) * 0.58;
-        if (hash2(cx, cy, 1) < treeP) {
-          let pick = hash2(cx, cy, 2) * TREE_WEIGHT, kind = TREE_KINDS[0];
-          for (const k of TREE_KINDS) { pick -= KINDS[k].w; if (pick <= 0) { kind = k; break; } }
+
+        /* how much of a wood this is, 0 in the open and 1 deep in it */
+        const forest = smooth(0.34, 0.72, field[i]);
+
+        /* the three weights, each through its own clump. The bushes'
+           is thresholded rather than scaled — that is the difference
+           between ground that is evenly speckled with scrub and ground
+           that is mostly clear with thickets in it. */
+        const treeClump = 0.55 + treeClumpF[i] * 0.9;
+        const coverClump = 0.55 + coverClumpF[i] * 0.9;
+        const bushClump = smooth(PLANT.bushClumpLo, PLANT.bushClumpHi, bushClumpF[i]);
+        let dTree = (PLANT.treeOpen + (PLANT.treeForest - PLANT.treeOpen) * forest) * treeClump;
+        let dBush = (PLANT.bushOpen + (PLANT.bushForest - PLANT.bushOpen) * forest) * bushClump;
+        let dCover = (PLANT.coverOpen + (PLANT.coverForest - PLANT.coverOpen) * forest) * coverClump;
+        /* and the priority clamp, which is the whole character of it */
+        dTree = Math.min(dTree, 1);
+        dBush = Math.min(dBush, 1 - dTree);
+        dCover = Math.min(dCover, 1 - dTree - dBush);
+
+        const keep = hash2(cx, cy, 1);
+        if (keep >= dTree + dBush + dCover) continue;
+
+        if (keep < dTree) {
+          /* A FIR. One a cell, and the only class that stops you. */
+          const kind = pick(TREE_KINDS, TREE_WEIGHT, hash2(cx, cy, 2));
           tx.push(wx + (hash2(cx, cy, 3) - 0.5) * CELL * 0.8);
           ty.push(wy + (hash2(cx, cy, 4) - 0.5) * CELL * 0.8);
           tk.push(kind);
@@ -224,17 +327,29 @@ export class Forest {
           tcell.push(i);
           this.cellTree[i] = tx.length - 1;
           this.tree[i] = 1;
+          continue;
         }
-        if (hash2(cx, cy, 8) < 0.15 * (0.5 + d)) {
-          gx.push(wx + (hash2(cx, cy, 9) - 0.5) * CELL * 0.9);
-          gy.push(wy + (hash2(cx, cy, 10) - 0.5) * CELL * 0.9);
-          gk.push(hash2(cx, cy, 11) < 0.45 ? COVER_KINDS[0] : COVER_KINDS[1]);
-          gs.push(0.8 + hash2(cx, cy, 12) * 0.5);
-          gf.push(hash2(cx, cy, 13) < 0.5 ? 1 : 0);
-          gseed.push(hash2(cx, cy, 14));
+
+        /* UNDERSTORY: scrub if the thicket reaches here, litter if it
+           does not. Several of them, jittered across the cell, from one
+           accepted cell — see PLANT. */
+        const bushy = keep < dTree + dBush;
+        const kinds = bushy ? BUSH_KINDS : COVER_KINDS;
+        const weight = bushy ? BUSH_WEIGHT : 1;
+        const n = bushy ? PLANT.bushPerCell : PLANT.coverPerCell;
+        this.coverStart[i] = gx.length;
+        for (let k = 0; k < n; k++) {
+          const lane = 20 + k * 6;
+          gx.push(wx + (hash2(cx, cy, lane) - 0.5) * CELL * 0.94);
+          gy.push(wy + (hash2(cx, cy, lane + 1) - 0.5) * CELL * 0.94);
+          gk.push(bushy ? pick(kinds, weight, hash2(cx, cy, lane + 2))
+                        : (hash2(cx, cy, lane + 2) < 0.45 ? COVER_KINDS[0] : COVER_KINDS[1]));
+          gs.push(0.78 + hash2(cx, cy, lane + 3) * 0.55);
+          gf.push(hash2(cx, cy, lane + 4) < 0.5 ? 1 : 0);
+          gseed.push(hash2(cx, cy, lane + 5));
           gcell.push(i);
-          this.cellCover[i] = gx.length - 1;
         }
+        this.coverCount[i] = n;
       }
     }
     this.trees = { x: Float32Array.from(tx), y: Float32Array.from(ty), kind: Uint8Array.from(tk), scale: Float32Array.from(ts),
@@ -490,51 +605,107 @@ export class Forest {
       t.needsUpdate = true;
       return t;
     };
+    /* ONE MESH PER KIND PER CHUNK, and that is the whole of how a much
+       thicker wood costs less than a thin one did.
+
+       The cost of this forest is LINEAR IN INSTANCES SUBMITTED and has
+       nothing to do with how much of the screen they cover: measured in
+       a software rasteriser, a hundred thousand plants cost a second a
+       frame whether they were drawn as a wall of green or collapsed to
+       nothing by the fade in the vertex shader. Collapsing the quad
+       saves the fill; it does not save the vertex, and the vertex was
+       the bill.
+
+       So the plants are cut into square chunks of ground and each chunk
+       is its own draw. A chunk gets a real bounding sphere, so three.js
+       frustum-culls the two thirds of the wood that is behind you for
+       free; and each kind hides the chunks past its own fade range, so
+       the fern carpet — which is most of the plants and is invisible at
+       two thousand units — is submitted for the ground you are standing
+       on and nowhere else. What reaches the GPU is a few thousand of a
+       hundred and seventy thousand.
+
+       The draw calls go up, from one a kind to a few a kind, and that
+       is the trade: a handful of draws against a hundred thousand
+       vertices, which is not a close call. */
+    const CH = CHUNK;
     KINDS.forEach((k, ki) => {
       const src = k.cover ? this.covers : this.trees;
       const list = [];
       for (let i = 0; i < src.n; i++) if (src.kind[i] === ki) list.push(i);
       const n = list.length;
       const A = {
-        pos: new Float32Array(n * 3), size: new Float32Array(n * 2), flip: new Float32Array(n),
-        burn: new Float32Array(n), seed: new Float32Array(n), slot: new Int32Array(src.n).fill(-1), n, cover: !!k.cover,
+        slot: new Int32Array(src.n).fill(-1), chunkOf: new Int32Array(src.n).fill(-1),
+        chunks: [], n, cover: !!k.cover, far: FADE(k)[1],
       };
-      list.forEach((i, s) => {
-        const sc = src.scale[i], h = k.h * sc, w = h * k.aspect;
-        A.pos[s * 3] = src.x[i]; A.pos[s * 3 + 1] = 0; A.pos[s * 3 + 2] = -src.y[i];
-        A.size[s * 2] = w; A.size[s * 2 + 1] = h;
-        A.flip[s] = src.flip[i]; A.seed[s] = src.seed[i];
-        A.burn[s] = this.prog[src.cell[i]] / 255;
-        A.slot[i] = s;
-      });
       this.kindArrays[ki] = A;
       if (!n || !art.sprites[k.name]) return;
-      const g = new THREE.InstancedBufferGeometry();
-      g.index = base.index;
-      g.setAttribute('position', base.getAttribute('position'));
-      g.setAttribute('uv', base.getAttribute('uv'));
-      g.setAttribute('iPos', new THREE.InstancedBufferAttribute(A.pos, 3));
-      g.setAttribute('iSize', new THREE.InstancedBufferAttribute(A.size, 2));
-      g.setAttribute('iFlip', new THREE.InstancedBufferAttribute(A.flip, 1));
-      A.burnAttr = new THREE.InstancedBufferAttribute(A.burn, 1).setUsage(THREE.DynamicDrawUsage);
-      g.setAttribute('iBurn', A.burnAttr);
-      g.setAttribute('iSeed', new THREE.InstancedBufferAttribute(A.seed, 1));
-      g.instanceCount = n;
-      const mat = new THREE.ShaderMaterial({
-        uniforms: {
-          map: { value: spriteTex(art.sprites[k.name].albedo, false) },
-          burnMap: { value: spriteTex(art.sprites[k.name].burn, true) },
-          billboardRot: this.uRot, uTime: this.uTime, ramp: { value: ramp },
-          light: { value: 0.56 },
-          ...worldUniforms(),
-        },
-        vertexShader: PLANT_VERT, fragmentShader: PLANT_FRAG,
-        side: THREE.DoubleSide, toneMapped: false, fog: false,
-      });
-      const m = new THREE.Mesh(g, mat);
-      m.frustumCulled = false;
-      m.name = 'forest-' + k.name;
-      this.mesh.add(m);
+
+      /* group by chunk of ground */
+      const by = new Map();
+      for (const i of list) {
+        const cx = Math.floor((src.x[i] - this.originX) / CH);
+        const cy = Math.floor((src.y[i] - this.originY) / CH);
+        const key = cy * 4096 + cx;
+        let g2 = by.get(key);
+        if (!g2) by.set(key, g2 = { cx, cy, list: [] });
+        g2.list.push(i);
+      }
+
+      const albedo = spriteTex(art.sprites[k.name].albedo, false);
+      const burnTex = spriteTex(art.sprites[k.name].burn, true);
+      for (const c of by.values()) {
+        const m2 = c.list.length;
+        const pos = new Float32Array(m2 * 3), size = new Float32Array(m2 * 2);
+        const flip = new Float32Array(m2), burn = new Float32Array(m2), seed = new Float32Array(m2);
+        let maxH = 0;
+        c.list.forEach((i, sIdx) => {
+          const sc = src.scale[i], h = k.h * sc, w = h * k.aspect;
+          pos[sIdx * 3] = src.x[i]; pos[sIdx * 3 + 1] = 0; pos[sIdx * 3 + 2] = -src.y[i];
+          size[sIdx * 2] = w; size[sIdx * 2 + 1] = h;
+          flip[sIdx] = src.flip[i]; seed[sIdx] = src.seed[i];
+          burn[sIdx] = this.prog[src.cell[i]] / 255;
+          if (h > maxH) maxH = h;
+          A.slot[i] = sIdx;
+          A.chunkOf[i] = A.chunks.length;
+        });
+        const g = new THREE.InstancedBufferGeometry();
+        g.index = base.index;
+        g.setAttribute('position', base.getAttribute('position'));
+        g.setAttribute('uv', base.getAttribute('uv'));
+        g.setAttribute('iPos', new THREE.InstancedBufferAttribute(pos, 3));
+        g.setAttribute('iSize', new THREE.InstancedBufferAttribute(size, 2));
+        g.setAttribute('iFlip', new THREE.InstancedBufferAttribute(flip, 1));
+        const burnAttr = new THREE.InstancedBufferAttribute(burn, 1).setUsage(THREE.DynamicDrawUsage);
+        g.setAttribute('iBurn', burnAttr);
+        g.setAttribute('iSeed', new THREE.InstancedBufferAttribute(seed, 1));
+        g.instanceCount = m2;
+        /* The bounding sphere is the chunk of ground plus the tallest
+           thing standing on it. Without one three.js has to compute it
+           from `position`, which for an instanced quad is a unit square
+           at the origin — every chunk would claim to be at the origin
+           and the frustum cull would be wrong in both directions. */
+        const wx = this.originX + (c.cx + 0.5) * CH, wy = this.originY + (c.cy + 0.5) * CH;
+        g.boundingSphere = new THREE.Sphere(
+          new THREE.Vector3(wx, maxH * 0.5, -wy),
+          Math.hypot(CH * 0.5, CH * 0.5) + maxH);
+        const mat = new THREE.ShaderMaterial({
+          uniforms: {
+            map: { value: albedo }, burnMap: { value: burnTex },
+            billboardRot: this.uRot, uTime: this.uTime, ramp: { value: ramp },
+            fadeBand: { value: new THREE.Vector2(...FADE(k)) },
+            light: { value: 0.56 },
+            ...worldUniforms(),
+          },
+          vertexShader: PLANT_VERT, fragmentShader: PLANT_FRAG,
+          side: THREE.DoubleSide, toneMapped: false, fog: false,
+        });
+        const m = new THREE.Mesh(g, mat);
+        m.name = `forest-${k.name}-${c.cx}-${c.cy}`;
+        m.userData.chunk = { x: wx, y: wy, far: A.far + CH };
+        A.chunks.push({ burn, burnAttr, mesh: m });
+        this.mesh.add(m);
+      }
     });
     scene.add(this.mesh);
     this._flush();
@@ -550,15 +721,23 @@ export class Forest {
       if (!built) continue;
       const v = this.prog[i];
       this.mask.image.data[i] = v;
+      const paint = (A, idx) => {
+        const ch = A.chunks[A.chunkOf[idx]];
+        const s = A.slot[idx];
+        if (!ch || s < 0) return;
+        ch.burn[s] = v / 255;
+        touched.add(ch);
+      };
       const t = this.cellTree[i];
-      if (t >= 0) { const A = this.kindArrays[this.trees.kind[t]]; const s = A.slot[t]; if (s >= 0) { A.burn[s] = v / 255; touched.add(A); } }
-      const c = this.cellCover[i];
-      if (c >= 0) { const A = this.kindArrays[this.covers.kind[c]]; const s = A.slot[c]; if (s >= 0) { A.burn[s] = v / 255; touched.add(A); } }
+      if (t >= 0) paint(this.kindArrays[this.trees.kind[t]], t);
+      const c0 = this.coverStart[i];
+      for (let c = c0; c >= 0 && c < c0 + this.coverCount[i]; c++)
+        paint(this.kindArrays[this.covers.kind[c]], c);
     }
     this._dirty.length = 0;
     if (!built) return;
     this.mask.needsUpdate = true;
-    for (const A of touched) if (A.burnAttr) A.burnAttr.needsUpdate = true;
+    for (const ch of touched) ch.burnAttr.needsUpdate = true;
   }
 
   render(camX, camY, billboardRot, time) {
@@ -566,6 +745,17 @@ export class Forest {
     this.uRot.value = billboardRot;
     this.uTime.value = time;
     this._flush();
+    /* Hide the chunks past their kind's range. The frustum takes care of
+       the ones behind you; this takes care of the ones in front and too
+       far to resolve, which for the understory is nearly all of them. */
+    for (const A of this.kindArrays) {
+      if (!A || !A.chunks.length) continue;
+      for (const ch of A.chunks) {
+        const c = ch.mesh.userData.chunk;
+        const dx = c.x - camX, dy = c.y - camY;
+        ch.mesh.visible = dx * dx + dy * dy < c.far * c.far;
+      }
+    }
     if (this.flames) { this._placeFlames(camX, camY); this.flames.render(billboardRot); }
   }
 
@@ -641,6 +831,9 @@ attribute float iFlip;
 attribute float iBurn;
 attribute float iSeed;
 uniform float billboardRot;
+/* How far this KIND is worth drawing, and over how far it goes away.
+   See FADE below for why the understory has a much shorter one. */
+uniform vec2  fadeBand;
 varying vec2  vUv;
 varying float vBurn;
 varying float vSeed;
@@ -654,7 +847,22 @@ void main() {
   vUv = vec2(iFlip > 0.5 ? 1.0 - uv.x : uv.x, uv.y);
   vBurn = iBurn;
   vSeed = iSeed;
-  vec3 p = vec3(position.x * iSize.x, position.y * iSize.y, 0.0);
+  /* THE UNDERSTORY STOPS. A fern is forty-six units tall, which is
+     under two pixels at three thousand and a quarter of one at twelve —
+     and there are a hundred and forty thousand of them. Drawn to the
+     horizon they cost a full screen of overdraw for a haze you cannot
+     resolve; dropped at their own range they cost nothing and look
+     identical, because a wood seen from two thousand units away is
+     trunks and canopy, which is the class that keeps its range.
+
+     Done in the VERTEX SHADER rather than by re-packing the instance
+     buffers: the quad collapses to a point and rasterises nothing, so
+     the fill goes away, which is the cost that matters. The vertices are
+     still submitted, and that is the price of not having a CPU repack
+     every time the camera crosses a cell. */
+  float eyeDist = distance(iPos, cameraPosition);
+  float keep = 1.0 - smoothstep(fadeBand.x, fadeBand.y, eyeDist);
+  vec3 p = vec3(position.x * iSize.x * keep, position.y * iSize.y * keep, 0.0);
   float c = cos(billboardRot), s = sin(billboardRot);
   p = vec3(p.x * c, p.y, -p.x * s) + iPos;
   vWorld = p;

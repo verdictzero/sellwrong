@@ -87,6 +87,10 @@ export class Actor {
     this.dead = false;
     this.removed = false;
 
+    /* running away — see A_Watch and A_Flee */
+    this.panic = 0;              // tics left frightened
+    this.fleeX = 0; this.fleeY = 0;
+
     /* fire */
     this.burning = 0;            // tics left alight
     this.burnTick = 0;
@@ -495,6 +499,91 @@ export const ACTIONS = {
      it is in js/people.js; this is the one line of state table that sets
      it off. */
   A_Gib(a) { a.game.giblets?.burst(a); },
+
+  /* ------------------------------------------------------------------
+     RUNNING AWAY
+
+     Standing still and smelling the air. Nine samples of the fire grid —
+     where the actor is and eight points round it at its scare range — is
+     enough to know both THAT there is a fire and WHICH WAY it is, which
+     is the part a single sample cannot give you and the part that
+     decides which way to run.
+     ------------------------------------------------------------------ */
+  A_Watch(a) {
+    const g = a.game;
+    if (a.burning) { ACTIONS.A_Scare(a, a.x, a.y); return; }
+    const F = g.fire;
+    if (!F) return;
+    const R = a.info.scareRange ?? 320;
+    let hot = 0, hx = 0, hy = 0, hw = 0;
+    for (let k = 0; k < 9; k++) {
+      const ang = (k / 8) * Math.PI * 2;
+      const x = k === 8 ? a.x : a.x + Math.cos(ang) * R;
+      const y = k === 8 ? a.y : a.y + Math.sin(ang) * R;
+      const h = F.heatAt(x, y);
+      if (h < 0.22) continue;
+      hot++; hx += x * h; hy += y * h; hw += h;
+    }
+    if (!hot) return;
+    ACTIONS.A_Scare(a, hx / hw, hy / hw);
+  },
+
+  /** Frighten one actor, away from a point. Called by A_Watch, and by
+   *  anything else that ought to clear a room — see Game.scare. */
+  A_Scare(a, x, y) {
+    const first = a.panic <= 0;
+    a.panic = a.info.panicTics ?? 280;
+    a.fleeX = x; a.fleeY = y;
+    if (first) {
+      a.game.sound?.play(a.info.painSound, a);
+      if (a.info.see) a.setState(a.info.see);
+    }
+  },
+
+  /* One step of getting out of here.
+
+     NOT Doom's chase with the sign flipped. P_NewChaseDir walks toward a
+     thing and its whole cleverness is about not oscillating in a
+     doorway; running away is a different problem, because the thing you
+     are running from is a REGION and the wrong step is not a step that
+     wastes time, it is a step into the fire. So the eight directions are
+     SCORED — how much further from the fire it gets you, minus how hot
+     it is where you would land, minus a little for turning — and the
+     best walkable one wins. */
+  A_Flee(a) {
+    const g = a.game, F = g.fire;
+    if (--a.panic <= 0 && !a.burning) {
+      /* only settle if it is actually clear here */
+      if (!F || F.heatAt(a.x, a.y) < 0.15) { a.setState(a.info.spawn); return; }
+      a.panic = 35;
+    }
+    const step = a.speed;
+    const d0 = dist(a.x, a.y, a.fleeX, a.fleeY);
+    let best = DI.NODIR, bestScore = -Infinity;
+    for (let d = 0; d < 8; d++) {
+      const ang = DIR_ANGLE[d];
+      const nx = a.x + Math.cos(ang) * step, ny = a.y + Math.sin(ang) * step;
+      /* two steps ahead for the heat, so it does not run into a wall of
+         fire one step short of noticing it */
+      const fx = a.x + Math.cos(ang) * step * 4, fy = a.y + Math.sin(ang) * step * 4;
+      let score = (dist(nx, ny, a.fleeX, a.fleeY) - d0) * 3;
+      if (F) score -= (F.heatAt(nx, ny) * 260 + F.heatAt(fx, fy) * 140);
+      if (d === a.movedir) score += 6;                       // keep going
+      if (d === OPPOSITE[a.movedir]) score -= 10;            // not straight back
+      score += (pRandom() / 255 - 0.5) * 4;
+      if (score <= bestScore) continue;
+      bestScore = score; best = d;
+    }
+    /* Try the best, then the next best, then anything: a shopper in a
+       corner with the aisle alight still has to do SOMETHING. */
+    if (best !== DI.NODIR && a.tryWalk(best)) { a.movedir = best; return; }
+    const order = pRandom() & 7;
+    for (let k = 0; k < 8; k++) {
+      const d = (order + k) & 7;
+      if (a.tryWalk(d)) { a.movedir = d; return; }
+    }
+    a.movedir = DI.NODIR;
+  },
 
   A_Pain(a) { a.game.sound?.play(a.info.painSound, a); },
   A_Scream(a) { a.game.sound?.play(a.info.deathSound, a); },

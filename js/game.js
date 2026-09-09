@@ -23,12 +23,12 @@ import * as THREE from 'three';
 import { TICRATE, PLAYER_EYE, angleNorm, angleDiff, dist, dist2, pRandom, clamp } from './util.js';
 import { Level } from './level.js';
 import { buildLevelGeometry } from './mapgeo.js';
-import { Actor } from './actor.js';
+import { Actor, ACTIONS } from './actor.js';
 import { ACTORS } from './states.js';
 import { Player } from './player.js';
 import { FireSystem } from './fire.js';
 import { world } from './material.js';
-import { charredName } from './textures.js';
+import { charredName, guttedSurfaces } from './textures.js';
 import { assignLineTextures } from './level.js';
 import { createSpriteMaterial } from './material.js';
 import { buildSlideDoors } from './slidedoor.js';
@@ -367,6 +367,38 @@ export class Game {
       this._geoDirty = true;
       this._geoAt = this.tics + 20;
     }
+
+    /* AND THEN THE BUILDING ITSELF. A region whose fuel is all gone
+       stops being a charred room and becomes a ruin: holes through the
+       walls with the framing behind them, a slab with the ceiling on it,
+       and no roof — the ceiling becomes sky, so a store that has fully
+       burnt is a shell open to the night with the fire still in the
+       cracks. It happens region by region, so the roof goes in PATCHES
+       and there is a long stretch where some of the shop is still a shop
+       and some of it is a hole. See guttedSurfaces in js/textures.js. */
+    if (f.newlyGutted.length) {
+      for (const si of f.newlyGutted) {
+        const s = this.level.sectors[si];
+        const to = guttedSurfaces(s);
+        for (const k of Object.keys(to)) {
+          if (k === 'sky') { s.sky = to.sky; continue; }
+          if (to[k] === 'SKY' || this.textures.map.has(to[k])) s[k] = to[k];
+        }
+        /* Lit by what is left of it: the cracks in the slab and the sky.
+           Higher than charred, because there is a hole in the roof. */
+        s.ambient = Math.max(s.ambient, 0.66);
+        /* NOTHING HANGS FROM A CEILING THAT IS NOT THERE. They are taken
+           away rather than switched off: a dead fitting still draws, and
+           a row of them hanging in the open night over a roofless shop
+           is the one thing in the shot that says "this is a computer
+           program". */
+        for (const lamp of this.lamps)
+          if (!lamp.removed && lamp.sector === s) { lamp.dead = true; lamp.remove(); }
+      }
+      f.newlyGutted.length = 0;
+      this._geoDirty = true;
+      this._geoAt = this.tics + 20;
+    }
     if (this._geoDirty && this.tics >= this._geoAt) {
       this._geoDirty = false;
       this.relight();
@@ -558,6 +590,22 @@ export class Game {
       o.damage(Math.round(60 * (1 - d / 150)), null, { fire: true });
       o.ignite?.(320);
     }
+  }
+
+  /** Clear a room. Anything that can be frightened and is within
+   *  `radius` of (x, y) starts running away from it — used by whatever
+   *  is loud and sudden enough to be worth running from, which at the
+   *  moment is somebody going off. */
+  scare(x, y, radius) {
+    const r2 = radius * radius;
+    let n = 0;
+    for (const a of this.actors) {
+      if (a.dead || a.removed || !a.info.panicTics) continue;
+      if (dist2(x, y, a.x, a.y) > r2) continue;
+      ACTIONS.A_Scare(a, x, y);
+      n++;
+    }
+    return n;
   }
 
   /** Doom's P_NoiseAlert, with a radius instead of a flood fill. Firing

@@ -95,8 +95,9 @@ const CELL = 32;
    At 2, one match took the whole store in 34 seconds and there was
    nothing for the player to do. At 6 it is a few minutes, which is time
    to walk in, work, and get out — and the flamethrower is roughly ten
-   times faster than waiting, which is the point of carrying it. */
-const FIRE_INTERVAL = 12;
+   times faster than waiting, which is the point of carrying it. Asked
+   for slower a third time, it went to 18. */
+const FIRE_INTERVAL = 18;
 
 const IGNITE_AT   = 55;      // heat a cell starts at when it catches
 const PEAK        = 255;
@@ -107,8 +108,28 @@ const SPREAD_AT   = 80;      // heat below which a cell cannot light another
 /* Fraction of a cell's ORIGINAL fuel consumed per fire tic at full heat.
    Making it a fraction rather than a flat rate is what gives every cell
    a roughly similar LIFETIME however rich it is — which is what keeps
-   thin fuel alight long enough to matter. */
+   thin fuel alight long enough to matter.
+
+   AND THIN FUEL IS SLOWER STILL, which is the whole of "spread very
+   slowly across the floor". A fire crossing a region survives only if
+   each burning cell lights, on average, more than one new one:
+
+     expected spreads  =  tics alight  x  chance  x  neighbours
+
+   so the two terms trade against each other exactly. Halving the spread
+   chance on its own would have put bare lino under the line and left
+   holes in the store that could never burn — that mistake has been made
+   here twice already. Instead the chance comes down by about three and
+   the LIFETIME goes up by about three: the same fire eventually reaches
+   the same places, and takes three times as long to creep there. A cell
+   of bare floor now smoulders for the better part of three minutes.
+
+   This is why the fuel arrays are floats. At the old rate a lino cell
+   ate `max(1, ...)` of its fifty-five units a tic, and that floor — one
+   whole unit, because the array was integers — WAS the burn rate for
+   everything thin. Nothing under one could be expressed. */
 const BURN_FRAC   = 0.022;
+const burnFrac = f0 => BURN_FRAC * (f0 >= 280 ? 1 : 0.22 + 0.78 * (f0 / 280));
 
 /* What is left afterwards.
 
@@ -126,29 +147,54 @@ const EMBER_TICS = 150;
    it; past that it should read as a shop that HAS burnt. */
 const CHAR_AT = 0.5;
 
+/* And how much before it is not a room any more.
+
+   CHARRED IS A SURFACE AND GUTTED IS A STRUCTURE. A charred aisle is the
+   same aisle with everything in it blackened; a gutted one has holes
+   through the walls with the studs showing, a slab with ash and debris
+   on it instead of a floor, and NO ROOF — you are looking at the night
+   sky through where the ceiling was. So this is deliberately near the
+   end of a region's fuel rather than halfway: everything in it has to
+   have burnt, not just most of it, or the store starts losing its roof
+   while there is still stock on the shelves.
+
+   0.92 rather than 1.0 because a region's last few cells can be ones a
+   wall keeps the fire out of, and waiting for them would mean a store
+   that burns to 99% and never falls down. */
+const GUT_AT = 0.92;
+
 /* How hot a cell can get, from how much there is to burn. Thin fuel
    smoulders below a hundred and thirty; a full gondola goes to white. */
 const peakHeat = f0 => Math.max(112, Math.min(PEAK, 112 + f0 * 0.5));
 
-/* Chance out of 256, per fire tic, per direction, that a burning cell
+/* Chance out of 1024, per fire tic, per direction, that a burning cell
    lights its neighbour. Scales with the NEIGHBOUR's richness — fire
    moves toward what will take it — and the range is deliberately wide:
 
-     a gondola of stock   75   a front advances a cell every ~0.6s, so a
-                               full run goes up in about ten seconds
-     bare lino            13   a cell every ~3.4s, so crossing an aisle
-                               takes the better part of twenty
+     a gondola of stock  150   a front advances a cell every second or
+                               so, and a full run goes up in a minute
+     bare lino             7   a cell every half a minute, so crossing
+                               one aisle is minutes of watching it creep
 
-   Both are far above the percolation threshold, so both go eventually.
-   The difference between them is entirely PACE, which is what makes
-   watching a fire find its way across a walkway worth watching. */
-/* Halved from the first cut, and no further: at a quarter the footway
-   stopped carrying the fire along the parade and the neighbours never
-   caught, which is the invariant the map is written against. The rest
-   of the slowing — the user watched a torched aisle take the store in a
-   couple of minutes and said so twice — is the CLOCK above, doubled,
-   which slows every fire in the store without touching what percolates. */
-const spreadChance = f => Math.max(2, Math.min(70, f >> 3));
+   Both are above the percolation threshold, so both go eventually. The
+   difference between them is entirely PACE, and it is now a factor of
+   twenty rather than the factor of six a straight `f >> 3` gave: the
+   curve is a power law rather than a shift, which is what lets the floor
+   crawl without the stock going out.
+
+   OUT OF 1024, NOT DOOM'S 256, because at the pace asked for the floor's
+   chance is about seven in a thousand and three in 256 is four times
+   that. The quantisation, not the arithmetic, was the limit. */
+const SPREAD_DEN = 1024;
+const SPREAD_TABLE = (() => {
+  const t = new Uint16Array(1024);
+  for (let f = 0; f < t.length; f++)
+    t[f] = f <= 0 ? 0 : Math.max(4, Math.min(220, Math.round(150 * Math.pow(f / 300, 1.72))));
+  return t;
+})();
+const spreadChance = f => SPREAD_TABLE[Math.min(1023, Math.max(0, f | 0))];
+/* One roll in 1024 out of two eight-bit rolls. */
+const spreadRoll = n => (((pRandom() << 2) | (pRandom() & 3)) < n);
 
 export class FireSystem {
   constructor(game) {
@@ -161,8 +207,12 @@ export class FireSystem {
     this.rows = Math.ceil((maxy - this.originY) / CELL) + 2;
     const n = this.cols * this.rows;
 
-    this.fuel  = new Uint16Array(n);
-    this.fuel0 = new Uint16Array(n);
+    /* Floats, so a cell of bare lino can eat a third of a unit a tic —
+       see burnFrac. As integers the smallest expressible burn rate was
+       one unit a tic, and that was the floor under how slowly anything
+       could smoulder. */
+    this.fuel  = new Float32Array(n);
+    this.fuel0 = new Float32Array(n);
     this.heat  = new Uint8Array(n);
     this.ember = new Uint16Array(n);
     this.link  = new Uint8Array(n);      // 1 E, 2 N, 4 W, 8 S
@@ -179,6 +229,7 @@ export class FireSystem {
     this.sectorFuel = new Float64Array(this.game.level.sectors.length);
     this.sectorBurnt = new Float64Array(this.game.level.sectors.length);
     this.newlyCharred = [];
+    this.newlyGutted = [];
 
     this._seed();
     this._linkCells();
@@ -340,20 +391,26 @@ export class FireSystem {
            time either way */
         const peak = peakHeat(fuel0[i]);
         h = Math.min(peak, h + RISE);
-        const eat = Math.min(f, Math.max(1, Math.round(fuel0[i] * BURN_FRAC * (h / 255))));
-        fuel[i] = f - eat;
+        const eat = Math.min(f, fuel0[i] * burnFrac(fuel0[i]) * (h / 255));
+        fuel[i] = f - eat < 0.02 ? 0 : f - eat;
         this.burntFuel += eat;
         const si = this.sectorOf[i];
         if (si >= 0) {
           this.sectorBurnt[si] += eat;
           const sec = this.game.level.sectors[si];
-          if (!sec.charred && this.sectorFuel[si] > 0 &&
-              this.sectorBurnt[si] / this.sectorFuel[si] >= CHAR_AT) {
-            sec.charred = true;
-            this.newlyCharred.push(si);
+          if (this.sectorFuel[si] > 0) {
+            const gone = this.sectorBurnt[si] / this.sectorFuel[si];
+            if (!sec.charred && gone >= CHAR_AT) {
+              sec.charred = true;
+              this.newlyCharred.push(si);
+            }
+            if (!sec.gutted && gone >= GUT_AT) {
+              sec.gutted = true;
+              this.newlyGutted.push(si);
+            }
           }
         }
-        if (fuel[i] === 0) this.ember[i] = EMBER_TICS;
+        if (fuel[i] <= 0) this.ember[i] = EMBER_TICS;
       } else if (h > EMBER_HEAT) {
         h -= FALL;                                  // falling back to a glow
         if (h < EMBER_HEAT) h = EMBER_HEAT;
@@ -404,7 +461,7 @@ export class FireSystem {
     if (j < 0 || j >= this.heat.length) return;
     const f = this.fuel[j];
     if (f <= 0 || this.heat[j] > 0) return;
-    if (pChance(spreadChance(f))) out.push(j);
+    if (spreadRoll(spreadChance(f))) out.push(j);
   }
 
   /** Anything standing in a hot cell catches, and anything alive in one

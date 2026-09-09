@@ -179,10 +179,22 @@ const BAY_W = 186, BAY_D = 180, LANE_D = 160;
 const LOT_X0 = -1400, LOT_X1 = 5680;
 const CANOPY_Y = -136;                       // the outer edge of the canopy
 const FIRELANE_Y = CANOPY_Y - LANE_D;        // -296: nobody parks here
-/* THE ROAD. Two lanes along the front of the lot, between the fire lane
-   and the first row of bays, running out of the lot and on through the
-   wood in both directions until the forest ends — the way you drove in,
-   and the way everyone else is going to arrive. */
+/* TWO ROADS, and they are different things.
+
+   THE FRONTAGE LANE runs along the front of the lot between the fire
+   lane and the first row of bays. It is the store's own: you drive along
+   it to reach a row, and it stops at the ends of the lot.
+
+   THE TRAVERSAL ROAD is the public one and it is at the FAR end, past
+   the last row of bays, running the whole width of the lot and on
+   through the wood in both directions until the forest ends. It is the
+   way you drove in, the way everyone else is going to arrive, and the
+   only firebreak in the wood. Putting it there rather than against the
+   shopfront is what makes the lot read as a lot: a road, then a car
+   park, then a shop, in that order, which is the order they are in.
+
+   Both are 300 deep and drawn by the same five strips; only the y
+   changes. See `roadAcross`. */
 const ROAD_D = 300;
 const ROAD_Y1 = FIRELANE_Y, ROAD_Y0 = FIRELANE_Y - ROAD_D;
 
@@ -337,16 +349,16 @@ export function buildSellWrong() {
      floor is textured to the world grid and a 64-unit tile cannot hold
      one line across a 300-unit road; a strip a few units wide wearing a
      tile that is line all the way through can. */
-  const roadAcross = (x0, x1, tag, extra = {}) => {
-    const mid = (ROAD_Y0 + ROAD_Y1) / 2;
+  const roadAcross = (x0, x1, y0, y1, tag, extra = {}) => {
+    const mid = (y0 + y1) / 2;
     const strip = (a, b, tex, name) => rm.add(x0, a, x1, b, lot(name, { floorTex: tex, light: 0.56, ...extra }));
-    strip(ROAD_Y0, ROAD_Y0 + 6, 'ROADEDGE', `road edge, ${tag}`);
-    strip(ROAD_Y0 + 6, mid - 3, 'ROADTAR', `road, ${tag}`);
+    strip(y0, y0 + 6, 'ROADEDGE', `road edge, ${tag}`);
+    strip(y0 + 6, mid - 3, 'ROADTAR', `road, ${tag}`);
     strip(mid - 3, mid + 3, 'ROADLINE', `road centre, ${tag}`);
-    strip(mid + 3, ROAD_Y1 - 6, 'ROADTAR', `road, ${tag}`);
-    strip(ROAD_Y1 - 6, ROAD_Y1, 'ROADEDGE', `road edge, ${tag}`);
+    strip(mid + 3, y1 - 6, 'ROADTAR', `road, ${tag}`);
+    strip(y1 - 6, y1, 'ROADEDGE', `road edge, ${tag}`);
   };
-  roadAcross(LOT_X0, LOT_X1, 'in the lot');
+  roadAcross(LOT_X0, LOT_X1, ROAD_Y0, ROAD_Y1, 'the frontage lane');
 
   /* and then the rows, walking south */
   let y = ROAD_Y0;
@@ -367,8 +379,14 @@ export function buildSellWrong() {
       y -= BAY_D;
     }
   }
-  const LOT_Y0 = y - 460;
-  const VERGE_Y1 = y;
+  /* THE TRAVERSAL ROAD, where the bays stop. South of it the verge, the
+     pylon sign and the spot you are standing in when the game starts —
+     so the opening shot is across a road, over a car park, at a
+     supermarket, which is what arriving at one looks like. */
+  const THRU_Y1 = y, THRU_Y0 = y - ROAD_D;
+  roadAcross(LOT_X0, LOT_X1, THRU_Y0, THRU_Y1, 'across the lot');
+  const VERGE_Y1 = THRU_Y0;
+  const LOT_Y0 = VERGE_Y1 - 460;
 
   /* The pylon sign at the mouth of the car park.
 
@@ -677,15 +695,15 @@ export function buildSellWrong() {
   const BACK_Y = ANCHOR_Y1 + WALL;             // behind the anchor
   const OX0 = LOT_X0 - FOREST_REACH, OX1 = LOT_X1 + FOREST_REACH;
   const OY0 = LOT_Y0 - FOREST_REACH, OY1 = BACK_Y + FOREST_REACH;
-  woodRect(OX0, OY0, OX1, LOT_Y0, 'wood, the road side');
-  /* the road goes on through the wood on both sides, so the two side
-     strips are each split around it */
-  roadAcross(OX0, LOT_X0, 'west', { outside: true });
-  roadAcross(LOT_X1, OX1, 'east', { outside: true });
-  woodRect(OX0, LOT_Y0, LOT_X0, ROAD_Y0, 'wood, west, this side of the road');
-  woodRect(OX0, ROAD_Y1, LOT_X0, OY1, 'wood, west');
-  woodRect(LOT_X1, LOT_Y0, OX1, ROAD_Y0, 'wood, east, this side of the road');
-  woodRect(LOT_X1, ROAD_Y1, OX1, OY1, 'wood, east');
+  woodRect(OX0, OY0, OX1, LOT_Y0, 'wood, behind you');
+  /* the traversal road goes on through the wood on both sides, so the
+     two side strips are each split around it */
+  roadAcross(OX0, LOT_X0, THRU_Y0, THRU_Y1, 'west', { outside: true });
+  roadAcross(LOT_X1, OX1, THRU_Y0, THRU_Y1, 'east', { outside: true });
+  woodRect(OX0, LOT_Y0, LOT_X0, THRU_Y0, 'wood, west, this side of the road');
+  woodRect(OX0, THRU_Y1, LOT_X0, OY1, 'wood, west');
+  woodRect(LOT_X1, LOT_Y0, OX1, THRU_Y0, 'wood, east, this side of the road');
+  woodRect(LOT_X1, THRU_Y1, OX1, OY1, 'wood, east');
   woodRect(LOT_X0, CANOPY_Y, PARADE_X0 - 2 * WALL, MALL_Y1, 'wood, west flank');
   woodRect(PARADE_X1 + 2 * WALL, CANOPY_Y, LOT_X1, MALL_Y1, 'wood, east flank');
   woodRect(LOT_X0, MALL_Y1, ANCHOR_X0 - WALL, BACK_Y, 'wood, behind the west wing');
@@ -850,28 +868,36 @@ export function buildSellWrong() {
   }
 
   /* --- the crowd -----------------------------------------------------
+     CUSTOMERS ARE ON THE SALES FLOOR AND NOWHERE ELSE. Not the car park,
+     not the stockroom, not the loading dock, not the neighbouring units:
+     a shopper is somebody who is in the shop. Everything below goes
+     through `onSalesFloor`, which is the anchor's sales area inset from
+     its own walls — the stockroom starts at BOH_Y0 and the parade starts
+     outside ANCHOR_X0 — so a position that drifts out of it is dropped
+     rather than placed, and the smoke test holds every one of them
+     against the same rectangle afterwards.
+
      A supermarket at two in the morning is not empty, it is thin: a
-     handful down each aisle, more of them at the back where the night
-     shift and the people who shop at night both are, a queue at the
-     tills, and a scatter across the car park of people who have parked
-     and not got in yet. Nobody is placed by hand except the queue,
-     because tripling the floor area once already turned a hand-written
-     list into a bug hunt; everything else comes off the same geometry
-     the shelves and the bays came off, from a fixed seed, so the shop is
-     laid out the same way every time you load it.
+     handful down each aisle, more at the back, and a queue at the tills.
+     Nobody is placed by hand except the queue, because tripling the
+     floor area once already turned a hand-written list into a bug hunt;
+     everything else comes off the same geometry the shelves came off,
+     from a fixed seed, so the shop is laid out the same way every time.
 
      WHICH PERSON is chosen here rather than at spawn time for the same
      reason: two runs of the same map put the same seventeen people in
-     the same places, and a screenshot is a screenshot of something.
-
-     They are all one actor type. There are no easy ones and no hard
-     ones, because none of them is fighting you — the things that will
-     are on the road, later, in js/responders.js. */
+     the same places, and a screenshot is a screenshot of something. */
+  const SALES = { x0: ANCHOR_X0 + 60, y0: Y_MAT + 40, x1: ANCHOR_X1 - 60, y1: Y_BACKXEND - 40 };
+  const onSalesFloor = (x, yy) => x > SALES.x0 && x < SALES.x1 && yy > SALES.y0 && yy < SALES.y1;
   {
     let seed = 777;
     const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
     const who = () => Math.floor(rnd() * SHOPPERS);
-    const place = (x, yy) => mb.thing('SHOPPER', x, yy, rnd() * Math.PI * 2, { variant: who() });
+    let dropped = 0;
+    const place = (x, yy, angle) => {
+      if (!onSalesFloor(x, yy)) { dropped++; return null; }
+      return mb.thing('SHOPPER', x, yy, angle ?? rnd() * Math.PI * 2, { variant: who() });
+    };
 
     /* two or three per aisle, thinner across the front where you come in
        and thickest at the back — walking in should look survivable and
@@ -895,12 +921,9 @@ export function buildSellWrong() {
                            [900, 320], [2900, 320], [3550, 180]])
       place(x, yy);
 
-    /* the back of house, which at this hour is the busiest part of it */
-    for (const [x, yy] of [[400, 2900], [700, 3150], [1100, 3300], [1500, 2900],
-                           [2100, 3100], [2500, 2950], [2800, 3300],
-                           [3100, 3050], [3500, 2900], [3900, 3200],
-                           [600, 3350], [1900, 3350]])
-      place(x, yy);
+    /* the front end, in the space between the tills and the first run */
+    for (let i = 0; i < 10; i++)
+      place(600 + rnd() * 3000, Y_FRONTX - 90 - rnd() * 90);
 
     /* A QUEUE, which is the one thing worth placing by hand. Four people
        one behind the other at two of the tills, all facing the same way,
@@ -908,39 +931,9 @@ export function buildSellWrong() {
        people" before you have looked at any of them. */
     for (const tx of [1180, 2620])
       for (let i = 0; i < 4; i++)
-        mb.thing('SHOPPER', tx + (rnd() - 0.5) * 20, Y_TILLEND + 70 + i * 62,
-                 Math.PI / 2, { variant: who() });
+        place(tx + (rnd() - 0.5) * 20, Y_TILLEND + 70 + i * 62, Math.PI / 2);
 
-    /* two in each of the neighbouring units */
-    for (const b of bays) {
-      if (b.anchor || !b.in) continue;
-      const mid = (b.x0 + b.x1) / 2;
-      place(mid - 40, 240);
-      place(mid + 40, 520);
-    }
-
-    /* --- and outside -------------------------------------------------
-       Across the bays, between the parked cars, in ones and twos, and
-       thicker near the doors than out by the road: a car park empties
-       from the far end. They stand in the LANES rather than in the bays
-       wherever the bay is taken, since the cars are coming and standing
-       a shopper inside one would put them in a bonnet. */
-    bayRows.forEach((row, ri) => {
-      const cy = (row.y0 + row.y1) / 2;
-      const n = Math.floor((LOT_X1 - LOT_X0) / BAY_W);
-      const take = 0.20 - ri * 0.03;                  // emptier towards the road
-      for (let i = 0; i < n; i++) {
-        if (rnd() > take) continue;
-        const cx = LOT_X0 + (i + 0.5) * BAY_W;
-        place(cx + (rnd() - 0.5) * 40, row.y1 + 26 + rnd() * 20);
-      }
-    });
-    /* the pavement outside the doors, where the trolleys are */
-    for (let i = 0; i < 9; i++)
-      place(ENT_A0 - 520 + rnd() * 1500, -190 - rnd() * 150);
-    /* and a few who have got as far as the sign */
-    for (const [x, yy] of [[1180, -900], [1620, -1180], [2760, -820], [3180, -1320]])
-      place(x + (rnd() - 0.5) * 60, yy + (rnd() - 0.5) * 60);
+    if (dropped) console.warn(`${dropped} shoppers fell outside the sales floor and were dropped`);
   }
 
   const level = mb.build();
@@ -949,12 +942,15 @@ export function buildSellWrong() {
   level.carSlots = carSlots;
   /* the road, and where it leaves the map: whoever comes, comes from
      one of these two points */
-  level.road = { y0: ROAD_Y0, y1: ROAD_Y1 };
+  level.road = { y0: THRU_Y0, y1: THRU_Y1 };
   level.roadEnds = [
-    { x: OX0 + 240, y: (ROAD_Y0 + ROAD_Y1) / 2, heading: 0, side: 'west' },
-    { x: OX1 - 240, y: (ROAD_Y0 + ROAD_Y1) / 2, heading: Math.PI, side: 'east' },
+    { x: OX0 + 240, y: (THRU_Y0 + THRU_Y1) / 2, heading: 0, side: 'west' },
+    { x: OX1 - 240, y: (THRU_Y0 + THRU_Y1) / 2, heading: Math.PI, side: 'east' },
   ];
   level.title = 'SELLWRONG — SUPERSTORE';
+  /* Where a customer may stand. The crowd is placed through it and the
+     smoke test holds every one of them against it. */
+  level.salesFloor = SALES;
   /* the wood, for js/forest.js: where it is, and the hole in it */
   level.forestRects = forestRects;
   level.forestBounds = [OX0, OY0, OX1, OY1];

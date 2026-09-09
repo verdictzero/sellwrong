@@ -158,6 +158,12 @@ export class Giblets {
        if every piece flies off somewhere else. */
     this.splat(a.x, a.y, a.z);
 
+    /* AND EVERYBODY WHO SAW IT LEAVES. This is the loudest thing that
+       happens in the game and it happens to a person, so it clears a
+       much wider circle than the fire itself does: torch one at the
+       tills and the whole front end is running before the pieces land. */
+    g.scare?.(a.x, a.y, 900);
+
     for (let k = 0; k < GIB.count; k++) {
       const ang = (pRandom() / 255) * Math.PI * 2;
       const sp = GIB.speedMin + (pRandom() / 255) * (GIB.speedMax - GIB.speedMin);
@@ -249,18 +255,32 @@ export class Giblets {
    with people in it rather than a room with cardboard in it, and it
    costs two sines an actor a frame.
    ------------------------------------------------------------------ */
-export const SWAY = { lean: 1.3, bob: 0.7, rate: 0.055 };
+export const SWAY = {
+  lean: 1.3, bob: 0.7, rate: 0.055,
+  /* AND HARDER WHEN IT IS RUNNING. There is one drawing, so a running
+     shopper is a standing shopper that is moving — which on its own
+     reads as a cardboard cutout being dragged along the floor. Four
+     times the rate and three times the bob turns the same drawing into
+     something scurrying, and it costs the two sines it already cost. */
+  runRate: 4.0, runLean: 1.6, runBob: 3.0,
+};
 
+/* ONE object, reused. This is called once per shopper per frame and
+   allocating a hundred and forty little vectors a frame to throw away is
+   exactly the kind of garbage a fixed-tic loop does not want. The caller
+   reads it before calling again; Actor.render does. */
 const _sway = { dx: 0, dy: 0, dz: 0 };
 export function swayOf(actor, tics) {
   /* the phase, and the DIRECTION of the lean, both come off the actor's
      own id — so no two of them lean together and no two of them lean the
      same way, which is the whole of the trick */
-  const t = (tics + actor.id * 37) * SWAY.rate;
-  const lean = Math.sin(t) * SWAY.lean;
+  const run = actor.panic > 0;
+  const t = (tics + actor.id * 37) * SWAY.rate * (run ? SWAY.runRate : 1);
+  const lean = Math.sin(t) * SWAY.lean * (run ? SWAY.runLean : 1);
   _sway.dx = Math.cos(actor.id) * lean;
   _sway.dy = Math.sin(actor.id) * lean;
-  _sway.dz = Math.sin(t * 2 + actor.id) * SWAY.bob;
+  _sway.dz = Math.abs(Math.sin(t * 2 + actor.id)) * SWAY.bob * (run ? SWAY.runBob : 1)
+           - (run ? SWAY.bob : 0);
   return _sway;
 }
 

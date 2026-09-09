@@ -42,15 +42,14 @@ pair grass_6_128         grass
 cp "$T/TEX_forest_ground_01_albedo_128.png" "$OUT/ground.png"
 cp "$T/TEX_crater_char_albedo_128.png"      "$OUT/ground_burnt.png"
 
-# And the fire itself: four seamlessly looping twenty-frame strips
-# (tools/TOOL_gen_flame_loop.py there), bottom-anchored with a round
-# base, in the same eight ember colours the plants burn in. The game
-# draws every fire — the store's, the wood's, the gun's — with these.
-F=assets/fire
-mkdir -p "$F"
-for k in flame blaze ember smoke; do
-  cp "$SRC/sprites/fire/SPRITE_fire_${k}_20.png" "$F/$k.png"
-done
+# The fire that goes with it does NOT come over by copying, because it
+# needs reshaping before it is any use here: golf's flames are drawn
+# standing on the ground and their bottom row is a hard flat edge, which
+# is invisible on the ground and is the only thing you can see when the
+# flame is sitting on top of a shelf. tools/prep-fire.mjs gives them a
+# domed foot. Run it with the same checkout:
+#
+#   node tools/prep-fire.mjs "$SRC"
 
 printf 'assets/forest: '
 ls "$OUT" | wc -l | tr -d ' '
