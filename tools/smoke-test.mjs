@@ -1397,6 +1397,40 @@ section('the fleet');
   check('and all four civilian types are represented',
     new Set(V.all.map(v => v.def.id)).size === CIVILIAN.length);
 
+  /* AND THEY ARE IN THE BAYS, not on the lines.
+
+     The bay lines are not geometry — they are one repeat of the BAYROW
+     texture, 186 by 180 with the line down its left edge, so where the
+     repeat starts is where the bays start. Tiled from the world origin
+     it started five units off the middle of every bay in the lot, and
+     every one of these cars was parked ON a line instead of between two
+     of them. The row now carries its own texture origin, which is what
+     makes the arithmetic the parking already used come out true, so this
+     measures the two against each other: how far across one repeat of
+     the bay texture each car is standing. Half way, or it is on a line. */
+  {
+    const bay = gm.textures.get('BAYROW');
+    const mod = (v, n) => ((v % n) + n) % n;
+    const across = [];
+    for (const v of V.all) {
+      const sec = level.sectorAt(v.x, v.y);
+      across.push(sec && sec.floorAnchor && sec.floorTex === 'BAYROW'
+        ? mod(v.x - sec.floorAnchor[0], bay.w) : -1);
+    }
+    const centred = across.filter(t => Math.abs(t - bay.w / 2) < 1).length;
+    /* three of them are abandoned at an angle across the lot, which is
+       the map saying everybody left at once; the rest are parked */
+    note('cars across their bay', `${centred} of ${V.count} dead centre of one`);
+    check('every parked car is in the middle of a bay rather than on a line',
+      centred >= V.count - 3,
+      across.filter(t => Math.abs(t - bay.w / 2) >= 1).map(t => t.toFixed(0)).join(', '));
+    check('and the bay rows are exactly one repeat of the bay texture deep',
+      level.sectors.filter(s => s.floorTex === 'BAYROW').every(s => {
+        const ys = s.poly.map(p => p[1]);
+        return Math.abs((Math.max(...ys) - Math.min(...ys)) - bay.h) < 1e-6;
+      }));
+  }
+
   /* ONE MESH, not seventy-seven. */
   const carMeshes = scene2.children.filter(o => o.name === 'cars');
   check('the whole car park is one mesh', carMeshes.length === 1);

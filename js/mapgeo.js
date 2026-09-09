@@ -196,6 +196,10 @@ function addFlats(set, level, s, bank) {
   if (s.floorTex && s.floorTex !== 'NONE') {
     const t = bank.get(s.floorTex);
     const b = set.get(s.floorTex);
+    /* Floors tile from the world origin unless the sector says
+       otherwise; see floorAnchor in js/level.js for the one that does. */
+    const ax = s.floorAnchor ? s.floorAnchor[0] : 0;
+    const ay = s.floorAnchor ? s.floorAnchor[1] : 0;
     for (const [a, bb, c] of tris) {
       /* Reversed relative to the map winding: the ring is
          counter-clockwise in map space, and the map's y becomes the
@@ -204,9 +208,9 @@ function addFlats(set, level, s, bank) {
          an hour debugging. */
       const p0 = pts[a], p1 = pts[bb], p2 = pts[c];
       b.tri(
-        p0.x, s.floor, -p0.y, p0.x / t.w, -p0.y / t.h,
-        p1.x, s.floor, -p1.y, p1.x / t.w, -p1.y / t.h,
-        p2.x, s.floor, -p2.y, p2.x / t.w, -p2.y / t.h,
+        p0.x, s.floor, -p0.y, (p0.x - ax) / t.w, -(p0.y - ay) / t.h,
+        p1.x, s.floor, -p1.y, (p1.x - ax) / t.w, -(p1.y - ay) / t.h,
+        p2.x, s.floor, -p2.y, (p2.x - ax) / t.w, -(p2.y - ay) / t.h,
         s.light, skyOf(s), charOf(s));
     }
   }

@@ -375,7 +375,16 @@ export function buildSellWrong() {
          cannot know — so the row records which way its cars point and
          the parking is done from that. */
       bayRows.push({ y0, y1: y, facing: i === 0 ? -Math.PI / 2 : Math.PI / 2 });
-      rm.add(LOT_X0, y0, LOT_X1, y, lot('bays', { floorTex: 'BAYROW' }));
+      /* ANCHORED TO THE ROW, not to the world. One repeat of BAYROW is
+         one bay — 186 by 180, line down the left edge — so where the
+         repeat starts is where the bays start. Tiled from the world
+         origin it landed five units off the middle of every bay in the
+         lot, and seventy-seven cars parked on the line rather than
+         between two of them. With the row's own corner as the origin,
+         bay i is LOT_X0 + i * BAY_W across and the row deep, which is
+         exactly what the parking below already assumed. */
+      rm.add(LOT_X0, y0, LOT_X1, y,
+        lot('bays', { floorTex: 'BAYROW', floorAnchor: [LOT_X0, y] }));
       y -= BAY_D;
     }
   }

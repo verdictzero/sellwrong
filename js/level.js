@@ -131,6 +131,16 @@ export class MapBuilder {
          shooting one out actually takes light away. */
       ambient: props.ambient ?? props.light ?? 0.75,
       floorTex: props.floorTex ?? 'FLAT',
+      /* WHERE THE FLOOR TEXTURE STARTS. Normally nowhere: a floor tiles
+         from the world origin, which is right for tarmac and lino and
+         anything else with no features to line up. A texture whose
+         REPEAT MEANS SOMETHING is different — BAYROW is one parking bay,
+         186 by 180, with the line down its left edge — and tiling that
+         from the origin puts the bay lines wherever world zero happens
+         to fall, which was five units off the middle of every bay in the
+         car park. Give the sector its own origin and the bays start
+         where the row starts. */
+      floorAnchor: props.floorAnchor ?? null,
       ceilTex: props.ceilTex ?? 'FLAT',
       poly: pts,
       vidx: pts.map(p => this.vertex(p[0], p[1])),

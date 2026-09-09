@@ -69,7 +69,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         491 checks, no install and no browser
+  the smoke test         493 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -1000,6 +1000,22 @@ that takes out six cars rebuilds once and nothing is ever drawn twice in
 one frame. The whole car park costs about two hundredths of a millisecond
 a tic, against a budget of 28.6.
 
+AND THEY ARE IN THE BAYS, WHICH TOOK A THIRD THING. The bay lines are
+not geometry: the whole car park is a dozen polygons because one repeat
+of the BAYROW texture IS one bay — 186 across, 180 deep, with the line
+down its left edge — so a row of forty bays is one sector rather than
+forty. But a floor tiles from the WORLD ORIGIN, which is right for tarmac
+and lino and anything else with no feature to line up, and wrong for a
+texture whose repeat means something: the lot starts at x = -1400, which
+is not a multiple of 186, so the painted lines fell five units from the
+middle of every bay and all seventy-seven cars were parked ON a line
+rather than between two of them. A sector can now say where its floor
+texture starts, and the bay rows say their own corner — which does not
+move a single car, it makes the arithmetic the parking already used come
+out true. The test measures the two against each other: how far across
+one repeat of the bay texture each car is standing, which had better be
+half way.
+
 ONLY CARS A SHOPPER MIGHT OWN. Four of the six are in the lot; the riot
 van and the APC are measured, packed into the same atlas and parked
 nowhere, waiting for js/responders.js to drive them up the road.
@@ -1081,7 +1097,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-491 checks. Every one of them earns its place by having caught something
+493 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -1101,6 +1117,9 @@ that had already reached a screenshot:
     park is a black shape either way. It is decided now by holding each
     triangle's winding against the normal the builder declared for it,
     which needs no air and no guessing
+  seventy-seven cars parked on the bay lines instead of between them,
+    because the texture that draws those lines tiles from the world
+    origin and the car park does not start there
   a white van that came out pale green, because a green screen throws
     green light on what stands in front of it and the eye only forgives
     that while the green field is still there to compare against
