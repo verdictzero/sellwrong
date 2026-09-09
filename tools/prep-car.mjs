@@ -143,6 +143,8 @@ const PAD = 1;           // gutter around each view in the atlas
 const ATLAS_W = 512;
 const PROFILE_TOL = 0.008; // an outline point closer than this to the line through its neighbours goes, in lengths
 const PROFILE_MAX = 24;    // and at most this many points survive
+const LEDGE_LEN = 0.035;   // an edge shorter than this, in lengths, that interrupts a line is a ledge
+const LEDGE_TURN = Math.PI / 4;   // and a line is two neighbours within this of each other
 const BLOB_MIN = 0.03;   // a piece this much of the biggest one is part of the vehicle
 const WHEEL_TOL = 0.018; // how far below the sill counts as a wheel
 /* How far the three views may disagree about the width before a sheet
@@ -621,6 +623,32 @@ function measure(spec) {
   let tol = PROFILE_TOL * LEN, poly = halves(tol);
   while (poly.length > PROFILE_MAX + 1) { tol *= 1.3; poly = halves(tol); }
   poly.pop();                                              // the closing point is the first one again
+  /* LEDGES GO. A drawing has a rubber seal where the hatch glass meets
+     the roof and a lip where the windscreen meets it, three pixels
+     tall, and the simplifier keeps them as a short vertical step in an
+     otherwise continuous line — which the model then faithfully builds
+     as a little shelf at each end of the roof. A short edge whose two
+     neighbours run within LEDGE_TURN of each other is interrupting a
+     line, not turning a corner, so both its ends go and its midpoint
+     stays; the nose and the tail keep their extreme points whatever
+     happens. Repeated until nothing qualifies. */
+  {
+    const LEDGE = LEDGE_LEN * LEN;
+    for (let pass = 0; pass < 8; pass++) {
+      let xs = poly.map(p => p[0]), xMin = Math.min(...xs), xMax = Math.max(...xs), done = true;
+      for (let i = 0; i < poly.length; i++) {
+        const n = poly.length, a = poly[(i + n - 1) % n], b = poly[i], c = poly[(i + 1) % n], d = poly[(i + 2) % n];
+        if (Math.hypot(c[0] - b[0], c[1] - b[1]) >= LEDGE) continue;
+        if (b[0] === xMin || b[0] === xMax || c[0] === xMin || c[0] === xMax) continue;
+        const t1 = Math.atan2(b[1] - a[1], b[0] - a[0]), t2 = Math.atan2(d[1] - c[1], d[0] - c[0]);
+        let turn = Math.abs(t2 - t1); if (turn > Math.PI) turn = 2 * Math.PI - turn;
+        if (turn > LEDGE_TURN) continue;
+        poly.splice(i, 2, [(b[0] + c[0]) / 2, (b[1] + c[1]) / 2]);
+        done = false; break;
+      }
+      if (done) break;
+    }
+  }
   /* the two ends of the walk are both on the sill; nothing else should be */
   const profile = poly.map(([px, z]) => ({
     x: round(mx(px)), z: round(z / LEN),

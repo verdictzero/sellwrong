@@ -869,9 +869,14 @@ above the sill is traced round its edge, simplified to a dozen or so
 points (Douglas-Peucker: throw away every point within a percent of the
 length of the straight line through its neighbours), and each point is
 given how far the vehicle reaches either side of its middle at that
-height, off the FRONT view. Push the outline out to +half on the left and
--half on the right, join the two copies edge for edge round the outside
-and cap them, and that is the body: one strip of quads and two fans, a
+height, off the FRONT view. Ledges go too: a drawing has a rubber seal
+where the hatch glass meets the roof and a lip where the windscreen
+does, three pixels tall, and a simplifier keeps them as a short step in
+an otherwise continuous line — so a short edge whose two neighbours run
+within forty-five degrees of each other is interrupting a line, not
+turning a corner, and it goes. Push the outline out to +half on the left
+and -half on the right, join the two copies edge for edge round the
+outside and cap them, and that is the body: one strip of quads and two fans, a
 closed solid whose cross-section follows the front view. A windscreen is
 a slope, a bonnet is a slope, the roof narrows the way a roof does, a
 pickup keeps the step down to its bed, and it is what makes a light bar a
