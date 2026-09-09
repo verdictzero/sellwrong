@@ -1073,7 +1073,7 @@ section('the fleet');
   const { fileURLToPath } = await import('node:url');
   const root = fileURLToPath(new URL('..', import.meta.url));
 
-  /* --- six sheets, six vehicles ------------------------------------- */
+  /* --- seven sheets, seven vehicles ------------------------------------- */
   note('the fleet', VEHICLE_IDS.map(id => `${id} (${VEHICLES[id].use})`).join(', '));
   check('every vehicle in the index is in the fleet',
     VEHICLE_IDS.length === Object.keys(VEHICLES).length &&

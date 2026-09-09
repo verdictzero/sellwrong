@@ -24,9 +24,9 @@ somewhere else: the people, the trees, the sky, and the gun.
   icon.png              and what it draws there — node tools/bake-icons.mjs
   vendor/three.module.js  three r160, local so the game runs off a memory stick
   js/                   the game
-  art/                  the logo, the old sprite weapon and the six
+  art/                  the logo, the old sprite weapon and the seven
                           four-view vehicle sheets, as PNGs
-  assets/cars/          the fleet: twenty-four views of six vehicles, packed
+  assets/cars/          the fleet: twenty-eight views of seven vehicles, packed
                           into one sheet
   assets/people/        the crowd, and what is left of one: seventeen
                           shoppers, eleven pieces, three splats, a fireball
@@ -39,7 +39,7 @@ somewhere else: the people, the trees, the sky, and the gun.
   tools/prep-forest.sh  copies the wood's art over from the golf project
   tools/bake-sky.mjs    the sky: 8k panorama to 1024 palette pixels
   tools/prep-model.mjs  strips the marker spheres out of a .glb, keeps their positions
-  tools/prep-car.mjs    measures six vehicles off their sheets and packs them
+  tools/prep-car.mjs    measures seven vehicles off their sheets and packs them
   tools/build-site.sh   assembles public/ — what actually gets published
   tools/bake-icons.mjs  the home-screen icon, out of the game's own fire
   tools/smoke-test.mjs  node tools/smoke-test.mjs — no install, no browser
@@ -69,7 +69,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         517 checks, no install and no browser
+  the smoke test         537 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -841,10 +841,10 @@ into a flickering still. It is resampled to twenty-six because a frame is a
 letter and the letters stop at Z.
 
 
-A CAR IS A PICTURE OF A CAR, FOUR TIMES. What arrived is six images: a
-hatchback, a panel van, a pickup, a custom van with an eagle down its
-flank, a riot van and a tracked APC, each drawn front, rear, side and
-plan on a green field. What is in the car park is a few boxes each with
+A CAR IS A PICTURE OF A CAR, FOUR TIMES. What arrived is seven images: a
+hatchback, two white vans a model year apart, a pickup, a custom van with
+an eagle down its flank, a riot van and a tracked APC, each drawn front,
+rear, side and plan on a green field. What is in the car park is a few boxes each with
 those images projected back onto them. tools/prep-car.mjs does the
 measuring, js/car.js does the building, js/vehicles.js does everything
 that happens afterwards, and js/car-data.js is what one hands the other.
@@ -855,7 +855,8 @@ silhouette is the vehicle's length by its height, the front view's is its
 width by its height, the plan view's is its length by its width. Every pair
 shares an axis with two others — three of the views claim a width — so each
 sheet is OVER-DETERMINED and can be checked against itself. The riot van
-agrees to one per cent; across all six the spread is 1, 2.3, 3, 4.6, 5 and
+agrees to one per cent; across all seven the spread is 1, 2.3, 2.4, 3,
+4.6, 5 and
 — the pickup, whose side view draws it taller for its length than its own
 head-on views do — 11.5. So one per cent was luck, and the check is there
 to catch a sheet that is NOT ONE VEHICLE (a swapped side and plan shows up
@@ -897,14 +898,14 @@ hang below it — and sit a fraction inside the flanks, because two faces
 at exactly the same depth is a tie in the depth buffer, and a tie is the
 flicker the trees used to have.
 
-A THIRD OF THE SHEETS FACE THE OTHER WAY. Two of the six side views were
-drawn nose to the right and four nose to the left, and a tool that
+SOME OF THE SHEETS FACE THE OTHER WAY. Two of the seven side views were
+drawn nose to the right and five nose to the left, and a tool that
 assumed one of those built a third of the fleet back to front: bonnet at
 the tail, and the front view painted over it. Nothing in the arithmetic
 can tell which way a picture of a van faces, so it is declared per sheet,
 and a nose-right side view is flipped as it goes into the atlas — from
 js/car.js onward every side view faces left and there is one rule. (All
-six plan views face left. The head-on views have no way to face.)
+seven plan views face left. The head-on views have no way to face.)
 
 AND THE DECLARATION WAS WRONG ONCE, which is the reason it is checked
 against the drawing now. The hatchback was read as nose-right off a
@@ -993,10 +994,12 @@ chromatic: key you can reach from outside the vehicle is background, key
 you cannot reach is glass. One flood fill from the border separates them.
 Background gets the nearest body colour bled into it, so a face that
 overhangs the silhouette by a pixel lands on paint rather than on a green
-screen; glass gets the same colour, darkened. The colour is taken from two
+screen; glass is painted dark dark grey, a shade off black. (It used to
+get the body colour, darkened, and a red car with dark red windows read
+as a car with no windows at all.) The bled colour is taken from two
 pixels IN from the edge, because every edge in a JPEG is fringed and
 against a green screen the fringe is green — filled from the pixel next
-door, a windscreen slit comes out dark green.
+door, an overhang comes out dark green.
 That fill is a STOPGAP and the tool says how much of each view it covers
 ("see-through glass, painted dark"): a fifth of the hatchback's side view,
 an eighth of the pickup's front. Nothing about a vehicle is drawn with
@@ -1157,7 +1160,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-517 checks. Every one of them earns its place by having caught something
+537 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -1277,15 +1280,16 @@ WHAT IS NOT DONE
   a shopper is drawn from one angle, so a crowd seen from the side is a
     crowd all facing you. At Doom's sprite scale in a dark shop this
     reads; in daylight it would not
-  a vehicle is four kinds of vehicle. Every one of the seventy-seven
-    bays is filled, but from four sheets, so the same hatchback is in
-    the lot thirty-one times and only its heading is different — no
+  a vehicle is five kinds of vehicle, two of them white vans. Every one
+    of the seventy-seven bays is filled, but from five sheets, so the
+    same hatchback is in the lot twenty times and only its heading is
+    different — no
     colour variation, no dents, nothing that would break the repeat.
     The atlas has room and the tool takes a sheet a line
   the windows are the renderer's, not the game's. The four civilian
     sheets were rendered with see-through glass, so a windscreen shows
     the seats and, past them, the green screen; the tool paints the
-    green as dark glass and leaves the seats. There is no alpha anywhere
+    green near-black and leaves the seats. There is no alpha anywhere
     in a vehicle, but the look wants sheets rendered with opaque glass,
     which drop straight in
   a wrecked car never cools past smoking, and never goes away. The

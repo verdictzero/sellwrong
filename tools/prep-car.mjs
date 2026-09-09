@@ -58,10 +58,15 @@
    A flood fill from the border separates them in one pass. Background
    gets the nearest body colour bled into it, so a face that overhangs
    the silhouette by a pixel picks up paint rather than chroma key.
-   Glass gets the same bled colour, darkened. (The flood runs against the
-   OPENED blob, not the raw pixels: those stray lines over the plan view
-   enclose little strips of green between them, and against the raw
-   pixels every one of them would have come out as a window.)
+   Glass is painted dark dark grey, a shade off black (GLASS). It used to
+   get the body colour, darkened, and a red car with dark red windows
+   read as a car with no windows at all. (The flood that finds the
+   BACKGROUND runs against the opened blob, not the raw pixels: those
+   stray lines over the plan view enclose little strips of green between
+   them, and against the raw pixels every one of them would have been
+   inside the vehicle. The flood that finds the GLASS runs against the
+   raw paint, because the opening erodes a thin pillar to nothing and
+   then a side window is background — see view() below.)
 
    THE SHAPE IS THE SIDE VIEW'S OWN OUTLINE, used as it is: the silhouette
    above the sill as one polygon, simplified to a dozen or so points, and
@@ -103,14 +108,15 @@ import { readPNG, writePNG } from './png-read.mjs';
 const FLEET = [
   { id: 'hatchback', name: 'Hatchback',  file: 'art/hatchback.png', metres: 3.70, use: 'civil',    wheels: 2, nose: 'left' },
   { id: 'van',       name: 'Panel van',  file: 'art/van.png',       metres: 5.45, use: 'civil',    wheels: 2, nose: 'right' },
+  { id: 'van2',      name: 'Work van',   file: 'art/van2.png',      metres: 5.45, use: 'civil',    wheels: 2, nose: 'left' },
   { id: 'pickup',    name: 'Pickup',     file: 'art/pickup.png',    metres: 5.20, use: 'civil',    wheels: 2, nose: 'left' },
   { id: 'muralvan',  name: 'Custom van', file: 'art/muralvan.png',  metres: 5.45, use: 'civil',    wheels: 2, nose: 'right' },
   { id: 'riotvan',   name: 'Riot van',   file: 'art/riotvan.png',   metres: 5.60, use: 'police',   wheels: 2, nose: 'left' },
   { id: 'apc',       name: 'APC',        file: 'art/apc.png',       metres: 6.50, use: 'military', wheels: 0, nose: 'left' },
 ];
 /* `nose` is which way the SIDE VIEW faces, and it is declared because
-   nothing in the arithmetic can tell: two of these six were drawn nose
-   to the right and four nose to the left, and a tool that assumed one
+   nothing in the arithmetic can tell: two of these seven were drawn nose
+   to the right and five nose to the left, and a tool that assumed one
    of those built a third of the fleet back to front — the bonnet at the
    tail, and the front view painted over it. The plan views all face
    left. A nose-right side view is flipped as it goes into the atlas, so
@@ -138,7 +144,7 @@ const OUT_JS = 'js/car-data.js';
    is fringed. */
 const KEY = 28;
 const OPEN = 2;          // radius of the measuring opening: kills anything under 5px
-const GLASS = 0.42;      // how much of the bled body colour glass keeps
+const GLASS = [24, 26, 30]; // what a see-through window is painted: dark dark grey, near black
 const PAD = 1;           // gutter around each view in the atlas
 const ATLAS_W = 512;
 const PROFILE_TOL = 0.012; // an outline point closer than this to the line through its neighbours goes, in lengths
@@ -150,8 +156,8 @@ const BLOB_MIN = 0.03;   // a piece this much of the biggest one is part of the 
 const WHEEL_TOL = 0.018; // how far below the sill counts as a wheel
 /* How far the three views may disagree about the width before a sheet
    is thrown out. The riot van manages one percent, and on the strength
-   of that this was 8; across six sheets the real spread is 1, 2.3, 3,
-   4.6, 5 and — the pickup, whose side view draws it taller for its
+   of that this was 8; across seven sheets the real spread is 1, 2.3, 2.4,
+   3, 4.6, 5 and — the pickup, whose side view draws it taller for its
    length than its own head-on views do — 11.5. So one percent was luck.
    The check is here to catch a sheet that is NOT ONE VEHICLE: a swapped
    side and plan shows up as twenty-odd percent and a mis-cut sheet as
@@ -786,11 +792,11 @@ function measure(spec) {
     for (let i = 0; i < n; i++) {
       const s = src[i] < 0 ? i : src[i];
       const sx = cell.x + (s % w), sy = cell.y + ((s / w) | 0), o = (sy * SW + sx) * 4;
-      const k = glass[i] ? GLASS : 1;
+      if (glass[i]) { rgb[i * 3] = GLASS[0]; rgb[i * 3 + 1] = GLASS[1]; rgb[i * 3 + 2] = GLASS[2]; continue; }
       const R = SD[o], G = SD[o + 1], B = SD[o + 2];
-      rgb[i * 3] = R * k;
-      rgb[i * 3 + 1] = Math.min(G, Math.max(R, B)) * k;
-      rgb[i * 3 + 2] = B * k;
+      rgb[i * 3] = R;
+      rgb[i * 3 + 1] = Math.min(G, Math.max(R, B));
+      rgb[i * 3 + 2] = B;
     }
     return rgb;
   }
