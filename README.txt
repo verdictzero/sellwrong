@@ -69,7 +69,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         570 checks, no install and no browser
+  the smoke test         574 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -258,6 +258,53 @@ where they were, thirteen pieces of them thrown sixty or seventy units on
 fire, and a little heat in the floor wherever each lands. Torch the queue
 at the tills and you have not started one fire, you have started nine, in
 a fan, in the part of the shop with the most cardboard in it.
+
+THERE ARE FOUR HUNDRED AND SIXTY OF THEM, at the user's request, up from
+ninety-two. Ninety-two was a supermarket at two in the morning; this is a
+different hour of a different day. The multiplier is one constant in
+js/maps/sellwrong.js and every count beside it is the count the old shop
+had, so putting it back to 1 puts the old shop back.
+
+MULTIPLYING A CROWD IS NOT THE SAME PROBLEM AS PLACING ONE, and it went
+wrong three ways first.
+
+Random placement stops working. Three people dropped into a 560-deep
+aisle land apart because there is nowhere else to land; ten do not. So
+every run of people is stratified — each one owns a slice of the run and
+is dropped inside it — and every placement has to clear 54 units of
+everybody already standing, with retries if it does not.
+
+A shopper is a DISC, and every version of the test that treated one as a
+point put somebody somewhere they could never leave. The sales floor is a
+rectangle, so it cannot tell an aisle from the gondola beside it. The
+sector under the middle of somebody is better and still not enough:
+eighteen units of shopper flush against the side of a till is a body half
+inside the till, and the move check then refuses all eight directions for
+the rest of the level. Two more were standing inside a crate of stock,
+because the crates go down before the crowd does. So the disc is tested
+against three things — the sector it is in, every rectangle that is not
+shop floor, and everything solid already placed.
+
+And five times the old shape does not fit. The old shape was almost all
+aisle, and an aisle is 160 wide: five times three people in one is a
+queue nobody can get out of, and the flee test caught exactly that — a
+shopper beside a fire that shuffled twenty-four units in two and a half
+seconds because it was walled in by its neighbours. The extra people go
+where a busy shop actually puts them: the two cross-aisles in the middle
+of the runs, the front cross-aisle, the mat inside the doors and the
+lanes at the tills, all of which had nobody on them at all and all of
+which are wider than an aisle.
+
+IT IS NOT A FREE KNOB. The cost of a crowd is not the crowd, it is the
+panicking: an actor deciding where to step asks every other solid actor
+whether it is in the way, so the work goes up with the SQUARE of how many
+are running. Measured with no renderer in the way, against a 35 Hz tic —
+a quiet shop is 0.03 ms a tic at ninety-two people and 0.06 at four
+hundred and sixty; five fires going with a third of the shop running is
+0.21 ms at ninety-two and 2.0 at four hundred and sixty. Ten times the
+work for five times the people, and still seven per cent of a tic. There
+is room above this and there is not unlimited room: another doubling
+wants a grid over the actors rather than a scan of them.
 
 The car park has no fuel at all and never burns, which makes it the safe
 room: the one place you can stand and watch what you have done.
@@ -1252,7 +1299,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-570 checks. Every one of them earns its place by having caught something
+574 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -1347,6 +1394,19 @@ that had already reached a screenshot:
     customer does. The map places the crowd through one predicate and
     exports the rectangle it used; the check holds every one of them
     against it from the other side
+  two customers at the same coordinate, which is one customer with a
+    shadow and, worse, two who can never move again: the move check
+    refuses any step that ends inside somebody, so a pair placed already
+    touching is a pair welded to the floor. The check measures the
+    closest two in the shop and demands they be further apart than two
+    shoppers are wide
+  and a customer who is not overlapping anybody and still cannot move,
+    which is not the same statement: thirty-six apart is not touching and
+    is still nowhere to go, because a step is sixteen. The check asks
+    every one of them for a step it could take
+  a customer standing on top of a till, a gondola or the deli counter,
+    found by testing the sector under them rather than the rectangle
+    round the shop
   a burnt-out store with no ceiling anywhere, because the first gutting
     opened every region to the sky. The check now demands BOTH — some of
     the roof fallen in and most of it still up — since either alone is a

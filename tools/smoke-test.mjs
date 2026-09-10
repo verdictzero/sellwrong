@@ -1002,6 +1002,50 @@ section('the crowd');
   check('they are solid, shootable and they burn',
     crowd.every(a => a.solid && a.shootable && a.flammable));
 
+  /* --- and there is room for all of them ---
+     Three things go wrong when a crowd is multiplied, and all three are
+     invisible in a screenshot taken from the wrong end of an aisle.
+
+     NOBODY OVERLAPS. Two shoppers at one coordinate are one shopper with
+     a shadow, and worse than that they are two shoppers who can never
+     move again: `canStandAt` refuses any step that ends inside somebody,
+     so a pair placed already touching is a pair welded to the floor. The
+     first cut of the bigger crowd spaced them 34 apart, and a shopper is
+     18 in the radius. */
+  const R2 = (2 * crowd[0].radius) ** 2;
+  let closest = Infinity, pair = '';
+  for (let i = 0; i < crowd.length; i++)
+    for (let j = i + 1; j < crowd.length; j++) {
+      const d2 = (crowd[i].x - crowd[j].x) ** 2 + (crowd[i].y - crowd[j].y) ** 2;
+      if (d2 < closest) { closest = d2; pair = `${crowd[i].x | 0},${crowd[i].y | 0}`; }
+    }
+  note('closest two shoppers', `${Math.sqrt(closest).toFixed(0)} apart`);
+  check('no two shoppers are standing inside each other', closest > R2,
+    `${Math.sqrt(closest).toFixed(0)} apart at ${pair}`);
+  /* AND EVERY ONE OF THEM CAN LEAVE. Not the same statement: 36 apart is
+     not overlapping and is still nowhere to go, because a step is 16. */
+  const canMove = a => {
+    for (let d = 0; d < 8; d++) {
+      const ang = d * Math.PI / 4;
+      if (a.canStandAt(a.x + Math.cos(ang) * a.speed, a.y + Math.sin(ang) * a.speed)) return true;
+    }
+    return false;
+  };
+  const stuck = crowd.filter(a => !canMove(a));
+  check('and every one of them has a step it can take', stuck.length === 0,
+    `${crowd.length - stuck.length} of ${crowd.length} can; ` +
+    stuck.slice(0, 3).map(a => `${a.x | 0},${a.y | 0}`).join(' '));
+  /* AND NOBODY IS ON THE FURNITURE. The sales floor is a rectangle and a
+     rectangle cannot tell an aisle from the gondola beside it, so this
+     is the sector rather than the box: a shopper whose floor is not the
+     shop floor is standing on the shelves, the deli counter or a till. */
+  const aloft = crowd.filter(a => (a.sector?.floor ?? -1) !== MAP.FLOOR_WALK);
+  check('nobody is standing on the shelves, the counters or a till',
+    aloft.length === 0,
+    aloft.slice(0, 4).map(a => `${a.sector?.name} at ${a.x | 0},${a.y | 0}`).join('; '));
+  check('the shop is five times as busy as it was', crowd.length > 400,
+    `${crowd.length}, from 92`);
+
   /* --- one tic of the stream is more than a person --- */
   const FL2 = await import('../js/flame.js');
   check('one tic of the flame is over a shopper twice',

@@ -56,6 +56,7 @@
 import { MapBuilder } from '../level.js';
 import { RectMap } from './rectmap.js';
 import { SHOPPERS } from '../people.js';
+import { ACTORS } from '../states.js';   // to ask what is solid before standing next to it
 
 /* --- the one rule ------------------------------------------------- */
 const WALL = 16;                  // the void between two rooms IS the wall
@@ -74,6 +75,11 @@ export const ANCHOR_Y0 = 0,   ANCHOR_Y1 = 3400;
 
 /* the gondola field: twelve columns of 120 with 160 between them */
 const NCOL = 12, GOND_W = 120, AISLE_W = 160, GX0 = 480;
+/* The front end. NTILL lives up here rather than in the block that lays
+   the tills out because the crowd wants it too: there is one queue per
+   till, so eight is eight in both places or it is a queue at a lane that
+   has no till in it. */
+const TILL_W = 180, TILL_PITCH = 400, NTILL = 8;
 const colX = k => GX0 + k * (GOND_W + AISLE_W);
 const GX1 = colX(NCOL - 1) + GOND_W;                 // 3680, the east edge
 /* The middle of the aisle between column k and column k+1. Everything
@@ -109,7 +115,8 @@ const BOH_Y0 = Y_BACKXEND + WALL, BOH_Y1 = ANCHOR_Y1;
        is where every tenant's name goes and is exactly one repeat tall
      the PARAPET is everything from the canopy edge up to the sky
    ===================================================================== */
-const FLOOR_OUT = 0, FLOOR_WALK = 12;
+const FLOOR_OUT = 0;
+export const FLOOR_WALK = 12;    // the shop floor, and the only thing you stand on
 const CEIL_SKY = 480;             // the parapet line: the top of the building
 const CEIL_EDGE = 328;            // the outer edge of the canopy
 const CEIL_SOFF = 232;            // the soffit over the footway
@@ -520,7 +527,6 @@ export function buildSellWrong() {
 
   /* eight tills across the front, and the lanes between them */
   {
-    const TILL_W = 180, TILL_PITCH = 400, NTILL = 8;
     let cur = ANCHOR_X0;
     for (let k = 0; k < NTILL; k++) {
       const a = GX0 + k * TILL_PITCH, b = a + TILL_W;
@@ -938,16 +944,70 @@ export function buildSellWrong() {
      rather than placed, and the smoke test holds every one of them
      against the same rectangle afterwards.
 
-     A supermarket at two in the morning is not empty, it is thin: a
-     handful down each aisle, more at the back, and a queue at the tills.
-     Nobody is placed by hand except the queue, because tripling the
-     floor area once already turned a hand-written list into a bug hunt;
-     everything else comes off the same geometry the shelves came off,
-     from a fixed seed, so the shop is laid out the same way every time.
+     IT IS FIVE TIMES AS BUSY AS IT WAS, at the user's request. Ninety-two
+     people was a supermarket at two in the morning: thin, a handful down
+     each aisle, more at the back and a queue at two of the tills. Four
+     hundred and sixty is a different hour of a different day. The whole
+     of the multiplier is CROWD, and every count below is the count the
+     old shop had, so CROWD = 1 is that shop back.
 
-     WHICH PERSON is chosen here rather than at spawn time for the same
-     reason: two runs of the same map put the same seventeen people in
-     the same places, and a screenshot is a screenshot of something. */
+     MULTIPLYING A CROWD IS NOT THE SAME PROBLEM AS PLACING ONE, and it
+     went wrong three ways before it went right.
+
+     The first is that random placement stops working. Three people
+     dropped into a 560-deep aisle land apart because there is nowhere
+     else to land; ten do not, and two shoppers at one coordinate are one
+     shopper with a shadow. So every run of people is STRATIFIED — each
+     one owns a slice of the run and is dropped inside it — and every
+     placement anywhere has to clear APART of everybody already standing,
+     with retries if it does not.
+
+     The second is the furniture. `onSalesFloor` is a rectangle, and a
+     rectangle cannot tell an aisle from the gondola beside it. At ninety
+     every position had been looked at by somebody; at four hundred and
+     sixty a stray one is a person standing on top of the shelves. So the
+     test is the SECTOR now, read off the rect list, which is built by
+     this point: the shop floor and nothing else.
+
+     The third is that FIVE TIMES THE OLD SHAPE DOES NOT FIT. The old
+     shape was almost all aisle, and an aisle is 160 wide: five times
+     three people in one is a queue nobody can get out of, and the flee
+     test caught exactly that — a shopper beside a fire that shuffled
+     twenty-four units in two and a half seconds because it was walled in
+     by its neighbours. So the extra people go where a busy shop actually
+     puts them: the cross-aisles, the front end, the mat inside the
+     doors and the lanes at the tills, all of which were empty and all of
+     which are four times the width of an aisle. The aisles are busier
+     than they were and not five times busier.
+
+     WHICH PERSON is chosen here rather than at spawn time so that two
+     runs of the same map put the same people in the same places, and a
+     screenshot is a screenshot of something. */
+  /* THE WHOLE OF IT. 1 is the old shop.
+
+     It is not a free knob. The cost of a crowd is not the crowd, it is
+     the panicking: an actor deciding where to step asks every other
+     solid actor whether it is in the way, so the work goes up with the
+     SQUARE of how many of them are running. Measured with no renderer in
+     the way, at 35 Hz: a quiet shop is 0.03 ms a tic at 92 people and
+     0.06 at 460, and five fires going with a third of the shop running
+     is 0.21 ms at 92 and 2.0 at 460 — ten times the work for five times
+     the people, and still only seven per cent of a tic. There is room
+     above this and there is not unlimited room: another doubling wants a
+     grid over the actors rather than a scan of them. */
+  const CROWD = 5;
+  /* A shopper is 18 in the radius, so two of them touch at 36, and one
+     walks 16 units a step. Below 52 a shopper hemmed in on all sides has
+     no step it can take that does not end inside somebody — which is
+     what 34 did: it placed the crowd already overlapping and then nobody
+     could leave. */
+  const APART = 54;
+  const TRIES = 20;                 // how many goes at a spot before giving up
+  /* A slice keeps a run spread out, and a slice can also be entirely
+     inside the deli counter, where re-rolling within it will never help.
+     So the first few goes stay in your own slice and the rest are
+     anywhere along the run. */
+  const WIDEN = 4;
   const SALES = { x0: ANCHOR_X0 + 60, y0: Y_MAT + 40, x1: ANCHOR_X1 - 60, y1: Y_BACKXEND - 40 };
   const onSalesFloor = (x, yy) => x > SALES.x0 && x < SALES.x1 && yy > SALES.y0 && yy < SALES.y1;
   {
@@ -955,46 +1015,135 @@ export function buildSellWrong() {
     const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
     const who = () => Math.floor(rnd() * SHOPPERS);
     let dropped = 0;
+    const taken = [];               // everybody placed so far, for the spacing test
+
+    /* A SHOPPER IS A DISC, and every version of this test that treated
+       one as a point put people somewhere they could never leave.
+       `onSalesFloor` is a rectangle, so it cannot tell an aisle from the
+       gondola beside it. The sector under the middle of somebody is
+       better and still not enough: eighteen units of shopper flush
+       against the side of a till is a body half inside the till, and
+       `canStandAt` then refuses all eight directions for the rest of the
+       level. And the crates of stock go down before the crowd does, so
+       two of them had somebody standing in them.
+
+       So the disc is tested against three things: the rect under the
+       point, every rect that is not shop floor, and everything solid
+       already placed. `rm.build()` and the crates have both happened by
+       here, so both lists are the finished map. */
+    const BLOCKERS = rm.rects.filter(r => r.props.floor !== FLOOR_WALK);
+    const SOLIDS = mb.things.filter(t => ACTORS[t.type]?.solid);
+    const CLEAR = 22;               // the radius and a little: beside it, not in it
+    const under = (x, yy) => rm.rects.find(r => x > r.x0 && x < r.x1 && yy > r.y0 && yy < r.y1);
+    const standable = (x, yy) => {
+      if (!onSalesFloor(x, yy)) return false;
+      const r = under(x, yy);
+      if (!r || r.props.floor !== FLOOR_WALK) return false;         // on the shelves
+      /* the nearest point of a rectangle to a point, which for an
+         axis-aligned rectangle is one max per axis */
+      if (BLOCKERS.some(b => {
+        const dx = Math.max(b.x0 - x, 0, x - b.x1), dy = Math.max(b.y0 - yy, 0, yy - b.y1);
+        return dx * dx + dy * dy < CLEAR * CLEAR;
+      })) return false;
+      if (SOLIDS.some(t => {
+        const rr = CLEAR + (ACTORS[t.type].radius ?? 16);
+        return (t.x - x) ** 2 + (t.y - yy) ** 2 < rr * rr;
+      })) return false;
+      return !taken.some(([tx, ty]) => (tx - x) ** 2 + (ty - yy) ** 2 < APART * APART);
+    };
     const place = (x, yy, angle) => {
-      if (!onSalesFloor(x, yy)) { dropped++; return null; }
+      if (!standable(x, yy)) return null;
+      taken.push([x, yy]);
       return mb.thing('SHOPPER', x, yy, angle ?? rnd() * Math.PI * 2, { variant: who() });
     };
+    /* One person, from a function that offers somewhere to put them. A
+       rejected spot used to mean one fewer person, which does not show at
+       ninety and shows as a hole in the crowd at four hundred and
+       sixty. */
+    const someone = (spot, angle) => {
+      for (let att = 0; att < TRIES; att++) {
+        const [x, yy] = spot(att);
+        if (place(x, yy, angle)) return true;
+      }
+      dropped++; return false;
+    };
 
-    /* two or three per aisle, thinner across the front where you come in
-       and thickest at the back — walking in should look survivable and
-       the far end of aisle nine should not */
+    /* THE QUEUES GO IN FIRST, because they are the only people here who
+       cannot be put somewhere else. Every other group is offered a
+       region and asked to find room in it; a queue is eight fixed lines
+       of five, and if the front cross-aisle has already filled up over
+       the top of them the queue is what loses. They are also the one
+       arrangement in the game that says "these are people" before you
+       have looked at any of them: five deep, one behind the other, all
+       facing the same way, one per till lane. The x values are AISLE
+       CENTRES — a queue is the only thing in the shop long enough to
+       reach past the front cross-aisle and into the runs, so it has to
+       stand where the runs have a gap. */
+    for (let q = 0; q < NTILL; q++) {
+      const k = Math.round(q * (NCOL - 2) / (NTILL - 1));    // 0 1 3 4 6 7 9 10
+      for (let i = 0; i < CROWD; i++)
+        someone(() => [aisleX(k) + (rnd() - 0.5) * 20,
+                       Y_TILLEND + 70 + i * 62], Math.PI / 2);
+    }
+
+    /* DOWN THE AISLES, thinner across the front where you come in and
+       thickest at the back — walking in should look survivable and the
+       far end of aisle nine should not. Each person owns a slice of the
+       aisle `1/n` long and is dropped inside it, so fifteen of them
+       spread down the aisle instead of piling up in the middle third of
+       it the way fifteen independent rolls would. */
     ROWS.forEach((row, ri) => {
       for (let k = 0; k < NCOL - 1; k++) {
-        const x = colX(k) + GOND_W + AISLE_W / 2;
-        const n = ri === 0 ? (k % 2 === 0 ? 1 : 0) : (k % 2 === 0 ? 3 : 2);
+        const x = aisleX(k);
+        const n = (ri === 0 ? (k % 2 === 0 ? 1 : 0) : (k % 2 === 0 ? 2 : 1)) * CROWD;
+        const y0 = row.y0 + 60, span = row.y1 - row.y0 - 120;
         for (let i = 0; i < n; i++)
-          place(x + (rnd() - 0.5) * 60, row.y0 + 60 + rnd() * (row.y1 - row.y0 - 120));
+          someone(att => [x + (rnd() - 0.5) * 90,
+                          y0 + (att < WIDEN ? (i + rnd()) / n : rnd()) * span]);
       }
     });
 
-    /* The perimeter departments are all FIXTURES at bench or gondola
-       height, so somebody placed "in produce" is standing on top of the
-       produce. They go in the walkway beside it, which is where they
-       would be anyway. */
-    for (const [x, yy] of [[410, 700], [410, 1600], [410, 2400],
-                           [3760, 700], [3760, 1600], [3760, 2400],
-                           [800, 2690], [2500, 2690], [3800, 2690],
-                           [900, 320], [2900, 320], [3550, 180]])
-      place(x, yy);
+    /* THE WALKWAYS AND THE CROSS-AISLES: every strip in the shop that
+       runs across the grain rather than down it, and where most of the
+       new people went. The last number is how many the OLD shop had on
+       that line — twelve of these were written out as bare coordinates
+       when there were twelve, and the four they sat on have become six,
+       because the two cross-aisles in the middle of the runs had nobody
+       on them at all and are the widest floor in the building.
 
-    /* the front end, in the space between the tills and the first run */
-    for (let i = 0; i < 10; i++)
-      place(600 + rnd() * 3000, Y_FRONTX - 90 - rnd() * 90);
+       The departments either side of the two walkways are FIXTURES at
+       bench or gondola height, so somebody placed "in produce" is
+       standing on top of the produce: they go in the walkway beside it,
+       which is where they would be anyway. Every one of these strips is
+       140 or 160 wide, so thirty-five of jitter either way stays in
+       it. */
+    const WALKS = [
+      [410, 420, 410, 2600, 3],     // west, between the departments and aisle 0
+      [3760, 420, 3760, 2600, 4],   // east, along the chill and the freezers
+      [500, 320, 3600, 320, 9],     // the front cross-aisle, the busiest floor there is
+      [500, 1150, 3600, 1150, 6],   // the mid cross-aisle, between run one and run two
+      [500, 1970, 3600, 1970, 6],   // the rear one
+      [400, 2690, 3900, 2690, 4],   // the back one, past the deli
+    ];
+    for (const [x0, y0, x1, y1, base] of WALKS)
+      for (let i = 0, n = base * CROWD; i < n; i++)
+        someone(att => {
+          const t = att < WIDEN ? (i + rnd()) / n : rnd();
+          return [x0 + (x1 - x0) * t + (rnd() - 0.5) * 70,
+                  y0 + (y1 - y0) * t + (rnd() - 0.5) * 70];
+        });
 
-    /* A QUEUE, which is the one thing worth placing by hand. Four people
-       one behind the other at two of the tills, all facing the same way,
-       which is the only arrangement in the game that says "these are
-       people" before you have looked at any of them. */
-    for (const tx of [1180, 2620])
-      for (let i = 0; i < 4; i++)
-        place(tx + (rnd() - 0.5) * 20, Y_TILLEND + 70 + i * 62, Math.PI / 2);
+    /* THE FRONT END: the mat inside the doors and the lanes between the
+       tills, which is where a shop this busy keeps the people who are
+       arriving and the people who are leaving. The tills themselves are
+       fixtures and get rejected, which is the point of testing the
+       sector — the band the old scatter used reached back over them, and
+       a shopper on a till is a shopper standing on a conveyor. */
+    for (let i = 0; i < 12 * CROWD; i++)
+      someone(() => [ANCHOR_X0 + 200 + rnd() * (ANCHOR_X1 - ANCHOR_X0 - 400),
+                     SALES.y0 + 10 + rnd() * (Y_TILLEND - SALES.y0 - 25)]);
 
-    if (dropped) console.warn(`${dropped} shoppers fell outside the sales floor and were dropped`);
+    if (dropped) console.warn(`${dropped} shoppers found nowhere to stand and were dropped`);
   }
 
   const level = mb.build();
