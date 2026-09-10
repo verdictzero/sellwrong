@@ -100,6 +100,7 @@ export class Player {
     this.momx = 0; this.momy = 0;
     this.radius = PLAYER_RADIUS;
     this.height = PLAYER_HEIGHT;
+    this._near = [];                   // scratch for thingInWay's blockmap query
     this.sector = game.level.sectorAt(x, y);
     this.z = this.sector ? this.sector.floor : 0;
 
@@ -210,13 +211,21 @@ export class Player {
   }
 
   thingInWay(nx, ny) {
-    for (const a of this.game.actors) {
+    /* Nine cells of blockmap. This is asked up to three times per tic —
+       once for the whole step and once per axis when it fails — and a
+       crowd of eight hundred behind every one of them is a scan the
+       player can feel. */
+    const bm = this.game.blockmap;
+    const list = bm ? bm.near(nx, ny, this._near) : this.game.actors;
+    for (let i = 0; i < list.length; i++) {
+      const a = list[i];
       if (a.removed || !a.solid || a.dead || a.noclip) continue;
       const rr = this.radius + a.radius;
       if (dist2(nx, ny, a.x, a.y) < rr * rr) {
         if (a.info.pushable) {           // trolleys move, they do not stop you
           const d = Math.hypot(a.x - nx, a.y - ny) || 1;
           a.x += ((a.x - nx) / d) * 6; a.y += ((a.y - ny) / d) * 6;
+          this.game.blockmap?.moved(a);
           a.updateSector();
           continue;
         }

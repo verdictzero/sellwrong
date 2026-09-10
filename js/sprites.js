@@ -168,6 +168,55 @@ export function bakeSprites() {
   fireFrames(20, 28, EMBER_FRAMES, 31, { taper: 0.62 }).forEach((p, i) =>
     bank.addFrame('EMBR', LETTERS[i], new Array(8).fill(p), { fullbright: true, scale: 0.92 }));
 
+  /* --- and what stands over it -------------------------------------
+     A FIRE WITHOUT SMOKE IS A LIGHT. Everything about a burning
+     supermarket that you would actually notice from the car park is the
+     smoke: it is bigger than the flames by a factor of ten, it is the
+     thing that gets into the aisle you were about to walk down, and it
+     is the only part of a fire that is still there after the fire is
+     out. There was already drifting smoke in the game — the puffs off
+     js/effects.js, which are particles and go where the wind takes them
+     — and no BODY of it standing on the fire itself. This is that body,
+     and js/fire.js parks it over the hottest, most buried cells.
+
+     IT CHURNS AND IT LOOPS EXACTLY, by the trick fbm makes free: the
+     noise lattice wraps after h rows, so sampling it with a vertical
+     offset of h/count per frame comes back to itself after count
+     frames. The same field decides the silhouette AND the shading, so
+     the scroll that stirs the inside also eats the outline — which is
+     what separates smoke from a grey ball with a pattern on it.
+
+     NOT SNAPPED, unlike almost everything else here. A cut-out edge is
+     what makes a Doom sprite a Doom sprite and it is exactly wrong for
+     this: smoke has no edge, and the alpha ramp is the whole effect. */
+  {
+    const W = 64, H = 64, N = 8;
+    const n = fbm(W, H, 5, 3, 240);
+    const fine = fbm(W, H, 11, 2, 341);
+    for (let f = 0; f < N; f++) {
+      const off = Math.round(f * H / N);
+      const p = new Pix(W, H, 240 + f, false);
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const sy = (y + off) % H;
+        const v = n[sy * W + x], q = fine[sy * W + x];
+        /* a ball with the noise eaten into it, wider than it is tall
+           because a plume spreads as it cools */
+        const dx = (x - 31.5) / 31, dy = (y - 33) / 29;
+        const d = Math.hypot(dx, dy * 0.94);
+        const a = (1 - d) * 1.5 + (v - 0.5) * 1.15 - 0.20;
+        if (a <= 0.02) continue;
+        /* DARKEST IN THE MIDDLE, which is not a lighting model, it is
+           how much smoke there is between you and whatever is behind it.
+           The warm underside is not drawn: the one fire light in the
+           game puts it there at run time, off the fire that is making
+           the smoke — see worldShade in js/material.js. */
+        const lum = 0.13 + q * 0.15 + Math.max(0, d - 0.28) * 0.26;
+        p.ink(x, y, 'grey', lum, Math.round(Math.min(1, a * 1.7) * 200));
+      }
+      bank.addFrame('SMOK', LETTERS[f], new Array(8).fill(p), { scale: 2.4 });
+    }
+  }
+
   /* --- a trolley, abandoned mid-aisle --- */
   bank.addFrame('TRLY', 'A', radial(p => {
     for (let x = 4; x < 28; x += 3) p.vline(x, 8, 26, 'grey', 0.44);

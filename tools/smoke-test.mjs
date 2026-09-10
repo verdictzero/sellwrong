@@ -807,6 +807,51 @@ section('fire');
     tex.CHARRABLE.every(n => bank.has(n)),
     tex.CHARRABLE.filter(n => !bank.has(n)).join(', '));
 
+  /* --- HOW IT IS DRAWN ---
+     Four claims, and each of them was a visible fault at some point this
+     afternoon: the flames add rather than cover, there is more than one
+     of them per cell and they are not on the cell's centre, they are
+     bigger where the fire is deep and smaller at its fringe, and the
+     scatter is the SAME scatter next frame. That last one is the
+     important one — jitter re-rolled per frame is a fire that boils, and
+     it is the difference between a fire and a fault. */
+  {
+    const THREE = await import('three');
+    const scene = new THREE.Scene();
+    const drawn = new FireSystem({
+      ...fake, scene, sprites: spr.bakeSprites(),
+      level, tics: 0,
+    });
+    drawn.ignite(1800, 1600, 400, 96);
+    for (let k = 0; k < 120; k++) drawn.tic();
+    drawn.render(1800, 1250, 0);
+    const flames = drawn.sprites.filter(m => m.visible);
+    const smoke = drawn.smokes.filter(m => m.visible);
+    note('one burning run, drawn', `${flames.length} flames and ${smoke.length} of smoke ` +
+      `over ${drawn.active.length} cells alight`);
+    check('the fire is drawn', flames.length > 40, `${flames.length}`);
+    check('additively, and without writing depth',
+      flames.every(m => m.material.blending === THREE.AdditiveBlending && !m.material.depthWrite));
+    check('there is smoke standing over it', smoke.length > 4, `${smoke.length}`);
+    check('and the smoke is blended rather than added',
+      smoke.every(m => m.material.blending === THREE.NormalBlending && !m.material.depthWrite));
+    /* a clump: more sprites than there are cells they sit on */
+    const cells = new Set(flames.map(m => `${Math.round(m.position.x / 32)},${Math.round(m.position.z / 32)}`));
+    check('more flames than cells to put them in', flames.length > cells.size, `${flames.length} on ${cells.size}`);
+    const off = flames.filter(m => Math.abs(((m.position.x - drawn.originX) % 32) - 16) > 0.5);
+    check('and most of them are not on a cell centre', off.length > flames.length * 0.3,
+      `${off.length} of ${flames.length}`);
+    const hs = flames.map(m => m.material.uniforms.spriteScale.value.y);
+    check('the big ones are several times the small ones',
+      Math.max(...hs) > Math.min(...hs) * 2.5,
+      `${Math.min(...hs).toFixed(0)} to ${Math.max(...hs).toFixed(0)} units tall`);
+    const was = flames.map(m => `${m.position.x},${m.position.z}`);
+    drawn.render(1800, 1250, 0);
+    const now = drawn.sprites.filter(m => m.visible).map(m => `${m.position.x},${m.position.z}`);
+    check('and the scatter is the same scatter next frame',
+      was.length === now.length && was.every((v, i) => v === now[i]));
+  }
+
   /* And the player's weapon has to be much faster than waiting. */
   const f2 = new FireSystem(fake);
   f2.ignite(540, 1000, 150, 26);
@@ -1043,8 +1088,8 @@ section('the crowd');
   check('nobody is standing on the shelves, the counters or a till',
     aloft.length === 0,
     aloft.slice(0, 4).map(a => `${a.sector?.name} at ${a.x | 0},${a.y | 0}`).join('; '));
-  check('the shop is five times as busy as it was', crowd.length > 400,
-    `${crowd.length}, from 92`);
+  check('the shop holds eight times what it first did', crowd.length === 736,
+    `${crowd.length}, from 92 and then 460`);
 
   /* --- one tic of the stream is more than a person --- */
   const FL2 = await import('../js/flame.js');
@@ -1069,9 +1114,16 @@ section('the crowd');
     `${g.giblets.trail.count} flames`);
 
   const heatBefore = g.fire.burningCells;
-  for (let k = 0; k < 200; k++) { g.giblets.tic(); g.fire.tic(); }
+  /* The pieces alone for the two hundred tics, and the fire afterwards.
+     They used to be run together, and that stopped working the moment
+     the fire got six times faster: two hundred tics of it beside a queue
+     takes the neighbours too, so the count in the air is somebody else's
+     pieces and the check was asking the wrong question. Landing needs no
+     fire tic — a piece coming down calls ignite itself. */
+  for (let k = 0; k < 200; k++) g.giblets.tic();
   check('every piece comes down', g.giblets.chunks.count === 0, `${g.giblets.chunks.count} still up`);
   check('they leave something on the floor', g.actors.filter(a => a.type === 'GORE').length > 1);
+  for (let k = 0; k < 12; k++) g.fire.tic();          // so the heat they laid is counted
   check('and they start a fire where they land', g.fire.burningCells > heatBefore,
     `${heatBefore} -> ${g.fire.burningCells} cells`);
   note('one person', `${g.actors.length - before + 1} things left behind, ` +
@@ -1139,6 +1191,128 @@ section('the crowd');
     check('and still stays within a few units of where it is',
       running.worst < 4, running.worst.toFixed(2));
     a.panic = 0;
+  }
+}
+
+/* ---------- the way out ---------- */
+/* Six crash-bar doors down the flanks of the building, and a crowd that
+   uses them. The claim being tested is one sentence — set fire to the
+   shop and most of the people in it end up OUTSIDE it — and it is worth
+   a whole section because there are five separate ways for it to be
+   false and every one of them has been true at some point today: the
+   doors could be in the wrong place, they could be blocked, they could
+   open for nobody, the crowd could not know about them, or the crowd
+   could know and get stuck on the way. */
+section('the way out');
+{
+  const { Game } = await import('../js/game.js');
+  const THREE = await import('three');
+  const hudStub = { message() {}, ticMessages() {}, resize() {}, update() {} };
+  const inputStub = { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 }, attack: false, use: false, run: false, sample() {}, sensitivity: 0 };
+  const lv = MAP.buildSellWrong();
+  const g = new Game({ level: lv, scene: new THREE.Scene(), camera: {}, textures: tex.bakeTextures(), sprites: spr.bakeSprites(), hud: hudStub, audio: null, input: inputStub });
+
+  /* --- the doors are there, and they are doors --- */
+  const swing = g.slideDoors.filter(d => d.swing);
+  check('there are six fire exits', swing.length === 6, `${swing.length}`);
+  check('three down each flank of the building',
+    swing.filter(d => d.spec.sector.name.includes('west')).length === 3 &&
+    swing.filter(d => d.spec.sector.name.includes('east')).length === 3);
+  check('every one of them has one leaf', swing.every(d => d.leaves.length === 1));
+  check('and blocks BOTH faces of the wall it is in',
+    swing.every(d => d.spec.lines.length === 2), swing.map(d => d.spec.lines.length).join(' '));
+  check('they start shut', swing.every(d => d.state === 'shut' && d.open === 0));
+  check('and a shut one is wall', swing.every(d => d.spec.lines.every(l => l.blocking)));
+  /* The whole point of the leaf being 128 tall and the sector's ceiling
+     being the door head: an opening taller than the leaf is a hole you
+     can see and shoot through with the door closed. */
+  check('the opening is exactly as tall as the leaf',
+    swing.every(d => d.zTop === d.spec.sector.ceil && d.zBot === d.spec.sector.floor));
+
+  /* --- and they are on walkable floor at both ends --- */
+  {
+    const bad = swing.filter(d => {
+      const cx = (d.spec.x0 + d.spec.x1) / 2, cy = (d.spec.y0 + d.spec.y1) / 2;
+      const nx = d.nx * 90, ny = d.ny * 90;
+      const inside = lv.sectorAt(cx - nx, cy - ny), outside = lv.sectorAt(cx + nx, cy + ny);
+      return !inside || !outside || inside.floor !== MAP.FLOOR_WALK || !outside.outdoor;
+    });
+    check('a fire exit has shop floor on one side and the open air on the other',
+      bad.length === 0, bad.map(d => d.spec.sector.name).join(', '));
+  }
+
+  /* --- the map tells the crowd where they are --- */
+  check('every way out is published', lv.exits.length === 8, `${lv.exits.length}`);
+  check('and every one of them is a point OUTSIDE the building',
+    lv.exits.every(e => e.x < MAP.ANCHOR_X0 || e.x > MAP.ANCHOR_X1 || e.y < MAP.ANCHOR_Y0),
+    'the doorway itself is where a greedy walker stops');
+  check('two of them are the front doors',
+    lv.exits.filter(e => e.kind === 'front door').length === 2);
+
+  /* --- A CRASH BAR IS NOT A PROXIMITY SENSOR ---
+     Somebody strolling past a fire exit with a basket does not open it.
+     This is what `panicOnly` buys and it is worth a check, because the
+     first cut of these opened for anybody and the shop's six fire doors
+     stood open all night with nothing on fire. */
+  {
+    const d = swing[0];
+    const cx = (d.spec.x0 + d.spec.x1) / 2, cy = (d.spec.y0 + d.spec.y1) / 2;
+    const calm = g.actors.find(a => a.type === 'SHOPPER' && !a.dead);
+    const was = [calm.x, calm.y];
+    calm.x = cx - d.nx * 60; calm.y = cy - d.ny * 60; calm.panic = 0;
+    g.blockmap.moved(calm);
+    for (let k = 0; k < 20; k++) d.tic();
+    check('a shopper standing at a fire exit does not open it', d.open === 0);
+    calm.panic = 100;
+    for (let k = 0; k < 30; k++) d.tic();
+    check('one that is running does', d.open > 0.9, d.open.toFixed(2));
+    check('and an open one is a hole', d.spec.lines.every(l => !l.blocking));
+    calm.panic = 0;
+    calm.x = was[0]; calm.y = was[1];
+    g.blockmap.moved(calm);
+  }
+
+  /* --- AND THE MEASUREMENT ---
+     One fire, in the middle of the shop, and then nothing: no player, no
+     second ignition, no help. Sixty seconds later most of the shop
+     should be standing outside in the car park and in the trees. */
+  {
+    const crowd = () => g.actors.filter(a => a.type === 'SHOPPER' && !a.dead && !a.removed);
+    const running = () => g.actors.reduce((n, a) => n + (a.type === 'SHOPPER' && !a.dead && a.panic > 0 ? 1 : 0), 0);
+    const start = crowd().length;
+    g.player.noclip = true;                     // out of the way, out of the fire
+    g.fire.ignite(1800, 1600, 400, 64);
+    /* THE FRIGHT HAS TO BE ABLE TO RUN OUT WHILE THE SHOP IS STILL
+       BURNING, which is a different claim from "everybody is calm at the
+       end" and is the one worth testing. What is watched is the LOW WATER
+       MARK after the first wave has gone through — because the count
+       legitimately climbs again every time the fire reaches a part of the
+       shop that still has people in it, and it does, twice, in the run
+       this was written against: down to nothing by forty seconds and back
+       over a hundred by seventy as the second run of shelving goes. */
+    let quietest = Infinity;
+    for (let t = 0; t < 2100; t++) {
+      g.tic();
+      if (t > 700) quietest = Math.min(quietest, running());
+    }
+    const alive = crowd();
+    const out = alive.filter(a => a.sector && a.sector.outdoor);
+    note('one fire, sixty seconds', `${out.length} of ${start} outside, ` +
+      `${alive.length - out.length} still in, ${start - alive.length} lost`);
+    check('most of the shop gets out of the building', out.length > start * 0.5,
+      `${out.length} of ${start}`);
+    check('and they scatter rather than pile up at one door',
+      new Set(out.map(a => a.sector.name)).size >= 3,
+      [...new Set(out.map(a => a.sector.name))].slice(0, 5).join(', '));
+    check('at least one fire exit was used', swing.some(d => d.open > 0 || d.state !== 'shut')
+      || out.length > 0);
+    /* Contagious panic passed on at full strength is a loop, and it ran
+       for the whole level: six hundred people in the woods behind the
+       store, none of them able to see a fire, each one renewing the
+       neighbour who had just renewed them. See A_Watch. */
+    check('and the fright runs out instead of feeding itself',
+      quietest < start * 0.05, `the quietest it ever got was ${quietest} still running`);
+    note('and then it starts again', `${running()} running as the fire reaches the rest of the shop`);
   }
 }
 

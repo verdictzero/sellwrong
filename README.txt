@@ -69,7 +69,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         574 checks, no install and no browser
+  the smoke test         602 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -95,6 +95,13 @@ both — and see what the night brings down the road. The sixty-per-cent
 target and the run back to the car park are gone, at the user's request:
 the only aim for now is open mayhem, and the night ends when you close
 the tab.
+
+There are seven hundred and thirty-six people in the shop and six fire
+exits for them to get out of, so the shop empties: light one aisle and
+most of the building is in the car park or in the trees inside a minute.
+The status bar counts how many are left, which is the number the game is
+actually played against once the fire is going — you started it, and now
+you have to go and find them.
 
   WASD          move            MOUSE     look
   SHIFT         run             LMB/CTRL  flamethrower
@@ -214,11 +221,30 @@ curve from fuel to spread chance is a power law rather than a shift:
   bare lino              a cell every half a minute — crossing one aisle
                            is minutes of watching it creep
 
-Left completely alone, one match takes the entire shop, and takes the
-better part of half an hour to do it. Your flamethrower is very much
-faster than that, which is the point of carrying it — you are not
-starting the fire so much as deciding where it starts and how long the
-store has.
+AND IT ALL HAPPENS SIX TIMES FASTER THAN IT USED TO, at the user's
+request: a gondola cell rises, roars and is spent in about four seconds
+rather than twenty-three, and the ember tail behind the front is a dozen
+seconds rather than a minute and a quarter. What moved is the CLOCK — one
+constant saying how many game tics a fire tic is worth, 18 down to 3 —
+and nothing else, for the reason in the next paragraph: the burn rate and
+the spread chance are the same two terms multiplied, so burning the fuel
+six times faster to shorten a fire also cuts the rolls it gets to pass
+itself on, and bare lino was only ever at 1.9 expected spreads. Six times
+the burn rate would have taken it to 0.3 and left holes in the shop that
+could never catch. Six times the clock changes nothing about what
+eventually burns and everything about when.
+
+What that buys is a chase rather than a siege. A run of shelving flashes
+over and dies back while you are still standing in the aisle, and with
+seven hundred people in the building and six fire exits for them to get
+out of, the fire is now the thing that starts the level rather than the
+thing that is the level.
+
+Left completely alone, one match still takes the entire shop; it now
+takes about seven minutes rather than the better part of half an hour.
+Your flamethrower is very much faster than that, which is the point of
+carrying it — you are not starting the fire so much as deciding where it
+starts and how long the store has.
 
 THE TWO TERMS TRADE EXACTLY, which is the thing to know before touching
 either. A fire crossing a region survives only if each burning cell
@@ -235,21 +261,81 @@ and takes three times as long to creep there. It is also why the fuel
 grid is floats — as integers the smallest burn rate expressible was one
 unit a tic, and for bare lino that floor WAS the burn rate.
 
-AND THEY RUN. A shopper on eight-tic watch samples the fire grid at nine
-points around itself — where it is standing and eight at its scare range
-— which is what tells it both THAT there is a fire and WHICH WAY, and the
-second is the part one sample cannot give you. Then it runs: of the eight
-compass directions, the one that gets furthest from the heat and lands
-somewhere cool, looking two steps ahead so it does not stop one step
-short of noticing a wall of fire. Somebody going off frightens a much
-wider circle than the fire does, so torching one at the tills empties the
-front end before the pieces land.
+AND THEY RUN, AND NOW THEY HAVE SOMEWHERE TO RUN TO. A shopper on
+eight-tic watch samples the fire grid at nine points around itself —
+where it is standing and eight at its scare range — which is what tells
+it both THAT there is a fire and WHICH WAY, and the second is the part
+one sample cannot give you.
+
+THEN IT HEADS FOR A DOOR, which is the change that made the crowd behave
+like a crowd. Running AWAY from a fire in a supermarket takes you to the
+back of the shop and then into a corner, because that is what "away"
+means inside a rectangle with one door in it: the crowd used to pile into
+the frozen aisle and cook. So the map publishes every way out of the
+building as a point on the OUTSIDE of it — six fire exits down the flanks
+and the two front sliders — and a frightened shopper picks one and scores
+its eight compass directions on how much CLOSER to it they get, minus how
+hot it is where it would land, looking two steps ahead so it does not
+stop one step short of noticing a wall of fire.
+
+Nearest is not enough, and the case that proves it happens most: a fire
+at the west end of the mid cross-aisle is nearest to the west mid exit
+for everybody in it, including the people the fire is between. So an exit
+is charged for being close to the thing being run from, heavily enough to
+lose a thousand units of walking — a longer way out you can use beats a
+shorter one you cannot. And the choice is re-made about once a second
+rather than every step, because a shopper who re-decides every step in
+the region where two exits score the same walks on the spot between them.
+
+GREEDY, AND IT WORKS HERE FOR A REASON WORTH WRITING DOWN. Hill climbing
+toward a point gets stuck in dead ends and a supermarket is nothing but
+dead ends — except that every aisle in this one runs north-south and
+opens onto a cross-aisle at BOTH ends, and every exit sits on a
+cross-aisle. So from anywhere in an aisle the door is never at your own
+y: moving toward the nearer cross-aisle always gets you closer to it, and
+the aisle you are in is a corridor to somewhere rather than a pocket. No
+graph, no nodes, and seven hundred of them cost eight distance calls
+each.
+
+PANIC IS CONTAGIOUS, because nobody in a supermarket finds out about a
+fire by seeing flames — they find out because the aisle in front of them
+is suddenly full of people going the other way. Without that, a shop this
+size behaves as hundreds of independent people who each notice at 320
+units, and with a fire six times faster than it used to be most of them
+never started moving until it was on them: the front end stood at the
+tills while the back of the store burned. So a fright spreads to anybody
+within 190 units, and it carries the point being run FROM with it, so a
+stampede goes one way rather than each new person choosing afresh.
+
+AND IT HAS TO RUN DOWN, which took two goes. A fright handed on at full
+strength is a loop, and it ran for the whole level: six hundred people in
+the woods behind the store, none of them able to see a fire, each one
+renewing the neighbour who had just renewed them. So what is passed on is
+what is LEFT minus a bit — a rumour weakens with every telling — and a
+chain of it dies after about a dozen hops unless somebody along it can
+actually see the fire and start a fresh one.
+
+Somebody going off frightens a much wider circle than the fire does, so
+torching one at the tills empties the front end before the pieces land.
 
 Not Doom's chase with the sign flipped. P_NewChaseDir walks TOWARD a
 thing and all its cleverness is about not oscillating in a doorway;
-running away is a different problem, because what you are running from is
-a region and the wrong step is not a wasted one, it is a step into the
-fire.
+running away is a different problem, because the wrong step is not a
+wasted one, it is a step into the fire. And the fallback when the best
+direction is blocked is the SECOND best rather than a random one, which
+is Doom's answer and is right for a monster that has lost sight of you
+and wrong for somebody with a door in mind: the second-best direction at
+the end of an aisle is the one that goes round the gondola, and picking
+at random instead threw that away half the time.
+
+WHAT IT LOOKS LIKE, MEASURED. One fire in the middle of the shop, no
+player, no help, sixty seconds: 583 of the 736 end up outside the
+building, scattered across the wood on both flanks, the bays, the driving
+lanes, the verge and the road; about a hundred are still inside in parts
+the fire never reached, and fewer than fifty do not make it. The count of
+people running drops to nothing after the first wave and climbs back over
+a hundred a minute later as the fire reaches the second run of shelving
+and finds the people who had gone back to shopping.
 
 THE CROWD is the third way it travels, and the fastest. A shopper has
 twelve health, which is under a fifth of what one tic of the stream
@@ -259,11 +345,12 @@ fire, and a little heat in the floor wherever each lands. Torch the queue
 at the tills and you have not started one fire, you have started nine, in
 a fan, in the part of the shop with the most cardboard in it.
 
-THERE ARE FOUR HUNDRED AND SIXTY OF THEM, at the user's request, up from
-ninety-two. Ninety-two was a supermarket at two in the morning; this is a
-different hour of a different day. The multiplier is one constant in
-js/maps/sellwrong.js and every count beside it is the count the old shop
-had, so putting it back to 1 puts the old shop back.
+THERE ARE SEVEN HUNDRED AND THIRTY-SIX OF THEM, at the user's request,
+up from four hundred and sixty and before that ninety-two. Ninety-two was
+a supermarket at two in the morning; this is a different hour of a
+different day. The multiplier is one constant in js/maps/sellwrong.js and
+every count beside it is the count the old shop had, so putting it back
+to 1 puts the old shop back.
 
 MULTIPLYING A CROWD IS NOT THE SAME PROBLEM AS PLACING ONE, and it went
 wrong three ways first.
@@ -295,19 +382,118 @@ of the runs, the front cross-aisle, the mat inside the doors and the
 lanes at the tills, all of which had nobody on them at all and all of
 which are wider than an aisle.
 
-IT IS NOT A FREE KNOB. The cost of a crowd is not the crowd, it is the
-panicking: an actor deciding where to step asks every other solid actor
-whether it is in the way, so the work goes up with the SQUARE of how many
-are running. Measured with no renderer in the way, against a 35 Hz tic —
-a quiet shop is 0.03 ms a tic at ninety-two people and 0.06 at four
-hundred and sixty; five fires going with a third of the shop running is
-0.21 ms at ninety-two and 2.0 at four hundred and sixty. Ten times the
-work for five times the people, and still seven per cent of a tic. There
-is room above this and there is not unlimited room: another doubling
-wants a grid over the actors rather than a scan of them.
+AND EIGHT TIMES DOES NOT FIT EITHER, which is a different failure from
+the one above and needed a different answer. Every group is a region and
+a count, and the counts were balanced by eye against the region they sit
+in; at eight times, eighty people found nowhere to stand in the region
+they had been offered and the shop came out at 656 of the 736 asked for.
+A shortfall like that is invisible as a number and shows up as the back
+of the store being emptier than the front. So there is a last pass that
+ignores the regions entirely, offers the whole sales floor a random point
+at a time, and stops when the shop holds what it was asked to hold. The
+placement predicate does all the work — it will not put anybody on a
+gondola, in a till, inside a crate or within 54 of somebody already
+standing — so a uniform scatter over a rectangle comes out as people in
+the walkable gaps of it.
+
+IT USED NOT TO BE A FREE KNOB AND NOW NEARLY IS. The cost of a crowd is
+not the crowd, it is the panicking: an actor deciding where to step asks
+every solid actor whether it is in the way, and against a flat list that
+is the crowd SQUARED. Measured with no renderer in the way, against a
+35 Hz tic, five fires going with a third of the shop running: 0.21 ms at
+ninety-two people, 2.0 at four hundred and sixty. Ten times the work for
+five times the people, and the reason this section used to end by saying
+that another doubling wanted a grid over the actors rather than a scan of
+them.
+
+It has one now. ActorGrid in js/actor.js is a hash of cells 128 units
+across holding every actor that was ever solid, and the same measurement
+is 0.6 ms at four hundred and sixty and 0.8 at seven hundred and
+thirty-six — a third of what the scan cost with sixty per cent more
+people on the floor, and about three per cent of a tic. The one design
+decision in it worth stating: only the POSITION has to be right. Whether
+an actor is still solid, still alive and still in the world changes in a
+dozen places, and threading grid maintenance through all of them is how
+you get a crowd that can walk through a body one time in a thousand. So
+a thing that has stopped being solid stays in the grid and the caller
+filters it, exactly as it filtered the flat list. The waste is a handful
+of entries per cell; the guarantee is that the grid can never disagree
+with the world about who is where.
+
+What limits the crowd from here is not the arithmetic any more, it is the
+floor: at 54 apart there is only so much shop.
 
 The car park has no fuel at all and never burns, which makes it the safe
 room: the one place you can stand and watch what you have done.
+
+
+SIX FIRE EXITS
+--------------
+
+At the user's request, and they are the single biggest change the shop
+floor has ever had, because they are the difference between a crowd that
+dies where it stands and a crowd that GETS OUT.
+
+WHERE. At the ends of the three cross-aisles, west and east, because that
+is where a real supermarket puts them and because it is the only place
+they can go: the perimeter of this building is fixtures — produce bins,
+the bakery case, the chill wall, the freezers — and a door in the middle
+of a run of chillers opens onto the top of a chiller. A cross-aisle is
+walkable floor that reaches the outside wall, and there are exactly three
+of them.
+
+WHAT IS ON THE OTHER SIDE. The flanks of the parade, which are wood. So a
+shopper who makes it out is in the trees at the side of the building, in
+the dark, and there are nine thousand units of forest for them to be
+somewhere in. That is the hunt, and it is free: no new geometry, and the
+wood already burns.
+
+WHAT MAKES THEM READ AS AN EXIT AND NOT A HOLE: they are LIT. The
+cross-aisles are at 0.26 and these are at 0.62, so the end of the aisle
+glows and you can see from the middle of the shop where the crowd is
+going. That is the whole signage budget and it is more legible than a
+sign would be — see the note further down on why a word in a texture is
+always the bug.
+
+THE LEAF SWINGS, which is the one thing in this engine that has no Doom
+precedent at all. Doom had exactly one door and it was a ceiling that
+goes up; the front entrance here is already a departure, because a
+supermarket slider cannot be faked by a rising portcullis, and it is done
+as two quads on a track with the collision lines switched between wall
+and hole. A quad on a transform can be MOVED along the wall or TURNED
+about one end of it, and the second one is a hinge. So the same class,
+the same state machine and the same blocking lines give both the
+entrance and the six crash-bar doors, and the differences are two lines
+of spec:
+
+  swing       one leaf instead of two, turned up to a right angle about
+                the (x0,y0) end. It turns OUTWARD, away from the shop,
+                because that is which way a fire door opens and it is not
+                a detail: a door that opens inward against a crowd is the
+                thing every fire regulation in the world exists to
+                prevent. There is no sign to choose in the code — yawing
+                by minus ninety takes the leaf's own +X onto the wall's
+                outward normal, so an opening declared left-to-right as
+                seen from outside swings the right way by construction.
+  panicOnly   the mat under it only trips for somebody who is RUNNING. A
+                fire exit is not an automatic door: it is shut all night
+                and it opens when a person in a hurry leans on the bar.
+                The first cut of these opened for anybody and the shop's
+                six fire doors stood open all night with nothing on fire.
+                The player counts as such a person at any time, because
+                the player is allowed to walk out of a building.
+
+Both faces of the wall are blocked when it is shut, which sounds obvious
+and is worth stating: a door that seals the inside face and leaves the
+outside one open is a door you can walk round from the car park.
+
+AND THE LEAF IS PAINTED STEEL WITH A CRASH BAR AND A RUNNING MAN, and
+neither of those is a word. A supermarket fire door in this country
+carries the pictogram and the bar and nothing else, which is lucky,
+because the last four textures with lettering on them came down for the
+reason further down this file. The bar is the brightest thing on it: it
+is the reason the crowd can leave and the player cannot lock them in,
+since a fire door has no handle on this side and no keyhole on the other.
 
 
 AND THEN IT FALLS DOWN
@@ -801,6 +987,66 @@ Colours are snapped to the palette on the GPU through a 32x32x32 lookup
 cube, built once at start-up, flattened into a 1024x32 texture. Dither
 first, then snap: dithering afterwards would put back colours the palette
 does not contain.
+
+THE FIRE IS THE ONE THING DRAWN ADDITIVELY, at the user's request, and it
+is the one thing in the game that should be. Doom had exactly one way of
+drawing a sprite — a cut-out, every pixel either there or not — and
+everything here that is a THING is drawn that way. Fire is not a thing.
+Two flames overlapping are brighter than one flame, and it is the adding
+that makes a mass of flame read as a source of light rather than as
+orange wallpaper. So the flame material adds to the frame buffer and
+writes no depth, and the soft edge the flame generator always drew and
+the alpha test always threw away is finally being used for something.
+
+A CLUMP, NOT A FLAME. One sprite per fuel cell puts one flame every
+thirty-two units on a grid, and a grid was exactly what you saw. Each
+cell now gets between one and three, scattered inside it and a little
+past it, at offsets HASHED off the cell index and the slot — so the
+scatter is random but it is the same random every frame, and the fire
+does not boil. Everything that moves in it moves because the flame art is
+animating.
+
+BIG IN THE MIDDLE, SMALL AT THE EDGE. `core` is how surrounded by heat a
+cell is: the mean of its four neighbours' heat, which is a number the
+simulation already has, so it costs four array reads. A cell in the
+middle of a burning gondola has hot neighbours in every direction and
+gets three big flames; a cell on the advancing front has cold ones and
+gets a single small one. That is the shape of a real fire — a bright body
+with a ragged fringe. It picks the SET as well as the scale: the outer
+members of a clump come off the size below, so a small flame is genuinely
+a smaller drawing rather than a big one shrunk.
+
+AND IT SHRINKS FOR BEING CLOSE, which is the same problem the particle
+system solved from the other end. The near cull only refuses a flame
+within forty-six units of the eye and it was written when a flame was a
+hundred and fifty units tall; a two-hundred-unit blaze on top of the
+gondola BESIDE you is a hundred and forty away, passes the cull, and
+covers half the screen. Standing in a burning aisle should be alarming
+and it should not be opaque. So a flame shrinks with its own distance,
+down to two fifths at the near cull. What that costs is a fire that is
+not perspective-correct at arm's length, which nobody can see; what it
+buys is that you can still find the door.
+
+AND THERE IS SMOKE STANDING ON IT. A fire without smoke is a light.
+Everything you would actually notice about a burning supermarket from the
+car park is the smoke: it is bigger than the flames by a factor of ten,
+it is the thing that gets into the aisle you were about to walk down, and
+it is the only part of a fire still there after the fire is out. There
+were already drifting puffs — particles, which go where the wind takes
+them — and no BODY of it on the fire itself. Now there is: billboards
+parked over the cells with the highest core, at a height that rises with
+it, alpha-blended and NOT fullbright, so the one fire light in the game
+lights them from underneath. Both halves are wanted. A plume that does
+not shed is a prop; puffs with nothing under them are litter.
+
+The art churns and loops exactly, by a trick the noise makes free: the
+lattice wraps after h rows, so sampling it with a vertical offset of
+h/count per frame comes back to itself after count frames. The same field
+decides the silhouette AND the shading, so the scroll that stirs the
+inside also eats the outline — which is what separates smoke from a grey
+ball with a pattern on it. It is the one piece of art here that is not
+snapped to the palette: a cut-out edge is what makes a Doom sprite a Doom
+sprite and it is exactly wrong for smoke, which has no edge.
 
 LIGHT STEPS, IT DOES NOT FADE. Doom did not multiply a surface by a light
 level, it kept 32 pre-darkened copies of the palette and picked one. So
@@ -1299,7 +1545,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-574 checks. Every one of them earns its place by having caught something
+602 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -1421,6 +1667,28 @@ that had already reached a screenshot:
     side view does and the roof therefore landed in a band of the picture
     that is nothing but light bar. The views are anchored on the roof line
     now, and the check holds the top of the body against it
+  a fire door that sealed the inside face of its wall and left the
+    outside one open, which is a door you walk round from the car park.
+    The check counts the blocked lines and demands two
+  a fire door that opened for anybody who walked past it, so the shop's
+    six of them stood open all night with nothing on fire. The check
+    stands a calm shopper against the bar and requires nothing to happen,
+    then frightens the same shopper and requires the leaf to move
+  a crowd that could not calm down. Contagious panic passed on at full
+    strength is a loop — six hundred people in the woods behind the
+    store, none of them able to see a fire, each one renewing the
+    neighbour who had just renewed them. What the check watches is not
+    "is everybody calm at the end", because the count legitimately climbs
+    again each time the fire reaches a part of the shop that still has
+    people in it; it is the LOW WATER MARK after the first wave, which a
+    loop can never reach
+  a fire whose scatter was re-rolled every frame, which is not a fire, it
+    is a fire boiling. The check renders the same frame twice and demands
+    every sprite be in the same place
+  "the pieces of a person all come down", which stopped being true the
+    moment the fire got six times faster: two hundred tics of it beside a
+    queue takes the neighbours too, so the count in the air was somebody
+    else's pieces and the check was asking the wrong question
 
 
 WHAT IS NOT DONE

@@ -31,6 +31,25 @@
    start being a hole with two burnt frames in it. Which is a nicer way
    of saying that after a certain point in a match you can no longer shut
    the front of the shop behind you.
+
+   AND THE FIRE EXITS SWING, which is why this file is not called
+   slidedoor.js any more than it has to be. A quad on a transform can be
+   MOVED along the wall or TURNED about one end of it, and the second one
+   is a hinge — so the same class, the same state machine and the same
+   blocking lines give both the entrance and the six crash-bar doors down
+   the sides of the building. The two differences are in the spec:
+
+     swing    one leaf instead of two, turned up to a right angle about
+              the (x0,y0) end rather than slid. It turns OUTWARD, away
+              from the shop, because that is which way a fire door opens
+              and it is not a detail — a door that opens inward against a
+              crowd is the thing every fire regulation in the world
+              exists to prevent.
+     panicOnly  the mat under it only trips for somebody who is running.
+              A fire exit is not an automatic door: it is shut all night
+              and it opens when a person in a hurry leans on the bar. The
+              player counts as such a person at any time, because the
+              player is allowed to walk out of a building.
    ===================================================================== */
 
 import * as THREE from 'three';
@@ -57,6 +76,10 @@ export class SlideDoor {
    *   speed        units per tic
    *   triggerR     how close something has to be
    *   hold         tics to stay open once nothing is near
+   *   swing        one leaf on a hinge at (x0,y0), turned outward,
+   *                instead of a pair that slide
+   *   panicOnly    only somebody running trips it (the player always does)
+   *   tex          the leaf's texture, for a swinging one
    * }
    */
   constructor(game, spec) {
@@ -78,7 +101,18 @@ export class SlideDoor {
     this.zBot = spec.zBot ?? 0;
     this.zTop = spec.zTop ?? 128;
     this.half = len / 2;
-    this.travel = spec.travel ?? this.half;
+
+    this.swing = !!spec.swing;
+    /* A swinging leaf fills the opening on its own, so it is as wide as
+       the opening; a pair of sliders each take half. */
+    this.leafW = this.swing ? this.len : this.half;
+
+    /* `travel` is what `speed` is measured against, and for a swing it
+       is not a distance any more — it is how much of the arc a tic
+       covers. Defaulting it to the leaf's own width keeps `speed` in the
+       units it has always been in and gives a hundred-unit fire door
+       about a third of a second, which is a door being shoved. */
+    this.travel = spec.travel ?? (this.swing ? this.leafW : this.half);
     this.speed = spec.speed ?? 7;
     this.triggerR = spec.triggerR ?? 180;
     this.hold = spec.hold ?? 60;
@@ -88,13 +122,13 @@ export class SlideDoor {
     this.state = 'shut';
     this.jammed = false;           // the fire got it
     this._light = -1;
+    this._near = [];               // scratch for the blockmap query
 
     this.group = new THREE.Group();
-    this.group.name = 'slide-door';
-    this.leaves = [
-      this._leaf('SLIDEL', -1),
-      this._leaf('SLIDER', +1),
-    ];
+    this.group.name = this.swing ? 'exit-door' : 'slide-door';
+    this.leaves = this.swing
+      ? [this._leaf(spec.tex || 'EXITDOOR', +1)]
+      : [this._leaf('SLIDEL', -1), this._leaf('SLIDER', +1)];
     for (const l of this.leaves) this.group.add(l.mesh);
     this._setBlocked(true);
     this._place();
@@ -117,9 +151,11 @@ export class SlideDoor {
       side: THREE.DoubleSide,
     });
 
-    const w = this.half, h = this.zTop - this.zBot;
+    const w = this.leafW, h = this.zTop - this.zBot;
     /* x from 0 to w for the right leaf, -w to 0 for the left, so each
-       one is drawn where it sits when the door is shut. */
+       one is drawn where it sits when the door is shut. A swinging leaf
+       is the second case with the whole opening's width: its origin is
+       its HINGE, which is the one point on it that does not move. */
     const xa = dir < 0 ? -w : 0, xb = dir < 0 ? 0 : w;
     const g = new THREE.BufferGeometry();
     /* Doom's world is XY-with-Z-up; the renderer's is XZ-with-Y-up, and
@@ -148,12 +184,28 @@ export class SlideDoor {
     return { mesh, dir, mat, geom: g };
   }
 
-  /** Put both leaves where `this.open` says they are. */
+  /** Put the leaves where `this.open` says they are. */
   _place() {
     const { x0, y0 } = this.spec;
-    const cx = x0 + this.dx * this.half + this.nx * (this.spec.standoff ?? 0);
-    const cy = y0 + this.dy * this.half + this.ny * (this.spec.standoff ?? 0);
+    const off = this.spec.standoff ?? 0;
     const yaw = Math.atan2(this.dy, this.dx);
+    if (this.swing) {
+      /* THE HINGE IS AT (x0, y0) AND STAYS THERE. Turning the quad about
+         its own origin is the whole of the swing; the leaf's geometry
+         already runs from that origin along +X.
+
+         Which way is a right angle NEGATIVE: yawing by -90 takes the
+         leaf's own +X onto (dy, -dx), which is the outward normal — see
+         the note in the constructor about which way a fire door opens.
+         So there is no sign to choose here, only an opening declared
+         left-to-right AS SEEN FROM OUTSIDE like every other one. */
+      const l = this.leaves[0];
+      l.mesh.position.set(x0 + this.nx * off, 0, -(y0 + this.ny * off));
+      l.mesh.rotation.set(0, yaw - this.open * Math.PI / 2, 0);
+      return;
+    }
+    const cx = x0 + this.dx * this.half + this.nx * off;
+    const cy = y0 + this.dy * this.half + this.ny * off;
     const slid = this.open * this.travel;
     for (const l of this.leaves) {
       const px = cx + this.dx * slid * l.dir;
@@ -178,9 +230,19 @@ export class SlideDoor {
     const cx = x0 + this.dx * this.half, cy = y0 + this.dy * this.half;
     const r = this.triggerR;
     if (g.player && !g.player.dead && dist(g.player.x, g.player.y, cx, cy) < r) return true;
-    for (const a of g.actors) {
+    /* Off the blockmap where there is one: eight hundred shoppers times
+       eight doors times every tic is a scan the crowd cannot afford, and
+       the answer only ever involves what is within a couple of hundred
+       units of the leaf. */
+    const list = g.blockmap ? g.blockmap.nearRadius(cx, cy, r, this._near) : g.actors;
+    for (let i = 0; i < list.length; i++) {
+      const a = list[i];
       if (!a.solid || a.dead || a.removed) continue;
       if (!a.monster) continue;              // trolleys do not open doors
+      /* A crash bar is not a proximity sensor. Somebody walking past a
+         fire exit with a basket does not open it; somebody running for it
+         does. */
+      if (this.spec.panicOnly && !(a.panic > 0)) continue;
       if (dist(a.x, a.y, cx, cy) < r) return true;
     }
     return false;

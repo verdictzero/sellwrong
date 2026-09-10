@@ -135,11 +135,12 @@ export class Hud {
     const s = this.scale;
     const g = this.game;
     const burn = Math.round(g.burnPercent), wood = Math.round(g.forestPercent);
-    const key = [this.width, s, burn, wood, this.messages.map(m => m.text).join('/')].join('|');
+    const left = g.peopleLeft;
+    const key = [this.width, s, burn, wood, left, this.messages.map(m => m.text).join('/')].join('|');
     if (key === this._topKey) return;
     this._topKey = key;
 
-    const longest = Math.max(120, ...this.messages.map(m => textWidth(m.text) + 8));
+    const longest = Math.max(148, ...this.messages.map(m => textWidth(m.text) + 8));
     const w = Math.min(this.width, longest * s + 6 * s);
     const h = (16 + 8 * this.messages.length) * s + 4;
     const pix = new Pix(w, h, 1, false);
@@ -154,7 +155,11 @@ export class Hud {
       for (let k = 0; k < s; k++) pix.ink(gx0 + i, gy + k, on ? 'fire' : 'grey', on ? 0.5 + f * 0.45 : 0.18);
     }
     x = bigText(pix, 'WOOD', x + 6 * s, M, 'grey', 0.55, s);
-    bigText(pix, `${wood}%`, x + 2 * s, M, 'fire', wood > 0 ? 0.66 : 0.3, s);
+    x = bigText(pix, `${wood}%`, x + 2 * s, M, 'fire', wood > 0 ? 0.66 : 0.3, s);
+    /* and how many are still alive, which since the fire exits went in is
+       the number the player is actually playing against */
+    x = bigText(pix, 'LEFT', x + 6 * s, M, 'grey', 0.55, s);
+    bigText(pix, `${left}`, x + 2 * s, M, 'bone', left > 0 ? 0.78 : 0.34, s);
 
     this.messages.forEach((m, i) => bigText(pix, m.text, M, M + (12 + i * 8) * s, 'bone', 0.72, s));
 

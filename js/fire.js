@@ -96,8 +96,26 @@ const CELL = 32;
    nothing for the player to do. At 6 it is a few minutes, which is time
    to walk in, work, and get out — and the flamethrower is roughly ten
    times faster than waiting, which is the point of carrying it. Asked
-   for slower a third time, it went to 18. */
-const FIRE_INTERVAL = 18;
+   for slower three times, it went to 18.
+
+   AND THEN ASKED TO GO OUT MUCH FASTER, so it is 3, and everything the
+   fire does happens six times sooner than it did. The reason this is the
+   number that moved and not the burn rate is the paragraph above: the
+   fire's LIFETIME and its SPREAD are the same two terms multiplied, so
+   burning the fuel faster to shorten a fire also shortens the number of
+   rolls it gets to pass itself on, and bare lino was only ever at 1.9
+   expected spreads. Six times the burn rate would have taken it to 0.3
+   and left holes in the shop that could never catch. Six times the clock
+   changes nothing about what eventually burns and everything about when.
+
+   What it feels like: a gondola cell rises, roars and is spent in about
+   four seconds rather than twenty-three, and the ember tail behind the
+   front — also counted in fire tics, so it came down with the clock — is
+   a dozen seconds rather than a minute and a quarter. A run of shelving
+   flashes over and dies back while you are still in the aisle, which is
+   what makes a store with eight hundred people in it a chase rather than
+   a slow siege. */
+const FIRE_INTERVAL = 3;
 
 const IGNITE_AT   = 55;      // heat a cell starts at when it catches
 const PEAK        = 255;
@@ -137,8 +155,14 @@ const burnFrac = f0 => BURN_FRAC * (f0 >= 280 ? 1 : 0.22 + 0.78 * (f0 / 280));
    seconds, so an aisle you had just burnt out looked exactly like an
    aisle nobody had touched — which made the fire feel like an animation
    playing over the level rather than something happening to it. Now it
-   drops to a low glow and sits there for the better part of a minute
-   before going cold, so the ground you have taken stays visibly taken. */
+   drops to a low glow and sits there before going cold, so the ground
+   you have taken stays visibly taken.
+
+   In FIRE tics, so what this is in seconds is whatever the clock above
+   says: a dozen or so at an interval of 3, and it was a minute and a
+   quarter when the interval was 18. That is the right coupling and not
+   an accident of units — the glow behind the front should be a fixed
+   fraction of the front's own life, or a fast fire leaves a slow scar. */
 const EMBER_HEAT = 20;
 const EMBER_TICS = 150;
 
@@ -547,11 +571,48 @@ export class FireSystem {
   /* ------------------------------------------------------------------
      Drawing
 
-     A fixed pool of quads, parked on the hottest cells near the player
-     each frame. There is no per-cell sprite object and nothing is
-     created or destroyed while the store burns — with a whole aisle
-     alight that would be hundreds of allocations a second for something
-     nobody can distinguish from sixty well-placed flames.
+     Two fixed pools of quads — flames and the smoke over them — parked
+     on the hottest cells near the player each frame. There is no
+     per-cell sprite object and nothing is created or destroyed while the
+     store burns: with a whole aisle alight that would be hundreds of
+     allocations a second for something nobody can distinguish from a
+     hundred and sixty well-placed ones.
+
+     WHAT CHANGED, AND WHY EACH PART OF IT
+
+     ADDITIVE. One quad per cell, alpha-tested, gave a fire made of
+     visible tiles: every flame was a hard-edged orange shape sitting in
+     front of the next one, and two of them overlapping were no brighter
+     than one. Fire does not work like that — light adds — and it is the
+     adding that makes a mass of flame read as a source of light rather
+     than as a picture of some flames. So the flame material is additive
+     and writes no depth, and the soft edge that js/fireart.js always
+     drew and the alpha test always threw away is finally being used for
+     something.
+
+     A CLUMP, NOT A FLAME. One sprite per cell puts one flame every
+     thirty-two units on a grid, and a grid is exactly what you saw. Each
+     cell now gets between one and three, scattered inside it and a
+     little past it, at offsets hashed off the cell index and the slot —
+     so the scatter is RANDOM but it is the SAME random every frame, and
+     the fire does not boil. Everything that moves in it moves because
+     the flame art is animating.
+
+     BIG IN THE MIDDLE, SMALL AT THE EDGE. `core` is how surrounded by
+     heat a cell is: the mean of its four neighbours' heat. A cell in the
+     middle of a burning gondola has hot neighbours in every direction
+     and gets three big flames off the top of the ladder; a cell on the
+     advancing front has cold ones and gets a single small one. That is
+     the shape of a real fire — a bright body with a ragged fringe — and
+     it falls out of a number the simulation already has, so it costs
+     four array reads. It picks the SET as well as the scale: the outer
+     members of a clump come off the size below, so a small flame is
+     genuinely a smaller drawing rather than a big one shrunk.
+
+     AND SMOKE. See sprites.js for the art. It is parked over the cells
+     with the highest core, at a height that rises with it, alpha-blended
+     and NOT fullbright — so the one fire light in the game lights it
+     from underneath, which is the whole look of smoke over a fire.
      ------------------------------------------------------------------ */
   /* Built on the first frame that draws, not in the constructor. The
      simulation is pure — a fuel grid and some integers — and coupling it
@@ -560,12 +621,13 @@ export class FireSystem {
      the game whose behaviour over a thousand tics is worth checking. */
   _initSprites() {
     if (this.sprites) return;
-    this.POOL = 96;
-    this.sprites = [];
+    this.POOL = 192;
+    this.SMOKE_POOL = 36;
     const geo = new THREE.PlaneGeometry(1, 1);
     geo.translate(0, 0.5, 0);
+    this.sprites = [];
     for (let i = 0; i < this.POOL; i++) {
-      const mat = createSpriteMaterial(null, { alphaTest: 0.5, fullbright: true, width: 32, height: 48 });
+      const mat = createSpriteMaterial(null, { blend: 'add', fullbright: true, width: 32, height: 48 });
       const m = new THREE.Mesh(geo, mat);
       m.frustumCulled = false;
       m.visible = false;
@@ -573,7 +635,32 @@ export class FireSystem {
       this.game.scene.add(m);
       this.sprites.push(m);
     }
+    this.smokes = [];
+    for (let i = 0; i < this.SMOKE_POOL; i++) {
+      /* Blended rather than added, because smoke SUBTRACTS what is
+         behind it, and lit by the room rather than by itself, because
+         the only thing that lights smoke here is the fire under it. */
+      const mat = createSpriteMaterial(null, { blend: 'alpha', width: 64, height: 64 });
+      const m = new THREE.Mesh(geo, mat);
+      m.frustumCulled = false;
+      m.visible = false;
+      m.renderOrder = 9;                  // behind the flames
+      this.game.scene.add(m);
+      this.smokes.push(m);
+    }
     this._candidates = [];
+  }
+
+  /** How buried in the fire a cell is, 0 at the front and 1 in the
+   *  middle of a blaze. The mean of the four neighbours' heat, guarded
+   *  at the edges of the grid — the border ring has no sector and so
+   *  never lights, but a guard is two comparisons and a NaN in a sprite
+   *  scale is an invisible flame nobody could explain. */
+  _core(i) {
+    const h = this.heat, n = h.length, c = this.cols;
+    const e = i + 1 < n ? h[i + 1] : 0, w = i > 0 ? h[i - 1] : 0;
+    const s = i + c < n ? h[i + c] : 0, t = i >= c ? h[i - c] : 0;
+    return (e + w + s + t) / 1020;
   }
 
   render(camX, camY, billboardRot) {
@@ -606,35 +693,127 @@ export class FireSystem {
       if (h < SPREAD_AT && d2 > EMBER_RANGE2) continue;
       /* Nearest first, but weight by heat so a big fire further off
          still gets drawn ahead of an ember at your feet. */
-      cand.push({ i, x, y, h, key: d2 / (0.35 + h / 255) });
+      cand.push({ i, x, y, h, d2, core: this._core(i), key: d2 / (0.35 + h / 255) });
     }
     cand.sort((a, b) => a.key - b.key);
 
-    const n = Math.min(this.POOL, cand.length);
-    for (let s = 0; s < this.POOL; s++) {
-      const m = this.sprites[s];
-      if (s >= n) { m.visible = false; continue; }
-      const c = cand[s];
-      /* which flame: an ember, a fire, or a proper blaze */
-      const set = c.h > 200 ? 'BLAZ' : c.h > 90 ? 'FIRE' : 'EMBR';
-      /* however many frames the set has — js/fireart.js decides, and
-         the fallback is only reached if the bank is empty */
-      const letters = bank.count(set) || 8;
-      /* Offset by the cell index so neighbouring flames are out of step
-         with each other — in phase, a wall of fire pulses like a heart. */
-      const frame = String.fromCharCode(65 + ((this.tics >> 1) + c.i * 3) % letters);
-      const entry = bank.get(set, frame);
+    /* --- the flames ------------------------------------------------- */
+    let s = 0;
+    for (let c = 0; c < cand.length && s < this.POOL; c++) {
+      const cd = cand[c];
+      /* which flame: an ember, a fire, or a proper blaze — and the outer
+         members of the clump come off the rung below */
+      const rung = cd.h > 200 ? 2 : cd.h > 90 ? 1 : 0;
+      /* HOW MANY. Two on the front, three where the fire has closed over
+         the cell from every side, one for an ember — and one for anything
+         further off than about four metres, whatever it is.
+
+         THAT LAST CLAUSE IS A BUDGET, not a look. The pool is fixed, and
+         three sprites a cell spent on the nearest fifty cells is a fire
+         that stops dead halfway down the aisle while a thousand cells
+         behind it are alight and undrawn. A clump is only worth paying
+         for where you can see that it is one; past that the cell is a few
+         pixels and one flame in it is the same picture for a third of the
+         cost. */
+      const n = rung === 0 || cd.d2 > 620 * 620 ? 1 : 1 + Math.round((0.35 + cd.core) * 1.9);
+      const sec = this.game.level.sectors[this.sectorOf[cd.i]];
+      const floor = sec ? sec.floor : 0;
+      for (let j = 0; j < n && s < this.POOL; j++, s++) {
+        const m = this.sprites[s];
+        const set = FLAME_SETS[Math.max(0, rung - (j > 0 ? 1 : 0))];
+        /* however many frames the set has — js/fireart.js decides, and
+           the fallback is only reached if the bank is empty */
+        const letters = bank.count(set) || 8;
+        /* Offset by the cell index AND the slot so neighbouring flames
+           are out of step with each other — in phase, a wall of fire
+           pulses like a heart. */
+        const frame = String.fromCharCode(65 + ((this.tics >> 1) + cd.i * 3 + j * 7) % letters);
+        const entry = bank.get(set, frame);
+        const u = m.material.uniforms;
+        u.map.value = bank.texture(entry, 0);
+        /* THE SAME RANDOM EVERY FRAME. Hashed off the cell and the slot,
+           never off the clock: jitter that is re-rolled per frame is a
+           fire that boils, and the only thing that should be moving in
+           one of these is the drawing. */
+        const a = hash2(cd.i, j) * Math.PI * 2, r = j === 0 ? 0 : (0.30 + hash2(cd.i, j + 64) * 0.75) * CELL * 0.8;
+        const grow = j === 0 ? 1 : 0.52 + hash2(cd.i, j + 128) * 0.30;
+        const sc = entry.scale * (0.7 + (cd.h / 255) * 0.75) * (0.95 + cd.core * 0.45) * grow * nearTaper(cd.d2);
+        u.spriteScale.value.set(entry.w * sc, entry.h * sc);
+        u.billboardRot.value = billboardRot;
+        u.light.value = 1;
+        m.position.set(cd.x + Math.cos(a) * r, floor, -(cd.y + Math.sin(a) * r));
+        m.visible = true;
+      }
+    }
+    for (; s < this.POOL; s++) this.sprites[s].visible = false;
+
+    /* --- and the smoke over them ------------------------------------
+       Over the BURIED cells only, and spread out along the candidate
+       list rather than taken off the front of it: thirty-six puffs all
+       on the nearest square metre of fire is a grey wall in your face,
+       and the same thirty-six spaced down a burning aisle is a burning
+       aisle. */
+    let q = 0;
+    const stride = Math.max(1, Math.floor(cand.length / (this.SMOKE_POOL * 2)));
+    for (let c = 0; c < cand.length && q < this.SMOKE_POOL; c += stride) {
+      const cd = cand[c];
+      if (cd.h < 110 || cd.core < 0.30) continue;
+      const m = this.smokes[q];
+      const letters = bank.count('SMOK') || 8;
+      const entry = bank.get('SMOK', String.fromCharCode(65 + (((this.tics * 3) >> 5) + cd.i) % letters));
+      const sec = this.game.level.sectors[this.sectorOf[cd.i]];
       const u = m.material.uniforms;
       u.map.value = bank.texture(entry, 0);
-      const sc = entry.scale * (0.7 + (c.h / 255) * 0.75);
+      const sc = entry.scale * (0.9 + cd.core * 1.1) * nearTaper(cd.d2);
       u.spriteScale.value.set(entry.w * sc, entry.h * sc);
       u.billboardRot.value = billboardRot;
-      u.light.value = 1;
-      const sec = this.game.level.sectors[this.sectorOf[c.i]];
-      m.position.set(c.x, sec ? sec.floor : 0, -c.y);
+      /* Lit by the room and by the fire under it, and it leans: a slow
+         sway off the cell's own phase, so a run of it is not a row of
+         identical balls at identical heights. */
+      u.light.value = sec ? Math.max(0.34, sec.light) : 0.5;
+      if (u.sky) u.sky.value = sec ? (sec.sky ?? (sec.outdoor ? 1 : 0)) : 0;
+      const ph = this.tics * 0.014 + hash2(cd.i, 7) * 6.283;
+      u.spriteOffset.value.set(Math.sin(ph) * 26, 0);
+      const lift = 42 + cd.core * 150 + Math.sin(ph * 1.7) * 12;
+      m.position.set(cd.x, (sec ? sec.floor : 0) + lift, -cd.y);
       m.visible = true;
+      q++;
     }
+    for (; q < this.SMOKE_POOL; q++) this.smokes[q].visible = false;
   }
+}
+
+/* The three sizes of flame, smallest first, so a clump can pick the rung
+   below its own for the little ones round the edge. */
+const FLAME_SETS = ['EMBR', 'FIRE', 'BLAZ'];
+
+/* HOW MUCH SMALLER A FLAME GETS FOR BEING CLOSE.
+
+   The same problem the particle system solved with `nearShrink`, arrived
+   at from the other end. The near cull only refuses a flame within
+   forty-six units of the eye, and it was written when a flame was a
+   hundred and fifty units tall; a two-hundred-unit blaze on top of the
+   gondola BESIDE you is a hundred and forty away, passes the cull, and
+   covers half the screen. Standing in a burning aisle should be alarming
+   and it should not be opaque.
+
+   So a flame shrinks with its own distance, down to two fifths at the
+   near cull, and is full size from about eight metres out. What that
+   costs is a fire that is not perspective-correct at arm's length, which
+   nobody can see; what it buys is that you can still find the door. */
+const nearTaper = d2 => {
+  const t = Math.sqrt(d2) / 280;
+  return t > 1 ? 1 : t < 0.40 ? 0.40 : t;
+};
+
+/* A stable random per (cell, slot). Not pRandom: that is a stream, and a
+   stream gives a different answer every frame, which is a flame that
+   jumps about. Knuth's mix twice, which is enough to scatter a hundred
+   and forty quads convincingly. */
+function hash2(a, b) {
+  let n = Math.imul(a | 0, 374761393) ^ Math.imul((b | 0) + 1, 668265263);
+  n = Math.imul(n ^ (n >>> 13), 1274126177);
+  return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
 }
 
 /* Local copy so the fire's link pass does not import the whole of

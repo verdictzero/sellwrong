@@ -38,8 +38,14 @@ export class Effects {
       max: 640, texture: atlases?.spark || null, frames: 1,
       blend: 'cutout', fullbright: true, name: 'embers', renderOrder: 12, nearShrink: 160,
     });
+    /* Raised from 240 when the fire got six times faster and grew a body
+       of smoke of its own (js/fire.js). These are the DRIFTING half of
+       it: the standing plume over a burning aisle is billboards pinned to
+       the hot cells, and these are what comes off the top of it and goes
+       where the wind takes it. Both halves are wanted — a plume that does
+       not shed is a prop, and puffs with nothing under them are litter. */
     this.smoke = new Particles({
-      max: 240, texture: atlases?.smoke || null, frames: 4,
+      max: 360, texture: atlases?.smoke || null, frames: 4,
       blend: 'alpha', fullbright: false, light: 0.55, name: 'smoke', renderOrder: 14, nearShrink: 90,
     });
     this._samples = [];
@@ -98,7 +104,13 @@ export class Effects {
       const F = g.fire;
       if (F && F.active.length) {
         const len = F.active.length;
-        for (let k = 0; k < 3; k++) {
+        /* EIGHT SAMPLES, NOT THREE. With the fire on a three-tic clock a
+           run of shelving is alight and spent inside four seconds, and at
+           three samples a tic a given cell got one spark every three —
+           which is a fire that has gone out by the time anything has come
+           off it. Still a sample and not a sum: with a whole aisle going
+           there are hundreds of cells and the answer does not change. */
+        for (let k = 0; k < 8; k++) {
           const i = F.active[(pRandom() * 256 + pRandom()) % len];
           const h = F.heat[i];
           if (h < 110) continue;
@@ -106,7 +118,9 @@ export class Effects {
           if (dist2(x, y, p.x, p.y) > 900 * 900) continue;
           const z = (g.level.sectors[F.sectorOf[i]]?.floor ?? 0);
           if (pRandom() < h * 0.55) this.ember(x, y, z + 14 + (pRandom() & 31), 1, h / 255);
-          if ((g.tics & 3) === 0 && pRandom() < 90) this.puff(x, y, z + 30, 26, 140);
+          /* and off the TOP of the flame rather than off the floor, so it
+             leaves the plume instead of appearing inside it */
+          if ((g.tics & 1) === 0 && pRandom() < 110) this.puff(x, y, z + 52, 32, 150);
         }
       }
       /* the forest's */

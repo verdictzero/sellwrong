@@ -348,7 +348,19 @@ export function createWallMaterial(texture, opts = {}) {
 }
 
 /* Sprites: one light value for the whole quad, updated each tic from
-   whichever sector the thing is standing in. */
+   whichever sector the thing is standing in.
+
+   `blend` is the one thing here that is not Doom. Doom had exactly one
+   way of drawing a sprite — a cut-out, every pixel either there or not —
+   and everything in this game that is a THING is drawn that way. Fire is
+   not a thing. Two flames overlapping are brighter than one flame, which
+   is the whole reason a fire reads as light rather than as orange
+   wallpaper, and no amount of cut-out gets you there: it is the one
+   effect that needs the frame buffer added to rather than replaced.
+
+     'cutout' (the default)  alpha-tested, writes depth, Doom's way
+     'add'                   added to what is there, no depth write
+     'alpha'                 blended over it, no depth write — smoke */
 export function createSpriteMaterial(texture, opts = {}) {
   const u = baseUniforms(texture, opts);
   u.light         = { value: opts.light ?? 1.0 };
@@ -356,14 +368,20 @@ export function createSpriteMaterial(texture, opts = {}) {
   u.billboardRot  = { value: 0.0 };
   u.spriteScale   = { value: new THREE.Vector2(opts.width ?? 64, opts.height ?? 64) };
   u.spriteOffset  = { value: new THREE.Vector2(0, 0) };
+  const blend = opts.blend || 'cutout';
+  /* Depth TESTING stays on for all three, always: a flame behind a
+     gondola is behind the gondola. It is only depth WRITING that a
+     translucent sprite must not do, or the next one to draw is clipped
+     against a pane of glass the first one left behind. */
   return new THREE.ShaderMaterial({
     uniforms: u,
     defines: { BILLBOARD: '' },
     vertexShader: COMMON_VERT,
     fragmentShader: COMMON_FRAG,
-    transparent: !!opts.transparent,
+    transparent: blend !== 'cutout' ? true : !!opts.transparent,
+    blending: blend === 'add' ? THREE.AdditiveBlending : THREE.NormalBlending,
     side: THREE.DoubleSide,
-    depthWrite: opts.depthWrite !== false,
+    depthWrite: blend === 'cutout' ? opts.depthWrite !== false : false,
     toneMapped: false,
     fog: false,
   });

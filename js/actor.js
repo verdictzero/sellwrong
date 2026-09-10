@@ -51,6 +51,99 @@ const DIAGONALS = [DI.NORTHWEST, DI.NORTHEAST, DI.SOUTHWEST, DI.SOUTHEAST];
 
 let nextId = 1;
 
+/* =====================================================================
+   THE BLOCKMAP, for the crowd
+
+   Doom kept one of these and this game did not, because for a hundred
+   and twenty actors a scan of the list is faster than a hash lookup and
+   the honest thing is the simple thing. At eight hundred it is not: a
+   crowd deciding where to step asks "is anybody standing there" once per
+   candidate direction per actor, which against a flat list is the crowd
+   squared, and the crowd squared is what stopped the last increase from
+   going further.
+
+   So: a hash of cells 128 units across, holding every actor that was
+   ever solid. `near` visits the nine cells around a point, which for a
+   query radius under a cell is every actor that could possibly overlap
+   and no more.
+
+   ONLY THE POSITION HAS TO BE RIGHT. Whether an actor is still solid,
+   still alive and still in the world changes in a dozen places — a
+   corpse stops being solid, a splat is taken away when the cap is
+   reached — and threading grid maintenance through all of them is how
+   you get a crowd that can walk through a body one time in a thousand.
+   Instead a thing that has stopped being solid stays in the grid and the
+   CALLER filters it, exactly as it filtered the flat list. The waste is
+   a handful of entries per cell; the guarantee is that the grid can
+   never disagree with the world about who is where.
+   ===================================================================== */
+const BM_CELL = 128;
+
+export class ActorGrid {
+  constructor() { this.cells = new Map(); }
+
+  key(x, y) { return (Math.floor(x / BM_CELL) * 4093) ^ Math.floor(y / BM_CELL); }
+
+  add(a) {
+    a._bmKey = this.key(a.x, a.y);
+    let b = this.cells.get(a._bmKey);
+    if (!b) this.cells.set(a._bmKey, b = []);
+    b.push(a);
+  }
+
+  remove(a) {
+    const b = this.cells.get(a._bmKey);
+    if (!b) return;
+    const i = b.indexOf(a);
+    if (i >= 0) b.splice(i, 1);
+  }
+
+  /** Called every time something in the grid moves. A move that stays in
+   *  the same cell — which most steps are, a step being sixteen units
+   *  against a cell of a hundred and twenty-eight — costs one hash. */
+  moved(a) {
+    const k = this.key(a.x, a.y);
+    if (k === a._bmKey) return;
+    this.remove(a);
+    this.add(a);
+  }
+
+  /** Every actor in the nine cells around (x, y). Not a radius test:
+   *  the caller is going to test the distance anyway, and a cell is
+   *  wider than any radius that asks. */
+  near(x, y, out) {
+    out.length = 0;
+    const gx = Math.floor(x / BM_CELL), gy = Math.floor(y / BM_CELL);
+    for (let j = -1; j <= 1; j++)
+      for (let i = -1; i <= 1; i++) {
+        const b = this.cells.get(((gx + i) * 4093) ^ (gy + j));
+        if (b) for (let k = 0; k < b.length; k++) out.push(b[k]);
+      }
+    return out;
+  }
+
+  /** The same, for something that reaches further than a cell — the
+   *  circle a fireball clears, say. Rings out to cover the radius. */
+  nearRadius(x, y, r, out) {
+    out.length = 0;
+    const n = Math.ceil(r / BM_CELL);
+    const gx = Math.floor(x / BM_CELL), gy = Math.floor(y / BM_CELL);
+    for (let j = -n; j <= n; j++)
+      for (let i = -n; i <= n; i++) {
+        const b = this.cells.get(((gx + i) * 4093) ^ (gy + j));
+        if (b) for (let k = 0; k < b.length; k++) out.push(b[k]);
+      }
+    return out;
+  }
+}
+
+/* One scratch array, because `near` is called eight times per fleeing
+   shopper per step and a fresh array each time is the garbage a
+   fixed-tic loop can least afford. Never held across a call. */
+const _near = [];
+/* and one for A_Flee's eight direction scores, for the same reason */
+const _score = new Float64Array(8);
+
 export class Actor {
   constructor(game, typeName, x, y, angle = 0, opts = {}) {
     const info = ACTORS[typeName];
@@ -91,9 +184,11 @@ export class Actor {
     this.dead = false;
     this.removed = false;
 
-    /* running away — see A_Watch and A_Flee */
+    /* running away — see A_Watch, A_PickExit and A_Flee */
     this.panic = 0;              // tics left frightened
     this.fleeX = 0; this.fleeY = 0;
+    /* which way out, and when to think about it again */
+    this.exitX = null; this.exitY = null; this.exitTic = 0;
 
     /* fire */
     this.burning = 0;            // tics left alight
@@ -119,6 +214,12 @@ export class Actor {
 
     this.mesh = null;
     this._lastKey = '';
+
+    /* into the blockmap, if it is the kind of thing anybody has to walk
+       round. Solidity can be lost later — see the note on ActorGrid — and
+       losing it does not take the entry out. */
+    this._bmKey = 0;
+    if (info.solid || info.monster) game.blockmap?.add(this);
   }
 
   /* ------------------------------------------------------------------
@@ -163,6 +264,7 @@ export class Actor {
   remove() {
     if (this.removed) return;
     this.removed = true;
+    this.game.blockmap?.remove(this);
     if (this.mesh) { this.game.scene.remove(this.mesh); this.mesh.geometry.dispose(); this.mesh.material.dispose(); this.mesh = null; }
     if (this.burnSprite) { this.burnSprite.remove(); this.burnSprite = null; }
   }
@@ -183,6 +285,7 @@ export class Actor {
     const ny = this.y + Math.sin(a) * this.speed;
     if (!this.canStandAt(nx, ny)) return false;
     this.x = nx; this.y = ny;
+    this.game.blockmap?.moved(this);
     this.updateSector();
     /* Doom re-randomises movecount here, which is why a monster commits
        to a direction for a while instead of jittering every tic. */
@@ -195,8 +298,13 @@ export class Actor {
     const [rx, ry, hit] = lv.slideMove(this.x, this.y, nx - this.x, ny - this.y, this.radius, this.z, this.height, true);
     if (hit || Math.abs(rx - nx) > 0.01 || Math.abs(ry - ny) > 0.01) return false;
     if (this.game.forest && this.game.forest.blocks(nx, ny, this.radius)) return false;
-    /* and nothing solid already standing there */
-    for (const o of this.game.actors) {
+    /* and nothing solid already standing there. Nine cells of blockmap
+       rather than the whole cast — see ActorGrid, and the note there
+       about why the flags are still tested here. */
+    const bm = this.game.blockmap;
+    const list = bm ? bm.near(nx, ny, _near) : this.game.actors;
+    for (let i = 0; i < list.length; i++) {
+      const o = list[i];
       if (o === this || o.removed || !o.solid || o.dead) continue;
       const rr = this.radius + o.radius;
       if (dist2(nx, ny, o.x, o.y) < rr * rr) return false;
@@ -538,20 +646,109 @@ export const ACTIONS = {
       if (h < 0.22) continue;
       hot++; hx += x * h; hy += y * h; hw += h;
     }
-    if (!hot) return;
-    ACTIONS.A_Scare(a, hx / hw, hy / hw);
+    if (hot) { ACTIONS.A_Scare(a, hx / hw, hy / hw); return; }
+    /* AND THEN THE PART THAT IS NOT ABOUT FIRE AT ALL.
+
+       Nine samples of the fire grid is a person who can see flames.
+       Nobody in a supermarket finds out about a fire that way: they find
+       out because the aisle in front of them is suddenly full of people
+       going the other way. Without that, a shop this size behaves as
+       hundreds of independent people who each notice at 320 units, and
+       the front end stands at the tills while the back of the store
+       burns — which is not what a crowd does and, with a fire six times
+       faster than it used to be, meant most of them never started
+       moving until it was on them.
+
+       So panic is contagious, and it travels at the speed of somebody
+       running past you. It borrows the panic it catches — the point
+       being run FROM comes across with it, so a stampede goes one way
+       rather than each new person choosing afresh from where they happen
+       to be standing.
+
+       It cannot start itself: every chain of this ends at somebody who
+       actually saw the fire in the loop above, and if the shop is not
+       alight there is nothing to catch.
+
+       AND IT HAS TO RUN DOWN, which is the part that took two goes. A
+       fright handed on at full strength is a loop: two people in the
+       woods four hundred units behind the store, neither of them able to
+       see a fire, each renewing the other for the rest of the level —
+       which is exactly what happened, six hundred of them, running on
+       the spot in the trees. So what is passed on is what is LEFT minus
+       a bit, a rumour weakens with every telling, and a chain of it dies
+       after about a dozen hops unless somebody along it can actually see
+       the fire and start a fresh one. */
+    const SEE = 190;                    // near enough to see their face
+    const FADE = 24;                    // what a telling costs
+    for (const o of g.blockmap.near(a.x, a.y, _near)) {
+      if (o === a || o.removed || o.dead || o.panic <= FADE * 2) continue;
+      if (dist2(a.x, a.y, o.x, o.y) > SEE * SEE) continue;
+      ACTIONS.A_Scare(a, o.fleeX, o.fleeY, o.panic - FADE);
+      return;
+    }
   },
 
   /** Frighten one actor, away from a point. Called by A_Watch, and by
-   *  anything else that ought to clear a room — see Game.scare. */
-  A_Scare(a, x, y) {
+   *  anything else that ought to clear a room — see Game.scare.
+   *
+   *  `tics` is how long the fright lasts and it is only ever passed by
+   *  the contagion in A_Watch, which passes LESS than it caught. See
+   *  the note there: a fright that is handed on at full strength is a
+   *  crowd that never calms down, and the woods behind the store filled
+   *  up with six hundred people running on the spot for ever because two
+   *  of them could see each other. */
+  A_Scare(a, x, y, tics) {
+    const full = a.info.panicTics ?? 280;
+    const want = Math.min(full, tics ?? full);
+    if (want <= a.panic) { a.fleeX = x; a.fleeY = y; return; }
     const first = a.panic <= 0;
-    a.panic = a.info.panicTics ?? 280;
+    a.panic = want;
     a.fleeX = x; a.fleeY = y;
     if (first) {
       a.game.sound?.play(a.info.painSound, a);
       if (a.info.see) a.setState(a.info.see);
+      a.exitTic = 0;                 // pick a way out on the next step
     }
+  },
+
+  /* ------------------------------------------------------------------
+     WHICH WAY OUT
+
+     The map publishes every way out of the building as a point on the
+     OUTSIDE of it — six fire exits down the flanks and the two front
+     sliders; see level.exits in js/maps/sellwrong.js. This picks one.
+
+     NEAREST IS NOT ENOUGH, and the case that proves it is the one that
+     happens most: a fire at the west end of the mid cross-aisle is
+     nearest to the west mid exit for everybody standing in it, including
+     the people the fire is between. So an exit is charged for being
+     close to the thing being run from, and the charge is large enough to
+     lose a thousand units of walking — because a longer way out you can
+     use beats a shorter one you cannot.
+
+     RE-PICKED ON A TIMER, not every step. The two terms both drift, and
+     a shopper who re-decides every step in the region where two exits
+     score the same walks on the spot between them. Once a second is
+     often enough to notice the aisle ahead has caught, and rare enough
+     that the decision holds long enough to act on.
+     ------------------------------------------------------------------ */
+  A_PickExit(a) {
+    const list = a.game.level.exits;
+    a.exitTic = 35 + (a.id & 15);
+    a.exitX = a.exitY = null;
+    if (!list || !list.length) return;
+    /* Somebody already outdoors does not need a door. They need to keep
+       going, which is what the plain flee below does. */
+    if (a.sector && a.sector.outdoor) return;
+    let best = null, bestScore = Infinity;
+    for (let i = 0; i < list.length; i++) {
+      const e = list[i];
+      const score = dist(a.x, a.y, e.x, e.y)
+                  + Math.max(0, 1400 - dist(e.x, e.y, a.fleeX, a.fleeY)) * 1.6;
+      if (score >= bestScore) continue;
+      bestScore = score; best = e;
+    }
+    if (best) { a.exitX = best.x; a.exitY = best.y; }
   },
 
   /* One step of getting out of here.
@@ -561,9 +758,29 @@ export const ACTIONS = {
      doorway; running away is a different problem, because the thing you
      are running from is a REGION and the wrong step is not a step that
      wastes time, it is a step into the fire. So the eight directions are
-     SCORED — how much further from the fire it gets you, minus how hot
+     SCORED — how much closer to the way out it gets you, minus how hot
      it is where you would land, minus a little for turning — and the
-     best walkable one wins. */
+     best walkable one wins.
+
+     AND THERE IS A WAY OUT NOW, which changed what this function is.
+     Running AWAY from a fire in a supermarket takes you to the back of
+     the shop and then into a corner, because that is what "away" means
+     inside a rectangle with one door in it: the crowd used to pile into
+     the frozen aisle and cook. So the target is an EXIT and the fire is
+     only a penalty on the step — get further from the flames if you can,
+     but get to the door either way. The two behaviours are the same
+     eight-way scorer with the sign of one term flipped, which is why
+     they are one function and not two.
+
+     GREEDY, AND IT WORKS HERE FOR A REASON WORTH WRITING DOWN. Hill
+     climbing toward a point gets stuck in dead ends, and a supermarket
+     is nothing but dead ends — except that every aisle in this one runs
+     north-south and opens onto a cross-aisle at BOTH ends, and every
+     exit sits on a cross-aisle. So from anywhere in an aisle the door is
+     never at your own y: moving toward the nearer cross-aisle always
+     gets you closer to it, and the aisle you are in is a corridor to
+     somewhere rather than a pocket. No graph, no nodes, and eight
+     hundred of them cost eight distance calls each. */
   A_Flee(a) {
     const g = a.game, F = g.fire;
     if (--a.panic <= 0 && !a.burning) {
@@ -571,30 +788,42 @@ export const ACTIONS = {
       if (!F || F.heatAt(a.x, a.y) < 0.15) { a.setState(a.info.spawn); return; }
       a.panic = 35;
     }
+    if (--a.exitTic <= 0) ACTIONS.A_PickExit(a);
+    /* Toward the door if there is one to head for, away from the fire if
+       there is not — which is anybody already outside, and anybody on a
+       map that has no exits declared. */
+    const out = a.exitX !== null && a.exitX !== undefined;
+    const tx = out ? a.exitX : a.fleeX, ty = out ? a.exitY : a.fleeY;
+    const sign = out ? -1 : 1;              // closer is better, or further is
     const step = a.speed;
-    const d0 = dist(a.x, a.y, a.fleeX, a.fleeY);
-    let best = DI.NODIR, bestScore = -Infinity;
+    const d0 = dist(a.x, a.y, tx, ty);
     for (let d = 0; d < 8; d++) {
       const ang = DIR_ANGLE[d];
       const nx = a.x + Math.cos(ang) * step, ny = a.y + Math.sin(ang) * step;
       /* two steps ahead for the heat, so it does not run into a wall of
          fire one step short of noticing it */
       const fx = a.x + Math.cos(ang) * step * 4, fy = a.y + Math.sin(ang) * step * 4;
-      let score = (dist(nx, ny, a.fleeX, a.fleeY) - d0) * 3;
+      let score = (dist(nx, ny, tx, ty) - d0) * 3 * sign;
       if (F) score -= (F.heatAt(nx, ny) * 260 + F.heatAt(fx, fy) * 140);
       if (d === a.movedir) score += 6;                       // keep going
       if (d === OPPOSITE[a.movedir]) score -= 10;            // not straight back
       score += (pRandom() / 255 - 0.5) * 4;
-      if (score <= bestScore) continue;
-      bestScore = score; best = d;
+      _score[d] = score;
     }
-    /* Try the best, then the next best, then anything: a shopper in a
-       corner with the aisle alight still has to do SOMETHING. */
-    if (best !== DI.NODIR && a.tryWalk(best)) { a.movedir = best; return; }
-    const order = pRandom() & 7;
+    /* IN SCORE ORDER, all eight of them. This used to be "the best, then
+       a random order over the rest", which is Doom's fallback and is
+       right for a monster that has lost sight of you and wrong for
+       somebody with a door in mind: the second-best direction at the end
+       of an aisle is the one that goes round the gondola, and picking at
+       random instead threw that away half the time. A selection sort over
+       eight is sixty-four compares and no allocation. */
     for (let k = 0; k < 8; k++) {
-      const d = (order + k) & 7;
-      if (a.tryWalk(d)) { a.movedir = d; return; }
+      let best = -1, bestScore = -Infinity;
+      for (let d = 0; d < 8; d++)
+        if (_score[d] > bestScore) { bestScore = _score[d]; best = d; }
+      if (best < 0) break;
+      _score[best] = -Infinity;
+      if (a.tryWalk(best)) { a.movedir = best; return; }
     }
     a.movedir = DI.NODIR;
   },

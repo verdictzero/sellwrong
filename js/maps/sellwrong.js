@@ -674,6 +674,69 @@ export function buildSellWrong() {
   rm.add(1800, BOH_Y0 + 120, 1816, BOH_Y1 - 120, boh('stock to dock', 0.18, FUEL.corridor));
   rm.add(2900, BOH_Y0 + 120, 2916, BOH_Y1 - 160, boh('dock to office', 0.18, FUEL.corridor));
 
+  /* =================================================================
+     THE FIRE EXITS
+
+     Six of them, and they are the single biggest change the shop floor
+     has ever had, because they are the difference between a crowd that
+     dies where it stands and a crowd that GETS OUT. Everything about
+     them follows from that.
+
+     WHERE. At the ends of the three cross-aisles, west and east, because
+     that is where a real supermarket puts them and because it is the
+     only place they can go: the perimeter of this building is fixtures —
+     produce bins, the bakery case, the chill wall, the freezers — and a
+     door in the middle of a run of chillers opens onto the top of a
+     chiller. A cross-aisle is walkable floor that reaches the outside
+     wall, and there are exactly three of them.
+
+     WHAT IS ON THE OTHER SIDE. The flanks of the parade, which are
+     wood. So a shopper who makes it out is in the trees at the side of
+     the building, in the dark, and there are nine thousand units of
+     forest for them to be somewhere in. That is the hunt, and it is
+     free: no new geometry, and the wood already burns.
+
+     WHAT MAKES THEM READ AS AN EXIT AND NOT A HOLE: they are LIT. The
+     cross-aisles are at 0.26 and these are at 0.62, so the end of the
+     aisle glows and you can see from the middle of the shop where the
+     crowd is going. That is the whole signage budget, and it is more
+     legible than a sign would be — see js/textures.js on why the green
+     man is on the leaf and there is no word anywhere.
+
+     The leaf itself swings, is shut all night, and opens for anybody
+     running — js/slidedoor.js. */
+  const EXIT_W = 104;                  // one leaf, and a leaf is a person and a bit
+  const exits = [];
+  const exitProps = n => ({
+    /* the ceiling is the door head, exactly like the entrance: a shut
+       leaf has to be the whole of the opening or you can see over it */
+    floor: FLOOR_WALK, ceil: DOOR_TOP, light: 0.62,
+    floorTex: 'CONCRETE', ceilTex: 'CEILTILE',
+    wallTex: 'STOCKWAL', upperTex: 'STOCKWAL', lowerTex: 'KERB',
+    fuel: FUEL.walk, name: n,
+  });
+  /* Every cross-aisle's middle, which is also every exit's middle. */
+  const EXIT_Y = [
+    (ROWS[0].y1 + ROWS[1].y0) / 2,     // 1150, between run one and run two
+    (ROWS[1].y1 + ROWS[2].y0) / 2,     // 1970, between run two and run three
+    (Y_BACKX + Y_BACKXEND) / 2,        // 2690, the back cross-aisle past the deli
+  ];
+  const WHICH = ['mid', 'rear', 'back'];
+  EXIT_Y.forEach((cy, i) => {
+    const a = cy - EXIT_W / 2, b = cy + EXIT_W / 2;
+    /* WEST. The opening is declared left to right AS SEEN FROM OUTSIDE,
+       which standing in the wood looking east means north to south — and
+       that is what puts the outward normal on the west side and swings
+       the leaf away from the building. Get it backwards and the door
+       opens into the shop, into the crowd coming at it. */
+    const w = rm.add(ANCHOR_X0 - WALL, a, ANCHOR_X0, b, exitProps(`fire exit west, ${WHICH[i]}`));
+    exits.push({ rect: w, x: ANCHOR_X0 - WALL / 2, y0: b, y1: a, out: [ANCHOR_X0 - 140, cy] });
+    /* EAST, mirrored: outside is the far side, so left to right is south
+       to north. */
+    const e = rm.add(ANCHOR_X1, a, ANCHOR_X1 + WALL, b, exitProps(`fire exit east, ${WHICH[i]}`));
+    exits.push({ rect: e, x: ANCHOR_X1 + WALL / 2, y0: a, y1: b, out: [ANCHOR_X1 + 140, cy] });
+  });
+
   /* the swing door out of the shop floor */
   const staffDoor = rm.add(700, Y_BACKXEND, 820, BOH_Y0, {
     floor: FLOOR_WALK, ceil: FLOOR_WALK, light: 0.46,      // shut: ceiling on the floor
@@ -817,6 +880,34 @@ export function buildSellWrong() {
       standoff: 0, travel: (x1 - x0) / 2,
       speed: 5, triggerR: 250, hold: 70,
       lines, sector: S[e.sector],
+    });
+  }
+
+  /* --- and the fire exits, on the same list ---------------------------
+     Same class, same state machine, same blocking lines; the spec says
+     `swing` and it turns about one end instead of sliding along the
+     wall. Which lines are the opening is easy here and does not need a
+     query per face: the exit sector is a rectangle in the thickness of
+     the wall, so its two long sides have a room on them and its two
+     short ones face into the void and are wall. TWO-SIDED IS THE
+     OPENING, both faces of it, which is what has to be blocked — a door
+     that seals the inside face and leaves the outside one open is a door
+     you can walk round from the car park.
+
+     triggerR is the width of the opening and a little, so it is the bar
+     that is being leaned on rather than a mat halfway down the aisle;
+     hold is long, because what comes through a fire exit is not one
+     person, it is everybody who was in that cross-aisle. */
+  for (const x of exits) {
+    const lines = mb.lines.filter(l =>
+      (l.front === x.rect.sector || l.back === x.rect.sector) &&
+      l.front !== null && l.back !== null);
+    slide.push({
+      x0: x.x, y0: x.y0, x1: x.x, y1: x.y1,
+      zBot: FLOOR_WALK, zTop: DOOR_TOP,
+      standoff: 0, swing: true, panicOnly: true, tex: 'EXITDOOR',
+      speed: 8, triggerR: EXIT_W + 40, hold: 210,
+      lines, sector: S[x.rect.sector],
     });
   }
 
@@ -983,19 +1074,29 @@ export function buildSellWrong() {
      WHICH PERSON is chosen here rather than at spawn time so that two
      runs of the same map put the same people in the same places, and a
      screenshot is a screenshot of something. */
-  /* THE WHOLE OF IT. 1 is the old shop.
+  /* THE WHOLE OF IT. 1 is the old shop, which held ninety-two.
 
-     It is not a free knob. The cost of a crowd is not the crowd, it is
-     the panicking: an actor deciding where to step asks every other
-     solid actor whether it is in the way, so the work goes up with the
-     SQUARE of how many of them are running. Measured with no renderer in
-     the way, at 35 Hz: a quiet shop is 0.03 ms a tic at 92 people and
-     0.06 at 460, and five fires going with a third of the shop running
-     is 0.21 ms at 92 and 2.0 at 460 — ten times the work for five times
-     the people, and still only seven per cent of a tic. There is room
-     above this and there is not unlimited room: another doubling wants a
-     grid over the actors rather than a scan of them. */
-  const CROWD = 5;
+     It used not to be a free knob and now nearly is, which is the whole
+     story of this number. The cost of a crowd is not the crowd, it is
+     the panicking: an actor deciding where to step asks every solid
+     actor whether it is in the way, and against a flat list that is the
+     crowd SQUARED. Measured with no renderer in the way, at 35 Hz, five
+     fires going with a third of the shop running: 0.21 ms a tic at 92
+     people, 2.0 at 460 — ten times the work for five times the people,
+     and the reason the note here used to say that another doubling
+     wanted a grid over the actors rather than a scan of them.
+
+     It has one now (ActorGrid, js/actor.js), and the same measurement is
+     0.6 ms at 460 and 0.8 at 736 — a third of what the scan cost with
+     sixty per cent more people on the floor, and about three per cent of
+     a tic. What limits the crowd from here is not the arithmetic, it is
+     the FLOOR: at 54 apart there is only so much shop, and the top-up
+     below is what finds the last of it. */
+  const CROWD = 8;
+  /* And what that is in people, so the number the shop is asked for is
+     written down once and both the placement and the smoke test read the
+     same one. */
+  const BASE = 92, TARGET = BASE * CROWD;
   /* A shopper is 18 in the radius, so two of them touch at 36, and one
      walks 16 units a step. Below 52 a shopper hemmed in on all sides has
      no step it can take that does not end inside somebody — which is
@@ -1143,7 +1244,32 @@ export function buildSellWrong() {
       someone(() => [ANCHOR_X0 + 200 + rnd() * (ANCHOR_X1 - ANCHOR_X0 - 400),
                      SALES.y0 + 10 + rnd() * (Y_TILLEND - SALES.y0 - 25)]);
 
-    if (dropped) console.warn(`${dropped} shoppers found nowhere to stand and were dropped`);
+    /* AND THE TOP-UP, which is what makes CROWD mean what it says.
+
+       Every group above is a region and a count, and the counts were
+       balanced by eye against the region they sit in. That held at five
+       times the old shop and stopped holding at eight: the aisles and the
+       queues filled up, eighty people found nowhere to stand in the
+       region they had been offered, and the shop came out at 656 of the
+       736 asked for — a shortfall that is invisible as a number and shows
+       up as the back of the store being emptier than the front.
+
+       So the last pass ignores the regions entirely and offers the WHOLE
+       sales floor, one random point at a time, until the shop holds what
+       it was asked to hold. `standable` is doing all the work: it will
+       not put anybody on a gondola, in a till, inside a crate or within
+       54 of somebody already standing, so a uniform scatter over a
+       rectangle comes out as people in the walkable gaps of it. The
+       attempt budget is what stops a shop that is genuinely full from
+       looping for ever — at some density every point is rejected, and
+       that density is a property of the floor plan, not a bug. */
+    for (let att = 0; taken.length < TARGET && att < TARGET * 60; att++)
+      place(SALES.x0 + 20 + rnd() * (SALES.x1 - SALES.x0 - 40),
+            SALES.y0 + 20 + rnd() * (SALES.y1 - SALES.y0 - 40));
+
+    if (taken.length < TARGET)
+      console.warn(`the shop holds ${taken.length} of the ${TARGET} asked for`);
+    if (dropped) console.warn(`${dropped} shoppers found nowhere to stand in their own region`);
   }
 
   const level = mb.build();
@@ -1161,6 +1287,24 @@ export function buildSellWrong() {
   /* Where a customer may stand. The crowd is placed through it and the
      smoke test holds every one of them against it. */
   level.salesFloor = SALES;
+  /* EVERY WAY OUT OF THE BUILDING, as a point on the OUTSIDE of it.
+
+     A frightened shopper reads this and runs at the nearest one (see
+     A_Flee in js/actor.js), and the reason the point is outside rather
+     than in the doorway is the whole of why that works: aim a greedy
+     walker at the threshold and it arrives, stops, and mills about in
+     the opening with everybody behind it. Aim it two door-widths past
+     and the doorway is somewhere it goes THROUGH.
+
+     The two front sliders are on the list as well. They are the widest
+     way out by a factor of three and they are the way the player came
+     in, so the front end empties out past the tills and into the car
+     park while the aisles empty out sideways into the trees. */
+  level.exits = [
+    ...exits.map(x => ({ x: x.out[0], y: x.out[1], kind: 'fire exit' })),
+    { x: ENT_A0 + ENTRY_W / 2, y: -80, kind: 'front door' },
+    { x: ENT_B0 + ENTRY_W / 2, y: -80, kind: 'front door' },
+  ];
   /* the wood, for js/forest.js: where it is, and the hole in it */
   level.forestRects = forestRects;
   level.forestBounds = [OX0, OY0, OX1, OY1];

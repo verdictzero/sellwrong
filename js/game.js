@@ -23,7 +23,7 @@ import * as THREE from 'three';
 import { TICRATE, PLAYER_EYE, angleNorm, angleDiff, dist, dist2, pRandom, clamp } from './util.js';
 import { Level } from './level.js';
 import { buildLevelGeometry } from './mapgeo.js';
-import { Actor, ACTIONS } from './actor.js';
+import { Actor, ACTIONS, ActorGrid } from './actor.js';
 import { ACTORS } from './states.js';
 import { Player } from './player.js';
 import { FireSystem } from './fire.js';
@@ -76,6 +76,11 @@ export class Game {
     this.bigMessageTics = 0;
     this.totalMonsters = 0;
 
+    /* Before anything is spawned: every actor puts itself into this on
+       the way out of its constructor. See ActorGrid in js/actor.js for
+       why the crowd needs one. */
+    this.blockmap = new ActorGrid();
+
     const geo = buildLevelGeometry(level, textures);
     this.geo = geo;
     scene.add(geo.group);
@@ -111,6 +116,7 @@ export class Game {
     this.responders = new Responders(this);
     this.idle = false;                 // the title: the world stands still and the eye wanders
     this._nozzle = { x: 0, y: 0, z: 0 };
+    this._scared = [];                 // scratch for Game.scare
 
     /* the flame the player is holding, and everything else that needs a
        quad but is not an actor */
@@ -120,6 +126,19 @@ export class Game {
 
   get burnPercent() { return this.fire ? this.fire.burnFraction * 100 : 0; }
   get forestPercent() { return this.forest ? this.forest.burnFraction * 100 : 0; }
+
+  /** How many of them are still alive, anywhere. On the status bar
+   *  because the shop now has six fire exits in it and most of the crowd
+   *  leaves through them: the number that matters once the building is
+   *  going is not how much of it has burnt, it is how many are still
+   *  out there. Counted rather than kept, because a count is one pass
+   *  over a list a few times a second and a tally is a thing to get
+   *  wrong in six places. */
+  get peopleLeft() {
+    let n = 0;
+    for (const a of this.actors) if (a.type === 'SHOPPER' && !a.dead && !a.removed) n++;
+    return n;
+  }
 
   /** Where the flame is born: the end of the gun as drawn, if there is
    *  one, else a point low and right of the eye — which is where the
@@ -614,7 +633,11 @@ export class Game {
   scare(x, y, radius) {
     const r2 = radius * radius;
     let n = 0;
-    for (const a of this.actors) {
+    /* Off the blockmap, not off the cast list. This is called once per
+       person who comes apart, and in a crowd of eight hundred a dozen of
+       them can come apart in the same second — a scan each would be the
+       crowd squared at exactly the moment the frame is busiest. */
+    for (const a of this.blockmap.nearRadius(x, y, radius, this._scared)) {
       if (a.dead || a.removed || !a.info.panicTics) continue;
       if (dist2(x, y, a.x, a.y) > r2) continue;
       ACTIONS.A_Scare(a, x, y);

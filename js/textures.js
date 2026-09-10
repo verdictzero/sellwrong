@@ -1545,6 +1545,75 @@ const slideLeaf = (seed, mirrored) => () => {
 T.SLIDEL = slideLeaf(170, false);
 T.SLIDER = slideLeaf(172, true);
 
+/* --- the fire exit --------------------------------------------------
+   One leaf, painted steel, a crash bar across it and the running man
+   above that. The picture IS the leaf — mapped 0..1 by js/slidedoor.js
+   like the sliders — so everything on it is drawn where it goes on a
+   door rather than wherever a 64-unit repeat happens to fall.
+
+   TWO THINGS ARE ON IT AND NEITHER IS A WORD. A supermarket fire door
+   in this country carries the pictogram and the bar and nothing else,
+   which is lucky, because the last four textures that had lettering on
+   them came down for the same reason: a word is a shape you can count,
+   and the moment it is on anything that repeats you are reading it
+   twenty-eight times. A leaf never repeats — but the habit is worth
+   keeping anyway, and the pictogram is better signage than the word is.
+
+   THE BAR IS WHERE THE STORY IS. It is the reason the crowd can leave
+   and the player cannot lock them in: a fire door has no handle on this
+   side and no keyhole on the other, and anybody who leans on it is
+   outside. So it is the brightest thing on the leaf. */
+T.EXITDOOR = () => {
+  const p = new Pix(64, 64, 168, false);           // no wrap: a sprite, not a tile
+  const n = fbm(64, 64, 10, 2, 168);
+  /* the leaf: works-painted steel, a little lighter down the hinge side
+     because the corridor light rakes across it */
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'green', 0.16 + (1 - x / 64) * 0.06 + n[y * 64 + x] * 0.05);
+  /* the frame, and the pressed rib round the panel */
+  for (let y = 0; y < 64; y++) {
+    p.ink(0, y, 'green', 0.30); p.ink(1, y, 'green', 0.24);
+    p.ink(62, y, 'green', 0.09); p.ink(63, y, 'green', 0.13);
+  }
+  for (let x = 0; x < 64; x++) {
+    p.ink(x, 0, 'green', 0.34); p.ink(x, 1, 'green', 0.26);
+    p.ink(x, 62, 'green', 0.10); p.ink(x, 63, 'green', 0.20);
+  }
+  /* box and frame take a WIDTH and a HEIGHT, not a second corner */
+  p.frame(4, 4, 56, 56, 'green', 0.26);
+  p.frame(5, 5, 54, 54, 'green', 0.11);
+  /* THE CRASH BAR, two thirds of the way up because that is hand height
+     on a door twice a person tall, with its brackets at either end and a
+     shadow under it. Bone rather than grey: a push bar is anodised and it
+     is the one part of a fire door that has been touched every day. */
+  const BY = 36;
+  for (let x = 6; x < 58; x++) {
+    p.ink(x, BY - 1, 'bone', 0.44);
+    p.ink(x, BY,     'bone', 0.66);
+    p.ink(x, BY + 1, 'bone', 0.30);
+    p.ink(x, BY + 3, 'green', 0.07);               // the shadow it throws
+  }
+  for (const bx of [7, 56]) {
+    for (let y = BY - 4; y < BY + 5; y++) p.ink(bx, y, 'bone', 0.34);
+    p.ink(bx, BY - 4, 'bone', 0.52);
+  }
+  /* the running man, on his green plate, up where a sign goes */
+  const gx = 32, gy = 20;
+  p.box(gx - 9, gy - 8, 19, 17, 'green', 0.52);
+  p.frame(gx - 9, gy - 8, 19, 17, 'green', 0.68);
+  p.disc(gx - 1, gy - 5, 1.6, 'bone', 0.92);       // head
+  p.line(gx - 2, gy - 3, gx + 1, gy + 1, 'bone', 0.92);   // body
+  p.line(gx + 1, gy + 1, gx + 4, gy + 5, 'bone', 0.92);   // trailing leg
+  p.line(gx + 1, gy + 1, gx - 3, gy + 5, 'bone', 0.92);   // leading leg
+  p.line(gx - 2, gy - 2, gx + 3, gy - 4, 'bone', 0.86);   // arm, thrown forward
+  /* and the bottom eighteen inches, which every trolley in the shop has
+     hit at least once */
+  p.grime(0.34, 'grey', 0.08, 169);
+  for (let y = 50; y < 62; y++) for (let x = 3; x < 61; x++)
+    if (n[y * 64 + x] > 0.62) p.ink(x, y, 'grey', 0.10 + n[y * 64 + x] * 0.10);
+  return p.snap(0.3);
+};
+
 /* --- what the bigger shop floor needed ---------------------------- */
 
 T.SHELFMIX = () => {
@@ -1926,7 +1995,7 @@ export const CHARRABLE = [
   'PRODAPPL', 'PRODCITR', 'PRODGREN', 'PRODROOT', 'PRODFLOW', 'PRODRIM',
   'DELICASE', 'CHECKOUT', 'CARDBOX', 'PALLET', 'TROLLEY',
   'LINO', 'LINOWORN', 'CEILTILE', 'CEILFIT', 'CEILDECK', 'WALLPANL', 'TILEWALL',
-  'STOCKFLR', 'STOCKWAL', 'DOORSTAF', 'DOCKDOOR', 'HAZARD', 'CONCRETE',
+  'STOCKFLR', 'STOCKWAL', 'DOORSTAF', 'DOCKDOOR', 'HAZARD', 'CONCRETE', 'EXITDOOR',
   /* the strip: the neighbours burn too, once you have walked the fire
      out of the anchor and along the footway */
   'SHELFMIX', 'BAKECASE', 'UNITGLAS', 'UNITSHUT', 'UNITVOID', 'SOFFIT',
@@ -2064,6 +2133,7 @@ const SIZES = {
      builder, so these numbers only matter if one ends up on a line. */
   SLIDEL:   { w: 96, h: 248, masked: true },
   SLIDER:   { w: 96, h: 248, masked: true },
+  EXITDOOR: { w: 104, h: 116 },
 
   /* ceilings — four tiles to a texture, so the fittings are spaced out */
   CEILFIT:  { w: 256, h: 256 },
