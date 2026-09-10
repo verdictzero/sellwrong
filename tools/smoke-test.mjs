@@ -465,11 +465,48 @@ const level = buildSellWrong();
      the fixture happens to end. */
   const declared = { SHELFSTK: MAP.H_GONDOLA, SHELFEMP: MAP.H_GONDOLA, FREEZDOR: MAP.H_GONDOLA,
                      CHECKOUT: MAP.H_FIXTURE, CHILLER: MAP.H_FIXTURE,
-                     PRODUCE: MAP.H_FIXTURE, DELICASE: MAP.H_FIXTURE };
+                     DELICASE: MAP.H_FIXTURE };
   const mismatched = Object.entries(declared)
     .filter(([n, h]) => (tex.TEXTURE_SIZES[n] || {}).h !== h)
     .map(([n, h]) => `${n} declared ${(tex.TEXTURE_SIZES[n] || {}).h} wants ${h}`);
   check('fixture textures are sized to their fixtures', mismatched.length === 0, mismatched.join(', '));
+
+  /* PRODUCE IS BINS, and the whole point of them is the top. A bin
+     wearing SHELFBAK is the bug this replaced: gondola steel on the one
+     department you look down into. */
+  const BIN_TOPS = ['PRODAPPL', 'PRODCITR', 'PRODGREN', 'PRODROOT', 'PRODFLOW'];
+  const bins = level.sectors.filter(s => BIN_TOPS.includes(s.floorTex));
+  check('produce is a run of bins', bins.length >= 7, `${bins.length} bins`);
+  check('every bin is at bench height', bins.every(s => s.floor === MAP.H_FIXTURE));
+  check('every bin is a whole crate of one thing',
+    bins.every(s => s.floorAnchor && s.floorAnchor[1] === Math.max(...s.poly.map(v => v[1]))),
+    'each anchored to its own north edge');
+  check('four categories of fruit and veg',
+    new Set(bins.map(s => s.floorTex)).size === BIN_TOPS.length,
+    [...new Set(bins.map(s => s.floorTex))].join(' '));
+  const rims = level.sectors.filter(s => s.floorTex === 'PRODRIM');
+  check('a crate rim between each pair', rims.length === bins.length - 2, `${rims.length} rims`);
+  check('the rim stands proud of the produce',
+    rims.every(s => s.floor === MAP.H_FIXTURE + 8) && rims.every(s => s.floor < PLAYER_EYE),
+    `${MAP.H_FIXTURE + 8} against an eye at ${PLAYER_EYE}`);
+  /* The crate boards get cut at three different heights — the lip, the
+     bin face and the rim face — so the board pitch has to divide the
+     lip or the top course comes out a sliver. */
+  check('the crate boards divide the lip',
+    (tex.TEXTURE_SIZES.PRODRIM || {}).h === 16 && 16 % 8 === 0);
+  check('no fixture in the store wears shelf steel on top',
+    !level.sectors.some(s => s.floorTex === 'SHELFBAK' && BIN_TOPS.includes(s.lowerTex)));
+
+  /* THE SIGNS CAME DOWN, at the user's request: the store's name off the
+     fascia band, the agent's board off the vacant units, the pylon out
+     of the car park altogether. Nothing here can see a picture, so what
+     it checks is that the pylon is gone from the map and from the bank
+     rather than merely unreferenced in one of them. */
+  check('the pylon sign is gone from the car park',
+    !level.sectors.some(s => s.wallTex === 'PYLONSGN' || (s.name || '').includes('pylon')));
+  check('and gone from the texture bank', !('PYLONSGN' in tex.TEXTURE_SIZES));
+  check('the verge runs clean to the mouth of the lot',
+    level.sectors.filter(s => s.name === 'verge').length === 1);
 
   /* the lights */
   const lamps = level.things.filter(t => t.type === 'LAMP');

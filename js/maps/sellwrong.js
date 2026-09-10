@@ -235,12 +235,12 @@ const UNIT_Y1 = 620;                          // in-line units are shallow
 const WEST_UNITS = [
   { name: 'chemist',    front: 'UNITGLAS', fascia: 'FASCHEM', in: true },
   { name: 'laundrette', front: 'UNITSHUT', fascia: 'FASWASH', in: false },
-  { name: 'unit to let west', front: 'UNITVOID', fascia: 'FASVOID', in: false },
+  { name: 'vacant unit west', front: 'UNITVOID', fascia: 'FASVOID', in: false },
 ];
 const EAST_UNITS = [
   { name: 'kebab shop', front: 'UNITGLAS', fascia: 'FASFOOD', in: true },
   { name: 'phone shop', front: 'UNITGLAS', fascia: 'FASPHON', in: false },
-  { name: 'unit to let east', front: 'UNITSHUT', fascia: 'FASVOID', in: false },
+  { name: 'vacant unit east', front: 'UNITSHUT', fascia: 'FASVOID', in: false },
 ];
 
 /* =====================================================================
@@ -394,37 +394,27 @@ export function buildSellWrong() {
       y -= BAY_D;
     }
   }
-  /* THE TRAVERSAL ROAD, where the bays stop. South of it the verge, the
-     pylon sign and the spot you are standing in when the game starts —
-     so the opening shot is across a road, over a car park, at a
-     supermarket, which is what arriving at one looks like. */
+  /* THE TRAVERSAL ROAD, where the bays stop. South of it the verge and
+     the spot you are standing in when the game starts — so the opening
+     shot is across a road, over a car park, at a supermarket, which is
+     what arriving at one looks like. */
   const THRU_Y1 = y, THRU_Y0 = y - ROAD_D;
   roadAcross(LOT_X0, LOT_X1, THRU_Y0, THRU_Y1, 'across the lot');
   const VERGE_Y1 = THRU_Y0;
   const LOT_Y0 = VERGE_Y1 - 460;
 
-  /* The pylon sign at the mouth of the car park.
+  /* THERE WAS A PYLON SIGN HERE, at 980 across and 200 north of the
+     mouth, and it is gone at the user's request. It was built as a
+     HOLE — a ring of four thin sectors round a 96-unit void, so all
+     four faces of the void were one-sided walls carrying the sign,
+     which is the only freestanding object a sector engine can make
+     without inventing a new primitive. Worth writing down, because the
+     trick is still the right one and the next thing that has to stand
+     up on its own out here will be built the same way.
 
-     It is a HOLE: a ring of four thin sectors with a 96-unit void in the
-     middle, so all four faces of the void are one-sided walls taking the
-     ring's texture — and one repeat of PYLONSGN covers the whole 480 of
-     it, board at the top and post below, because the texture is declared
-     as tall as the thing rather than tiled up it. A monolith built out
-     of an absence, which is the only kind of freestanding object a
-     sector engine can make without inventing a new primitive. */
-  const PYL_X = 980, PYL_Y = LOT_Y0 + 200, PYL_W = 96, PYL_R = 40;
-  const pylProps = lot('pylon base', { floorTex: 'CONCRETE', wallTex: 'PYLONSGN' });
-  const bandX0 = PYL_X - PYL_R, bandX1 = PYL_X + PYL_W + PYL_R;
-  const bandY0 = PYL_Y - PYL_R, bandY1 = PYL_Y + PYL_W + PYL_R;
-
-  rm.add(LOT_X0, LOT_Y0, bandX0, VERGE_Y1, lot('verge'));
-  rm.add(bandX1, LOT_Y0, LOT_X1, VERGE_Y1, lot('verge'));
-  rm.add(bandX0, LOT_Y0, bandX1, bandY0, lot('verge'));
-  rm.add(bandX0, bandY1, bandX1, VERGE_Y1, lot('verge'));
-  rm.add(bandX0, bandY0, bandX1, PYL_Y, { ...pylProps });
-  rm.add(bandX0, PYL_Y + PYL_W, bandX1, bandY1, { ...pylProps });
-  rm.add(bandX0, PYL_Y, PYL_X, PYL_Y + PYL_W, { ...pylProps });
-  rm.add(PYL_X + PYL_W, PYL_Y, bandX1, PYL_Y + PYL_W, { ...pylProps });
+     What replaced eight rectangles is one: the verge runs clean from
+     the road to the mouth. */
+  rm.add(LOT_X0, LOT_Y0, LOT_X1, VERGE_Y1, lot('verge'));
 
   /* =================================================================
      THE CANOPY AND THE FOOTWAY
@@ -571,11 +561,64 @@ export function buildSellWrong() {
   /* --- perimeter departments ---------------------------------------
      The west strip is bench height so that side of the store stays open;
      the east strip is chill, and the middle run of it is freezer doors
-     at full gondola height so the east wall is not one long low shelf. */
+     at full gondola height so the east wall is not one long low shelf.
+
+     FRUIT AND VEG IS BINS, and it is the one department here that is not
+     a single long fixture. A chiller is a cabinet and a bakery case is a
+     cabinet; produce is a ROW OF OPEN CRATES, one category to a crate,
+     and the way anybody shops it is by looking down into them. Built as
+     a single rect wearing one texture it came out as a bench, and worse
+     than that: a fixture is a raised floor, its floor texture is what
+     you see from beside it, and every one of these had SHELFBAK on
+     top — gondola steel — because that is what a fixture's top has
+     always been in here and nothing had ever been looked down at.
+
+     So the strip is cut into a bin per category, with a crate rim
+     between each pair standing eight units proud. Eight is enough to
+     throw a shadow line and read as separate boxes from the end of the
+     aisle, and low enough that the run still reads as one department
+     from the front of the store. */
+  const BIN_RIM = 24;               // how deep the timber between two bins is
+  const BIN_LIP = 8;                // and how far it stands over the produce
+  /* One step is a bin AND the rim after it, so the last bin's rim falls
+     off the end and the run finishes flush with the department. */
+  const binRun = (y0, y1, kinds, light, fuel) => {
+    const step = (y1 - y0 + BIN_RIM) / kinds.length;
+    kinds.forEach((k, i) => {
+      const a = Math.round(y0 + i * step);
+      const b = Math.round(y0 + (i + 1) * step - BIN_RIM);
+      /* ANCHORED TO THE BIN, not to the world, for the reason the
+         parking bays are: a packing that starts at the crate edge is a
+         crate of apples, and one that starts wherever the world grid
+         falls is apples that happen to be near a crate. */
+      rm.add(ANCHOR_X0, a, WEST_WALK, b, shop(k.name, light, fuel, {
+        floor: H_FIXTURE, floorTex: k.tex, floorAnchor: [ANCHOR_X0, b],
+        lowerTex: 'PRODRIM',
+      }));
+      if (i + 1 < kinds.length)
+        rm.add(ANCHOR_X0, b, WEST_WALK, Math.round(y0 + (i + 1) * step),
+          shop(`${k.name} rim`, light, fuel, {
+            floor: H_FIXTURE + BIN_LIP, floorTex: 'PRODRIM', lowerTex: 'PRODRIM',
+          }));
+    });
+  };
+
   const WEST = [
-    { name: 'produce', fuel: FUEL.produce, tex: 'PRODUCE',  h: H_FIXTURE, light: 0.28 },
+    /* PRODUCE IS THE BRIGHTEST DEPARTMENT IN A SUPERMARKET and that is
+       not decoration, it is the trade: fruit under a dim fitting looks
+       like fruit nobody wants. It is the one part of a store lit above
+       the sales floor rather than with it, so it is lit above the sales
+       floor here — brighter than the aisles, brighter than the bakery,
+       and the only warm thing left on this side of the building. */
+    { name: 'produce', fuel: FUEL.produce, light: 0.42, bins: [
+      { name: 'apples', tex: 'PRODAPPL' }, { name: 'citrus', tex: 'PRODCITR' },
+      { name: 'greens', tex: 'PRODGREN' }, { name: 'roots',  tex: 'PRODROOT' },
+    ] },
     { name: 'bakery',  fuel: FUEL.bakery,  tex: 'BAKECASE', h: H_FIXTURE, light: 0.34 },
-    { name: 'flowers', fuel: FUEL.produce, tex: 'PRODUCE',  h: H_FIXTURE, light: 0.26 },
+    { name: 'flowers', fuel: FUEL.produce, light: 0.36, bins: [
+      { name: 'flowers', tex: 'PRODFLOW' }, { name: 'flowers', tex: 'PRODFLOW' },
+      { name: 'flowers', tex: 'PRODFLOW' },
+    ] },
   ];
   const EAST = [
     { name: 'chiller', fuel: FUEL.chill, tex: 'CHILLER',  h: H_FIXTURE, light: 0.36 },
@@ -584,7 +627,8 @@ export function buildSellWrong() {
   ];
   ROWS.forEach((row, ri) => {
     const w = WEST[ri], e = EAST[ri];
-    rm.add(ANCHOR_X0, row.y0, WEST_WALK, row.y1, shop(w.name, w.light, w.fuel, {
+    if (w.bins) binRun(row.y0, row.y1, w.bins, w.light, w.fuel);
+    else rm.add(ANCHOR_X0, row.y0, WEST_WALK, row.y1, shop(w.name, w.light, w.fuel, {
       floor: w.h, floorTex: 'SHELFBAK', lowerTex: w.tex,
     }));
     rm.add(EAST_DEPT, row.y0, ANCHOR_X1, row.y1, shop(e.name, e.light, e.fuel, {
@@ -774,7 +818,7 @@ export function buildSellWrong() {
      THINGS
      ================================================================= */
 
-  /* the player, out at the mouth of the car park, looking at the sign */
+  /* the player, out at the mouth of the car park, looking at the store */
   mb.thing('START', 1240, LOT_Y0 + 200, Math.PI / 2);
 
   /* --- where the cars go ---------------------------------------------

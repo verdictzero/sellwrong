@@ -69,7 +69,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         551 checks, no install and no browser
+  the smoke test         570 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -86,7 +86,7 @@ container pull and about a second of work.
 WHAT YOU DO
 -----------
 
-You start at the mouth of the car park at night, under the pylon sign. The
+You start at the mouth of the car park at night, across the road from it. The
 parade is in front of you, the automatic doors open when you get near them,
 and the night crew are still inside.
 
@@ -184,7 +184,7 @@ its value from the sector it lands in.
 
   a gondola of stock    300      goes up like a gondola of stock
   the stockroom         340
-  a produce bench       150
+  a produce bin         150
   the aisle between      55      creeps
   the car park            0      will not burn at all, ever
 
@@ -585,11 +585,15 @@ piece of architecture in the store is one of those two pieces:
                       is a ceiling height, because that is the only thing
                       a sector engine has that draws a band
   a parapet         upper, from the canopy edge to the sky
-  a pylon sign      a HOLE: a ring of four thin sectors with a void in the
-                      middle, so all four faces of the void are one-sided
-                      walls carrying the sign. A freestanding object built
-                      out of an absence, which is the only kind a sector
-                      engine can make without a new primitive.
+  a produce bin     lower only, 40 tall, wearing crate boards, with the
+                      divider between it and the next bin eight higher
+  a freestanding    a HOLE: a ring of four thin sectors round a void, so
+    object            that all four faces of the void are one-sided walls
+                      carrying its picture. An object built out of an
+                      absence, which is the only kind a sector engine can
+                      make without a new primitive. The pylon sign at the
+                      mouth of the car park was one. It has been taken
+                      down; the trick has not.
   the back door     a sector whose ceiling is on the floor and rises
 
 WALLS ARE THE GAPS. Two rectangles that touch become an opening between two
@@ -623,6 +627,52 @@ door head, which turns the band between it and the soffit into that
 sector's upper texture on both faces of the wall: glazing, a transom,
 where there used to be twenty-two units of open air over a 210 door.
 
+THE SIGNS CAME DOWN, at the user's request, and what they had in common is
+worth writing down: every one of them was a WORD in a texture that tiles.
+The store's fascia is a single 64-wide picture repeating the length of the
+anchor, so SELLWRONG SUPERSTORE was written across the front of the
+building about sixty times. A vacant shopfront is four tiles across and
+four up, so the agent's TO LET board hung on the whitewash twenty-eight
+times. The pylon at the mouth of the car park had the opposite problem and
+the same cause: it was declared 340 tall on a wall 480 tall, so its board
+appeared once where a board goes and then again two thirds of the way down
+the post.
+
+A word is a shape the eye locks onto and counts, which is the one thing a
+tiling texture must not contain. What tiles honestly is the MATERIAL. So
+the fascia keeps its red tray and gets a panel joint at every repeat, which
+is a rhythm a fascia really has; the vacant unit keeps its whitewash, which
+has no shape to count; the trolley rail loses its BAY plate and keeps the
+bracket it was bolted to; and the pylon is gone along with the eight
+rectangles that stood it up. One sign is left on the building and it is the
+only one that was never a repeat: the logo over the entrance, which gets
+GEOMETRY instead — four tiles hung as a two-by-two, drawn once at its own
+size, which is why it was worth the two ceiling steps it costs.
+
+A FIXTURE IS A RAISED FLOOR, AND THE FLOOR IS THE PART YOU LOOK AT. Every
+department in the store is a rectangle with its floor lifted to bench or
+gondola height and a lower texture round the edge, and every bit of care
+here went into the edge, because the edge is what shows in a screenshot
+taken from the end of an aisle. The tops were all SHELFBAK — perforated
+gondola steel — because a fixture's top had always been gondola steel and
+nothing had ever been looked down at.
+
+For a chiller or a shelf run that is right. For fruit and veg it is the
+whole department: a supermarket does not SHELVE produce, it BINS it, one
+category to an open crate, and the way anybody shops it is by looking down
+in. So produce is a run of four bins now — apples, citrus, greens, roots —
+with a crate rim between each pair standing eight units proud, which is
+enough to throw a shadow line and read as separate boxes from the end of
+the aisle and low enough that the run is still one department from the
+front of the store. The flowers are three more with pails in them. The
+tops are their own pictures at 64 by 64, which is two metres of shop, so a
+five-pixel apple is a fifteen-centimetre apple, and each bin is anchored
+to its own corner so the packing starts at the crate edge rather than
+wherever the world grid falls — the fix the parking bays needed, for the
+same reason. Produce is also the brightest thing on that side of the
+building, because it is the brightest thing in a real supermarket and for
+the same reason: fruit under a dim fitting looks like fruit nobody wants.
+
 THE MAP'S Y IS THE RENDERER'S MINUS Z. A map with x east and y north laid
 onto a renderer with x east and z north is LEFT-handed, and everything
 still works: movement, collision, the camera, the sprites, all of it
@@ -632,6 +682,9 @@ says TO LET and it comes out backwards, and so does the fascia, and so does
 the sign at the mouth of the car park. Negating y reverses the screen
 winding of every polygon, so every winding in mapgeo.js is written reversed
 to match; that is not a style, it is the other half of the sign change.
+All three of those signs have since come down. The fix stays, because the
+logo over the entrance is still four tiles of artwork and would mirror
+just as happily.
 
 LIGHT FROM THE SKY IS NOT LIGHT FROM A FITTING. Doom diminished everything
 by distance at one rate, which is right for a corridor and wrong the moment
@@ -1199,7 +1252,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-551 checks. Every one of them earns its place by having caught something
+570 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -1249,6 +1302,12 @@ that had already reached a screenshot:
     now bursts every fitting over one aisle and demands it get darker
   a fixture texture whose declared world height did not match the fixture,
     showing a slice of a second copy of itself cut off at the floor
+  a fixture whose TOP was gondola steel, on the one department in the shop
+    you look down into rather than at
+  a texture drawn with fractional pixel centres — which on a surface that
+    wraps by modulo rather than flooring means a fractional array index,
+    and a fractional index into a Uint8ClampedArray writes NOWHERE. No
+    error, no pixel: every crate of produce came out as bare liner
   a firebreak check phrased as "no outdoor sector burns", which stopped
     being the same statement the moment the store got a footway — the
     pavement is outdoors AND carries fuel, on purpose, because it is the

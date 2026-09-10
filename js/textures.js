@@ -292,13 +292,22 @@ T.STORBASE = () => {
 };
 
 T.BRANDBAND = () => {
-  /* The sign band, and the only place in the game the store says its own
-     name. It says it in the same red as the blood.
+  /* The sign band. It carried the store's name in white across the whole
+     front of the anchor and the name is off it now, at the user's
+     request; what is left is the TRAY — the red channel the letters were
+     mounted in, which is the part of a supermarket fascia that is
+     actually a piece of building.
+
+     A texture that repeats sixty times sideways has to survive being
+     seen sixty times at once, and lettering does not: a word at this
+     size is a shape the eye locks onto, and sixty of them in a row read
+     as wallpaper rather than as a sign. What tiles honestly is the thing
+     the band is made of, so this is panel, joint, panel: the returned
+     edge top and bottom, a seam every repeat where two tray sections
+     meet, and nothing else.
 
      Drawn at 64x64 and declared 96 tall, so one repeat is exactly the
-     fascia and the name sits where a name sits. It repeats sideways
-     about sixty times across the front of the anchor, which is not a
-     compromise — it is what a supermarket fascia does. */
+     fascia band between the soffit and the canopy edge. */
   const p = new Pix(64, 64, 23);
   const n = fbm(64, 64, 8, 2, 23);
   for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
@@ -306,15 +315,12 @@ T.BRANDBAND = () => {
   /* the tray: a returned edge top and bottom, catching the canopy light */
   for (let y = 0; y < 4; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'red', y < 2 ? 0.66 : 0.54);
   for (let y = 58; y < 64; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'red', y > 61 ? 0.14 : 0.24);
-  drawTextCentred(p, 'SELLWRONG', 32, 24, 'bone', 0.96);
-  p.hline(6, 57, 36, 'bone', 0.34);
-  drawTextCentred(p, 'SUPERSTORE', 32, 42, 'bone', 0.52);
-  /* Half the letters have failed, which is the point of the place */
+  /* the joint between two tray sections, at the repeat so it lands on
+     every one and reads as panelisation rather than as a tiling seam */
+  for (let y = 4; y < 58; y++) { p.ink(0, y, 'red', 0.30); p.ink(63, y, 'red', 0.56); }
+  /* and the streak below it, where sixty years of rain came off the joint */
   const rng = makeRng(91);
-  for (let i = 0; i < 46; i++) {
-    const x = Math.floor(rng() * 64), y = 23 + Math.floor(rng() * 9);
-    if (rng() < 0.5) p.ink(x, y, 'red', 0.30);
-  }
+  for (let y = 6; y < 58; y++) if (rng() < 0.7) p.ink(2, y, 'red', 0.34);
   p.grime(0.4, 'grey', 0.10, 10);
   return p.snap(0.5);
 };
@@ -741,25 +747,123 @@ T.CHILLER = () => {
   return p.snap(0.4);
 };
 
-T.PRODUCE = () => {
-  /* A produce bench, raked toward you, going over. */
-  const p = new Pix(64, 64, 84);
-  p.fill('green', 0.10);
-  const rng = makeRng(84);
-  for (let s = 0; s < 3; s++) {
-    const top = 6 + s * 20;
-    for (let i = 0; i < 60; i++) {
-      const cx = Math.floor(rng() * 64), cy = top + Math.floor(rng() * 12);
-      const r = 1 + rng() * 1.8;
-      const key = ['green', 'olive', 'red', 'yellow', 'purple'][Math.floor(rng() * 5)];
-      const t = 0.28 + rng() * 0.45;
-      p.disc(cx, cy, r, key, t);
-      p.ink(cx - 1, cy - 1, key, Math.min(1, t + 0.3));       // the wet highlight
-    }
-    p.hline(0, 63, top + 13, 'brown', 0.3);
-    p.hline(0, 63, top + 14, 'brown', 0.12);
+/* --- produce: the bins you look down into --------------------------
+   A supermarket does not SHELVE fruit and veg, it BINS it — a run of
+   open crates at hip height, one category to a crate, shopped by
+   looking down into them from the aisle. So the picture that carries
+   the department is the one on TOP, and the top of this department was
+   SHELFBAK: perforated gondola steel. That is not an oversight anybody
+   made on purpose. A fixture in a sector engine is a raised floor with
+   a lower texture round its edge, and all the care went into the edge,
+   because the edge is the part you can see in a screenshot taken from
+   the far end of an aisle. Stand next to it — eye at 49, bench at 40 —
+   and the top is nearly all of it.
+
+   One repeat is 64 by 64, which is two metres square, so a five-pixel
+   apple is a fifteen-centimetre apple. Every bin is anchored to its own
+   south-west corner, so the packing starts at the crate edge rather
+   than wherever the world grid happens to fall — the same fix the
+   parking bays needed for the same reason.
+
+   PACKED, not scattered: the rows go down at a pitch tighter than one
+   item across, so neighbours overlap and the crate liner barely shows.
+   A bin with gaps in it reads as a bin somebody has already been
+   through, which is a different picture and is the one the flowers
+   get. */
+const produceTop = (seed, kinds, r, jitter, liner) => () => {
+  const p = new Pix(64, 64, seed);
+  const rng = makeRng(seed);
+  const n = fbm(64, 64, 8, 2, seed);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, liner, 0.10 + n[y * 64 + x] * 0.07);        // the crate, under it all
+  /* WHOLE PIXELS. Pix wraps by modulo and does not floor, so a centre
+     with a fraction in it produces a fractional array index, and a
+     fractional index into a Uint8ClampedArray writes NOWHERE — no
+     error, no pixel. The first cut of this passed floats and every
+     crate came out as bare liner. */
+  const pitch = r * 1.5;
+  const items = [];
+  for (let row = 0; row * pitch < 64 + pitch; row++) {
+    const stagger = row % 2 ? pitch / 2 : 0;
+    for (let col = 0; col * pitch < 64 + pitch; col++) items.push({
+      x: Math.round(col * pitch + stagger + (rng() - 0.5) * jitter),
+      y: Math.round(row * pitch + (rng() - 0.5) * jitter),
+      r: r * (0.82 + rng() * 0.36),
+      key: kinds[(rng() * kinds.length) | 0],
+      t: 0.34 + rng() * 0.34,
+    });
   }
-  p.grime(0.4, 'olive', 0.1, 21);
+  /* Every shadow first, THEN every item. They are packed tighter than
+     they are wide, so drawing each pair in turn puts the next row's
+     shadow over this row's fruit and the crate goes black. */
+  for (const it of items) p.disc(it.x, it.y + 1, it.r + 1, liner, 0.05);
+  for (const it of items) {
+    p.disc(it.x, it.y, it.r, it.key, it.t);
+    /* the wet highlight, up and left, because the ceiling fittings are */
+    const o = Math.round(it.r * 0.34);
+    p.disc(it.x - o, it.y - o, Math.max(1, it.r * 0.34), it.key, Math.min(1, it.t + 0.28));
+  }
+  p.grime(0.22, liner, 0.07, seed + 1);
+  return p.snap(0.4);
+};
+
+T.PRODAPPL = produceTop(180, ['red', 'red', 'olive'],        4.2, 2.2, 'brown');
+T.PRODCITR = produceTop(182, ['yellow', 'rust', 'yellow'],   4.0, 2.0, 'brown');
+T.PRODGREN = produceTop(184, ['green', 'green', 'olive'],    6.4, 2.8, 'green');
+T.PRODROOT = produceTop(186, ['brown', 'bone', 'olive'],     3.4, 2.4, 'brown');
+
+T.PRODFLOW = () => {
+  /* Cut flowers are not binned, they are BUCKETED: black pails in a
+     block, and what you see from up here is the rim of each one and the
+     heads crowded out of it. Gaps between the pails on purpose — this
+     is the one display in the store that is meant to look picked
+     over. */
+  const p = new Pix(64, 64, 188);
+  const rng = makeRng(188);
+  p.fill('grey', 0.13);
+  for (let row = 0; row < 4; row++) for (let col = 0; col < 4; col++) {
+    /* rounded, for the reason produceTop is rounded */
+    const cx = Math.round(col * 16 + 8 + (rng() - 0.5) * 3);
+    const cy = Math.round(row * 16 + 8 + (rng() - 0.5) * 3);
+    p.disc(cx, cy, 7, 'grey', 0.06);                         // the pail's shadow
+    p.disc(cx, cy, 6, 'grey', 0.22);                         // its rim
+    p.disc(cx, cy, 5, 'green', 0.14);                        // stems, in the water
+    if (rng() < 0.15) continue;                              // and one nobody refilled
+    const key = ['red', 'yellow', 'purple', 'pink', 'bone'][(rng() * 5) | 0];
+    for (let i = 0; i < 16; i++) {
+      const a = rng() * Math.PI * 2, d = rng() * 4.4;
+      p.disc(cx + Math.round(Math.cos(a) * d), cy + Math.round(Math.sin(a) * d),
+             1.4, key, 0.32 + rng() * 0.30);
+    }
+  }
+  p.grime(0.3, 'grey', 0.08, 189);
+  return p.snap(0.4);
+};
+
+T.PRODRIM = () => {
+  /* The crate itself: sawn boards eight units to a board with a shadow
+     gap between them, declared 64 by 16 so two boards are one repeat.
+
+     It does three jobs at three heights and that is why it is boards.
+     It is the TOP of every divider between two bins; it is the eight
+     units of LIP that divider stands proud of the produce by; and it is
+     the thirty-six-unit face the aisle sees, where it repeats two and a
+     quarter times. A texture that has to survive being cut at any
+     height had better be made of something that is already stacked. */
+  const p = new Pix(64, 16, 190);
+  const n = fbm(64, 16, 8, 2, 190);
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'brown', 0.38 + n[y * 64 + x] * 0.12);
+  for (const by of [0, 8]) {
+    for (let x = 0; x < 64; x++) {
+      p.ink(x, by, 'brown', 0.56);                           // the board's lit edge
+      p.ink(x, by + 6, 'brown', 0.18);                       // and its shadow
+      p.ink(x, by + 7, 'grey', 0.05);                        // the gap to the next
+    }
+    /* the nail heads, at the ends of the boards and every crate along */
+    for (let x = 3; x < 64; x += 16) p.ink(x, by + 3, 'grey', 0.34);
+  }
+  p.grime(0.3, 'brown', 0.10, 191);
   return p.snap(0.4);
 };
 
@@ -1300,8 +1404,13 @@ T.UNITSHUT = () => {
 };
 
 T.UNITVOID = () => {
-  /* Never let. Whitewash on the inside of the glass, and an agent's
-     board nobody has taken down. */
+  /* Never let. Whitewash on the inside of the glass, and nothing else:
+     the agent's board that used to hang here came off at the user's
+     request, and it is a better wall without it. A shopfront is four
+     tiles across and four up, so the board was on the glass
+     twenty-eight times over — the same complaint as the fascia band,
+     and the same fix. What is left tiles the way whitewash does,
+     because whitewash has no shape to count. */
   const p = new Pix(64, 64, 146);
   const n = fbm(64, 64, 12, 3, 146);
   for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
@@ -1313,10 +1422,9 @@ T.UNITVOID = () => {
       for (let x = 0; x < 64; x++) p.ink(x, y, 'bone', 0.52 + Math.sin(x * 0.3 + i) * 0.06);
   }
   for (const mx of [0, 32]) { p.vline(mx, 0, 63, 'grey', 0.34); p.vline(mx + 1, 0, 63, 'grey', 0.18); }
-  p.box(14, 18, 36, 22, 'grey', 0.18);                 // the board
-  p.frame(14, 18, 36, 22, 'red', 0.55);
-  drawTextCentred(p, 'TO LET', 32, 23, 'red', 0.9);
-  drawTextCentred(p, '0800', 32, 31, 'grey', 0.7);
+  /* Nothing else. The clean square the board left behind was the first
+     thing tried here and it was the same mistake in a smaller size: a
+     rectangle you can count, twenty-eight times over. */
   for (let y = 48; y < 64; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'grey', 0.20);
   p.grime(0.4, 'grey', 0.10, 148);
   return p.snap(0.5);
@@ -1345,29 +1453,17 @@ T.FASCHEM = fascia(150, 'CHEMIST', 'green', 0.30, 'bone', 0.92);
 T.FASPHON = fascia(152, 'PHONES', 'blue', 0.34, 'yellow', 0.90);
 T.FASFOOD = fascia(154, 'KEBAB', 'red', 0.36, 'yellow', 0.92);
 T.FASWASH = fascia(156, 'WASH', 'cyan', 0.26, 'blue', 0.55);
-T.FASVOID = fascia(158, 'TO LET', 'grey', 0.22, 'grey', 0.55);
+/* The dead one. Same tray as its neighbours and no name in it, because
+   the tenant took the letters when they left and nobody put any back. */
+T.FASVOID = fascia(158, '', 'grey', 0.22, 'grey', 0.55);
 
-T.PYLONSGN = () => {
-  /* The freestanding sign at the mouth of the car park. Board on top,
-     post below, and ONE repeat covers the whole 340-unit monolith — so
-     the picture is drawn once and stretched rather than tiled, which is
-     the only way to keep the board at the top where a board goes. */
-  const p = new Pix(48, 64, 160);
-  p.fill('grey', 0.16);
-  for (let y = 28; y < 64; y++) for (let x = 0; x < 48; x++)      // the post
-    p.ink(x, y, 'grey', x < 8 || x > 39 ? 0.12 : 0.24);
-  p.vline(9, 28, 63, 'grey', 0.34);
-  p.box(1, 1, 46, 26, 'red', 0.42);                                // the board
-  p.frame(1, 1, 46, 26, 'grey', 0.30);
-  p.frame(2, 2, 44, 24, 'bone', 0.55);
-  drawTextCentred(p, 'SELL', 24, 5, 'bone', 0.95);
-  drawTextCentred(p, 'WRONG', 24, 12, 'bone', 0.95);
-  p.hline(4, 43, 19, 'bone', 0.30);
-  drawTextCentred(p, 'OPEN 24H', 24, 21, 'yellow', 0.80);
-  streaks(p, 5, 161, 'grey', 0.12, 0.4);
-  p.grime(0.4, 'grey', 0.10, 162);
-  return p.snap(0.5);
-};
+/* THERE WAS A PYLON SIGN HERE and it is gone, along with the ring of
+   four thin sectors in the map that carried it. It was declared 340
+   tall on a wall 480 tall, so the board drew once where a board goes
+   and then a second time two thirds of the way down the post, which is
+   nowhere a board goes. The right fix for that is one number; the fix
+   the user asked for is the whole object, so what stands at the mouth
+   of the car park now is the car park. */
 
 T.POSTMETL = () => {
   /* Galvanised column: car park lighting, and the bollards. */
@@ -1386,7 +1482,9 @@ T.POSTMETL = () => {
 };
 
 T.TROLLRAI = () => {
-  /* The trolley bay: galvanised rail, and the sign nobody obeys. */
+  /* The trolley bay: galvanised rail and nothing written on it. There
+     was a blue plate on the near upright saying BAY, and it went with
+     the pylon — nothing in the car park carries writing now. */
   const p = new Pix(64, 48, 168);
   p.clear();
   for (const ry of [6, 26]) for (let x = 0; x < 64; x++) {
@@ -1395,9 +1493,8 @@ T.TROLLRAI = () => {
   for (const px of [4, 32, 60]) for (let y = 4; y < 48; y++) {
     p.ink(px, y, 'grey', 0.18); p.ink(px + 1, y, 'grey', 0.42);
   }
-  p.box(36, 34, 24, 12, 'blue', 0.30);
-  p.frame(36, 34, 24, 12, 'bone', 0.55);
-  drawTextCentred(p, 'BAY', 48, 37, 'bone', 0.85);
+  /* the bracket the plate was bolted to, still on the upright */
+  for (let y = 34; y < 38; y++) { p.ink(33, y, 'grey', 0.30); p.ink(34, y, 'grey', 0.16); }
   return p.snap(0.4);
 };
 
@@ -1826,7 +1923,8 @@ for (let v = 0; v < RUIN_VARIANTS; v++) {
    were swapped out. */
 export const CHARRABLE = [
   'SHELFSTK', 'SHELFEMP', 'SHELFBAK', 'SHELFEND', 'CHILLER', 'FREEZDOR',
-  'PRODUCE', 'DELICASE', 'CHECKOUT', 'CARDBOX', 'PALLET', 'TROLLEY',
+  'PRODAPPL', 'PRODCITR', 'PRODGREN', 'PRODROOT', 'PRODFLOW', 'PRODRIM',
+  'DELICASE', 'CHECKOUT', 'CARDBOX', 'PALLET', 'TROLLEY',
   'LINO', 'LINOWORN', 'CEILTILE', 'CEILFIT', 'CEILDECK', 'WALLPANL', 'TILEWALL',
   'STOCKFLR', 'STOCKWAL', 'DOORSTAF', 'DOCKDOOR', 'HAZARD', 'CONCRETE',
   /* the strip: the neighbours burn too, once you have walked the fire
@@ -1846,7 +1944,8 @@ export const charredName = n => (n && CHARRABLE.includes(n)) ? n + '_B' : n;
    charring and the name has already been through it once. */
 const FIXTURES = new Set([
   'SHELFSTK', 'SHELFEMP', 'SHELFBAK', 'SHELFEND', 'CHILLER', 'FREEZDOR',
-  'PRODUCE', 'DELICASE', 'CHECKOUT', 'SHELFMIX', 'BAKECASE', 'CARDBOX', 'PALLET',
+  'PRODAPPL', 'PRODCITR', 'PRODGREN', 'PRODROOT', 'PRODFLOW', 'PRODRIM',
+  'DELICASE', 'CHECKOUT', 'SHELFMIX', 'BAKECASE', 'CARDBOX', 'PALLET',
 ]);
 
 /** Every ruin texture there is, for whatever wants to check they exist. */
@@ -1929,7 +2028,16 @@ const SIZES = {
   FREEZDOR: { w: 64, h: 80 },
   CHECKOUT: { w: 64, h: 40 },      // H_FIXTURE
   CHILLER:  { w: 64, h: 40 },
-  PRODUCE:  { w: 64, h: 40 },
+  /* A bin's top is a FLOOR, so its 64 by 64 is two metres of shop
+     rather than the height of a fixture; the crate boards round it are
+     two to a repeat, so they land at eight units whatever they are cut
+     against. */
+  PRODAPPL: { w: 64, h: 64 },
+  PRODCITR: { w: 64, h: 64 },
+  PRODGREN: { w: 64, h: 64 },
+  PRODROOT: { w: 64, h: 64 },
+  PRODFLOW: { w: 64, h: 64 },
+  PRODRIM:  { w: 64, h: 16 },
   DELICASE: { w: 64, h: 40 },
   SHELFMIX: { w: 64, h: 80 },      // H_GONDOLA
   BAKECASE: { w: 64, h: 40 },      // H_FIXTURE
@@ -1952,9 +2060,6 @@ const SIZES = {
   FASWASH:  { w: 64, h: 96 },
   FASVOID:  { w: 64, h: 96 },
   TROLLRAI: { w: 64, h: 48, masked: true },
-  /* The pylon is a monolith, not a tiling wall: one repeat covers the
-     whole 340 of it, so the board stays at the top where a board goes. */
-  PYLONSGN: { w: 96, h: 340 },
   /* Door leaves are mapped 0..1 by the slider, never by the wall
      builder, so these numbers only matter if one ends up on a line. */
   SLIDEL:   { w: 96, h: 248, masked: true },

@@ -352,7 +352,9 @@ function addQuad(set, l, bank, texName, zBot, zTop, facingFront, peg, light, sk 
      mirror image of the floor plan. Nobody notices for months, because
      nothing in a supermarket is chiral. Then you put the words TO LET on
      a shopfront and they come out backwards, and so does the fascia, and
-     so does the sign at the mouth of the car park.
+     so does the sign at the mouth of the car park. All three of those
+     signs have since come down; the logo over the entrance has not, and
+     it would mirror just as happily.
 
      Negating y is the fix, and negating y reverses the screen winding of
      every polygon, so every winding here and in addFlats is reversed to
