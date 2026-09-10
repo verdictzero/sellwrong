@@ -34,7 +34,13 @@ cp -r css js vendor "$OUT/"
 # outside, is loaded at run time rather than generated, and stays as files.
 # Everything else the page needs it draws for itself — the fire included,
 # since js/fireart.js took that job back off the golf project's strips.
-cp -r assets/cars assets/forest assets/people assets/sky assets/models assets/fonts "$OUT/assets/"
+#
+# assets/cars is gone. It held the four-view sheet the drawn fleet is
+# painted from, and the car park is one modelled van now, so nothing the
+# page loads reads it — it has moved to art/vehicles-atlas.png, beside
+# the other source art, and waits there for the responders' riot van and
+# APC. Half a megabyte nobody downloads until they turn up.
+cp -r assets/forest assets/people assets/sky assets/models assets/fonts "$OUT/assets/"
 
 printf 'built %s: ' "$OUT"
 find "$OUT" -type f | wc -l | tr -d ' '

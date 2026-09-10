@@ -54,7 +54,7 @@ const LAMP_RANGE = 340;
 const LAMP_GAIN = 0.30;
 
 export class Game {
-  constructor({ level, scene, camera, textures, sprites, hud, audio, input, sky, flameAtlas, fxAtlases, gibAtlases, carAtlas }) {
+  constructor({ level, scene, camera, textures, sprites, hud, audio, input, sky, flameAtlas, fxAtlases, gibAtlases, fleet }) {
     this.level = level;
     this.scene = scene;
     this.camera = camera;
@@ -91,7 +91,8 @@ export class Game {
     this.geo.rebuildStatic();          // with the lamps' light in it
     /* after relight, because a car's light is baked into it the same way
        a wall's is, and it should be the light the bay ended up with */
-    this.vehicles = new Vehicles(this, carAtlas || null).place(this.level.carSlots);
+    this.vehicles = new Vehicles(this, fleet?.texture || null, fleet?.def || null)
+      .place(this.level.carSlots);
     this.slideDoors = buildSlideDoors(this);
     /* the sky is a picture that arrives from outside; without one (the
        smoke test) there is simply no sky, and nothing else minds */

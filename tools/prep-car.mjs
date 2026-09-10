@@ -8,7 +8,7 @@
    What arrives is a set of pictures, one per vehicle: the thing drawn
    four times on a green field — front, rear, side and plan, laid out in
    reading order. What leaves is ONE texture atlas holding every view of
-   every vehicle (assets/cars/vehicles.png) and one set of numbers
+   every vehicle (art/vehicles-atlas.png) and one set of numbers
    (js/car-data.js) that js/car.js turns into a body. (The sheets in art/
    are as they were handed over, decoded out of their JPEGs once and
    otherwise untouched, because the rest of this repository's tooling
@@ -139,7 +139,12 @@ const FLEET = [
    which is why nothing parked in one is longer than that. */
 const PER_METRE = 32;
 
-const OUT_PNG = 'assets/cars/vehicles.png';
+/* IN art/ RATHER THAN assets/, since the car park stopped being drawn.
+   assets/ is what the page downloads; this sheet is what the RESPONDERS'
+   riot van and APC will be painted from when js/responders.js drives
+   them up the road, and until then nothing loads it. It is measured,
+   packed and tested, and it is half a megabyte nobody has to fetch. */
+const OUT_PNG = 'art/vehicles-atlas.png';
 const OUT_JS = 'js/car-data.js';
 
 /* How much greener than red and blue a pixel has to be to be the key.

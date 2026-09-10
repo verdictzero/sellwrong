@@ -78,6 +78,7 @@
 
 import * as THREE from 'three';
 import { createWallMaterial } from './material.js';
+import { parseGLB, readAccessor } from './glb.js';
 import { CAR_ATLAS, VEHICLES, VEHICLE_IDS, CIVILIAN } from './car-data.js';
 
 export { CAR_ATLAS, VEHICLES, VEHICLE_IDS, CIVILIAN };
@@ -248,10 +249,17 @@ function pen(v, opts = {}) {
     return light + CONTRAST * (Math.abs(wy) - Math.abs(wx));
   };
 
-  /* model space -> the renderer's, which is y-up with z running back */
-  const vert = (p, n, l) => {
+  /* model space -> the renderer's, which is y-up with z running back.
+
+     `t` is a UV the caller already has, which is the whole difference
+     between a vehicle that was DRAWN and one that was MODELLED: a drawn
+     one has no UVs of its own and gets them by projecting its views back
+     onto itself, and a modelled one arrives with them. Everything else
+     about the two — the light per face, the origin, the scale, the
+     winding — is the same, which is why they share a pen. */
+  const vert = (p, n, l, t0) => {
     pos.push((p[0] - origin[0]) * length, (p[2] - origin[2]) * length, -(p[1] - origin[1]) * length);
-    const t = uvOf(views, n, p);        // the UV is of where the piece CAME FROM
+    const t = t0 || uvOf(views, n, p);  // the UV is of where the piece CAME FROM
     uv.push(t[0], t[1]);
     lit.push(l); skies.push(sky); chars.push(charred);
     /* WHICH WAY THIS FACE WAS MEANT TO POINT. The shader lights nothing
@@ -268,15 +276,15 @@ function pen(v, opts = {}) {
      product, is what ended the era of a tyre tread being inside out on
      one side and the caps on the other: the builder says which way a
      face points, and the winding follows. */
-  const tri = (a, b, c, n) => {
+  const tri = (a, b, c, n, ta, tb, tc) => {
     const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
     const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
     const gx = uy * vz - uz * vy, gy = uz * vx - ux * vz, gz = ux * vy - uy * vx;
     const l = faceLight(n);
-    if (gx * n[0] + gy * n[1] + gz * n[2] >= 0) { vert(a, n, l); vert(b, n, l); vert(c, n, l); }
-    else { vert(a, n, l); vert(c, n, l); vert(b, n, l); }
+    if (gx * n[0] + gy * n[1] + gz * n[2] >= 0) { vert(a, n, l, ta); vert(b, n, l, tb); vert(c, n, l, tc); }
+    else { vert(a, n, l, ta); vert(c, n, l, tc); vert(b, n, l, tb); }
   };
-  const face = (q, n) => { tri(q[0], q[1], q[2], n); tri(q[0], q[2], q[3], n); };
+  const face = (q, n, t) => { tri(q[0], q[1], q[2], n, t, t, t); tri(q[0], q[2], q[3], n, t, t, t); };
   /* A face of the hull: a quad whose corners may have fallen together.
      Consecutive duplicates go; three corners left is a triangle, four a
      quad, fewer nothing at all. Its normal is its own — Newell's method
@@ -306,14 +314,15 @@ function pen(v, opts = {}) {
     if (q.length === 4) tri(q[0], q[2], q[3], n);
   };
 
-  /* six faces, wound so the outside is the front */
-  const box = (x0, x1, y0, y1, z0, z1) => {
-    face([[x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]], [1, 0, 0]);
-    face([[x0, y1, z0], [x0, y0, z0], [x0, y0, z1], [x0, y1, z1]], [-1, 0, 0]);
-    face([[x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0]], [0, 1, 0]);
-    face([[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1]], [0, -1, 0]);
-    face([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], [0, 0, 1]);
-    face([[x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [x1, y0, z0]], [0, 0, -1]);
+  /* six faces, wound so the outside is the front. `t`, when given, is
+     one texel every face reads — see chunkGeometry. */
+  const box = (x0, x1, y0, y1, z0, z1, t) => {
+    face([[x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]], [1, 0, 0], t);
+    face([[x0, y1, z0], [x0, y0, z0], [x0, y0, z1], [x0, y1, z1]], [-1, 0, 0], t);
+    face([[x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0]], [0, 1, 0], t);
+    face([[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1]], [0, -1, 0], t);
+    face([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], [0, 0, 1], t);
+    face([[x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [x1, y0, z0]], [0, 0, -1], t);
   };
 
   return { box, face, poly, tri, vert, faceLight, arrays: { position: pos, uv, light: lit, sky: skies, charred: chars, normal: norms } };
@@ -332,6 +341,19 @@ function pen(v, opts = {}) {
 export function carGeometry(v, opts = {}) {
   const s = v.shape;
   const P = pen(v, opts);
+
+  /* A MODELLED VEHICLE SHORT-CIRCUITS THE LOT. Everything below builds a
+     body out of two silhouette curves because the drawn fleet has
+     nothing else to build one from; this van arrives as triangles with
+     UVs on them, so all that is left to do is put them through the same
+     pen — which is not a formality, because the pen is where the face
+     light, the parked heading, the origin the mesh turns about and the
+     charred flag all come from, and a modelled vehicle wants every one
+     of them exactly as much as a drawn one does. */
+  if (v.model) {
+    for (const t of v.model.tris) P.tri(t.a, t.b, t.c, t.n, t.ta, t.tb, t.tc);
+    return P.arrays;
+  }
 
   /* THE BODY: the visual hull, as a grid.
 
@@ -441,8 +463,108 @@ export function carGeometry(v, opts = {}) {
 export function chunkGeometry(v, cut, opts = {}) {
   const mid = [(cut.x0 + cut.x1) / 2, (cut.y0 + cut.y1) / 2, (cut.z0 + cut.z1) / 2];
   const P = pen(v, { ...opts, origin: mid });
-  P.box(cut.x0, cut.x1, cut.y0, cut.y1, cut.z0, cut.z1);
+  /* A MODELLED VEHICLE'S DEBRIS IS PAINTED FLAT, one texel per piece.
+     The drawn fleet projects the vehicle's own four views onto the box a
+     piece was cut out of, which is the nicest thing in this file and
+     needs the four view rectangles measured; the van's texture IS a
+     four-view sheet so it could be done, and it is not worth it for a
+     piece of van twenty units across, in the air, on fire, for a second
+     and a bit. Two texels answer it — panel above the sill, tyre below —
+     and the pen's own face light still makes each piece read as a solid
+     thing rather than as a flat card. */
+  P.box(cut.x0, cut.x1, cut.y0, cut.y1, cut.z0, cut.z1,
+    v.model ? (mid[2] >= v.shape.sill ? v.model.bodyUV : v.model.flatUV) : undefined);
   return P.arrays;
+}
+
+/* ---------------------------------------------------------------------
+   A VEHICLE THAT ARRIVED MODELLED
+
+   The car park is one van now, at the user's request, and it came out of
+   Blender rather than off a four-view sheet. What this does is put its
+   triangles into the space the rest of this file already speaks — x
+   +0.5 at the nose, y to the vehicle's left, z 0 on the ground, all as
+   fractions of the vehicle's own length — and hand back something shaped
+   like an entry in js/car-data.js, so js/vehicles.js cannot tell the
+   difference and none of the tumble, the blockers, the debris or the
+   wrecks had to change.
+
+   THE AXES ARE THE ONLY REAL WORK. A GLB says nothing about which end of
+   a van is the front: this one lies along its Z with the nose at +Z and
+   up at +Y, which was established by rendering four orthographic views
+   of it and looking, and is recorded in the file by tools/prep-van.mjs.
+   The swap (nose, left, up) <- (z, x, y) is a cyclic permutation, so it
+   preserves handedness, which is the one thing that would otherwise turn
+   every triangle in the model inside out.
+
+   THE NORMAL IS THE TRIANGLE'S OWN, not the vertex normals the model
+   ships. The pen uses a normal for two things — which way round to wind
+   the triangle, and how bright the face is on this game's fake compass —
+   and both of those are properties of the FACE. A vertex normal averaged
+   over a smooth shoulder is neither.
+   --------------------------------------------------------------------- */
+/**
+ * The van, from the file, ready to fill a car park with.
+ *
+ * Its texture comes out of the same file: the model is one
+ * self-describing thing, so there is no second URL to keep in step and
+ * no atlas coordinates written down anywhere. Decoded by the browser,
+ * point-sampled and unmipped like every other texture in the game.
+ */
+export async function loadVehicleModel(url, opts = {}) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url}: ${res.status}`);
+  const { json, bin } = parseGLB(await res.arrayBuffer());
+  const def = modelVehicle(json, bin, opts);
+  const im = json.images?.[0];
+  if (im?.bufferView === undefined) throw new Error(`${url}: the texture is not in the buffer`);
+  const bv = json.bufferViews[im.bufferView];
+  const bytes = bin.subarray(bv.byteOffset || 0, (bv.byteOffset || 0) + bv.byteLength);
+  const bitmap = await createImageBitmap(new Blob([bytes], { type: im.mimeType }),
+    { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
+  return { def, texture: carTexture(bitmap) };
+}
+
+export function modelVehicle(json, bin, opts = {}) {
+  const ex = json.asset?.extras?.vehicle;
+  if (!ex) throw new Error('the model has no asset.extras.vehicle — run tools/prep-van.mjs on it');
+  const prims = json.meshes[0].primitives;
+  const s = 1 / (ex.length / ex.unit);        // model units -> fractions of the length
+  const tris = [];
+  for (const p of prims) {
+    const pos = readAccessor(json, bin, p.attributes.POSITION).array;
+    const uvs = p.attributes.TEXCOORD_0 !== undefined
+      ? readAccessor(json, bin, p.attributes.TEXCOORD_0).array : null;
+    const idx = readAccessor(json, bin, p.indices).array;
+    const textured = !!json.materials?.[p.material]?.pbrMetallicRoughness?.baseColorTexture;
+    const at = i => [
+      (pos[i * 3 + 2] - ex.centre) * s * ex.noseSign,     // along the length
+      pos[i * 3] * s,                                     // to the left
+      (pos[i * 3 + 1] - ex.ground) * s,                   // up off the tarmac
+    ];
+    /* glTF's v runs down from the top of the image and every texture in
+       this game is uploaded the other way up, so it is flipped here
+       exactly as uvOf flips the atlas. An untextured primitive — the
+       glass, the tyres, the bumpers — is pointed at one dark texel,
+       because a car park is one material and one draw call. */
+    const tex = i => (textured && uvs) ? [uvs[i * 2], 1 - uvs[i * 2 + 1]] : ex.flatUV;
+    for (let t = 0; t < idx.length; t += 3) {
+      const a = at(idx[t]), b = at(idx[t + 1]), c = at(idx[t + 2]);
+      const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+      const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+      let n = [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx];
+      const m = Math.hypot(n[0], n[1], n[2]);
+      if (m < 1e-12) continue;                            // a degenerate triangle is nothing
+      n = [n[0] / m, n[1] / m, n[2] / m];
+      tris.push({ a, b, c, n, ta: tex(idx[t]), tb: tex(idx[t + 1]), tc: tex(idx[t + 2]) });
+    }
+  }
+  return {
+    id: opts.id || 'van', name: opts.name || 'Van', use: 'civil',
+    length: ex.length,
+    shape: ex.shape,
+    model: { tris, flatUV: ex.flatUV, bodyUV: ex.bodyUV },
+  };
 }
 
 /** Plain arrays to a geometry on the shared atlas. */

@@ -2,7 +2,7 @@
    do not edit by hand.
 
    7 vehicles measured off four-view sheets, and where each of those
-   28 views ended up in assets/cars/vehicles.png. js/car.js builds boxes
+   28 views ended up in art/vehicles-atlas.png. js/car.js builds boxes
    out of a shape and paints them by projecting that vehicle's views back
    along the axes they were drawn down.
 
@@ -13,7 +13,7 @@
 
 /** The atlas. One picture for the whole fleet, so a car park full of
     vehicles is one texture and one material. */
-export const CAR_ATLAS = { file: 'assets/cars/vehicles.png', w: 512, h: 1140 };
+export const CAR_ATLAS = { file: 'art/vehicles-atlas.png', w: 512, h: 1140 };
 
 /** The fleet.
 

@@ -1632,6 +1632,60 @@ section('the fleet');
       veh.turn([3, 4, 5], 0, 0, 0).every((t, i) => Math.abs(t - [3, 4, 5][i]) < 1e-9));
   }
 
+  /* --- THE VAN THAT ARRIVED MODELLED -------------------------------
+     Everything above measures the drawn fleet: seven bodies built out of
+     boxes and painted by projecting four drawings onto them. None of it
+     is in the car park any more. What is out there is one van, modelled,
+     put into the same model space by car.modelVehicle — so these checks
+     are about the conversion, which is where a wrong axis or a flipped v
+     would put seventy-seven vans on their sides. */
+  const van = await (async () => {
+    const glb = await import('../js/glb.js');
+    const bytes = fs.readFileSync('assets/models/van.glb');
+    const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    const { json, bin } = glb.parseGLB(ab);
+    const ex = json.asset?.extras?.vehicle;
+    check('the van model has been through tools/prep-van.mjs', !!ex);
+    note('the van', `${ex.length} long, ${ex.width} wide, ${ex.height} tall, ` +
+      `nose at ${ex.noseSign > 0 ? '+' : '-'}${'XYZ'[ex.lengthAxis]}`);
+    const v = car.modelVehicle(json, bin);
+    note('its triangles', `${v.model.tris.length}, against ${car.carGeometry(car.VEHICLES.van).position.length / 9} for the drawn one`);
+    check('it has triangles', v.model.tris.length > 200, `${v.model.tris.length}`);
+    /* IN THE SPACE THE REST OF THIS FILE SPEAKS: x is +0.5 at the nose
+       and -0.5 at the tail, y is across, z is 0 on the tarmac. Getting
+       any of the three wrong is a van standing on its nose. */
+    let x0 = Infinity, x1 = -Infinity, y1 = 0, z0 = Infinity, z1 = -Infinity;
+    for (const t of v.model.tris) for (const p of [t.a, t.b, t.c]) {
+      x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]);
+      y1 = Math.max(y1, Math.abs(p[1]));
+      z0 = Math.min(z0, p[2]); z1 = Math.max(z1, p[2]);
+    }
+    check('it runs from tail to nose over exactly its own length',
+      Math.abs(x0 + 0.5) < 1e-3 && Math.abs(x1 - 0.5) < 1e-3, `${x0.toFixed(4)}..${x1.toFixed(4)}`);
+    check('it stands on the tarmac rather than in it or over it',
+      Math.abs(z0) < 1e-3, `${z0.toFixed(4)}`);
+    check('it is taller than it is wide and longer than it is tall',
+      z1 > y1 * 2 * 0.9 && z1 < 1,
+      `${(v.length * 2 * y1).toFixed(0)} wide, ${(v.length * z1).toFixed(0)} tall, ${v.length} long`);
+    /* every UV inside the picture, which is what catches a v that was
+       not flipped out of glTF's top-left origin */
+    const uvs = v.model.tris.flatMap(t => [...t.ta, ...t.tb, ...t.tc]);
+    check('and every one of its UVs is inside its own texture',
+      uvs.every(u => u >= -1e-6 && u <= 1 + 1e-6),
+      `${uvs.filter(u => u < 0 || u > 1).length} outside`);
+    /* the flat primitive — glass, tyres, bumpers — all points at one
+       dark texel, because a car park is one material */
+    const flat = v.model.tris.filter(t =>
+      t.ta[0] === v.model.flatUV[0] && t.ta[1] === v.model.flatUV[1]).length;
+    check('the untextured parts share one dark texel', flat > 100, `${flat} triangles`);
+    /* AND THE NORMALS ARE THE TRIANGLES' OWN. Every one unit long, or
+       the face light and the winding are both being asked a question
+       about a vector that is not a direction. */
+    check('and every triangle carries its own unit normal',
+      v.model.tris.every(t => Math.abs(Math.hypot(t.n[0], t.n[1], t.n[2]) - 1) < 1e-5));
+    return v;
+  })();
+
   /* --- and seventy-seven of them, parked ---------------------------- */
   const { Game } = await import('../js/game.js');
   const THREE2 = await import('three');
@@ -1642,7 +1696,7 @@ section('the fleet');
     hud: { message() {}, ticMessages() {} }, audio: null,
     input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
              attack: false, use: false, run: false, sample() {}, sensitivity: 0 },
-    carAtlas: {},                                   // it never draws in here
+    fleet: { texture: {}, def: van },                // it never draws in here
   });
   const V = gm.vehicles;
   note('the car park', `${V.count} vehicles in ${(level.carSlots || []).length} bays`);
@@ -1652,8 +1706,8 @@ section('the fleet');
   check('and none of it is police or military',
     V.all.every(v => v.def.use === 'civil'),
     [...new Set(V.all.map(v => v.def.id))].join(', '));
-  check('and all four civilian types are represented',
-    new Set(V.all.map(v => v.def.id)).size === CIVILIAN.length);
+  check('and every one of them is the modelled van',
+    V.all.every(v => v.def === van), [...new Set(V.all.map(v => v.def.id))].join(', '));
 
   /* AND THEY ARE IN THE BAYS, not on the lines.
 

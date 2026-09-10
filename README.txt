@@ -24,15 +24,16 @@ somewhere else: the people, the trees, the sky, and the gun.
   icon.png              and what it draws there — node tools/bake-icons.mjs
   vendor/three.module.js  three r160, local so the game runs off a memory stick
   js/                   the game
-  art/                  the logo, the old sprite weapon and the seven
-                          four-view vehicle sheets, as PNGs
-  assets/cars/          the fleet: twenty-eight views of seven vehicles, packed
-                          into one sheet
+  art/                  the logo, the old sprite weapon, the seven four-view
+                          vehicle sheets and the atlas packed out of them —
+                          which nothing loads any more, and waits there for
+                          the responders' riot van and APC
   assets/people/        the crowd, and what is left of one: seventeen
                           shoppers, eleven pieces, three splats, a fireball
   assets/forest/        the wood: ten plants with their burn maps, two grounds
   assets/sky/night.png  the night, baked from a Polyhaven panorama
-  assets/models/        the flamethrower, prepared from the user's .glb
+  assets/models/        the flamethrower and the van, prepared from the
+                          user's .glb files
   assets/fonts/         Michroma (SIL OFL), the title face
   tools/bake-art.mjs    node tools/bake-art.mjs — turns art/ into source
   tools/prep-people.mjs the crowd's art, crunched down from galvarius
@@ -40,6 +41,7 @@ somewhere else: the people, the trees, the sky, and the gun.
   tools/bake-sky.mjs    the sky: 8k panorama to 1024 palette pixels
   tools/prep-model.mjs  strips the marker spheres out of a .glb, keeps their positions
   tools/prep-car.mjs    measures seven vehicles off their sheets and packs them
+  tools/prep-van.mjs    measures the van model and halves its texture
   tools/build-site.sh   assembles public/ — what actually gets published
   tools/bake-icons.mjs  the home-screen icon, out of the game's own fire
   tools/smoke-test.mjs  node tools/smoke-test.mjs — no install, no browser
@@ -69,7 +71,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         602 checks, no install and no browser
+  the smoke test         610 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -1208,13 +1210,74 @@ into a flickering still. It is resampled to twenty-six because a frame is a
 letter and the letters stop at Z.
 
 
+THE CAR PARK IS ONE VAN, SEVENTY-SEVEN TIMES, at the user's request, and
+it arrived MODELLED. So the two sections after this one describe how the
+seven drawn vehicles are measured off their sheets and built out of
+boxes, and none of that is what you are looking at in the lot any more.
+It is all still there — measured, packed, tested — because the riot van
+and the APC in it are the responders' vehicles and js/responders.js has
+not driven them up the road yet. The sheet itself has moved out of
+assets/ into art/, so it is no longer half a megabyte the page
+downloads.
+
+WHAT A MODELLED VEHICLE NEEDS, AND IT IS NOT MUCH. tools/prep-van.mjs
+measures the .glb and writes what it found into the file's own
+asset.extras — the length, width and height in the game's units, which
+axis is the length and which end of it is the nose, and the two curves
+(columns and levels) that everything downstream of the body asks for:
+where the torn pieces come off, how tall the thing is once it is on its
+roof, how wide the part you cannot walk through is. js/car.js reads that
+back, puts the triangles into the space the drawn fleet already speaks —
+x +0.5 at the nose, y to the vehicle's left, z 0 on the ground, all as
+fractions of the length — and hands back something shaped exactly like
+an entry in js/car-data.js. Nothing in the tumble, the blockers, the
+debris, the wrecks or the smouldering had to change.
+
+THREE THINGS ABOUT IT ARE WORTH WRITING DOWN.
+
+WHICH END IS THE NOSE IS NOT IN THE FILE. A GLB says which way is up by
+convention and says nothing at all about which way a van faces. This one
+lies along its Z with the nose at +Z, established by rendering four
+orthographic views of it in a scratch script and looking at which end has
+the grille in it. Guessing would have parked seventy-seven vans
+backwards, which is the kind of mistake that looks like a rendering bug.
+The axis swap from (z, x, y) to (nose, left, up) is a cyclic permutation,
+so it preserves handedness — which is the one thing that would otherwise
+turn every triangle in the model inside out.
+
+THE FLAT MATERIAL IS THE INTERESTING PROBLEM. The model has two
+primitives: the body, textured, and a second one — glass, tyres,
+bumpers, chassis — with no texture at all, just a base colour of
+near-black. A car park is ONE material and one draw call, so a second
+material is not available. The answer is to find the darkest texel in the
+texture and point every vertex of the flat primitive at it. One texture,
+one draw call, and the tyres come out the colour tyres are.
+
+AND THE TEXTURE IS HALVED. The gun's diffuse is copied byte for byte
+because resampling pixel art is vandalism; the van's is a 700x382
+photograph of a van, and the van is sixty pixels tall on screen. So it is
+box-filtered to half and snapped to the game's own 256 colours — which
+the GPU does to it at draw time anyway, so nothing is lost on screen, and
+a photograph reduced to 256 colours compresses to a seventieth of what it
+was: 785K to 11K, and the whole model 812K to 39K.
+
+The debris is the one place the modelled van is poorer than a drawn one.
+A drawn vehicle's torn pieces are painted by projecting its own four
+views onto the box the piece was cut out of, which is the nicest thing in
+js/car.js; the van's pieces get one flat texel each, panel above the sill
+and tyre below. It is a piece of van twenty units across, in the air, on
+fire, for a second and a bit, and the pen's own face light still makes it
+read as a solid thing.
+
+
 A CAR IS A PICTURE OF A CAR, FOUR TIMES. What arrived is seven images: a
 hatchback, two white vans a model year apart, a pickup, a custom van with
 an eagle down its flank, a riot van and a tracked APC, each drawn front,
-rear, side and plan on a green field. What is in the car park is a few boxes each with
-those images projected back onto them. tools/prep-car.mjs does the
-measuring, js/car.js does the building, js/vehicles.js does everything
-that happens afterwards, and js/car-data.js is what one hands the other.
+rear, side and plan on a green field. What was in the car park until now
+is a few boxes each with those images projected back onto them.
+tools/prep-car.mjs does the measuring, js/car.js does the building,
+js/vehicles.js does everything that happens afterwards, and
+js/car-data.js is what one hands the other.
 
 THE FOUR PICTURES ARE MEASUREMENTS AS WELL AS PAINT, and that is the whole
 idea. An orthographic view is a parallel projection, so the side view's
@@ -1545,7 +1608,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-602 checks. Every one of them earns its place by having caught something
+610 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

@@ -576,9 +576,17 @@ class Chunk {
    THE LOT
    ===================================================================== */
 export class Vehicles {
-  constructor(game, texture) {
+  /**
+   * @param game
+   * @param texture  the fleet's one texture
+   * @param def      the vehicle every bay gets. Null means an empty lot,
+   *                 which is what a missing model file costs — the same
+   *                 bargain every other asset in this game makes.
+   */
+  constructor(game, texture, def = null) {
     this.game = game;
     this.texture = texture || null;
+    this.def = def;
     this.all = [];
     this.flying = [];            // chunks still in the air
     this.resting = [];           // and chunks that are not
@@ -600,15 +608,24 @@ export class Vehicles {
    * has already left; that is the map's decision and this just fills
    * what it was given.
    *
-   * CIVILIAN ONLY. The fleet has a riot van and an APC in it, and
-   * neither belongs outside a supermarket at nine in the evening. They
-   * are built, measured and packed in the same atlas, waiting for
+   * ONE VAN, SEVENTY-SEVEN TIMES, at the user's request. It used to be
+   * five civilian bodies picked off the slot's own `variant`, built out
+   * of boxes and painted by projecting four drawings onto them; it is
+   * now the modelled van from assets/models/van.glb in every bay. What
+   * that costs is variety, and what it buys is a car park full of the
+   * thing the user drew — and, read a certain way, a delivery fleet
+   * parked outside a store called SellWrong is not the wrong joke.
+   *
+   * `variant` is still on every slot and is still what would pick
+   * between vehicles if there were more than one; it is simply not read
+   * while there is one. The drawn fleet's riot van and APC are still
+   * measured and still packed in their atlas, waiting for
    * js/responders.js to drive them up the road.
    */
   place(slots) {
     if (!this.texture || !slots) return this;
     for (const slot of slots) {
-      const def = vehicleOf(CIVILIAN[(slot.variant ?? 0) % CIVILIAN.length]);
+      const def = this.def || vehicleOf(CIVILIAN[(slot.variant ?? 0) % CIVILIAN.length]);
       const sec = this.game.level.sectorAt(slot.x, slot.y);
       this.all.push(new Vehicle(this, def, {
         x: slot.x, y: slot.y, z: sec ? sec.floor : 0, angle: slot.angle,
