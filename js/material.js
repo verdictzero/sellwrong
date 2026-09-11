@@ -72,27 +72,40 @@ export const world = {
      so does every charred and gutted surface in the store. Seconds. */
   emberTime: { value: 0.0 },
 
-  /* HOW FAR THROUGH BURNING EVERY REGION IS, as a picture.
+  /* HOW BURNT EVERY PIECE OF FLOOR IS, as a picture.
 
      The store's surfaces used to know three things about the fire:
      untouched, charred, gutted. Two steps, both of them a texture swap,
      and between them nothing — an aisle could lose half its stock
      without a pixel of it changing, and then change all at once.
 
-     A region's progress is a number the simulation has had all along
-     (js/fire.js keeps burnt and total fuel per sector); what it did not
-     have is a way to the fragment shader. It cannot be a per-vertex
-     attribute, because the geometry is batched by TEXTURE and a region's
-     vertices are scattered across every batch it touches — updating one
-     would mean walking the lot. So it is a data texture, one texel per
-     sector, and every wall carries its own region index. Updating the
-     whole store is then a few hundred bytes a tic, and the shader reads
-     it with one fetch.
+     THE FIRST FIX WAS ONE TEXEL PER SECTOR and it was the wrong picture,
+     which the user reported as z-fighting. A sector's progress is one
+     number, so every surface in it sooted together, and the sectors of
+     this map are big axis-aligned rectangles: a burnt aisle met a clean
+     cross-aisle along a dead-straight line, exactly vertical or exactly
+     horizontal on screen, with a different texture and a different light
+     on each side. That does not read as a fire. It reads as a fault.
 
-     `regionSide` is the square it is laid out in, so a map with more
-     sectors than this one costs one bigger texture and no code. */
-  regionBurn: { value: null },
-  regionSide: { value: 1.0 },
+     So the picture is the FIRE'S OWN GRID: 32-unit cells, the same ones
+     it spreads through, one byte each, sampled here by WORLD POSITION
+     with a linear filter. The soot front then creeps at the resolution
+     the fire has and crosses a sector boundary without knowing it is
+     there. It also answers the question better for the surfaces that are
+     not floors — a wall reads the cells it stands in and a ceiling the
+     cells under it, rather than whichever sector it was filed under.
+
+     `burnOrigin` and `burnCell` are the grid's corner and pitch in world
+     units; `burnSide` is the square texture it is laid out in and
+     `burnCols`/`burnRows` how much of that square is grid, so anything
+     off the edge of the fire's world reads zero rather than the clamped
+     edge. See Game.ticBurnGrid. */
+  burnGrid:   { value: null },
+  burnOrigin: { value: new THREE.Vector2(0, 0) },
+  burnCell:   { value: 32.0 },
+  burnSide:   { value: 1.0 },
+  burnCols:   { value: 1.0 },
+  burnRows:   { value: 1.0 },
   emberRamp: { value: EMBER_RAMP.map(c => new THREE.Vector3(c[0], c[1], c[2])) },
 };
 
@@ -113,8 +126,12 @@ uniform float fireLight;
 uniform vec3  fireLightColor;
 uniform float emberTime;
 uniform vec3  emberRamp[8];
-uniform sampler2D regionBurn;
-uniform float regionSide;
+uniform sampler2D burnGrid;
+uniform vec2  burnOrigin;
+uniform float burnCell;
+uniform float burnSide;
+uniform float burnCols;
+uniform float burnRows;
 `;
 
 /* The two halves of the lighting, as functions.
@@ -192,16 +209,18 @@ vec3 emberOf(float charAmt, vec3 wpos, float lum, float depth) {
 /* ---------------------------------------------------------------------
    A REGION BEING BURNT, RATHER THAN HAVING BEEN
 
-   How far through burning the region this pixel belongs to is, read out
-   of the one-texel-per-sector picture above. Region 0 is "no region" —
-   a sprite, a door leaf, anything that is not a piece of the building —
-   and never burns, so every wall's index is its sector's plus one.
+   How burnt the piece of floor under this pixel is, read out of the
+   fire's own cell grid. Off the edge of the fire's world — a sprite in
+   the woods, anything the grid does not cover — is zero rather than the
+   clamped edge value, or the far wall of the car park would soot itself
+   from whatever the last cell of the shop was doing.
    ------------------------------------------------------------------- */
-float regionBurnt(float r) {
-  if (r < 0.5) return 0.0;
-  float s = max(1.0, regionSide);
-  float i = r - 1.0;
-  return texture2D(regionBurn, (vec2(mod(i, s), floor(i / s)) + 0.5) / s).r;
+float burnAt(vec3 w) {
+  /* The renderer's z runs BACKWARDS against the map's y — see addQuad in
+     js/mapgeo.js — so the grid is indexed with -z. */
+  vec2 c = (vec2(w.x, -w.z) - burnOrigin) / burnCell;
+  if (c.x < 0.0 || c.y < 0.0 || c.x > burnCols || c.y > burnRows) return 0.0;
+  return texture2D(burnGrid, (c + 0.5) / burnSide).r;
 }
 
 /* ---------------------------------------------------------------------
@@ -329,7 +348,6 @@ varying float vDepth;
 varying vec3  vWorld;
 varying float vSky;
 varying float vChar;
-varying float vRegion;
 
 #ifdef PER_VERTEX_LIGHT
   attribute float light;
@@ -350,15 +368,10 @@ varying float vRegion;
   /* how burnt this surface's region is: 0 untouched, about a half
      charred, 1 gutted. Set by js/mapgeo.js, read by emberOf. */
   attribute float charred;
-  /* WHICH region it belongs to, plus one — see regionBurnt. This is how
-     a wall finds out how far through burning it is, continuously, rather
-     than in the two steps the charred attribute can say. */
-  attribute float region;
 #else
   uniform float light;
   uniform float sky;
   uniform float charred;
-  uniform float region;
 #endif
 
 #ifdef BILLBOARD
@@ -372,7 +385,6 @@ void main() {
   vLight = light;
   vSky = sky;
   vChar = charred;
-  vRegion = region;
 
   vec3 p = position;
 
@@ -410,28 +422,27 @@ varying float vDepth;
 varying vec3  vWorld;
 varying float vSky;
 varying float vChar;
-varying float vRegion;
 
 ${WORLD_SHADE_GLSL}
 
 void main() {
   vec4 t = texture2D(map, vUv);
   if (t.a < alphaTest) discard;
-  /* HOW FAR THROUGH BURNING THIS REGION IS, continuously. The soot goes
+  /* HOW BURNT THE FLOOR UNDER THIS PIXEL IS, continuously. The soot goes
      on the ALBEDO, before the light and before the smoke, because that
      is where it is: a wall with soot on it is a darker wall, and it
      diminishes down an aisle and catches the firelight exactly as the
      wall does. Adding it afterwards would have made a sooty wall in the
      dark end of aisle nine darker than the air in front of it. */
-  float burn = regionBurnt(vRegion);
+  float burn = burnAt(vWorld);
   float soot = sootAmount(burn, vWorld);
   vec3 albedo = sootOn(t.rgb, soot, vWorld);
   float l = worldBand(vLight, vDepth, vSky, fullbright);
   vec3 c = worldShade(albedo, l, vDepth, vWorld, fullbright);
   /* The coals go on AFTER the smoke, so a burnt aisle glows through it —
-     and they arrive on the region's own number rather than on its stage,
-     so the first few show up in the recesses while there is still stock
-     on the shelves and they thicken from there. */
+     and they arrive on how burnt the floor there is rather than on the
+     sector's stage, so the first few show up in the recesses while there
+     is still stock on the shelves and they thicken from there. */
   c += emberOf(max(vChar, smoothstep(0.06, 0.92, burn)), vWorld,
                dot(albedo, vec3(0.2126, 0.7152, 0.0722)), vDepth);
   gl_FragColor = vec4(c, t.a);
@@ -455,8 +466,12 @@ export function worldUniforms() {
     tint:         world.tint,
     emberTime:    world.emberTime,
     emberRamp:    world.emberRamp,
-    regionBurn:   world.regionBurn,
-    regionSide:   world.regionSide,
+    burnGrid:     world.burnGrid,
+    burnOrigin:   world.burnOrigin,
+    burnCell:     world.burnCell,
+    burnSide:     world.burnSide,
+    burnCols:     world.burnCols,
+    burnRows:     world.burnRows,
   };
 }
 
@@ -503,9 +518,6 @@ export function createSpriteMaterial(texture, opts = {}) {
   const u = baseUniforms(texture, opts);
   u.light         = { value: opts.light ?? 1.0 };
   u.sky           = { value: opts.sky ?? 0.0 };
-  /* 0 is "no region", which never burns: a sprite is a thing standing in
-     a room, not a piece of one. */
-  u.region        = { value: 0.0 };
   u.billboardRot  = { value: 0.0 };
   u.spriteScale   = { value: new THREE.Vector2(opts.width ?? 64, opts.height ?? 64) };
   u.spriteOffset  = { value: new THREE.Vector2(0, 0) };
@@ -535,7 +547,6 @@ export function createHudMaterial(texture) {
   const u = baseUniforms(texture, { alphaTest: 0.5, fullbright: true });
   u.light = { value: 1.0 };
   u.sky = { value: 0.0 };
-  u.region = { value: 0.0 };
   return new THREE.ShaderMaterial({
     uniforms: u,
     vertexShader: COMMON_VERT,

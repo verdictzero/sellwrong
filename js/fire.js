@@ -229,6 +229,10 @@ export class FireSystem {
     this.originY = Math.floor(miny / CELL) * CELL - CELL;
     this.cols = Math.ceil((maxx - this.originX) / CELL) + 2;
     this.rows = Math.ceil((maxy - this.originY) / CELL) + 2;
+    /* and how big a cell is, for anything that has to find its way from
+       a world position into this grid — see Game.ticBurnGrid, which
+       hands the whole thing to the shader as a picture */
+    this.CELL = CELL;
     const n = this.cols * this.rows;
 
     /* Floats, so a cell of bare lino can eat a third of a unit a tic —
@@ -698,8 +702,13 @@ export class FireSystem {
     cand.sort((a, b) => a.key - b.key);
 
     /* --- the flames ------------------------------------------------- */
+    /* HOW MUCH OF THE POOL TO SPEND. The sprites are sorted nearest and
+       hottest first, so spending less of it drops the far, cold end —
+       which is the right end to drop and is why the budget is a cap on
+       the count rather than a filter on the candidates. */
+    const pool = Math.max(16, Math.round(this.POOL * (this.game.quality?.effects ?? 1)));
     let s = 0;
-    for (let c = 0; c < cand.length && s < this.POOL; c++) {
+    for (let c = 0; c < cand.length && s < pool; c++) {
       const cd = cand[c];
       /* which flame: an ember, a fire, or a proper blaze — and the outer
          members of the clump come off the rung below */

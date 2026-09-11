@@ -68,6 +68,18 @@ export class Game {
     this.projectiles = [];
     this.lamps = [];
     this.doors = [];
+    /* ------------------------------------------------------------------
+       WHAT TO SPEND THE FRAME ON
+
+       Three dials, all of them 1 by default and all of them honoured by
+       whoever can honour them rather than by a branch here: the crowd is
+       how many standees are drawn, effects is how much of the fire's
+       sprite pool gets used, and wood is how far into the trees the
+       chunks are kept. The pause menu sets them (see js/main.js) and the
+       simulation never reads them — the shop is the same shop at every
+       setting, it is only the drawing that is cheaper.
+       ------------------------------------------------------------------ */
+    this.quality = { crowd: 1, effects: 1, wood: 1 };
     this.tics = 0;
     this.accum = 0;
     this.paused = false;
@@ -118,7 +130,7 @@ export class Game {
     this.idle = false;                 // the title: the world stands still and the eye wanders
     this._nozzle = { x: 0, y: 0, z: 0 };
     this._scared = [];                 // scratch for Game.scare
-    this._initRegionBurn();
+    this._initBurnGrid();
 
     /* the flame the player is holding, and everything else that needs a
        quad but is not an actor */
@@ -358,7 +370,7 @@ export class Game {
     this.fx.tic();
     this.giblets.tic();
     this.applyChar();
-    this.ticRegionBurn();
+    this.ticBurnGrid();
     this.hud.ticMessages();
 
     if (this.bigMessageTics > 0 && --this.bigMessageTics === 0) this.bigMessage = null;
@@ -644,52 +656,75 @@ export class Game {
   }
 
   /* ------------------------------------------------------------------
-     HOW FAR THROUGH BURNING EVERY REGION IS, as a picture
+     HOW BURNT EVERY PIECE OF FLOOR IS, as a picture
 
-     One texel per sector, laid out in the smallest square that holds
-     them, updated once a tic. The shader reads it per pixel and sooties
-     the wall in proportion — see regionBurn and sootAmount in
-     js/material.js for what it is for and why it cannot be an attribute.
+     THIS USED TO BE ONE TEXEL PER SECTOR and that was the bug the user
+     reported as z-fighting. A region's progress is a single number, so
+     every surface in a sector sooted at once, and this map's sectors are
+     big axis-aligned rectangles: a burnt aisle met a clean cross-aisle
+     along a dead-straight line with a different texture and a different
+     light level on either side of it. A knife edge across the floor,
+     exactly vertical or exactly horizontal on screen, which reads as two
+     surfaces fighting rather than as a fire.
 
-     A BYTE IS ENOUGH. The number is a fraction and the shader turns it
-     into a smoothstep; a 256th of a region's fuel is a tenth of a second
-     of it burning. Red-only would be tidier and is not worth the
-     format-support argument: RGBA of a 16-by-16 picture is a kilobyte.
+     So the picture is the FIRE'S OWN GRID instead — 32-unit cells, the
+     same ones the fire actually spreads through — sampled by world
+     position with a linear filter, so the soot front creeps across the
+     floor at the resolution the fire has and crosses a sector boundary
+     without knowing it is there. A wall reads the cells it stands in and
+     a ceiling the cells under it, which is also more nearly true than
+     "the sector this surface was filed under".
+
+     One byte a cell, in a square texture big enough to hold the grid.
+     225 by 207 at the moment, so 256 square: 64K, uploaded only on the
+     tics where a byte actually changed.
      ------------------------------------------------------------------ */
-  _initRegionBurn() {
-    const n = this.level.sectors.length + 1;      // +1: texel 0 is "no region"
-    const side = Math.max(1, Math.ceil(Math.sqrt(n)));
-    this._regionData = new Uint8Array(side * side * 4);
-    const tex = new THREE.DataTexture(this._regionData, side, side);
-    tex.magFilter = THREE.NearestFilter;
-    tex.minFilter = THREE.NearestFilter;
+  _initBurnGrid() {
+    const f = this.fire;
+    if (!f) return;
+    let side = 1;
+    while (side < f.cols || side < f.rows) side *= 2;
+    this._burnData = new Uint8Array(side * side * 4);
+    const tex = new THREE.DataTexture(this._burnData, side, side);
+    /* LINEAR, which is the whole point: the fire's cells are 32 units
+       across and the eye is two metres from the floor, so a nearest
+       filter would trade one straight seam for a grid of little ones. */
+    tex.magFilter = THREE.LinearFilter;
+    tex.minFilter = THREE.LinearFilter;
     tex.generateMipmaps = false;
     tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
     tex.needsUpdate = true;
-    world.regionBurn.value = tex;
-    world.regionSide.value = side;
-    this._regionTex = tex;
-    this._regionDirty = false;
+    world.burnGrid.value = tex;
+    world.burnOrigin.value.set(f.originX, f.originY);
+    world.burnCell.value = f.CELL;
+    world.burnSide.value = side;
+    world.burnCols.value = f.cols;
+    world.burnRows.value = f.rows;
+    this._burnTex = tex;
+    this._burnSide = side;
   }
 
-  /** Push the fire's per-sector progress into it. Only uploads when a
-   *  byte actually changed, which for a shop that is not on fire is
-   *  never and for one that is, is most tics. */
-  ticRegionBurn() {
+  /** Push the fire's per-cell progress into it. Only uploads when a byte
+   *  actually changed, which for a shop that is not on fire is never. */
+  ticBurnGrid() {
     const f = this.fire;
-    if (!f || !this._regionData) return;
-    const d = this._regionData;
+    if (!f || !this._burnData) return;
+    const d = this._burnData, side = this._burnSide;
+    const fuel = f.fuel, fuel0 = f.fuel0, cols = f.cols, rows = f.rows;
     let dirty = false;
-    for (let i = 0; i < this.level.sectors.length; i++) {
-      const total = f.sectorFuel[i];
-      if (total <= 0) continue;
-      const v = Math.min(255, Math.round(255 * f.sectorBurnt[i] / total));
-      const o = (i + 1) * 4;
-      if (d[o] === v) continue;
-      d[o] = v; d[o + 1] = v; d[o + 2] = v; d[o + 3] = 255;
-      dirty = true;
+    for (let y = 0; y < rows; y++) {
+      const row = y * cols, out = y * side;
+      for (let x = 0; x < cols; x++) {
+        const t = fuel0[row + x];
+        if (t <= 0) continue;                    // never had anything to burn
+        const v = 255 - Math.min(255, Math.round(255 * fuel[row + x] / t));
+        const o = (out + x) * 4;
+        if (d[o] === v) continue;
+        d[o] = v; d[o + 1] = v; d[o + 2] = v; d[o + 3] = 255;
+        dirty = true;
+      }
     }
-    if (dirty) this._regionTex.needsUpdate = true;
+    if (dirty) this._burnTex.needsUpdate = true;
   }
 
   /** Clear a room. Anything that can be frightened and is within
@@ -837,9 +872,24 @@ export class Game {
        same fire. */
     world.emberTime.value = this.tics / TICRATE + now * 0.0002;
 
-    for (const a of this.actors) a.render(p.x, p.y, billboardRot);
+    /* which way the eye is pointing, so a standee can decide for itself
+       whether it is worth drawing — see the culling note on
+       Actor.render, and why three.js is not allowed to do it */
+    const vx = Math.cos(p.angle), vy = Math.sin(p.angle);
+    /* AND HOW MUCH OF THE CROWD TO DRAW. Off the actor's own id rather
+       than off a counter, so the same people are the ones left out from
+       frame to frame — a crowd that reshuffles which half of it exists
+       is worse than half a crowd. */
+    const crowd = this.quality.crowd;
+    for (const a of this.actors) {
+      if (crowd < 1 && a.type === 'SHOPPER' && (a.id % 16) >= crowd * 16) {
+        if (a.mesh) a.mesh.visible = false;
+        continue;
+      }
+      a.render(p.x, p.y, billboardRot, vx, vy);
+    }
     this.fire.render(p.x, p.y, billboardRot);
-    this.forest.render(p.x, p.y, ez, billboardRot, world.emberTime.value);
+    this.forest.render(p.x, p.y, ez, billboardRot, world.emberTime.value, this.quality.wood);
     this.flame.render(billboardRot);
     this.fx.render(billboardRot);
     this.giblets.render(billboardRot);

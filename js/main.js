@@ -54,6 +54,33 @@ const status = (text, pct) => {
 const DETAIL = [120, 150, 200, 240, 300, 400, 480, 600];
 const DEFAULT_DETAIL = 5;
 
+/* ---------------------------------------------------------------------
+   WHAT TO SPEND THE FRAME ON
+
+   Three ladders, coarse on purpose — a slider from 0 to 1 invites you to
+   fiddle and tells you nothing, and there are only ever two or three
+   answers worth having. Each is a multiplier the game reads off
+   `game.quality`; the simulation never sees them, so the shop is the
+   same shop at every setting and only the drawing is cheaper.
+
+   Which of them to reach for first, measured under a software
+   rasteriser, where fill rate and draw calls hurt in the same
+   proportions they do on a weak phone:
+
+     RENDER   the biggest lever by a long way. Halving the buffer's
+              height quarters the pixels
+     THE WOOD next: twenty-eight thousand trees in chunks, and hiding
+              the far ones was worth four times the frame rate on its
+              own
+     CROWD    seven hundred standees are seven hundred draw calls,
+              because a billboard the shader turns cannot be batched
+     EFFECTS  the fire's sprite pool, sorted nearest-and-hottest first,
+              so spending less of it drops the far cold end
+   ------------------------------------------------------------------- */
+const CROWD  = [{ v: 1, n: 'EVERYONE' }, { v: 0.5, n: 'HALF' }, { v: 0.25, n: 'A FEW' }];
+const FX     = [{ v: 1, n: 'FULL' }, { v: 0.5, n: 'FEWER' }, { v: 0.25, n: 'LEAST' }];
+const WOOD   = [{ v: 1, n: 'ALL OF IT' }, { v: 0.6, n: 'NEARER' }, { v: 0.35, n: 'NEAREST' }];
+
 /* ---- what the player has chosen, remembered ------------------------
    Look speed, inversion, handedness, vibration, chunkiness. Kept in
    localStorage, which may be absent or refused, in which case the game
@@ -62,7 +89,8 @@ const DEFAULT_DETAIL = 5;
    not quietly keep the old default alive. */
 const PREF_KEY = 'sellwrong.prefs';
 const PREF_VERSION = 2;
-const DEFAULT_PREFS = { v: PREF_VERSION, sens: 1, invert: false, lefty: false, haptics: true, detail: DEFAULT_DETAIL };
+const DEFAULT_PREFS = { v: PREF_VERSION, sens: 1, invert: false, lefty: false, haptics: true,
+                        detail: DEFAULT_DETAIL, crowd: 0, fx: 0, wood: 0, fps: false };
 function loadPrefs() {
   try {
     const saved = JSON.parse(localStorage.getItem(PREF_KEY) || '{}');
@@ -276,13 +304,26 @@ async function boot() {
     setTog('opt-invert', prefs.invert);
     setTog('opt-lefty', prefs.lefty);
     setTog('opt-haptic', prefs.haptics);
-    $('opt-detail').textContent = 'DETAIL ' + DETAIL[detailIndex] + 'P';
+    /* the buffer's own size, because "400P" says nothing about how wide
+       it is and the width is where the pixels are */
+    $('opt-res-v').textContent = DETAIL[detailIndex] + 'P  ' + pipeline.width + '\u00d7' + pipeline.height;
+    $('opt-res-down').disabled = detailIndex === 0;
+    $('opt-res-up').disabled = detailIndex === DETAIL.length - 1;
+    $('opt-crowd').textContent = 'CROWD: ' + CROWD[prefs.crowd].n;
+    $('opt-fx').textContent = 'EFFECTS: ' + FX[prefs.fx].n;
+    $('opt-wood').textContent = 'THE WOOD: ' + WOOD[prefs.wood].n;
+    setTog('opt-fps', prefs.fps);
     $('opt-full').textContent = inFullscreen() ? 'LEAVE FULLSCREEN' : 'FULLSCREEN';
   }
   function applyPrefs() {
     input.sensitivity = 0.0022 * prefs.sens;    // the mouse and the thumb share one dial
     input.invertY = !!prefs.invert;
     touch.applyPrefs();
+    /* the three dials, straight onto the game — see game.quality */
+    game.quality.crowd = CROWD[prefs.crowd].v;
+    game.quality.effects = FX[prefs.fx].v;
+    game.quality.wood = WOOD[prefs.wood].v;
+    $('fps').hidden = !prefs.fps;
     savePrefs(prefs);
     syncMenu();
   }
@@ -292,7 +333,19 @@ async function boot() {
   toggle('opt-invert', 'invert');
   toggle('opt-lefty', 'lefty');
   toggle('opt-haptic', 'haptics');
-  $('opt-detail').addEventListener('click', () => setDetail((detailIndex + 1) % DETAIL.length));
+  $('opt-res-down').addEventListener('click', () => setDetail(detailIndex - 1));
+  $('opt-res-up').addEventListener('click', () => setDetail(detailIndex + 1));
+  /* THE LADDERS WRAP, because three states is short enough to walk
+     round and a stepper for three is two buttons doing one job. */
+  const ladder = (id, key, list) => $(id).addEventListener('click', () => {
+    prefs[key] = (prefs[key] + 1) % list.length;
+    applyPrefs();
+    game.message($(id).textContent);
+  });
+  ladder('opt-crowd', 'crowd', CROWD);
+  ladder('opt-fx', 'fx', FX);
+  ladder('opt-wood', 'wood', WOOD);
+  toggle('opt-fps', 'fps');
   $('opt-full').addEventListener('click', () => (inFullscreen() ? exitFullscreen() : enterFullscreen()));
   document.addEventListener('fullscreenchange', syncMenu);
   document.addEventListener('webkitfullscreenchange', syncMenu);
@@ -351,7 +404,6 @@ async function boot() {
     game.message('SELLWRONG SUPERSTORE. OPEN ALL NIGHT.');
   }
   title.addEventListener('click', start);
-  let debug = false;
   addEventListener('keydown', e => {
     if (!started && (e.code === 'Space' || e.code === 'Enter')) { start(); return; }
     if (started && game.state !== 'play' && e.code === 'Space') location.reload();
@@ -361,7 +413,7 @@ async function boot() {
       const u = pipeline.material.uniforms.uSnap;
       u.value = u.value > 0.5 ? 0 : 1;
     }
-    if (e.code === 'Backquote') { debug = !debug; $('fps').hidden = !debug; }
+    if (e.code === 'Backquote') { prefs.fps = !prefs.fps; applyPrefs(); }
   });
   renderer.domElement.addEventListener('mousedown', () => { if (!started) start(); else audio.resume(); });
 
@@ -400,9 +452,22 @@ async function boot() {
     fpsAccum += dt; fpsFrames++;
     if (fpsAccum > 0.5) {
       const el = $('fps');
-      if (el && debug) el.textContent = `${Math.round(fpsFrames / fpsAccum)} FPS  ${pipeline.width}x${pipeline.height}  ` +
-        `${game.actors.length} things  ${game.fire.burningCells} alight  ${game.forest.burningCells} wood  ` +
-        `${game.flame.liveCount + game.fx.liveCount} particles`;
+      /* AND WHAT THE FRAME IS ACTUALLY SPENT ON, since the readout is a
+         setting now rather than a debug key: the buffer's size, how many
+         of the crowd got drawn against how many there are, and the two
+         fires. `draws` is what the renderer issued last frame, which is
+         the number the culling in Actor.render exists to move. */
+      if (el && prefs.fps) {
+        let drawn = 0, live = 0;
+        for (const a of game.actors) {
+          if (a.removed || !a.state) continue;
+          live++; if (a.mesh && a.mesh.visible) drawn++;
+        }
+        el.textContent = `${Math.round(fpsFrames / fpsAccum)} FPS  ${pipeline.width}x${pipeline.height}  ` +
+          `${renderer.info.render.calls} draws  ${drawn}/${live} things  ` +
+          `${game.fire.burningCells} alight  ${game.forest.burningCells} wood  ` +
+          `${game.flame.liveCount + game.fx.liveCount} particles`;
+      }
       fpsAccum = 0; fpsFrames = 0;
     }
   }

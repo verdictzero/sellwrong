@@ -139,6 +139,14 @@ html.touch .desk-only, html:not(.touch) .touch-only { display: none !important; 
 .btn.tog::before { content: '○ '; color: rgba(207, 207, 214, .35); }
 .btn.tog[aria-pressed="true"] { color: #e8c34a; }
 .btn.tog[aria-pressed="true"]::before { content: '● '; color: #e8c34a; }
+/* THE STEPPER, for a setting with an order to it: a name, minus, the
+   value, plus. A cycling button is fine for three states and wrong for
+   eight — you should not have to go all the way round to go back one. */
+.step { font-size: .7rem; letter-spacing: .2em; color: rgba(207, 207, 214, .55); }
+.step > span { min-width: 6.5rem; text-align: right; }
+.step b { min-width: 7.5rem; text-align: center; color: #e8c34a; font-weight: normal; }
+.btn.narrow { min-width: 44px; padding: .5rem .6rem; font-size: .9rem; letter-spacing: 0; }
+
 .slider { font-size: .7rem; letter-spacing: .2em; color: rgba(207, 207, 214, .55); }
 .slider span { min-width: 6.5rem; text-align: right; }
 .slider b { min-width: 3rem; text-align: left; color: #e8c34a; font-weight: normal; }

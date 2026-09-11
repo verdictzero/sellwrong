@@ -747,7 +747,7 @@ export class Forest {
     for (const ch of touched) ch.burnAttr.needsUpdate = true;
   }
 
-  render(camX, camY, camZ, billboardRot, time) {
+  render(camX, camY, camZ, billboardRot, time, reach = 1) {
     if (!this.mesh) { if (this._dirty.length > 4096) this._flush(); return; }
     this.uRot.value = billboardRot;
     this.uTime.value = time;
@@ -755,12 +755,16 @@ export class Forest {
     /* Hide the chunks past their kind's range. The frustum takes care of
        the ones behind you; this takes care of the ones in front and too
        far to resolve, which for the understory is nearly all of them. */
+    /* and how far in is a setting: the wood is the most expensive thing
+       in the frame by a long way, so the pause menu can pull its range
+       in. `reach` is game.quality.wood — see js/game.js. */
     for (const A of this.kindArrays) {
       if (!A || !A.chunks.length) continue;
       for (const ch of A.chunks) {
         const c = ch.mesh.userData.chunk;
         const dx = c.x - camX, dy = c.y - camY;
-        ch.mesh.visible = dx * dx + dy * dy < c.far * c.far;
+        const far = c.far * reach;
+        ch.mesh.visible = dx * dx + dy * dy < far * far;
       }
     }
     if (this.flames) { this._placeFlames(camX, camY, camZ); this.flames.render(billboardRot); }

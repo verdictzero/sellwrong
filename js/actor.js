@@ -144,6 +144,12 @@ const _near = [];
 /* and one for A_Flee's eight direction scores, for the same reason */
 const _score = new Float64Array(8);
 
+/* HOW FAR A THING IS DRAWN FROM, how far off the view axis, and how
+   close is too close to bother asking. See the note on Actor.render. */
+const CULL_FAR = 6400;
+const CULL_NEAR = 96;
+const CULL_COS = Math.cos(80 * Math.PI / 180);
+
 export class Actor {
   constructor(game, typeName, x, y, angle = 0, opts = {}) {
     const info = ACTORS[typeName];
@@ -496,9 +502,49 @@ export class Actor {
     this.game.scene.add(this.mesh);    // so its bounds are a lie
   }
 
-  render(camX, camY, billboardRot) {
+  /* ------------------------------------------------------------------
+     DO NOT DRAW WHAT CANNOT BE SEEN
+
+     Every standee is its own mesh with its own material — it has to be,
+     because the quad is spun and scaled by uniforms — so a crowd of
+     seven hundred is seven hundred draw calls and seven hundred uniform
+     updates a frame. And it was ALL of them, every frame, however far
+     away and whether or not they were behind you: these meshes say
+     frustumCulled = false, because a quad the shader turns has bounds
+     that are a lie, so three.js was not allowed to cull any of them.
+
+     So it is done here, where the lie does not matter, with the two
+     tests that are safe for a billboard:
+
+       BEHIND THE EYE. Every sprite in the game is turned to the camera
+       PLANE rather than the camera point, so a thing far enough behind
+       that plane is edge-on and invisible by construction.
+
+       TOO FAR TO MATTER. Past the end of the parade, and well past
+       where the distance falloff has taken a standee to its darkest
+       step.
+
+     The cone is deliberately generous — it keeps everything within
+     eighty degrees of the view axis, against a horizontal field of
+     about forty-eight — because a sprite is as wide as it is and
+     popping one in at the edge of the screen is worse than drawing it.
+     Even so it is most of the crowd: the half behind you, plus what is
+     out to the sides. Anything closer than three metres is never culled
+     at all, whatever the angle, because at that range the quad is wider
+     than the screen.
+     ------------------------------------------------------------------ */
+  render(camX, camY, billboardRot, viewX = 0, viewY = 0) {
     if (this.removed || !this.state) return;
+    const dx = this.x - camX, dy = this.y - camY;
+    const d2 = dx * dx + dy * dy;
+    if (d2 > CULL_FAR * CULL_FAR ||
+        (d2 > CULL_NEAR * CULL_NEAR && (viewX !== 0 || viewY !== 0) &&
+         dx * viewX + dy * viewY < Math.sqrt(d2) * CULL_COS)) {
+      if (this.mesh) this.mesh.visible = false;
+      return;
+    }
     this.ensureMesh();
+    this.mesh.visible = true;
 
     /* Which of the eight views. rot 0 is head-on. */
     let rot = 0;

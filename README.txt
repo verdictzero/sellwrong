@@ -71,7 +71,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         639 checks, no install and no browser
+  the smoke test         663 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -1041,13 +1041,55 @@ awkward fractions are 25/32 and 50/32, the numbers in Doom's own table.
 HOW IT LOOKS
 ------------
 
-Everything is drawn into a buffer about 200 pixels tall and thrown at the
-screen with no smoothing. The vertical resolution is fixed — that is the
-chunkiness control, on [ and ] — and the width follows the window's shape,
-so a wider monitor shows MORE STORE rather than the same store stretched.
+Everything is drawn into a buffer a few hundred pixels tall and thrown at
+the screen with no smoothing. The vertical resolution is a SETTING — the
+RENDER stepper in the pause menu, or [ and ], from 120 up to 600 — and the
+width follows the window's shape, so a wider monitor shows MORE STORE
+rather than the same store stretched. The menu shows the buffer's actual
+size beside the setting, because "400P" says nothing about how wide it is
+and the width is where the pixels are.
 The status bar and the weapon go into the same buffer, at the same chunk
 size, because a crisp overlay on a chunky world reads as a filter applied to
 a photograph.
+
+WHAT TO SPEND THE FRAME ON. Four settings, and they are in the order of
+what they are worth, measured:
+
+  RENDER    the buffer's height. Halving it quarters the pixels, and on
+            anything with a weak fill rate that is the whole answer
+  THE WOOD  how far into the trees the chunks are kept. Twenty-eight
+            thousand plants in distance-culled chunks, and pulling the
+            range in was worth two to three times the frame rate on its
+            own — the single biggest thing in the frame
+  CROWD     how many of the standees are drawn. Seven hundred billboards
+            are seven hundred draw calls, because a quad the shader
+            turns cannot be batched with the next one
+  EFFECTS   how much of the fire's sprite pool gets used. The candidates
+            are sorted nearest-and-hottest first, so spending less of it
+            drops the far, cold end, which is the right end to drop
+
+NONE OF THEM TOUCHES THE SIMULATION. The shop is the same shop at every
+setting: the same seven hundred and thirty-six people, walking the same
+way, running from the same fire and getting out of the same doors. Only
+the drawing is cheaper. A crowd setting that spawned fewer people would
+change who gets out of the building alive, and the smoke test holds that
+line — four hundred tics at the lowest setting, and the cast list is
+unchanged.
+
+AND THE CROWD CULLS ITSELF. Every standee is its own mesh with its own
+material, because the quad is spun and scaled by uniforms, and the meshes
+say frustumCulled = false — a quad the shader turns has bounds that are a
+lie, so three.js is not allowed to cull any of them. It was therefore
+drawing all seven hundred every frame, however far away and whether or
+not they were behind you. Actor.render does it instead, with the two
+tests that are safe for a billboard: behind the camera PLANE (which every
+sprite in the game is turned to, so a thing behind it is edge-on and
+invisible by construction) and too far to matter. The cone is generous —
+eighty degrees against a field of about forty-eight, because a sprite is
+as wide as it is and popping one in at the edge of the screen is worse
+than drawing it — and it still takes the shop from about a thousand draw
+calls to under eight hundred, and to under five hundred when you turn
+round and face a wall.
 
 256 COLOURS. Fourteen ramps, generated, so nothing here is anybody's palette
 and there is nothing to attribute. A ramp is a list of stops with the middle
@@ -1829,7 +1871,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-639 checks. Every one of them earns its place by having caught something
+663 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -1937,6 +1979,20 @@ that had already reached a screenshot:
   a customer standing on top of a till, a gondola or the deli counter,
     found by testing the sector under them rather than the rectangle
     round the shop
+  a hard straight line across the shop floor where a burnt aisle met a
+    clean cross-aisle, reported as z-fighting and near enough: the soot
+    read how far through burning a surface was out of a
+    one-texel-per-SECTOR picture, and a sector's progress is one number.
+    Every surface in one sooted together, and the sectors of this map
+    are big axis-aligned rectangles, so the step landed as a knife edge
+    — exactly vertical or exactly horizontal on screen, with a different
+    texture and a different light level on each side of it. It reads as
+    two surfaces fighting rather than as a fire. The shader reads the
+    fire's own 32-unit cell grid by world position now, so the soot
+    front creeps at the resolution the fire actually has and crosses a
+    sector boundary without knowing it is there. The region attribute
+    and its texture are gone with it: a surface finds its own burn from
+    where it is
   a 40%-burnt aisle drawn as a black void with shoppers floating in it,
     because the soot took the albedo to a fifth and the room light took
     that to nothing. What a surface part-way through burning has to look

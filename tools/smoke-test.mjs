@@ -815,13 +815,20 @@ section('fire');
        The store used to know three things about the fire: untouched,
        charred, gutted. Two texture swaps, and between them nothing — an
        aisle could lose half its stock without a pixel of it changing.
-       The middle of a region's life is drawn now, continuously, off a
-       number the simulation always had. */
+       The middle of it is drawn now, continuously, and off a number that
+       belongs to the PIECE OF FLOOR rather than to the sector: a
+       sector's progress is one number, and this map's sectors are big
+       rectangles, so that version put a knife edge across the floor. */
     check('and it sooties a surface before anything has burnt off it',
       /float sootAmount\(/.test(mat.WORLD_SHADE_GLSL) && /vec3 sootOn\(/.test(mat.WORLD_SHADE_GLSL));
-    check('off a per-region number rather than a per-region stage',
-      /float regionBurnt\(/.test(mat.WORLD_SHADE_GLSL) &&
-      /uniform sampler2D regionBurn/.test(mat.WORLD_UNIFORMS_GLSL));
+    check('off the fire grid, sampled where the surface is',
+      /float burnAt\(vec3/.test(mat.WORLD_SHADE_GLSL) &&
+      /uniform sampler2D burnGrid/.test(mat.WORLD_UNIFORMS_GLSL) &&
+      !/regionBurn/.test(mat.WORLD_UNIFORMS_GLSL));
+    check('and it knows the renderer z runs backwards against the map y',
+      /vec2\(w\.x, -w\.z\)/.test(mat.WORLD_SHADE_GLSL));
+    check('and anything off the edge of the fire reads nothing at all',
+      /burnCols[\s\S]{0,60}return 0\.0/.test(mat.WORLD_SHADE_GLSL));
     check('and the soot creeps in world space and crawls on the coals clock',
       /emberHash\(floor\(wpos/.test(mat.WORLD_SHADE_GLSL) &&
       /crawl[\s\S]{0,80}emberTime/.test(mat.WORLD_SHADE_GLSL));
@@ -839,17 +846,23 @@ section('fire');
     tex.CHARRABLE.filter(n => !bank.has(n)).join(', '));
 
   /* --- THE PICTURE THE SHADER READS IT OUT OF ---
-     One texel per sector, plus a texel 0 that means "no region" and
-     never burns, because a sprite is a thing standing in a room and not
-     a piece of one. Three ways for this to be wrong and all three are
-     silent: the picture too small to hold every sector, a wall carrying
-     the wrong region, or texel 0 catching fire and sooting every sprite
-     in the game. */
+     THE FIRE'S OWN CELL GRID, one byte a cell, sampled by world
+     position. It used to be one texel per SECTOR, and that is the bug
+     the user reported as z-fighting: a sector's progress is one number,
+     so every surface in it sooted at once, and the sectors of this map
+     are big axis-aligned rectangles — a burnt aisle met a clean
+     cross-aisle along a dead-straight line with a different texture and
+     a different light on each side of it.
+
+     Four ways for the grid version to be silently wrong: the texture too
+     small to hold the grid, the world-to-cell arithmetic off (which puts
+     a shop's soot in the car park), the y axis unflipped (the renderer's
+     z runs backwards against the map's y), and anything off the edge of
+     the grid reading the clamped edge instead of nothing. */
   {
     const THREE3 = await import('three');
     const { Game } = await import('../js/game.js');
     const mat = await import('../js/material.js');
-    const geo = await import('../js/mapgeo.js');
     const lv3 = MAP.buildSellWrong();
     const scene3 = new THREE3.Scene();
     const g3 = new Game({
@@ -859,40 +872,71 @@ section('fire');
       input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
                attack: false, use: false, run: false, sample() {}, sensitivity: 0 },
     });
-    const side = mat.world.regionSide.value;
-    note('the region picture', `${side}x${side} for ${lv3.sectors.length} sectors`);
-    check('the region picture holds every sector and the null one',
-      side * side >= lv3.sectors.length + 1, `${side * side} texels`);
-    check('and a sector index is its own region minus one',
-      geo.regionOf(lv3.sectors[7]) === 8 && geo.regionOf(null) === 0);
-    /* every wall's region inside the picture, and never 0 */
-    let walls = 0, bad = 0;
-    /* the level's geometry is groups of groups of meshes — a static set
-       and a dynamic one, each batched by texture */
-    const walk = o => {
-      const r = o.geometry?.getAttribute?.('region');
-      if (r) for (let i = 0; i < r.array.length; i++) {
-        walls++;
-        if (r.array[i] < 1 || r.array[i] > side * side) bad++;
+    const f3 = g3.fire;
+    const side = mat.world.burnSide.value;
+    note('the burn picture', `${side}x${side} for a ${f3.cols}x${f3.rows} grid of ` +
+      `${f3.CELL}-unit cells`);
+    check('the picture holds the whole fire grid',
+      side >= f3.cols && side >= f3.rows, `${side} against ${f3.cols}x${f3.rows}`);
+    check('and it says where the grid is and how big a cell is',
+      mat.world.burnOrigin.value.x === f3.originX &&
+      mat.world.burnOrigin.value.y === f3.originY &&
+      mat.world.burnCell.value === f3.CELL &&
+      mat.world.burnCols.value === f3.cols && mat.world.burnRows.value === f3.rows);
+    check('and it is filtered rather than blocky, which is the whole point',
+      mat.world.burnGrid.value.magFilter === THREE3.LinearFilter);
+
+    /* BURN ONE CELL AND FIND IT IN THE PICTURE. This is the arithmetic
+       the shader does backwards, so doing it forwards here is the check
+       that the two agree — and it is the one that would catch the axis
+       flip, because the cell it looks in is derived from a world x and y
+       and not from an index. */
+    const cellAt = (x, y) => Math.floor((y - f3.originY) / f3.CELL) * f3.cols +
+                             Math.floor((x - f3.originX) / f3.CELL);
+    const pick = (() => {
+      for (const s2 of lv3.sectors) {
+        if (!s2.fuel || s2.outdoor) continue;
+        const x = (s2.bbox[0] + s2.bbox[2]) / 2, y = (s2.bbox[1] + s2.bbox[3]) / 2;
+        const i = cellAt(x, y);
+        if (f3.fuel0[i] > 0) return { x, y, i, name: s2.name };
       }
+      return null;
+    })();
+    check('there is a cell of shop floor to test with', !!pick);
+    f3.fuel[pick.i] = f3.fuel0[pick.i] * 0.25;         // three quarters gone
+    g3.ticBurnGrid();
+    const data = mat.world.burnGrid.value.image.data;
+    const texel = (x, y) => {
+      const cx = Math.floor((x - f3.originX) / f3.CELL);
+      const cy = Math.floor((y - f3.originY) / f3.CELL);
+      return data[(cy * side + cx) * 4];
+    };
+    note('one cell, three quarters burnt', `${pick.name} at ${pick.x | 0},${pick.y | 0} reads ${texel(pick.x, pick.y)}`);
+    check('a cell three quarters burnt reads three quarters of the way up',
+      Math.abs(texel(pick.x, pick.y) - 191) <= 2, `${texel(pick.x, pick.y)}`);
+    /* AND ITS NEIGHBOURS HAVE NOT MOVED, which is the axis check: get the
+       row and column the wrong way round and the value lands somewhere
+       else in the picture entirely. */
+    check('and nothing else in the shop caught it',
+      texel(pick.x + f3.CELL * 3, pick.y) === 0 && texel(pick.x, pick.y + f3.CELL * 3) === 0);
+    /* the car park has no fuel, so it can never soot */
+    const lot = lv3.sectors.find(s2 => s2.name === 'bays' || s2.floorTex === 'BAYROW');
+    if (lot) {
+      const lx = (lot.bbox[0] + lot.bbox[2]) / 2, ly = (lot.bbox[1] + lot.bbox[3]) / 2;
+      check('and nothing outdoors with no fuel in it can ever soot',
+        f3.fuel0[cellAt(lx, ly)] === 0 && texel(lx, ly) === 0);
+    }
+    /* NOTHING CARRIES A REGION ANY MORE. The attribute and its texture
+       are gone; a surface finds its own burn from where it is. */
+    const geo = await import('../js/mapgeo.js');
+    check('the geometry carries no region attribute', !('regionOf' in geo));
+    let attrs = 0;
+    const walk = o => {
+      if (o.geometry?.getAttribute?.('region')) attrs++;
       for (const c of o.children || []) walk(c);
     };
     walk(g3.geo.group);
-    check('every piece of the building carries a region in range', walls > 1000 && bad === 0,
-      `${bad} of ${walls} outside 1..${side * side}`);
-    /* and the progress lands in the right texel */
-    const si = lv3.sectors.findIndex((_, i) => g3.fire.sectorFuel[i] > 0);
-    g3.fire.sectorBurnt[si] = g3.fire.sectorFuel[si] * 0.5;
-    g3.ticRegionBurn();
-    const data = mat.world.regionBurn.value.image.data;
-    check('a region half burnt reads as half way through the picture',
-      Math.abs(data[(si + 1) * 4] - 128) <= 1, `${data[(si + 1) * 4]}`);
-    check('and the null region never burns, whatever the shop is doing',
-      data[0] === 0 && data[1] === 0 && data[2] === 0);
-    /* the car park has no fuel, so it can never soot */
-    const lot = lv3.sectors.findIndex(s => s.name === 'bays' || s.floorTex === 'BAYROW');
-    check('and nothing outdoors with no fuel in it can ever soot',
-      lot < 0 || g3.fire.sectorFuel[lot] === 0);
+    check('and no batch of it has one either', attrs === 0, `${attrs} found`);
   }
 
   /* --- HOW IT IS DRAWN ---
@@ -1467,6 +1511,112 @@ section('the lights');
   }
 }
 
+/* ---------- the settings ---------- */
+/* A DEAD BUTTON IS SILENT. js/main.js reaches into the page by id and
+   the page is a separate file; a typo in either leaves a control that
+   renders, highlights on hover and does nothing at all, and no test that
+   imports modules one at a time would ever know. So the two files are
+   held against each other, the same way the imports are held against the
+   exports below.
+
+   And the three quality dials are checked for the one property that
+   matters about them: that full is the default and that nothing in the
+   SIMULATION reads them. The shop has to be the same shop at every
+   setting — a crowd option that spawned fewer people would change who
+   gets out of the building alive. */
+section('the settings');
+await (async () => {
+  const fs2 = await import('node:fs');
+  const html = fs2.readFileSync('index.html', 'utf8');
+  const main = fs2.readFileSync('js/main.js', 'utf8');
+
+  const ids = new Set([...html.matchAll(/id="([^"]+)"/g)].map(m => m[1]));
+  const asked = new Set([...main.matchAll(/\$\('([^']+)'\)/g)].map(m => m[1]));
+  const missing = [...asked].filter(id => !ids.has(id));
+  note('the page / what the code asks it for', `${ids.size} ids, ${asked.size} asked for`);
+  check('every control the code reaches for is in the page',
+    missing.length === 0, missing.join(', '));
+  /* AND THE OTHER WAY for the option rows: an option in the page that
+     nothing in the code so much as names is a button that renders,
+     highlights on hover and does nothing at all. Any quoted mention
+     counts here, because the toggles and the ladders are wired through
+     helpers that take the id as an argument. */
+  const opts = [...ids].filter(id => id.startsWith('opt-'));
+  const unwired = opts.filter(id => !main.includes(`'${id}'`));
+  note('the options', opts.join(', '));
+  check('and every option in the page is wired to something',
+    unwired.length === 0, unwired.join(', '));
+
+  /* --- THE THREE DIALS --- */
+  const ladder = (name) => {
+    const m = main.match(new RegExp('const ' + name + '\\s*=\\s*\\[([^\\]]*)\\]'));
+    if (!m) return null;
+    return [...m[1].matchAll(/v:\s*([0-9.]+),\s*n:\s*'([^']+)'/g)].map(x => ({ v: +x[1], n: x[2] }));
+  };
+  for (const name of ['CROWD', 'FX', 'WOOD']) {
+    const l = ladder(name);
+    check(`${name.toLowerCase()} has a ladder of settings`, !!l && l.length >= 2,
+      l ? l.map(e => `${e.n} ${e.v}`).join(', ') : 'missing');
+    check(`and it starts at everything`, !!l && l[0].v === 1, l ? `${l[0].v}` : '');
+    check(`and every step of it is less than the last`,
+      !!l && l.every((e, i) => i === 0 || e.v < l[i - 1].v));
+  }
+  check('the render ladder goes from a phone to a desktop',
+    /const DETAIL = \[120,/.test(main) && /600\]/.test(main));
+
+  /* --- AND THE SIMULATION CANNOT SEE THEM --- */
+  const THREE5 = await import('three');
+  const { Game } = await import('../js/game.js');
+  const lv5 = MAP.buildSellWrong();
+  const g5 = new Game({
+    level: lv5, scene: new THREE5.Scene(), camera: {},
+    textures: tex.bakeTextures(), sprites: spr.bakeSprites(),
+    hud: { message() {}, ticMessages() {} }, audio: null,
+    input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
+             attack: false, use: false, run: false, sample() {}, sensitivity: 0 },
+  });
+  check('a game starts at full quality',
+    g5.quality.crowd === 1 && g5.quality.effects === 1 && g5.quality.wood === 1);
+  const before = g5.peopleLeft;
+  g5.quality.crowd = 0.25; g5.quality.effects = 0.25; g5.quality.wood = 0.35;
+  g5.fire.ignite(1300, 1300, 900);
+  for (let i = 0; i < 400; i++) g5.tic();
+  const hurt = before - g5.peopleLeft;
+  g5.quality.crowd = 1;
+  note('four hundred tics at the lowest setting', `${hurt} of ${before} shoppers gone`);
+  check('turning the drawing down does not change the shop',
+    g5.actors.filter(a => a.type === 'SHOPPER').length > 700,
+    `${g5.actors.filter(a => a.type === 'SHOPPER').length} shoppers still simulated`);
+
+  /* --- AND WHAT IT DOES NOT DRAW ---
+     The culling in Actor.render, which is the whole reason a crowd of
+     seven hundred is affordable: a standee behind the camera plane is
+     edge-on and invisible, so it is not drawn, and three.js cannot work
+     that out for itself because the quad's bounds are a lie. */
+  const someone = g5.actors.find(a => a.type === 'SHOPPER' && a.state);
+  const wipe = () => { if (someone.mesh) someone.mesh.visible = false; };
+  someone.x = 1000; someone.y = 1000;
+  /* in front of the eye, close: drawn */
+  wipe(); someone.render(1000, 600, 0, 0, 1);
+  check('a shopper in front of you is drawn', !!someone.mesh && someone.mesh.visible);
+  /* behind: not */
+  wipe(); someone.render(1000, 1400, 0, 0, 1);
+  check('and one behind you is not', !someone.mesh.visible);
+  /* DEAD ABEAM: four hundred units to the right of an eye looking
+     straight ahead, which is ninety degrees off the axis and so past
+     even the generous cone */
+  wipe(); someone.render(600, 1000, 0, 0, 1);
+  check('nor one square out to the side', !someone.mesh.visible);
+  /* and a long way off: not, whatever the angle */
+  wipe(); someone.render(1000, -6000, 0, 0, 1);
+  check('nor one on the far side of the wood', !someone.mesh.visible);
+  /* and within arm's reach it is drawn whatever the angle, because at
+     that range the quad is wider than the screen */
+  wipe(); someone.render(1010, 1010, 0, 0, 1);
+  check('but one at your elbow is drawn whichever way you face',
+    someone.mesh.visible);
+})();
+
 /* ---------- the wiring ---------- */
 /* EVERY NAME ONE MODULE TAKES FROM ANOTHER HAS TO BE THERE.
 
@@ -1661,8 +1811,15 @@ section('the way out');
        for the whole level: six hundred people in the woods behind the
        store, none of them able to see a fire, each one renewing the
        neighbour who had just renewed them. See A_Watch. */
+    /* A TENTH, not a twentieth. The claim is that the fright COLLAPSES —
+       a self-sustaining loop leaves hundreds running for ever, and it
+       did — and the exact low-water mark is a few dozen either way
+       depending on where the shared random table happens to be by the
+       time this runs. Sitting the threshold on top of the observed value
+       made this a coin flip that any new check earlier in the file could
+       flip, which is a test of the wrong thing. */
     check('and the fright runs out instead of feeding itself',
-      quietest < start * 0.05, `the quietest it ever got was ${quietest} still running`);
+      quietest < start * 0.10, `the quietest it ever got was ${quietest} still running`);
     note('and then it starts again', `${running()} running as the fire reaches the rest of the shop`);
   }
 }
