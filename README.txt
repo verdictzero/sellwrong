@@ -40,8 +40,7 @@ somewhere else: the people, the trees, the sky, and the gun.
   tools/prep-forest.sh  copies the wood's art over from the golf project
   tools/bake-sky.mjs    the sky: 8k panorama to 1024 palette pixels
   tools/prep-model.mjs  strips the marker spheres out of a .glb, keeps their positions
-  tools/prep-car.mjs    measures six vehicles off their sheets and packs them
-  tools/prep-van.mjs    measures the van model and halves its texture
+  tools/prep-van.mjs    halves the van's texture and writes down its axes
   tools/build-site.sh   assembles public/ — what actually gets published
   tools/bake-icons.mjs  the home-screen icon, out of the game's own fire
   tools/smoke-test.mjs  node tools/smoke-test.mjs — no install, no browser
@@ -71,7 +70,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         663 checks, no install and no browser
+  the smoke test         516 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -1400,152 +1399,94 @@ into a flickering still. It is resampled to twenty-six because a frame is a
 letter and the letters stop at Z.
 
 
-THE CAR PARK IS ONE VAN, SEVENTY-SEVEN TIMES, at the user's request, and
-it arrived MODELLED. So the two sections after this one describe how the
-seven drawn vehicles are measured off their sheets and built out of
-boxes, and none of that is what you are looking at in the lot any more.
-It is all still there — measured, packed, tested — because the riot van
-and the APC in it are the responders' vehicles and js/responders.js has
-not driven them up the road yet. The sheet itself has moved out of
-assets/ into art/, so it is no longer half a megabyte the page
-downloads.
+THE CAR PARK IS ONE VAN, ABOUT TWENTY TIMES, at the user's request, and
+it arrived MODELLED — a GLB, dropped in as it is. There is no other kind
+of vehicle in the project now: the system that built seven of them out of
+four drawings each is deleted, and there is an obituary for it further
+down, because it was a good piece of work aimed at the wrong question.
+
+WHAT IS LEFT IS SHORT. The file's own triangles, its own UVs, its own
+texture, drawn both sides. A second GLB would drop in beside this one
+with no new code at all, which is the thing the old system could never
+say.
 
 WHAT A MODELLED VEHICLE NEEDS, AND IT IS NOT MUCH. tools/prep-van.mjs
-measures the .glb and writes what it found into the file's own
-asset.extras — the length, width and height in the game's units, which
-axis is the length and which end of it is the nose, the two curves
-(columns and levels) that everything downstream of the body asks for,
-and the four view rectangles its paint comes from. js/car.js reads that
-back, puts the triangles into the space the drawn fleet already speaks —
-x +0.5 at the nose, y to the vehicle's left, z 0 on the ground, all as
-fractions of the length — and hands back something shaped exactly like
-an entry in js/car-data.js. Nothing in the tumble, the blockers, the
-debris, the wrecks or the smouldering had to change.
+writes four things into the file's own asset.extras: which axis is the
+length and which end of it is the nose, how long the thing is in metres,
+where the ground under its wheels is, and where in the sheet a small dark
+block has been painted. js/car.js reads that back, puts the triangles
+into the space the game speaks — x +0.5 at the nose, y to the vehicle's
+left, z 0 on the ground, all as fractions of the length — and measures
+the width and height off the triangles themselves, which is what the
+collision and the tumble want. Nothing else is measured at all.
 
-THE MODEL'S OWN UVs ARE NOT USED, AND THAT IS THE POINT. They were, for
-one afternoon, and the van shipped with its flanks smeared — the user's
-words were "super fucked", which was fair. The mesh's side panels are
-UV-mapped as a FAN of long thin triangles all sharing one corner, so a
-few pixels of the picture are stretched across the whole side of the
-van. Nothing catches that except drawing the UV layout over the texture
-and looking at it, which took four minutes once the question was asked
-properly and which I had already half-seen and waved away as an artefact
-of my own scratch renderer.
-
-What the texture IS, though, is a four-view sheet: front, rear, side and
-plan of this very van, one per quadrant, on a flat grey field — exactly
-the input the rest of js/car.js has wanted since the day it was written,
-because the drawn fleet is seven of those sheets and the whole file is
-about projecting them back onto a solid. So the SHAPE comes from the
-model and the PAINT comes from the projection, and the two are
-independent. That is better than fixing the UVs would have been: the
-torn pieces of a wrecked van get real projected paint as well, which the
-drawn fleet's debris has always had and a flat texel per piece never
-would.
-
-IT ALSO MEANS THE UNTEXTURED PRIMITIVE STOPPED BEING A PROBLEM. The
-model's second primitive — glass, tyres, bumpers, chassis — arrives with
-no texture at all, just a base colour of near-black, and a car park is
-ONE material and one draw call. Projected, it does not need one: the
-four views are renders of this mesh, so the side view has the tyre in it
-where the tyre is and the front view has the windscreen where the
-windscreen is. Painting the whole van from its own photographs gets the
-black parts black for free.
-
-MEASURING THE FOUR VIEWS is the only hard part, and the hard part of
-that is that the picture has WING MIRRORS and the mesh does not. Key the
-background out, take the bounding box in each quadrant, and the front
-view comes out 55 per cent wider than the model, the rear 39, the plan
-30 — all of it mirror. The LENGTH axis is clean, and it agrees between
-the side and the plan view to under one per cent, so that is the ruler:
-pixels per unit length from the two views that have a length in them,
-and then every other window derived from the model's own proportions and
-anchored on the two datums the picture and the mesh genuinely share —
-the ground the tyres stand on, and the centre line a van is symmetric
-about.
-
-THREE THINGS ABOUT IT ARE WORTH WRITING DOWN.
-
-WHICH END IS THE NOSE IS NOT IN THE FILE. A GLB says which way is up by
-convention and says nothing at all about which way a van faces. This one
-lies along its Z with the nose at +Z, established by rendering four
-orthographic views of it in a scratch script and looking at which end has
-the grille in it. Guessing would have parked seventy-seven vans
-backwards, which is the kind of mistake that looks like a rendering bug.
-The axis swap from (z, x, y) to (nose, left, up) is a cyclic permutation,
-so it preserves handedness — which is the one thing that would otherwise
-turn every triangle in the model inside out.
-
-AND WHICH WAY ROUND IT IS IS NOT IN THE FILE EITHER — but the answer is
-not to work it out, it is to stop needing it. This took four goes and
-three of them were wrong, so it is worth writing down properly.
-
-A GLB states which way a face points twice over: the order of a triangle's
-three corners, and the NORMAL attribute on them. In this file the two
-agree with each other everywhere and both disagree with the SOLID. The
-body shell — 134 triangles, the ones with the texture on — comes to minus
-a third of its bounding box, which is a shell wound inward. The 490
-triangles of chassis, wheels, bumpers and glass underneath come to plus a
-twentieth, which is an open shell wound the other way.
-
-So the first fix was a global one: measure the whole mesh's signed volume
-and reverse every triangle if it is negative. That turned the body the
-right way out AND the chassis inside out, and the car park went from
-twenty vans seen from the inside to twenty vans with no bodywork — a
-black sill and four wheels, which is worse and looks just as much like a
-rendering bug.
-
-THE MODEL IS NOT WRONG. It renders perfectly in Blender and on Sketchfab,
-and the reason is embarrassingly simple: both of them draw BOTH SIDES of
-a single-sided material by default. That is the entire oversight. This
-renderer culls back faces, and the model was authored somewhere that
-never mattered. A vehicle is drawn double-sided now, the winding is left
-exactly as the file has it, nothing is measured and nothing is reversed,
-and what comes out is what the author saw. A vehicle is a thin shell you
-are never inside, so the cost is drawing the far face of a solid that
-already covers it.
-
-The NORMALS still have to be sorted out, because the face light reads
-them — Doom's fake contrast wants to know whether a face is a roof, an
-underside or a flank, and a roof triangle whose normal points down is
-given the tarmac's light, which is a third of the brightness. They are
-turned outward from the model's own centre, 376 of the 624, and that IS a
-heuristic, which is exactly why it is used for nothing but the light: a
-triangle it guesses wrong about is one step of shading out on one face.
-It can no longer cull anything or choose anybody's paint.
-
-AND THE PAINT IS THE MODEL'S OWN, which is the other half of the same
-mistake. The mesh is UNWRAPPED — onto the very sheet embedded in it — and
-that unwrap was thrown away here in favour of projecting the four views
-back onto the mesh, on the strength of a measurement that said the flanks
-were a fan of long thin triangles all sharing one corner.
+THE MODEL'S OWN UVs ARE USED, and getting there took four attempts, three
+of which shipped. The mesh is unwrapped onto the very sheet embedded in
+it, which is why it renders correctly in Blender and on Sketchfab, and
+for three rounds this game painted it by projection instead — on the
+strength of a measurement that said the flanks were a fan of long thin
+triangles all sharing one corner.
 
 That measurement pooled BOTH primitives. The flat-black one has no
-texture, so its UVs are unused junk — 490 triangles "covering" 321 per
-cent of the sheet, which cannot be a layout at all — and the junk is what
-the fan was. The body's own unwrap is ordinary: 134 triangles over 39 per
-cent of the sheet with a biggest triangle of 3.7 per cent, laid out over
-the four views exactly as you would expect. Reported as "the van UV
-mapping is super fucked", which it was, and the cause was here rather
-than in the file.
+texture, so its UVs are unused junk: 490 triangles "covering" 321 per
+cent of the sheet, which cannot be a layout at all, and the junk was the
+fan. The body's own unwrap is entirely ordinary — 134 triangles over 39
+per cent of the sheet, biggest 3.7 per cent, laid out over the four
+views. Drawing the UV layout over the texture PER PRIMITIVE is what
+finally showed it; drawing it over both at once is what hid it.
 
-So a modelled vehicle is painted with its own UVs, per vertex, and the
-four measured views stay for the DEBRIS — a chunk torn off the van is a
-box built on the fly and has no unwrap of its own. glTF's v runs down
-from the top of the image and a three.js texture is uploaded flipped, so
-it comes through as one minus v.
+glTF's v runs down from the top of the image and a three.js texture is
+uploaded flipped, so v comes through as one minus v.
 
-THE FLAT MATERIAL IS THE INTERESTING PROBLEM. The model has two
-primitives: the body, textured, and a second one — glass, tyres,
-bumpers, chassis — with no texture at all, just a base colour of
-near-black. A car park is ONE material and one draw call, so a second
-material is not available. The answer is to PAINT somewhere black: a
-six-texel block in the corner of the sheet, which is background grey in
-every one of these turnarounds and inside no view's box, and every vertex
-of the flat primitive points at the middle of it. One texture, one draw
+AND IT IS DRAWN BOTH SIDES, which was the other half of the same lesson.
+The file declares which way a face points twice — the winding of its
+corners and the NORMAL on them — and its two declarations agree with each
+other and disagree with the SOLID: the body shell comes to minus a third
+of its bounding box, wound inward, and the 490 triangles of chassis,
+wheels and glass under it to plus a tenth, wound the other way. There is
+no single flip that fixes both, and the first attempt was one: reverse
+everything when the total volume comes out negative. That turned the body
+the right way out and the chassis inside out with it, and the car park
+went from vans seen from the inside to vans with no bodywork.
+
+The model is not wrong. Blender and Sketchfab both draw BOTH SIDES of a
+single-sided material by default, and that is the entire oversight — this
+renderer culls back faces, and the model was authored where that never
+mattered. Vehicles are double-sided now, the winding is left exactly as
+the file has it, and a vehicle is a thin shell you are never inside, so
+the cost is drawing the far face of a solid that already covers it.
+
+The NORMALS are still turned outward from the model's own centre, 376 of
+the 624, because the face light reads them: Doom's fake contrast wants to
+know whether a face is a roof, an underside or a flank, and a roof
+triangle whose normal points down is given the tarmac's light, which is a
+third of the brightness. That IS a heuristic, and it is used for the
+light and nothing else — a triangle it guesses wrong about is one step of
+shading out on one face. It can no longer cull anything or choose
+anybody's paint, which is exactly what made the same guess fatal when the
+projection depended on it.
+
+IT ALSO MEANS THE UNTEXTURED PRIMITIVE STOPPED BEING A PROBLEM. The model
+has two primitives: the body, textured, and a second one — glass, tyres,
+bumpers, chassis, 490 of the 624 triangles — with no texture at all, just
+a flat near-black base colour. A car park is ONE material and one draw
+call, so a second material is not available. The answer is to PAINT
+somewhere black: a six-texel block in the corner of the sheet, which is
+background grey in every one of these turnarounds, and every vertex of
+the flat primitive points at the middle of it. One texture, one draw
 call, and the tyres come out the colour tyres are. Its colour is the
 model's own baseColorFactor lifted a little, because a tyre that is
 literally black in a night car park is a hole.
+
+
+AND WHICH END IS THE NOSE IS NOT IN THE FILE. A GLB says which way is up
+by convention and says nothing at all about which way a van faces. This
+one lies along its Z with the nose at +Z, established by rendering four
+orthographic views of it in a scratch script and looking at which end has
+the grille in it. Guessing would have parked a car park of vans
+backwards, which is the kind of mistake that looks like a rendering bug.
+The axis swap from (z, x, y) to (nose, left, up) is a cyclic permutation,
+so it preserves handedness.
 
 AND THE TEXTURE IS HALVED. The gun's diffuse is copied byte for byte
 because resampling pixel art is vandalism; the van's is a 700x382
@@ -1557,271 +1498,66 @@ was: 785K to 11K, and the whole model 812K to 39K.
 
 
 
-A CAR IS A PICTURE OF A CAR, FOUR TIMES. What arrived is seven images: a
-hatchback, two white vans a model year apart, a pickup, a custom van with
-an eagle down its flank, a riot van and a tracked APC, each drawn front,
-rear, side and plan on a green field. What was in the car park until now
-is a few boxes each with those images projected back onto them.
-tools/prep-car.mjs does the measuring, js/car.js does the building,
-js/vehicles.js does everything that happens afterwards, and
-js/car-data.js is what one hands the other.
+THERE WAS A WHOLE SYSTEM HERE and it is gone, at the user's request, so
+what follows is an obituary rather than a description. It is worth one,
+because it was a good answer to a question nobody was asking by the end.
 
-THE FOUR PICTURES ARE MEASUREMENTS AS WELL AS PAINT, and that is the whole
-idea. An orthographic view is a parallel projection, so the side view's
-silhouette is the vehicle's length by its height, the front view's is its
-width by its height, the plan view's is its length by its width. Every pair
-shares an axis with two others — three of the views claim a width — so each
-sheet is OVER-DETERMINED and can be checked against itself. The riot van
-agrees to one per cent; across all seven the spread is 1, 2.3, 2.4, 3,
-4.6, 5 and
-— the pickup, whose side view draws it taller for its length than its own
-head-on views do — 11.5. So one per cent was luck, and the check is there
-to catch a sheet that is NOT ONE VEHICLE (a swapped side and plan shows up
-as twenty-odd per cent) rather than to grade the artwork. Each vehicle
-carries its own residual into js/car-data.js and the test holds it. The
-one number NOT taken off a picture is the length in metres, because
-nothing in a picture of a van says how big a van is.
+WHAT IT DID. Seven vehicles arrived as orthographic turnarounds on a
+green field — front, rear, side and plan, a hatchback, two white vans a
+model year apart, a pickup, a custom van with an eagle down its flank, a
+riot van and a tracked APC. tools/prep-car.mjs keyed the green, measured
+each sheet and wrote js/car-data.js: proportions, and three curves that
+between them are the VISUAL HULL of the three silhouettes. js/car.js put
+a vertex at every crossing of those curves and painted every triangle by
+PROJECTION — take the axis a face's normal points most nearly along, read
+the view that was drawn down that axis, and the pixel lands where it came
+from. No unwrapping, no seams, no atlas authored by a person. Four
+pictures in, a solid out, and the debris got real paint for free because
+a torn piece was a box cut out of the same model space and put through
+the same projection.
 
-THE SHAPE IS THE VISUAL HULL OF THE THREE SILHOUETTES. Each view is a
-parallel projection, so the vehicle lies inside its own silhouette
-extruded along the axis that view was drawn down — the side view's,
-pushed across the width, is a slab the vehicle is inside; the plan's,
-pushed down, is another; the head-on views', pushed along the length, a
-third — and inside all three at once is the tightest solid three pictures
-can vouch for. It comes out as three curves: along the length, the side
-view's top edge and the plan view's half width at each x (the COLUMNS);
-up the height, the head-on views' half width at each z (the LEVELS).
-js/car.js puts a vertex at every column and level, as high as the side
-view allows there and as far out as the narrower of the other two views
-allows, and the grid of them — two flanks, a top, an underside, a cap at
-each end — is the body. A column whose top is below a level puts that
-level's vertex ON its top, so up a windscreen the levels bunch and across
-a bonnet they fall together, and the quads between fallen-together
-vertices are skipped. Nothing is named: the nose corners round off because
-the plan view rounds them, the shoulders because the head-on views do,
-the windscreen slopes because the side view slopes it, a pickup steps down
-to its bed because its top edge does, and the riot van's bonnet is
-narrower than its cab because its plan view says so. Each curve is
-simplified to its breakpoints (Douglas-Peucker: throw away every point
-within half a percent of the length of the straight line through its
-neighbours), so a straight roof is two columns and a rounded corner four
-or five — twenty-odd columns and seven to nine levels per vehicle, a
-thousand-odd triangles. Every edge on these sheets has the same specks in
-it, so every curve goes through the same one-dimensional closing the side
-view's top edge always did: a slot narrower than the window is bridged
-and anything wider is kept exactly. The head-on views are taken as the
-WIDER of the pair at each height, because both see the same widths and
-where they differ it is the drawing — the pickup's rear bumper is a
-chrome bar thinner than the ruler, and ruled away it left four rows of
-nothing but tow hitch, which averaged with the front put a groove round
-the truck at bumper height. A head-on silhouette cannot tell a tyre from
-the body behind it, so the lowest levels are tyre to tyre; the plan view,
-which sees the body over the tyres, clamps them back. The wheels stay
-separate — the sill is the body's underside and they hang below it — and
-sit a fraction inside the flank at their own x, because two faces at
-exactly the same depth is a tie in the depth buffer, and a tie is the
-flicker the trees used to have.
+It was over-determined, too, which is the part that was genuinely nice:
+three of the four views claim the vehicle's width, so each sheet could be
+checked against itself, and the check caught a sheet that was not one
+vehicle, two sheets drawn facing the other way, a right flank painted
+with its tail at its nose, and a wheel measured off a bull bar.
 
-IT WAS THE SIDE OUTLINE LOFTED ACROSS ONE WIDTH BEFORE THAT, and a
-staircase of boxes before that. The loft was the right silhouette from
-the side and a rectangle from above: square nose corners, a crease for a
-shoulder, and — because the projection paints whatever is under a face
-with whatever the picture has at that spot — bled body colour on every
-corner the picture had rounded off, which is what read as stretching. The
-picture had the shape the whole time, in three views; the tool was reading
-one of them. Tight geometry is what lets projected paint land where it
-came from, and it is why the body is a thousand triangles now and not the
-forty it was: forty was a box with rounded pictures on it.
+WHY IT IS GONE. Because the car park stopped being four pictures and
+became a MODEL, and a projection that infers a mapping is strictly worse
+than a mapping somebody already made. Three rounds of trouble came out of
+that mismatch and every one of them was the projection arguing with a
+file that already knew better: the flanks smeared (the measurement that
+condemned the model's own UVs had pooled them with a second primitive's
+junk), the vans inside out (the projection reads a normal to choose a
+picture, so an inverted normal paints a panel with the opposite panel),
+and then the vans with no bodywork (the fix for that was a global winding
+reversal, and the mesh is two shells wound opposite ways).
 
-SOME OF THE SHEETS FACE THE OTHER WAY. Two of the seven side views were
-drawn nose to the right and five nose to the left, and a tool that
-assumed one of those built a third of the fleet back to front: bonnet at
-the tail, and the front view painted over it. Nothing in the arithmetic
-can tell which way a picture of a van faces, so it is declared per sheet,
-and a nose-right side view is flipped as it goes into the atlas — from
-js/car.js onward every side view faces left and there is one rule. (All
-seven plan views face left. The head-on views have no way to face.)
+So js/car-data.js, tools/prep-car.mjs and art/vehicles-atlas.png are
+deleted, along with the hull builder, the projection and about a hundred
+and fifty checks that held them together. The seven sheets stay in art/,
+unshipped, in case anybody wants them back. js/car.js is a fifth of the
+size and does what the file says.
 
-AND THE DECLARATION WAS WRONG ONCE, which is the reason it is checked
-against the drawing now. The hatchback was read as nose-right off a
-thumbnail, and for a day its grille was painted on its hatch and its
-hatch glass served as a bonnet — a wedge, from every angle. Its top edge
-column by column says otherwise, unmistakably: a long gentle rise into a
-steep one is a bonnet and a windscreen; a slope into a drop is a hatch
-and a tail. The eye gets a hatchback wrong at a hundred pixels. The
-numbers do not, and PROFILE_DEBUG=<id> prints them.
+WHAT REPLACED IT IS NOTHING, WHICH IS THE POINT. The GLB's own triangles,
+its own UVs, its own texture, drawn both sides. tools/prep-van.mjs still
+halves the texture and writes down the short list of things a GLB
+genuinely cannot say — which end is the nose, where the ground is, how
+long the thing is in metres, and where in the sheet the untextured
+primitive should point — and nothing else is measured at all. The width
+and height the collision wants come off the triangles at load time.
 
-AND THE RIGHT FLANK WAS PAINTED BACKWARDS. The projection took the side
-view the other way round on the right-hand side, on the theory that a
-picture seen from the other side is mirrored. It is; but a face's
-coordinates are its own and do not care which side you are standing on —
-nose is nose — and the effect was the tail's paint on the nose of every
-right flank. On a plain van it is invisible. On a pickup it is the cab at
-the back. The same on the underside, which mattered from the day cars
-started landing on their roofs.
+THE PIECES COST SOMETHING, and it is the only thing that got harder. A
+chunk used to be a fresh box with the views projected onto its six faces,
+so it was small by construction. Now it is the model's own surface inside
+the cut, and the first attempt at that — whole triangles, in or out by
+their centroid — sheds roof panels two thirds of the van long, because a
+whole van's body shell is 134 triangles. So the pieces are clipped
+properly: Sutherland-Hodgman against the six planes of the cut, carrying
+u and v along with the position, fan-triangulated. Forty lines, and a
+piece is a piece.
 
-THE PAINT IS PROJECTED, not unwrapped. For each triangle: take the axis
-its normal points most nearly along, and read the view that was drawn down
-that axis — forward gets the front, sideways gets the side, up gets the
-plan, and the two views down the same axis from opposite sides share one
-picture, mirrored. There is no atlas laid out by a person and no seam to
-place anywhere. It is the reason a model this crude reads as a vehicle:
-the light bar, the wheel arches, the ribbed floor of the pickup's bed and
-the airbrushed eagle down the custom van are all paint that lands where
-the shape says it should.
 
-WHAT A FLEET CHANGED. One sheet could be measured against itself in
-fractions of its own length. Six could not, and every constant that was
-secretly about vans had to be found and replaced:
-
-  the roof line was "the topmost row of the side view that runs nearly
-    half the length", because a van's roof does. A PICKUP'S DOES NOT: its
-    cab is a quarter of its length, so the topmost row running half the
-    length is the BONNET, and the side view would have anchored on the
-    bonnet while the front view, which sees nothing but cab, anchored on
-    the cab roof — sliding the paint a fifth of the height. The test is
-    now relative to the longest run in the top third of each view, so a
-    light bar is still a narrow thing sitting on a roof and a cab roof is
-    still a roof, and a vehicle with nothing on top of it finds its roof
-    in the first row or two, which is frame alignment, which is right
-  the silhouette was "the largest connected blob after the opening",
-    which on a van discards a mirror and on a PICKUP discards the truck:
-    its windscreen is drawn see-through, so the head-on view's body is one
-    island and its bumper another, and its rear wheels stand clear of the
-    tailgate on either side. Measured across the six sheets the gap is not
-    close — real parts are six per cent of the body and up, specks and
-    mirrors are one per cent and under — so the vehicle is every piece at
-    least three per cent of the biggest one. Losing the mirrors is right
-    and not a compromise: the three views only agree about the width
-    because none of them counts a wing mirror as bodywork
-  the tyre was "the longest run at the bottom of the front view", which
-    is right on four of the six and catastrophic on the fifth: the custom
-    van has a BULL BAR across its nose, one run the whole width of the
-    vehicle, read as a tyre four tenths of the van long — a slab of rubber
-    from flank to flank. A tyre is one of the TWO things at the bottom of
-    a head-on view, so only rows showing exactly two runs count
-  two of the six carry a faint one-pixel seam straight across the middle
-    of the picture, left over from however they were composited. Against
-    the raw pixels that seam is a row which is not a gutter, so the sheet
-    has three rows of views in it and the tool gives up. The opening that
-    was already the ruler now runs over the WHOLE SHEET before the cells
-    are cut, and the seam is not there
-  a tracked vehicle has no wheel dips at all, so the count is declared
-    per vehicle and the tool throws if the underside disagrees. It also
-    has nothing to stand on but its bottom layer, so that layer starts at
-    the ground rather than at the sill — otherwise the whole APC hovers
-    the one pixel its tracks measured
-
-MEASURING A SILHOUETTE THAT HAS RUBBISH IN IT is most of the tool. The
-sheets are renders and renders come with specks — a stray three-pixel line
-off the tail, a thin grid of stray rows over a plan view — and taken
-literally they made the riot van's side view eleven pixels longer than it
-is, which is five per cent, which is the difference between the three
-views agreeing and not. So everything is measured after a 5x5
-morphological opening, which deletes anything thinner than five pixels and
-leaves a boxy vehicle alone. The opening is a RULER and not an edit: the
-pixels that get packed are the original ones.
-
-THE WINDOWS ARE HOLES IN THE KEY. Whoever rendered the sheets let the
-glass go through to the green, so "green is background" cuts the
-windscreen out of the van. The rule that works is topological rather than
-chromatic: key you can reach from outside the vehicle is background, key
-you cannot reach is glass. One flood fill from the border separates them.
-Background gets the nearest body colour bled into it, so a face that
-overhangs the silhouette by a pixel lands on paint rather than on a green
-screen; glass is painted dark dark grey, a shade off black. (It used to
-get the body colour, darkened, and a red car with dark red windows read
-as a car with no windows at all.) The bled colour is taken from two
-pixels IN from the edge, because every edge in a JPEG is fringed and
-against a green screen the fringe is green — filled from the pixel next
-door, an overhang comes out dark green.
-That fill is a STOPGAP and the tool says how much of each view it covers
-("see-through glass, painted dark"): a fifth of the hatchback's side view,
-an eighth of the pickup's front. Nothing about a vehicle is drawn with
-alpha — the atlas is opaque to the last pixel and the body uses the plain
-wall material — but a windscreen the renderer let the seats and the green
-through still looks like one you can see into, because those seats are
-pixels in the sheet. The cure is upstream: a sheet rendered with opaque
-glass, in the same four views on the same green, reads ~0% here and gets
-its windows exactly as drawn.
-
-AND THE GREEN COMES BACK OFF THE PAINT. A green screen throws green light
-on what is standing in front of it, and white paint takes it: the panel
-van's body is about six units greener than it is red or blue ALL OVER,
-everywhere, three pixels in or thirty. That is not a fringe and no amount
-of eroding reaches it. Against a saturated green field it reads as white,
-which is why nobody notices in the sheet; cut out and parked on tarmac, it
-is a pale green van, and it was. So no pixel may be greener than its own
-strongest other channel — which leaves a red car red, a blue one blue and
-a grey APC grey, because it only bites where green actually dominates, and
-which is safe here for the reason the whole tool is: nothing that can be
-cut out of a green screen was ever green itself.
-
-THE THREE VIEWS AGREE ABOUT THE VEHICLE AND NOT ABOUT THE FRAME. They put
-its proportions within a few per cent of each other and then draw it
-sitting in different places inside its own picture: the riot van's head-on
-views give it a taller light bar and shallower wheels, which slides
-everything else three per cent of the height down the frame. Map frame to
-bounding box and have done with it, and the model's roof lands up in a
-band where the head-on view has nothing but light bar — which paints a
-pale stripe along the top of the nose and the tail, and that is exactly
-what it did. So the SCALE still comes from the frames, which is the
-measurement that agrees, and the OFFSET comes from the ROOF LINE. Line
-those up and the sills come out within a fifth of a pixel of each other as
-well. Each view therefore carries the window of the model it covers, and
-the projection is a plain remap.
-
-AND IT IS LIT LIKE A WALL. This renderer does no shading, so a solid
-comes out a silhouette — every face the same value, no edge anywhere. A car
-borrows the trick the walls use, Doom's FAKE CONTRAST: a face looking
-north or south reads a notch brighter than one looking east or west, the
-same 0.055 js/level.js uses. The walls take it as a step because Doom's
-walls are mostly on the grid; a van parked at a fifth of a radian never is,
-so here it is the same number interpolated. The roof gets a lift on top of
-that, being the face pointing at the floodlights, and the underside goes
-dark. Four brightnesses is the whole of the shading and it is the
-difference between a vehicle and a black rectangle.
-
-THE LOT IS ONE MESH. There are a couple of hundred bays and about twenty
-vehicles in them — sparse at the user's request, roughly one bay in six
-near the doors and almost nothing by the road, because half the town has
-already left; that is the map's decision and js/vehicles.js just fills
-what it was given. Three of the twenty are abandoned across the driving
-lanes, which are FOUND from the row geometry rather than guessed at: the
-first cut put them at a hand-picked distance south of the road, where
-there is no lane at all, and one of them ended up thirty-two units from a
-parked van. Two vehicles in one bay — invisible while the lot was full,
-and the first thing you see once it is not. Twenty meshes
-would be twenty draw calls for a row of things that never move, so
-a parked car is not a mesh: it is a slab of vertices baked into world
-space and concatenated into ONE geometry, the same bargain js/mapgeo.js
-makes with the walls. A car gets a mesh of its own for the second and a
-half it is in the air and then goes back into a second slab with the other
-wrecks, and so does every piece of debris that has come to rest. Rebuilds
-happen once at the end of whichever tic dirtied them, so a chain reaction
-that takes out six cars rebuilds once and nothing is ever drawn twice in
-one frame. The whole car park costs about two hundredths of a millisecond
-a tic, against a budget of 28.6.
-
-AND THEY ARE IN THE BAYS, WHICH TOOK ANOTHER THING. The bay lines are
-not geometry: the whole car park is a dozen polygons because one repeat
-of the BAYROW texture IS one bay — 186 across, 180 deep, with the line
-down its left edge — so a row of forty bays is one sector rather than
-forty. But a floor tiles from the WORLD ORIGIN, which is right for tarmac
-and lino and anything else with no feature to line up, and wrong for a
-texture whose repeat means something: the lot starts at x = -1400, which
-is not a multiple of 186, so the painted lines fell five units from the
-middle of every bay and every car in the lot was parked ON a line
-rather than between two of them. A sector can now say where its floor
-texture starts, and the bay rows say their own corner — which does not
-move a single car, it makes the arithmetic the parking already used come
-out true. The test measures the two against each other: how far across
-one repeat of the bay texture each car is standing, which had better be
-half way.
-
-ONLY CARS A SHOPPER MIGHT OWN. Four of the six are in the lot; the riot
-van and the APC are measured, packed into the same atlas and parked
-nowhere, waiting for js/responders.js to drive them up the road.
 
 YOU CANNOT WALK THROUGH ONE. Doom's things are cylinders — one radius, no
 rotation, however long the thing is — so five and a half metres of van is
@@ -1901,7 +1637,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-663 checks. Every one of them earns its place by having caught something
+516 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -2136,13 +1872,13 @@ WHAT IS NOT DONE
     crowd all facing you. At Doom's sprite scale in a dark shop this
     reads; in daylight it would not
   every vehicle in the car park is the same van. It is the user's model
-    and it is the only one out there: about twenty of them, sparse, and
-    only the heading differs — no colour variation, no dents, nothing
-    that would break the repeat. Six more vehicles are measured and
-    ready in js/car-data.js (a hatchback, a work van, a pickup, a custom
-    van, a riot van and an APC) and none of them is placed; the drawn
-    panel van that used to be in there has been deleted at the user's
-    request, since the modelled one answers to the same name
+    and it is the only one in the project: about twenty of them, sparse,
+    and only the heading differs — no colour variation, no dents,
+    nothing that would break the repeat. The six drawn vehicles that
+    used to be measured and waiting are deleted with the system that
+    built them; their sheets are still in art/ if anybody wants them
+    back, and a second GLB would drop in beside the van with no code at
+    all
   the windows are the renderer's, not the game's. The four civilian
     sheets were rendered with see-through glass, so a windscreen shows
     the seats and, past them, the green screen; the tool paints the
@@ -2187,7 +1923,7 @@ WHAT IS NOT DONE
     store's do not cross the car park to each other; the flamethrower is
     the bridge
   the trees are 128 and 256 pixels, the sky 1024, the gun's paint 1024,
-    the fleet's twenty-four views 85 to 231: art that came from outside
+    the van's four views 85 to 231: art that came from outside
     was left as it came, and the 64-pixel rule stands for everything the
     game draws itself
   no save

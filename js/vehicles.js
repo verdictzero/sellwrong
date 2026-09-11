@@ -48,8 +48,8 @@
 import * as THREE from 'three';
 import { TICRATE, pRandom } from './util.js';
 import {
-  VEHICLES, CIVILIAN, vehicleOf, carGeometry, chunkGeometry, carMesh,
-  carGeom, carCorners, carBlockers, carBlockRadius, carHeight, bodyTopAt, bodyHalfAt,
+  carGeometry, chunkGeometry, carMesh, carGeom,
+  carCorners, carBlockers, carBlockRadius, carHeight,
 } from './car.js';
 
 /* ---------------------------------------------------------------------
@@ -189,7 +189,7 @@ class Vehicle {
     this.flames = [];
     this.mesh = null;
 
-    const L = def.length, h = def.shape.height;
+    const L = def.length, h = def.box.height;
     this.mid = [0, 0, h / 2];                 // it turns about its middle, not its wheels
     this.cz = this.ground + h / 2 * L;        // where that middle is
     this.vx = 0; this.vy = 0; this.vz = 0;
@@ -441,22 +441,30 @@ class Vehicle {
      decide what a torn piece of van looks like.
      ------------------------------------------------------------------ */
   shed(n) {
-    const d = this.def, s = d.shape, L = d.length;
+    const d = this.def, L = d.length;
+    const tris = d.model.tris;
     for (let k = 0; k < n; k++) {
       if (this.fleet.flying.length >= MAX_FLYING_CHUNKS) return;
-      /* a piece off the OUTSIDE: a random point on the hull's skin —
-         somewhere along the length, and either on the top or somewhere
-         up a flank — and a box cut in around it, as wide as the body is
-         there, so it is a bit of roof, a bit of bonnet, a bit of door */
-      const px = rnd() - 0.5, top = bodyTopAt(d, px);
-      const pz = rnd() < 0.4 ? top : s.sill + rnd() * (top - s.sill);
-      const half = bodyHalfAt(d, px, pz);
+      /* A PIECE OFF THE OUTSIDE, and the model says where the outside
+         is: pick one of its triangles and cut a box in around that
+         triangle's middle. A chunk is then the model's own triangles
+         inside that box (see chunkGeometry), so a piece off the tail is
+         the tail — the same geometry, the same paint, torn out.
+
+         This used to sample the hull's two silhouette curves for a point
+         on the skin, because the body was BUILT from those curves and
+         there were no triangles to ask. There are now. */
+      const pick = tris[(rnd() * tris.length) | 0];
+      const px = (pick.a[0] + pick.b[0] + pick.c[0]) / 3;
+      const py = (pick.a[1] + pick.b[1] + pick.c[1]) / 3;
+      const pz = (pick.a[2] + pick.b[2] + pick.c[2]) / 3;
       const w = 0.07 + rnd() * 0.10, dp = 0.05 + rnd() * 0.09, t = 0.04 + rnd() * 0.07;
       const cut = {
-        x0: Math.max(-0.5, px - w / 2), z0: Math.max(0, pz - t / 2),
-        y0: -half + rnd() * Math.max(0, 2 * half - dp),
+        x0: px - w / 2, x1: px + w / 2,
+        y0: py - dp / 2, y1: py + dp / 2,
+        z0: Math.max(0, pz - t / 2),
       };
-      cut.x1 = Math.min(0.5, cut.x0 + w); cut.y1 = cut.y0 + dp; cut.z1 = cut.z0 + t;
+      cut.z1 = cut.z0 + t;
 
       /* where that box is in the world right now, tumble and all */
       const mid = [(cut.x0 + cut.x1) / 2, (cut.y0 + cut.y1) / 2, (cut.z0 + cut.z1) / 2];
@@ -625,7 +633,7 @@ export class Vehicles {
   place(slots) {
     if (!this.texture || !slots) return this;
     for (const slot of slots) {
-      const def = this.def || vehicleOf(CIVILIAN[(slot.variant ?? 0) % CIVILIAN.length]);
+      const def = this.def;
       const sec = this.game.level.sectorAt(slot.x, slot.y);
       this.all.push(new Vehicle(this, def, {
         x: slot.x, y: slot.y, z: sec ? sec.floor : 0, angle: slot.angle,
@@ -689,4 +697,4 @@ export class Vehicles {
   get count() { return this.all.length; }
 }
 
-export { VEHICLES, CIVILIAN, GRAVITY, extentOf, lowestOf, turn };
+export { GRAVITY, extentOf, lowestOf, turn };

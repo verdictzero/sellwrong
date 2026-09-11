@@ -152,79 +152,17 @@ const measured = {
   ground: +mn[1].toFixed(6),
 };
 
-/* ---- the silhouette ------------------------------------------------
-   THE SAME TWO CURVES THE DRAWN FLEET IS MADE OF, measured off the model
-   instead of off a sheet. `columns` runs nose to tail and says how high
-   the body is and how far out it reaches at each x; `levels` runs sill
-   to roof and says how far out it reaches at each height. js/car.js
-   builds a drawn vehicle's whole hull out of those two curves — this
-   model does not need them for its body, which arrives finished — but
-   everything DOWNSTREAM of the body still asks: where the torn pieces
-   come off (js/vehicles.js shed), how tall the thing is on its roof, how
-   wide the part you cannot walk through is. Answering it here, from the
-   triangles, keeps one shape format in the game rather than two.
+/* ---- THERE WAS A SILHOUETTE HERE, and four measured views under it.
+   Both are gone with the projection they fed. The old pipeline measured
+   two curves off this mesh, built a body as the visual hull of them,
+   and painted it by projecting four rectangles of the sheet back along
+   the axes they were drawn down. js/car.js draws the model itself now,
+   with the model's own UVs, so none of it is wanted — and neither is the
+   agreement report that held the sheet's two claims about the van's
+   length against each other.
 
-   Measured by sampling each triangle rather than by rasterising it: a
-   barycentric grid over six hundred triangles is forty thousand points,
-   which is nothing, and it cannot miss a thin sliver the way a
-   scanline can. */
-const COLS = 24, LEVELS = 9;
-{
-  const noseAt = z => ((z - measured.centre) * measured.noseSign) / span[2];
-  const colTop = new Array(COLS).fill(-Infinity), colHalf = new Array(COLS).fill(0);
-  const lvlHalf = new Array(LEVELS).fill(0);
-  const zTop = span[1];
-  for (const pr of prims) {
-    for (let t = 0; t < pr.idx.length; t += 3) {
-      const P = [0, 1, 2].map(k => {
-        const i = pr.idx[t + k];
-        return [noseAt(pr.pos[i * 3 + 2]), pr.pos[i * 3] / span[2], (pr.pos[i * 3 + 1] - measured.ground) / span[2]];
-      });
-      const N = 6;
-      for (let a = 0; a <= N; a++) for (let b = 0; a + b <= N; b++) {
-        const wa = a / N, wb = b / N, wc = 1 - wa - wb;
-        const x = P[0][0] * wa + P[1][0] * wb + P[2][0] * wc;
-        const y = Math.abs(P[0][1] * wa + P[1][1] * wb + P[2][1] * wc);
-        const z = P[0][2] * wa + P[1][2] * wb + P[2][2] * wc;
-        const ci = Math.min(COLS - 1, Math.max(0, Math.floor((x + 0.5) * COLS)));
-        colTop[ci] = Math.max(colTop[ci], z);
-        colHalf[ci] = Math.max(colHalf[ci], y);
-        /* LEVELS OFF THE BODY ONLY. The flat primitive is wheels,
-           bumpers and glass, and the wheels are as wide as the body is —
-           so with them in, the lowest level is already at full width and
-           the sill comes out at four units off the tarmac. The sill is
-           meant to be where the FLANKS start. */
-        if (pr.textured) {
-          const li = Math.min(LEVELS - 1, Math.max(0, Math.floor(z / (zTop / span[2]) * LEVELS)));
-          lvlHalf[li] = Math.max(lvlHalf[li], y);
-        }
-      }
-    }
-  }
-  /* Nose first, because lerpAt in js/car.js walks columns DESCENDING in
-     x — the drawn fleet's sheets are all nose to the left. */
-  const columns = [];
-  for (let i = COLS - 1; i >= 0; i--)
-    columns.push([+((i + 0.5) / COLS - 0.5).toFixed(4), +Math.max(0, colTop[i]).toFixed(4), +colHalf[i].toFixed(4)]);
-  /* and levels ascending, sill to roof, with the same held ends */
-  const height = zTop / span[2];
-  const levels = [];
-  for (let i = 0; i < LEVELS; i++)
-    levels.push([+((i + 0.5) / LEVELS * height).toFixed(4), +lvlHalf[i].toFixed(4)]);
-  const widest = Math.max(...lvlHalf);
-  /* THE SILL is where the flanks begin — the lowest height at which the
-     body is within a tenth of its widest. Below it is wheels and axles,
-     and a piece of debris torn from down there is not a piece of van. */
-  let sill = 0;
-  for (let i = 0; i < LEVELS; i++) if (lvlHalf[i] >= widest * 0.9) { sill = levels[i][0]; break; }
-  measured.shape = {
-    width: +(2 * widest).toFixed(4),
-    height: +height.toFixed(4),
-    sill: +sill.toFixed(4),
-    roof: +height.toFixed(4),
-    columns, levels,
-  };
-}
+   What is left is the short list of things a GLB genuinely does not say.
+   ------------------------------------------------------------------ */
 
 /* ---- the texture --------------------------------------------------- */
 const im = json.images[0];
@@ -252,91 +190,6 @@ for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
 }
 snapImageData({ data: small, width: W, height: H }, 0);
 
-/* ---- the four views ------------------------------------------------
-   Keyed off the background, one bounding box per quadrant, and then
-   every window derived from the model rather than from the box — see the
-   note at the top about the wing mirrors. What is written out is what
-   uvOf in js/car.js wants: a rectangle in atlas pixels plus the WINDOW
-   on the model it covers.
-   ------------------------------------------------------------------ */
-{
-  /* The background is the commonest colour in the picture by a mile —
-     half of it — and the only thing between it and the van is the soft
-     shadow under each one, which sits about a fifth of the way from one
-     to the other. A threshold of 96 over the three channels together
-     clears the shadow and keeps every part of the van, including the
-     tyres, which are further from a mid grey than the white body is. */
-  const bg = [small[0], small[1], small[2]];
-  const KEY = 96;
-  const lit = (x, y) => {
-    const o = (y * W + x) * 4;
-    return Math.abs(small[o] - bg[0]) + Math.abs(small[o + 1] - bg[1]) + Math.abs(small[o + 2] - bg[2]) > KEY;
-  };
-  const quadrant = (qx, qy) => {
-    const ax = qx ? (W >> 1) : 0, bx = qx ? W : (W >> 1);
-    const ay = qy ? (H >> 1) : 0, by = qy ? H : (H >> 1);
-    let x0 = Infinity, y0 = Infinity, x1 = -1, y1 = -1;
-    for (let y = ay; y < by; y++) for (let x = ax; x < bx; x++) if (lit(x, y)) {
-      x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
-    }
-    if (x1 < 0) throw new Error(`nothing in the ${qx},${qy} quadrant of the sheet`);
-    return { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
-  };
-  /* The layout, which is the one the drawn fleet's sheets use as well:
-     front and rear along the top, side and plan along the bottom, every
-     one of them drawn nose to the LEFT or facing you. */
-  const box = {
-    front: quadrant(0, 0), rear: quadrant(1, 0),
-    side:  quadrant(0, 1), top:  quadrant(1, 1),
-  };
-  const half = measured.shape.width / 2;        // in fractions of the length
-  const tall = measured.shape.height;
-
-  /* PIXELS PER UNIT LENGTH, from the two views that have a length in
-     them. They agree to about one per cent, which is the check: a sheet
-     whose four views are not the same vehicle at the same scale fails
-     here rather than on screen. */
-  const scale = (box.side.w + box.top.w) / 2;
-  const agree = Math.abs(box.side.w - box.top.w) / scale;
-  if (agree > 0.05) throw new Error(`the side and plan views disagree about the length by ${(agree * 100).toFixed(0)}%`);
-
-  /* And the two datums the picture and the mesh genuinely share: the
-     GROUND the tyres stand on, and the CENTRE LINE a van is symmetric
-     about. Everything else is the model's own proportions times `scale`.
-
-     Which datum applies to which axis of which view is the only fiddly
-     part, and it is fiddly because a plan view turns the vehicle on its
-     side: in the front, rear and side views the vertical axis is HEIGHT
-     and sits on the ground, and in the plan view it is WIDTH and is
-     centred. */
-  const hPx = tall * scale, wPx = 2 * half * scale;
-  const onGround = (b, hgt) => +(b.y + b.h - hgt).toFixed(2);
-  const centred = (at, len, want) => +(at + (len - want) / 2).toFixed(2);
-  const px = n => +n.toFixed(2);
-  const Z = { z0: 0, z1: +tall.toFixed(4) }, HALF = { half: +half.toFixed(4) };
-  measured.views = {
-    /* head-on: width across, centred; height up, off the ground */
-    front: { x: centred(box.front.x, box.front.w, wPx), y: onGround(box.front, hPx), w: px(wPx), h: px(hPx), ...Z, ...HALF },
-    rear:  { x: centred(box.rear.x,  box.rear.w,  wPx), y: onGround(box.rear,  hPx), w: px(wPx), h: px(hPx), ...Z, ...HALF },
-    /* the flank: the length is the ruler, so the box's own x and w stand */
-    side:  { x: box.side.x, y: onGround(box.side, hPx), w: box.side.w, h: px(hPx), ...Z },
-    /* and the plan: length across as drawn, width up the picture and
-       centred, because the mirrors stick out into it both ways */
-    top:   { x: box.top.x, y: centred(box.top.y, box.top.h, wPx), w: box.top.w, h: px(wPx), ...HALF },
-    atlas: { w: W, h: H },
-  };
-
-  measured.agree = {
-    length: +agree.toFixed(4),
-    /* how much of each keyed box is not in the mesh — mirrors, mostly.
-       Reported rather than corrected, because the correction is to
-       ignore it and take the model's word for the proportions. */
-    front: +((box.front.w - wPx) / wPx).toFixed(3),
-    rear:  +((box.rear.w - wPx) / wPx).toFixed(3),
-    side:  +((box.side.h - hPx) / hPx).toFixed(3),
-    top:   +((box.top.h - wPx) / wPx).toFixed(3),
-  };
-}
 
 /* ---- AND SOMEWHERE BLACK TO POINT THE BLACK MATERIAL AT ------------
    The mesh has two primitives. One is the body, textured, with a UV
@@ -361,6 +214,9 @@ snapImageData({ data: small, width: W, height: H }, 0);
   /* the middle of it, in the same top-down pixel coordinates the views
      use — js/car.js turns it into a texture coordinate the same way */
   measured.black = { x: BLK / 2, y: H - BLK / 2 };
+  /* and how big the sheet is, since that is what turns those pixels
+     into a texture coordinate and there is no atlas table any more */
+  measured.sheet = { w: W, h: H };
   console.log(`  a ${BLK}x${BLK} block of ${c.join(',')} at ${BLK / 2},${H - BLK / 2} for the untextured primitive`);
 }
 
@@ -418,12 +274,6 @@ console.log(`${inFile} -> ${outFile}`);
 console.log(`  ${prims.map(p => `${p.name}: ${p.tris} triangles${p.textured ? '' : ', flat'}`).join('; ')}`);
 console.log(`  texture ${src.w}x${src.h} -> ${W}x${H}, ${(raw.length / 1024).toFixed(0)}K -> ${(png.length / 1024).toFixed(0)}K`);
 console.log(`  in game units: ${measured.length} long, ${measured.width} wide, ${measured.height} tall`);
-const V = measured.views, A = measured.agree;
-for (const k of ['front', 'rear', 'side', 'top'])
-  console.log(`  ${k.padEnd(5)} ${JSON.stringify(V[k])}`);
-console.log(`  the two lengths agree to ${(A.length * 100).toFixed(1)}%; ` +
-  `mirror overhang front ${(A.front * 100).toFixed(0)}%, rear ${(A.rear * 100).toFixed(0)}%, ` +
-  `side ${(A.side * 100).toFixed(0)}%, plan ${(A.top * 100).toFixed(0)}%`);
-console.log(`  silhouette: ${measured.shape.columns.length} columns, ${measured.shape.levels.length} levels, ` +
-  `sill at ${(measured.shape.sill * LENGTH).toFixed(0)}, widest ${(measured.shape.width * LENGTH).toFixed(0)}`);
+console.log(`  nose at ${measured.noseSign > 0 ? '+' : '-'}${'XYZ'[measured.lengthAxis]}, ` +
+  `up at +${'XYZ'[measured.upAxis]}; centre ${measured.centre}, ground ${measured.ground}`);
 console.log(`  ${(buf.length / 1024).toFixed(0)}K -> ${(total / 1024).toFixed(0)}K`);

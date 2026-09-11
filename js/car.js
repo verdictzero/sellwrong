@@ -1,64 +1,57 @@
 /* =====================================================================
-   GROCERY STORE SIMULATOR — vehicles out of three silhouettes, painted by projection
+   GROCERY STORE SIMULATOR — the vehicles, which are a model in a file
    =====================================================================
 
    The car park has been waiting for cars since the day it was laid out:
-   `level.carSlots` has held a position, a heading and a variant for every
-   bay since then. This is what fills them, and what it puts in one is not
-   a model — it is a PICTURE OF ONE, four times, and the arithmetic that
-   turns four pictures into a solid.
+   `level.carSlots` has held a position and a heading for every bay since
+   then. This is what fills them, and what it puts in one is a GLB — the
+   user's van, as authored, triangles and UVs and texture and all.
 
-   WHAT ARRIVES is an orthographic turnaround on a green field: front,
-   rear, side and plan. tools/prep-car.mjs measures it — see that file
-   for how, it is the interesting half — and leaves js/car-data.js: for
-   each vehicle its proportions, three curves that between them are the
-   VISUAL HULL of its three silhouettes (the side view's top edge and the
-   plan view's width along the length, the head-on views' width up the
-   height), its wheels off the underside, and where each of its views
-   sits in the shared atlas.
+   THERE WAS A WHOLE SYSTEM HERE and it is gone, at the user's request.
+   It took a four-view turnaround on a green field — front, rear, side,
+   plan — measured three silhouettes off it, built a body as the visual
+   hull of those silhouettes, and then painted every triangle by
+   PROJECTION: look at a face's normal, take the axis it points most
+   nearly along, read the view that was drawn down that axis. It was a
+   good answer to the question "how do you get a car out of four
+   drawings", and it was the wrong answer to "how do you get a car out of
+   a model", which is the question that was actually in front of it.
 
-   WHAT THIS DOES is put a vertex at every crossing of those curves —
-   a grid, nose to tail and sill to roof, each vertex as high as the side
-   view allows and as far out as the narrower of the other two views
-   allows — and then assign every UV by PROJECTION rather than by hand.
-   For a triangle, look at its normal, take the axis it points most
-   nearly along, and read the view that was drawn down that axis:
+   Three rounds of trouble came out of that mismatch, and every one of
+   them was the projection arguing with a file that already knew better:
 
-     pointing forward   the front view, at the y and z it is at
-     pointing back      the rear view
-     pointing sideways  the side view, at the x and z it is at
-     pointing up        the plan view, at the x and y it is at
-     pointing down      the plan view again, mirrored — nobody looks
+     the flanks came out smeared, because the measurement that condemned
+     the model's own UVs had pooled them with a second primitive's
+     unused junk
 
-   That is the whole of it. No unwrapping, no seams to place, no atlas
-   authored by a person: the four views were parallel projections of the
-   real thing, so projecting them straight back puts every pixel where it
-   came from, and geometry that follows the pictures gets painted with
-   exactly what the pictures had there. A light bar, a wheel arch, an
-   eagle airbrushed down the flank of a van are all paint that lands
-   where the shape says — and the tighter the shape, the less of the
-   paint is the bled body colour from outside the drawing. Which is why
-   the body is a grid of a thousand triangles and not the forty it was:
-   forty was a box with rounded pictures on it.
+     the vans came out inside out, because the projection reads a face's
+     normal to choose its picture, so an inverted normal paints a panel
+     with the picture of the opposite panel
 
-   The two views drawn down the same axis from opposite sides — left and
-   right, up and down — share one picture, mirrored. A van is very nearly
-   symmetric and Doom is not going to notice.
+     and then the vans came out with no bodywork, because the fix for
+     that was a global winding reversal, and the mesh is two shells
+     wound opposite ways
 
-   AND IT IS WHY THE DEBRIS WORKS. When one of these goes up it comes
-   apart into chunks, and a chunk is a small box cut out of the vehicle's
-   own model space and put through exactly this function. A piece off the
-   tail has the tail's paint on it, on every face, without anybody
-   deciding what a torn piece of van looks like.
+   None of it was the model's fault. It renders correctly in Blender and
+   on Sketchfab. So now it is simply DRAWN: its own triangles, its own
+   UVs, its own texture, both sides, nothing measured and nothing
+   guessed. tools/prep-van.mjs still halves the texture and writes down
+   the few things a GLB genuinely cannot say — which end is the nose,
+   where the ground is, how long the thing is in metres, and where in the
+   sheet the untextured primitive should point — and that is the whole of
+   the preparation.
 
-   WHY THE WHEELS SIT A FRACTION OF A UNIT INSIDE THE FLANKS rather than
-   flush with them. Two faces at exactly the same depth is not a
-   drawing order problem, it is a tie, and a tie in the depth buffer is
-   the flicker you have already seen on the trees. Nothing here is ever
-   exactly coplanar with anything else, so there is nothing to tie.
+   WHAT IS LEFT IN HERE is the part that is about this GAME rather than
+   about the model.
+
+   BOTH SIDES. This renderer culls back faces; Blender and Sketchfab do
+   not, so a model authored in them has never had to be consistent about
+   winding. Ours are drawn double-sided, which costs the far face of a
+   solid that already covers it and removes an entire class of argument.
+   See carMesh.
 
    LIGHT. This renderer does no shading: a surface is as bright as the
-   map says, stepped down by distance, and that is all. A box lit that
+   map says, stepped down by distance, and that is all. A solid lit that
    way is a silhouette — every face the same value, no edge anywhere. So
    the car borrows the trick the walls use, DOOM'S FAKE CONTRAST: a face
    looking north or south reads a notch brighter than one looking east or
@@ -68,6 +61,16 @@
    a fifth of a radian is never on the grid, so here it is the same
    number, interpolated. The roof gets a lift on top of that — it is the
    face pointing at the floodlights — and the underside goes dark.
+
+   THE PIECES. When one of these goes up it comes apart into chunks, and
+   a chunk is the model's own SURFACE inside a small box of its own model
+   space, clipped to that box and recentred on it. So a piece off the
+   tail has the tail's paint on it because it IS the tail. The old system
+   cut a fresh box and projected the four views onto its six faces, which
+   got small pieces for free; clipping is what that costs once the
+   geometry is somebody else's, and the first attempt at avoiding it —
+   whole triangles by centroid — sheds roof panels two thirds of the van
+   long, because a whole van's body shell is 134 triangles.
 
    A BURNT ONE takes the same two knobs every burnt thing in the game
    takes: its light comes down and its `charred` goes up, which is the
@@ -79,31 +82,20 @@
 import * as THREE from 'three';
 import { createWallMaterial } from './material.js';
 import { parseGLB, readAccessor } from './glb.js';
-import { CAR_ATLAS, VEHICLES, VEHICLE_IDS, CIVILIAN } from './car-data.js';
 
-export { CAR_ATLAS, VEHICLES, VEHICLE_IDS, CIVILIAN };
-
-const TREAD = 8;            // sides on a wheel — Doom would have used four
-const LIP = 0.005;          // how far things sink into each other, in lengths
 const ROOF_LIT = 1.12;      // the roof faces the floodlights
 const UNDER_LIT = 0.40;     // and the underside faces the tarmac
 const CONTRAST = 0.055;     // Doom's fake contrast, the same number js/level.js uses
 
-/** One vehicle out of the fleet, by name, loudly if it is not there. */
-export function vehicleOf(id) {
-  const v = VEHICLES[id];
-  if (!v) throw new Error(`no such vehicle: ${id} (have ${VEHICLE_IDS.join(', ')})`);
-  return v;
-}
-
-/** How big it is, in game units. */
+/** How big it is, in game units. `box` is fractions of the length, so a
+ *  vehicle has one scale and `length` sets it. */
 export const carLength = v => v.length;
-export const carWidth = v => v.length * v.shape.width;
-export const carHeight = v => v.length * v.shape.height;
+export const carWidth = v => v.length * v.box.half * 2;
+export const carHeight = v => v.length * v.box.height;
 
-/** The atlas as a texture. Nearest, and NO MIPMAPS: Doom point-sampled
- *  every texture at every distance, and the shimmer that gives a distant
- *  surface is not an artefact here, it is the look. */
+/** The sheet out of the model. Nearest, and NO MIPMAPS: Doom
+ *  point-sampled every texture at every distance, and the shimmer that
+ *  gives a distant surface is not an artefact here, it is the look. */
 export function carTexture(img) {
   const t = new THREE.Texture(img);
   t.magFilter = THREE.NearestFilter;
@@ -116,127 +108,19 @@ export function carTexture(img) {
 }
 
 /* ---------------------------------------------------------------------
-   THE PROJECTION
+   THE PEN
 
    Model space: x is +0.5 at the nose and -0.5 at the tail, y is to the
    vehicle's left, z is 0 on the ground, and the unit is the vehicle's
-   own length.
-
-   Every view carries the WINDOW it covers — how high its bottom and top
-   edges are, how far either side of the middle it reaches — so this is a
-   straight remap of two coordinates and nothing has to be lined up by
-   eye. The windows are not all the same, and that is the point: the
-   three views agree about the vehicle's proportions to a few percent and
-   disagree about where the vehicle sits inside its own frame, so
-   tools/prep-car.mjs anchors the head-on views on the ROOF LINE rather
-   than on their frames. Get that wrong — map frame to bounding box and
-   have done with it — and the model's roof lands three percent up into a
-   band where the head-on view has nothing but light bar, which paints a
-   pale stripe along the top of the nose and the tail.
-   --------------------------------------------------------------------- */
-const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
-
-function uvOf(views, n, p) {
-  const ax = Math.abs(n[0]), ay = Math.abs(n[1]), az = Math.abs(n[2]);
-  let r, iu, iv;
-  if (ax >= ay && ax >= az) {
-    /* looking the vehicle in the face, its left hand is on your right */
-    r = n[0] > 0 ? views.front : views.rear;
-    iu = (n[0] > 0 ? p[1] + r.half : r.half - p[1]) / (2 * r.half);
-    iv = (r.z1 - p[2]) / (r.z1 - r.z0);
-  } else if (ay >= az) {
-    /* The side view is drawn nose to the left (tools/prep-car.mjs turns
-       the ones that were not), so it runs against x — on BOTH flanks.
-       The right flank used to take x the other way round, on the theory
-       that a picture seen from the other side is mirrored. It is, but a
-       face's coordinates are its own and do not care which side you are
-       standing on: nose is nose. Reversed, the right flank of every
-       vehicle had its tail's paint on its nose, which on a van is
-       invisible and on a pickup is the cab at the back. */
-    r = views.side;
-    iu = 0.5 - p[0];
-    iv = (r.z1 - p[2]) / (r.z1 - r.z0);
-  } else {
-    /* and the plan view nose to the left as well, with the vehicle's
-       left hand at the bottom of the picture — the same on the underside,
-       for the same reason as the flanks */
-    r = views.top;
-    iu = 0.5 - p[0];
-    iv = (p[1] + r.half) / (2 * r.half);
-  }
-  /* The sheet's own size, because there are two sheets now: the drawn
-     fleet's packed atlas and the modelled van's own four-view texture,
-     which arrives inside its .glb. */
-  const A = views.atlas || CAR_ATLAS;
-  return [(r.x + clamp01(iu) * r.w) / A.w, 1 - (r.y + clamp01(iv) * r.h) / A.h];
-}
-
-/* ---------------------------------------------------------------------
-   THE HULL, AS CURVES
-
-   `shape.columns` runs nose to tail and says, at each x, how high the
-   side view's top edge is and how far out the plan view reaches;
-   `shape.levels` runs sill to roof and says, at each z, how far out the
-   head-on views reach. Between breakpoints each is a straight line, so
-   the body at any x and z is one lookup in each and the narrower of the
-   two. The body, the wheels, the debris and the smoke test all ask that
-   question, so it is answered here, once.
-   --------------------------------------------------------------------- */
-const lerpAt = (pts, t, descending) => {
-  /* pts are [key, ...values]; hold the ends */
-  const n = pts.length;
-  if (descending ? t >= pts[0][0] : t <= pts[0][0]) return pts[0];
-  for (let i = 1; i < n; i++) {
-    const a = pts[i - 1], b = pts[i];
-    if (descending ? t >= b[0] : t <= b[0]) {
-      const f = (t - a[0]) / ((b[0] - a[0]) || 1);
-      return a.map((v, k) => v + (b[k] - v) * f);
-    }
-  }
-  return pts[n - 1];
-};
-/** How high the side view's top edge is at x (nose +0.5, tail -0.5). */
-export const bodyTopAt = (v, x) => lerpAt(v.shape.columns, x, true)[1];
-/** How far out the plan view reaches at x. */
-export const planHalfAt = (v, x) => lerpAt(v.shape.columns, x, true)[2];
-/** How far out the head-on views reach at height z. */
-export const headHalfAt = (v, z) => lerpAt(v.shape.levels, z, false)[1];
-/** And the body's own half width at x and z: the narrower of the two. */
-export const bodyHalfAt = (v, x, z) => Math.min(planHalfAt(v, x), headHalfAt(v, z));
-
-/* Every vertex of the body, by column and level: [x, half, z], with z
-   held down to the column's top so a level above a bonnet lands ON the
-   bonnet, and the half width read at that height. */
-function hullGrid(v) {
-  return v.shape.columns.map(([x, top, w]) => v.shape.levels.map(([z]) => {
-    const zz = Math.min(z, top);
-    return [x, Math.min(w, headHalfAt(v, zz)), zz];
-  }));
-}
-/** The widest the body is actually drawn, in game units — not quite
- *  `shape.width`, which is the average the three views reconciled to. */
-export function carDrawnWidth(v) {
-  let m = 0;
-  for (const col of hullGrid(v)) for (const p of col) if (p[1] > m) m = p[1];
-  return 2 * m * v.length;
-}
-
-/* ---------------------------------------------------------------------
-   THE PEN
-
-   Everything drawn here is boxes, so this is the only thing that knows
-   how to draw one: given a vehicle it hands back a `box` and the arrays
-   it fills. The whole vehicle and one chunk of flying wreckage go
-   through the same pen with different `origin`s, which is what makes the
-   debris genuinely be pieces of the car rather than pieces of something
-   that looks like it.
+   own length. Out the other end: plain arrays in the renderer's
+   coordinates, so the smoke test can hold every triangle against the
+   model without a GPU anywhere.
    --------------------------------------------------------------------- */
 function pen(v, opts = {}) {
   const {
     angle = 0, length = v.length, light = 0.74, sky = 1, charred = 0,
     origin = [0, 0, 0],           // which point of the model the mesh is about
   } = opts;
-  const views = v.views;
   const pos = [], uv = [], lit = [], skies = [], chars = [], norms = [];
   const ca = Math.cos(angle), sa = Math.sin(angle);
 
@@ -254,276 +138,162 @@ function pen(v, opts = {}) {
   };
 
   /* model space -> the renderer's, which is y-up with z running back */
-  const vert = (p, n, l, uvIn) => {
+  const vert = (p, n, l, t) => {
     pos.push((p[0] - origin[0]) * length, (p[2] - origin[2]) * length, -(p[1] - origin[1]) * length);
-    /* THE MODEL'S OWN UV IF IT HAS ONE, and the projection otherwise.
-       A drawn vehicle has no UVs — it is boxes built from silhouettes,
-       and the only way to paint it is to project its own turnaround back
-       onto it. A MODELLED one arrives unwrapped, and the unwrap is
-       better than any projection: it knows which triangle is a wheel
-       arch and a projection can only guess from a normal. */
-    const t = uvIn || uvOf(views, n, p);
     uv.push(t[0], t[1]);
     lit.push(l); skies.push(sky); chars.push(charred);
-    /* WHICH WAY THIS FACE WAS MEANT TO POINT. The shader lights nothing
-       from a normal, so this never reaches the GPU; it is kept so the
-       smoke test can hold every triangle's winding against what the
-       builder intended for it, exactly. Working it out from the solid
-       instead leaves any face buried inside the model undecidable, and
-       every tyre's tread is buried under a wheel arch — which is how all
-       sixty-four of them stayed inside out through a passing test. */
+    /* WHICH WAY THIS FACE POINTS. The shader lights nothing from a
+       normal, so this never reaches the GPU; it is kept so the smoke
+       test can hold a triangle against what the model said about it. */
     norms.push(n[0], n[1], n[2]);
   };
-  /* A triangle is emitted the way round that puts its front where the
-     declared normal says. Working that out here, once, from the cross
-     product, is what ended the era of a tyre tread being inside out on
-     one side and the caps on the other: the builder says which way a
-     face points, and the winding follows. */
+
+  /* A triangle, in the order the model has it. The winding is NOT
+     touched — see carMesh for why it no longer has to be. */
   const tri = (a, b, c, n, ta, tb, tc) => {
-    const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
-    const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
-    const gx = uy * vz - uz * vy, gy = uz * vx - ux * vz, gz = ux * vy - uy * vx;
     const l = faceLight(n);
-    /* When the winding is turned to agree with the declared normal, the
-       UVs have to turn with it or a corner ends up wearing another
-       corner's paint. */
-    if (gx * n[0] + gy * n[1] + gz * n[2] >= 0) { vert(a, n, l, ta); vert(b, n, l, tb); vert(c, n, l, tc); }
-    else { vert(a, n, l, ta); vert(c, n, l, tc); vert(b, n, l, tb); }
-  };
-  const face = (q, n) => { tri(q[0], q[1], q[2], n); tri(q[0], q[2], q[3], n); };
-  /* A face of the hull: a quad whose corners may have fallen together.
-     Consecutive duplicates go; three corners left is a triangle, four a
-     quad, fewer nothing at all. Its normal is its own — Newell's method
-     over whatever corners are left — turned to agree with `hint`, which
-     only says which side of the body the face is on. The view a face
-     reads is decided by where it actually points, so a shoulder rounding
-     over from flank to roof reads the side view until it tips past
-     forty-five degrees and the plan view after, which is also the point
-     at which the plan view has the better picture of it. */
-  const same = (a, b) => Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9 && Math.abs(a[2] - b[2]) < 1e-9;
-  const poly = (corners, hint) => {
-    const q = [];
-    for (const p of corners) if (!q.length || !same(q[q.length - 1], p)) q.push(p);
-    while (q.length > 1 && same(q[0], q[q.length - 1])) q.pop();
-    if (q.length < 3) return;
-    let nx = 0, ny = 0, nz = 0;
-    for (let i = 0; i < q.length; i++) {
-      const a = q[i], b = q[(i + 1) % q.length];
-      nx += (a[1] - b[1]) * (a[2] + b[2]);
-      ny += (a[2] - b[2]) * (a[0] + b[0]);
-      nz += (a[0] - b[0]) * (a[1] + b[1]);
-    }
-    const m = Math.hypot(nx, ny, nz);
-    let n = m > 1e-12 ? [nx / m, ny / m, nz / m] : hint;
-    if (n[0] * hint[0] + n[1] * hint[1] + n[2] * hint[2] < 0) n = [-n[0], -n[1], -n[2]];
-    tri(q[0], q[1], q[2], n);
-    if (q.length === 4) tri(q[0], q[2], q[3], n);
+    vert(a, n, l, ta); vert(b, n, l, tb); vert(c, n, l, tc);
   };
 
-  /* six faces, wound so the outside is the front */
-  const box = (x0, x1, y0, y1, z0, z1) => {
-    face([[x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]], [1, 0, 0]);
-    face([[x0, y1, z0], [x0, y0, z0], [x0, y0, z1], [x0, y1, z1]], [-1, 0, 0]);
-    face([[x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0]], [0, 1, 0]);
-    face([[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1]], [0, -1, 0]);
-    face([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], [0, 0, 1]);
-    face([[x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [x1, y0, z0]], [0, 0, -1]);
+  return {
+    tri, vert, faceLight,
+    arrays: { position: pos, uv, light: lit, sky: skies, charred: chars, normal: norms },
   };
-
-  return { box, face, poly, tri, vert, faceLight, arrays: { position: pos, uv, light: lit, sky: skies, charred: chars, normal: norms } };
 }
 
 /**
- * Every triangle in one vehicle, as plain arrays — the renderer's
- * coordinates, but no renderer involved, so the smoke test can hold the
- * projection against the atlas without a GPU.
+ * Every triangle in one vehicle, as plain arrays.
  *
- * @param v     one of VEHICLES
+ * @param v     a vehicle definition from modelVehicle
  * @param opts  the angle it is parked at, the light and sky of the
  *              sector it stands in, how burnt it is, and which point of
  *              the model the mesh should turn about
  */
 export function carGeometry(v, opts = {}) {
-  const s = v.shape;
   const P = pen(v, opts);
-
-  /* A MODELLED VEHICLE SHORT-CIRCUITS THE LOT. Everything below builds a
-     body out of two silhouette curves because the drawn fleet has
-     nothing else to build one from; this van arrives as triangles, so
-     all that is left is to put them through the same pen — which is not
-     a formality, because the pen is where the face light, the parked
-     heading, the origin the mesh turns about, the charred flag AND THE
-     PAINT all come from.
-
-     The paint comes with the triangles here, though. A modelled vehicle
-     arrives UNWRAPPED and the unwrap is used — see modelVehicle. */
-  if (v.model) {
-    for (const t of v.model.tris) P.tri(t.a, t.b, t.c, t.n, t.ta, t.tb, t.tc);
-    return P.arrays;
-  }
-
-  /* THE BODY: the visual hull, as a grid.
-
-     A vertex at every column and level — see hullGrid — and the quads
-     between them: two flanks, the top, the underside, and a cap at each
-     end. A column whose top is below a level puts that level's vertex ON
-     its top, so up a windscreen the levels bunch and across a bonnet
-     they fall together; a quad between fallen-together vertices is
-     nothing and is skipped, and one with a single fallen side is a
-     triangle. The result is closed, because every edge of it is an edge
-     of exactly two quads, or would be but for the ones that vanished in
-     matching pairs.
-
-     Nothing here is a car. The nose corners round off because the plan
-     view rounds them, the shoulders because the head-on views do, the
-     windscreen slopes because the side view slopes it, a pickup steps
-     down to its bed because its top edge does — and the paint, projected
-     back along the axes the views were drawn down, lands on a shape
-     that is where the pictures say it is. It replaced the side view's
-     outline lofted across one width, which was a rectangle from above
-     with square corners and bled body colour painted over each of
-     them, and a staircase of boxes before that. */
-  const G = hullGrid(v), N = G.length, K = G[0].length;
-  const at = (i, k, side) => { const p = G[i][k]; return [p[0], side * p[1], p[2]]; };
-  for (let i = 0; i + 1 < N; i++) {
-    for (let k = 0; k + 1 < K; k++) {
-      P.poly([at(i, k, 1), at(i + 1, k, 1), at(i + 1, k + 1, 1), at(i, k + 1, 1)], [0, 1, 0]);
-      P.poly([at(i, k, -1), at(i, k + 1, -1), at(i + 1, k + 1, -1), at(i + 1, k, -1)], [0, -1, 0]);
-    }
-    P.poly([at(i, K - 1, -1), at(i, K - 1, 1), at(i + 1, K - 1, 1), at(i + 1, K - 1, -1)], [0, 0, 1]);
-    P.poly([at(i, 0, 1), at(i, 0, -1), at(i + 1, 0, -1), at(i + 1, 0, 1)], [0, 0, -1]);
-  }
-  for (let k = 0; k + 1 < K; k++) {
-    P.poly([at(0, k, -1), at(0, k, 1), at(0, k + 1, 1), at(0, k + 1, -1)], [1, 0, 0]);
-    P.poly([at(N - 1, k, 1), at(N - 1, k, -1), at(N - 1, k + 1, -1), at(N - 1, k + 1, 1)], [-1, 0, 0]);
-  }
-
-  /* THE WHEELS: a prism on its side, sitting on the ground, set a lip
-     inside the body's flank so the arch hides its top the way an arch
-     does. Its round faces get the side view — which is the wheel, drawn
-     exactly there — and its tread gets whichever of the other views it
-     happens to point at, which for a black tyre is close enough.
-
-     The flank is THE NARROWEST THE BODY GETS OVER THE TYRE'S OWN
-     HEIGHT, at the wheel's own x, and not half the vehicle's nominal
-     width, because those are not the same number: the nominal width is
-     the average of what three views claim, and the hull is what they
-     draw. On a van they agree to a thousandth. On the hatchback the
-     nominal is the wider, and taken literally it hangs both wheels a
-     fraction of a unit PROUD of the bodywork — which, being a tie in
-     the depth buffer along the length of the car, is the one thing this
-     file is careful never to do. */
-  if (s.wheels.length) {
-    for (const wheel of s.wheels) {
-      const { x: cx, r } = wheel;
-      let flank = Infinity;
-      for (let z = s.sill; z <= 2 * r + 1e-9; z += (2 * r - s.sill) / 8) flank = Math.min(flank, bodyHalfAt(v, cx, z));
-      const yOut = flank - LIP, yIn = yOut - s.tyre;
-      for (const side of [1, -1]) {
-        const a = side > 0 ? yIn : -yOut, b = side > 0 ? yOut : -yIn;
-        /* A ring of eight, turned half a step so the tyre stands on a
-           FLAT rather than on a corner, and dropped by exactly the
-           sagitta of that flat so the flat is on the tarmac. A wheel
-           hovering a unit off the ground is the sort of thing you only
-           see once. */
-        const ring = [], cz = r * Math.cos(Math.PI / TREAD);
-        for (let k = 0; k < TREAD; k++) {
-          const th = (k + 0.5) * 2 * Math.PI / TREAD;
-          ring.push([cx + r * Math.cos(th), cz + r * Math.sin(th)]);
-        }
-        for (let k = 0; k < TREAD; k++) {
-          const p = ring[k], q = ring[(k + 1) % TREAD];
-          const nx = (p[0] + q[0]) / 2 - cx, nz = (p[1] + q[1]) / 2 - cz;
-          const m = Math.hypot(nx, nz) || 1;
-          /* Far side of the prism first: the ring runs anticlockwise in
-             the model's x-z plane, and a quad taken from the near edge
-             round to the far one comes out facing INWARDS. The caps have
-             always had this backwards on one side and said so; the tread
-             had it backwards on both, invisibly, because a back-facing
-             tyre in a dark car park is a black shape either way. */
-          P.face([[p[0], b, p[1]], [q[0], b, q[1]], [q[0], a, q[1]], [p[0], a, p[1]]], [nx / m, 0, nz / m]);
-        }
-        /* the two round faces, as fans; the outer one is the one you see */
-        for (const [yy, n] of [[b, [0, 1, 0]], [a, [0, -1, 0]]]) {
-          const l = P.faceLight(n);
-          for (let k = 1; k < TREAD - 1; k++) {
-            const o = ring[0], p = ring[k], q = ring[k + 1];
-            /* the ring runs anticlockwise seen from -y, so the +y cap
-               takes it backwards to keep its front face out */
-            if (n[1] > 0) { P.vert([o[0], yy, o[1]], n, l); P.vert([q[0], yy, q[1]], n, l); P.vert([p[0], yy, p[1]], n, l); }
-            else { P.vert([o[0], yy, o[1]], n, l); P.vert([p[0], yy, p[1]], n, l); P.vert([q[0], yy, q[1]], n, l); }
-          }
-        }
-      }
-    }
-  }
-
-  return P.arrays;
-}
-
-/**
- * One torn-off piece, as a box cut out of the vehicle's own model space
- * and turned about its own middle.
- *
- * @param cut  { x0, x1, y0, y1, z0, z1 } in model units
- */
-export function chunkGeometry(v, cut, opts = {}) {
-  const mid = [(cut.x0 + cut.x1) / 2, (cut.y0 + cut.y1) / 2, (cut.z0 + cut.z1) / 2];
-  const P = pen(v, { ...opts, origin: mid });
-  P.box(cut.x0, cut.x1, cut.y0, cut.y1, cut.z0, cut.z1);
+  for (const t of v.model.tris) P.tri(t.a, t.b, t.c, t.n, t.ta, t.tb, t.tc);
   return P.arrays;
 }
 
 /* ---------------------------------------------------------------------
-   A VEHICLE THAT ARRIVED MODELLED
+   CLIPPED TO A BOX
 
-   The car park is one van now, at the user's request, and it came out of
-   Blender rather than off a four-view sheet. What this does is put its
-   triangles into the space the rest of this file already speaks — x
-   +0.5 at the nose, y to the vehicle's left, z 0 on the ground, all as
-   fractions of the vehicle's own length — and hand back something shaped
-   like an entry in js/car-data.js, so js/vehicles.js cannot tell the
-   difference and none of the tumble, the blockers, the debris or the
-   wrecks had to change.
+   Sutherland-Hodgman against six planes, carrying the UVs along. Which
+   sounds like more than a torn piece of van needs, and the alternative
+   was tried first: take whole triangles whose CENTROID falls inside the
+   cut. The body shell is 134 triangles for a whole van, so a roof panel
+   is 115 units long — two thirds of the vehicle — and a van shedding
+   fourteen of those is a van shedding fourteen vans.
+
+   So the pieces are cut properly. A polygon crossing a plane gains a
+   vertex on it, with its u and v interpolated the same way its position
+   is, and what comes out is a fan. The old system got small pieces for
+   free because it BUILT a box; this is what that costs once the geometry
+   is somebody else's.
+   --------------------------------------------------------------------- */
+const PLANES = [[0, 1], [0, -1], [1, 1], [1, -1], [2, 1], [2, -1]];
+
+function clipToBox(poly, lo, hi) {
+  for (const [axis, sign] of PLANES) {
+    if (poly.length < 3) return [];
+    const limit = sign > 0 ? lo[axis] : hi[axis];
+    /* inside is >= lo for a +1 plane and <= hi for a -1 one */
+    const dist = v2 => sign * (v2.p[axis] - limit);
+    const out = [];
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length];
+      const da = dist(a), db = dist(b);
+      if (da >= 0) out.push(a);
+      if ((da >= 0) !== (db >= 0)) {
+        const f = da / (da - db);
+        out.push({
+          p: [a.p[0] + (b.p[0] - a.p[0]) * f,
+              a.p[1] + (b.p[1] - a.p[1]) * f,
+              a.p[2] + (b.p[2] - a.p[2]) * f],
+          t: [a.t[0] + (b.t[0] - a.t[0]) * f, a.t[1] + (b.t[1] - a.t[1]) * f],
+        });
+      }
+    }
+    poly = out;
+  }
+  return poly;
+}
+
+/**
+ * One torn-off piece: the model's own surface inside a box of its own
+ * model space, clipped to that box and turned about its middle.
+ *
+ * If a cut catches nothing at all the nearest triangle goes in whole, so
+ * a piece is never nothing: an empty chunk is an invisible thing with a
+ * collision box, which is worse than a wrong one.
+ *
+ * @param cut  { x0, x1, y0, y1, z0, z1 } in model units
+ */
+export function chunkGeometry(v, cut, opts = {}) {
+  const lo = [cut.x0, cut.y0, cut.z0], hi = [cut.x1, cut.y1, cut.z1];
+  const mid = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2];
+  const P = pen(v, { ...opts, origin: mid });
+  let n = 0;
+  for (const t of v.model.tris) {
+    /* the cheap rejection first: a triangle whose own box misses the cut
+       cannot survive the clip, and most of them miss */
+    let skip = false;
+    for (let k = 0; k < 3 && !skip; k++) {
+      const a = t.a[k], b = t.b[k], c = t.c[k];
+      if (Math.min(a, b, c) > hi[k] || Math.max(a, b, c) < lo[k]) skip = true;
+    }
+    if (skip) continue;
+    const poly = clipToBox([{ p: t.a, t: t.ta }, { p: t.b, t: t.tb }, { p: t.c, t: t.tc }], lo, hi);
+    for (let i = 1; i + 1 < poly.length; i++) {
+      P.tri(poly[0].p, poly[i].p, poly[i + 1].p, t.n, poly[0].t, poly[i].t, poly[i + 1].t);
+      n++;
+    }
+  }
+  if (!n) {
+    let best = null, bd = Infinity;
+    for (const t of v.model.tris) {
+      const dx = (t.a[0] + t.b[0] + t.c[0]) / 3 - mid[0];
+      const dy = (t.a[1] + t.b[1] + t.c[1]) / 3 - mid[1];
+      const dz = (t.a[2] + t.b[2] + t.c[2]) / 3 - mid[2];
+      const d = dx * dx + dy * dy + dz * dz;
+      if (d < bd) { bd = d; best = t; }
+    }
+    if (best) P.tri(best.a, best.b, best.c, best.n, best.ta, best.tb, best.tc);
+  }
+  return P.arrays;
+}
+
+/* ---------------------------------------------------------------------
+   THE MODEL
+
+   What arrives is a GLB with one mesh, two primitives and one image. The
+   body primitive is textured and unwrapped onto that image; the other —
+   glass, tyres, bumpers, chassis, 490 of the 624 triangles — has no
+   texture at all, just a flat near-black base colour.
+
+   A car park is ONE material and one draw call, so a second material is
+   not available. Instead every vertex of the untextured primitive is
+   pointed at one dark texel that tools/prep-van.mjs paints into a corner
+   of the sheet. One texture, one draw call, and the tyres come out the
+   colour tyres are.
 
    THE AXES ARE THE ONLY REAL WORK. A GLB says nothing about which end of
    a van is the front: this one lies along its Z with the nose at +Z and
    up at +Y, which was established by rendering four orthographic views
    of it and looking, and is recorded in the file by tools/prep-van.mjs.
    The swap (nose, left, up) <- (z, x, y) is a cyclic permutation, so it
-   preserves handedness, which is the one thing that would otherwise turn
-   every triangle in the model inside out.
+   preserves handedness.
 
-   THE MODEL'S OWN UVs ARE NOT USED, AND THAT IS THE POINT. They were,
-   for one afternoon, and the van shipped with its flanks smeared: the
-   mesh's side panels are UV-mapped as a FAN of long thin triangles all
-   sharing one corner, so a few pixels of the picture are stretched
-   across the whole side of the van. Nothing catches that except drawing
-   the UV layout over the texture and looking at it.
-
-   What the texture IS, though, is a four-view sheet — front, rear, side
-   and plan of this very van, one per quadrant, on a flat grey field —
-   which is exactly the input the rest of this file has wanted since the
-   day it was written. So the SHAPE comes from the model and the PAINT
-   comes from the projection, and the two are independent. That is better
-   than fixing the UVs would have been: the torn pieces of a wrecked van
-   get real projected paint as well, which the drawn fleet's debris has
-   always had and a flat texel per piece never would.
-
-   THE NORMAL IS THE TRIANGLE'S OWN, not the vertex normals the model
-   ships. The pen uses a normal for three things — which way round to
-   wind the triangle, how bright the face is on this game's fake compass,
-   and WHICH VIEW the face reads its paint from — and all three are
-   properties of the FACE. A vertex normal averaged over a smooth
-   shoulder is none of them.
+   glTF's v runs DOWN from the top of the image and a three.js texture is
+   uploaded flipped, so v comes through as 1 - v.
    --------------------------------------------------------------------- */
+
 /**
  * The van, from the file, ready to fill a car park with.
  *
  * Its texture comes out of the same file: the model is one
  * self-describing thing, so there is no second URL to keep in step and
- * no atlas coordinates written down anywhere. Decoded by the browser,
- * point-sampled and unmipped like every other texture in the game.
+ * no atlas coordinates written down anywhere.
  */
 export async function loadVehicleModel(url, opts = {}) {
   const res = await fetch(url);
@@ -542,53 +312,26 @@ export async function loadVehicleModel(url, opts = {}) {
 export function modelVehicle(json, bin, opts = {}) {
   const ex = json.asset?.extras?.vehicle;
   if (!ex) throw new Error('the model has no asset.extras.vehicle — run tools/prep-van.mjs on it');
-  if (!ex.views) throw new Error('the model has no measured views — run tools/prep-van.mjs again');
+  if (!ex.black || !ex.sheet) throw new Error('the model has no dark texel — run tools/prep-van.mjs again');
   const prims = json.meshes[0].primitives;
   const s = 1 / (ex.length / ex.unit);        // model units -> fractions of the length
   const tris = [];
-  /* WHERE TO POINT A TRIANGLE THAT HAS NO TEXTURE. tools/prep-van.mjs
-     paints a small dark block into the corner of the sheet for exactly
-     this; the coordinates are top-down pixels, like the views. */
-  const A = ex.views.atlas;
-  const black = ex.black
-    ? [ex.black.x / A.w, 1 - ex.black.y / A.h]
-    : null;
+  /* where to point a triangle that has no texture of its own */
+  const black = [ex.black.x / ex.sheet.w, 1 - ex.black.y / ex.sheet.h];
+
   for (const p of prims) {
     const pos = readAccessor(json, bin, p.attributes.POSITION).array;
     const idx = readAccessor(json, bin, p.indices).array;
-    /* --------------------------------------------------------------
-       THE PAINT, AND THE MISTAKE THAT IS WORTH WRITING DOWN
-
-       This model is UNWRAPPED, onto the very sheet that is embedded in
-       it: 134 body triangles laid out over the four views, which is why
-       it renders correctly in Blender and on Sketchfab. The first cut
-       here threw those UVs away and projected the views back onto the
-       mesh instead, on the strength of a measurement that said the
-       layout was a fan of slivers sharing one corner.
-
-       That measurement pooled BOTH primitives. The second one — 490
-       triangles of glass, tyres, bumpers and chassis — has no texture at
-       all, just a flat near-black base colour, so its UVs are unused
-       junk, and the junk is what the fan was. The body's own unwrap
-       covers 39 per cent of the sheet with a biggest triangle of under
-       four per cent: an ordinary, sane, four-view unwrap.
-
-       So: a textured primitive is painted with its own UVs, and an
-       untextured one is pointed at the dark block. That is the file
-       rendered as the file says, which is all it ever needed.
-
-       glTF's v runs DOWN from the top of the image and a three.js
-       texture is uploaded flipped, so v comes through as 1 - v.
-       -------------------------------------------------------------- */
-    const textured = !!json.materials?.[p.material]?.pbrMetallicRoughness?.baseColorTexture;
-    const uvSrc = textured && p.attributes.TEXCOORD_0 !== undefined
-      ? readAccessor(json, bin, p.attributes.TEXCOORD_0).array : null;
-    const uvAt = i => (uvSrc ? [uvSrc[i * 2], 1 - uvSrc[i * 2 + 1]] : black);
     const at = i => [
       (pos[i * 3 + 2] - ex.centre) * s * ex.noseSign,     // along the length
       pos[i * 3] * s,                                     // to the left
       (pos[i * 3 + 1] - ex.ground) * s,                   // up off the tarmac
     ];
+    const textured = !!json.materials?.[p.material]?.pbrMetallicRoughness?.baseColorTexture;
+    const uvSrc = textured && p.attributes.TEXCOORD_0 !== undefined
+      ? readAccessor(json, bin, p.attributes.TEXCOORD_0).array : null;
+    const uvAt = i => (uvSrc ? [uvSrc[i * 2], 1 - uvSrc[i * 2 + 1]] : black);
+
     for (let t = 0; t < idx.length; t += 3) {
       const a = at(idx[t]), b = at(idx[t + 1]), c = at(idx[t + 2]);
       const ta = uvAt(idx[t]), tb = uvAt(idx[t + 1]), tc = uvAt(idx[t + 2]);
@@ -601,74 +344,60 @@ export function modelVehicle(json, bin, opts = {}) {
       tris.push({ a, b, c, n, ta, tb, tc });
     }
   }
+  if (!tris.length) throw new Error('the model has no triangles in it');
 
   /* ------------------------------------------------------------------
-     WHICH WAY ROUND THE MODEL IS, and the answer is BOTH
-
-     A GLB says which way a face points twice — the order of its three
-     corners and the NORMAL attribute on them — and in this file the two
-     agree with each other everywhere and disagree with the SOLID. The
-     body shell's 134 triangles come to minus a third of the bounding
-     box, which is a shell wound inward; the 490 triangles of chassis,
-     wheels and glass under it come to plus a twentieth, which is an open
-     shell wound the other way.
-
-     There is no single flip that fixes that, and the first attempt here
-     was one: reverse everything when the total volume is negative. It
-     turned the body the right way out and turned the chassis inside out
-     with it, so the car park went from twenty vans seen from the inside
-     to twenty vans with no bodywork — a black sill and four wheels.
-
-     THE MODEL IS NOT WRONG. It renders correctly in Blender and on
-     Sketchfab, and the reason is that both of them draw BOTH SIDES of a
-     single-sided material by default. That is the whole of what was
-     missing: this renderer culls back faces, and the model was authored
-     without that ever mattering. So a vehicle is drawn double-sided (see
-     carMesh) and the winding is left exactly as the file has it. Nothing
-     is guessed, nothing is reversed, and what comes out is what the
-     author saw.
-
-     The NORMALS still have to be sorted out, because the face light
-     reads them: Doom's fake contrast wants to know whether a face is a
-     roof, an underside or a flank, and a roof triangle whose normal
-     points down gets the tarmac's light. They are turned outward from
-     the model's own centre — a heuristic, and only ever a heuristic,
-     which is why it is used for NOTHING but the light. A triangle it
-     guesses wrong about is one step of shading out on one face; it can
-     no longer cull anything or choose anybody's paint.
+     ITS OWN BOX, measured rather than declared, because the collision
+     and the tumble want a width and a height and the file has both of
+     them in it. All in fractions of the length, which is 1 by
+     construction: x runs from -0.5 at the tail to +0.5 at the nose.
      ------------------------------------------------------------------ */
+  const bb = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+  for (const t of tris) for (const p of [t.a, t.b, t.c]) for (let k = 0; k < 3; k++) {
+    if (p[k] < bb[k]) bb[k] = p[k];
+    if (p[k] > bb[3 + k]) bb[3 + k] = p[k];
+  }
+  const box = { half: Math.max(Math.abs(bb[1]), Math.abs(bb[4])), height: bb[5], sill: bb[2] };
+
+  /* ------------------------------------------------------------------
+     AND THE NORMALS TURNED OUTWARD, for the face light and for nothing
+     else.
+
+     The file's winding is left exactly as it is — the material draws
+     both sides, so it does not matter — but the LIGHT does read a
+     normal: Doom's fake contrast wants to know whether a face is a roof,
+     an underside or a flank, and a roof triangle whose normal points
+     down is given the tarmac's light, which is a third of the
+     brightness. This model's two shells are wound opposite ways, so
+     about three in five need turning.
+
+     It is a HEURISTIC — away from the model's own centre — and that is
+     exactly why it is used for the light alone. A triangle it guesses
+     wrong about is one step of shading out on one face. It can no longer
+     cull anything or choose anybody's paint, which is what made the same
+     guess fatal when the projection depended on it.
+     ------------------------------------------------------------------ */
+  const c3 = [(bb[0] + bb[3]) / 2, (bb[1] + bb[4]) / 2, (bb[2] + bb[5]) / 2];
   let normalsTurned = 0;
-  {
-    const c3 = [0, 0, 0];
-    const bb = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
-    for (const t of tris) for (const p of [t.a, t.b, t.c]) for (let k = 0; k < 3; k++) {
-      if (p[k] < bb[k]) bb[k] = p[k];
-      if (p[k] > bb[3 + k]) bb[3 + k] = p[k];
+  for (const t of tris) {
+    const mx = (t.a[0] + t.b[0] + t.c[0]) / 3 - c3[0];
+    const my = (t.a[1] + t.b[1] + t.c[1]) / 3 - c3[1];
+    const mz = (t.a[2] + t.b[2] + t.c[2]) / 3 - c3[2];
+    if (t.n[0] * mx + t.n[1] * my + t.n[2] * mz < 0) {
+      t.n = [-t.n[0], -t.n[1], -t.n[2]];
+      normalsTurned++;
     }
-    for (let k = 0; k < 3; k++) c3[k] = (bb[k] + bb[3 + k]) / 2;
-    let turned = 0;
-    for (const t of tris) {
-      const mx = (t.a[0] + t.b[0] + t.c[0]) / 3 - c3[0];
-      const my = (t.a[1] + t.b[1] + t.c[1]) / 3 - c3[1];
-      const mz = (t.a[2] + t.b[2] + t.c[2]) / 3 - c3[2];
-      if (t.n[0] * mx + t.n[1] * my + t.n[2] * mz < 0) {
-        t.n = [-t.n[0], -t.n[1], -t.n[2]];
-        turned++;
-      }
-    }
-    normalsTurned = turned;
   }
 
   return {
     id: opts.id || 'van', name: opts.name || 'Van', use: 'civil',
     length: ex.length,
-    shape: ex.shape,
-    views: ex.views,
+    box,
     model: { tris, normalsTurned },
   };
 }
 
-/** Plain arrays to a geometry on the shared atlas. */
+/** Plain arrays to a geometry. */
 export function carGeom(a) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(a.position, 3));
@@ -682,11 +411,12 @@ export function carGeom(a) {
 
 /** And that geometry as a mesh. */
 export function carMesh(texture, a) {
-  /* BOTH SIDES, because the model was authored in renderers that draw
-     both — see the note in modelVehicle. A vehicle is a thin shell with
-     no interior you are ever inside, so the only cost is drawing the far
-     face of a solid that already covers it, and the alternative is
-     guessing which way round somebody else's mesh is. */
+  /* BOTH SIDES, and this is the whole reason the van works. A model
+     authored in Blender or shown on Sketchfab has never had to be
+     consistent about winding, because neither of them culls: this one's
+     body shell is wound inward and the chassis under it outward, and no
+     single flip fixes both. Drawing both sides costs the far face of a
+     solid that already covers it, and removes the question. */
   const mesh = new THREE.Mesh(carGeom(a), createWallMaterial(texture, { side: THREE.DoubleSide }));
   /* Y then X then Z, applied in that order in the object's own frame:
      yaw it to its heading, roll it about its own length, then tip it
@@ -700,8 +430,8 @@ export function carMesh(texture, a) {
 /**
  * One vehicle, as a mesh ready to be added to the scene.
  *
- * @param texture  the atlas, from carTexture()
- * @param v        one of VEHICLES
+ * @param texture  the sheet, from carTexture()
+ * @param v        a vehicle definition from modelVehicle
  * @param opts     x, y, z in game coordinates and the angle it is parked
  *                 at, plus whatever carGeometry wants
  */
@@ -740,7 +470,7 @@ export function carBlockers(v, x, y, angle, length = v.length) {
    there is no cheaper honest way to know how high a car on its roof
    sits than to ask its own corners. */
 export function carCorners(v) {
-  const s = v.shape, h = s.width / 2, out = [];
-  for (const x of [-0.5, 0.5]) for (const y of [-h, h]) for (const z of [0, s.height]) out.push([x, y, z]);
+  const h = v.box.half, out = [];
+  for (const x of [-0.5, 0.5]) for (const y of [-h, h]) for (const z of [0, v.box.height]) out.push([x, y, z]);
   return out;
 }

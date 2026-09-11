@@ -1826,342 +1826,55 @@ section('the way out');
 
 /* ---------- the gun ---------- */
 /* ---------- the van ---------- */
-section('the fleet');
+/* ONE VEHICLE, AND IT IS A FILE. There was a whole section here for the
+   drawn fleet — seven bodies measured off four-view sheets, built as the
+   visual hull of three silhouettes and painted by projecting those views
+   back onto them, with about thirty checks holding the atlas, the
+   windows, the wheels, the winding and the projected UVs against each
+   other. It is deleted, at the user's request, along with js/car-data.js
+   and tools/prep-car.mjs: the car park is the user's GLB, drawn as
+   authored, and the projection was what three rounds of van trouble came
+   out of.
+
+   What is left to check is the conversion — the axes, the scale, the
+   ground line — the model's own UVs, the dark texel the untextured
+   primitive points at, and the pieces that come off one when it goes up.
+   A wrong axis or an unflipped v still puts a car park full of vans on
+   their sides. */
+section('the van');
 {
-  const { CAR_ATLAS, VEHICLES, VEHICLE_IDS, CIVILIAN } = await import('../js/car-data.js');
   const car = await import('../js/car.js');
   const veh = await import('../js/vehicles.js');
-  const { readPNG } = await import('./png-read.mjs');
   const fs = await import('node:fs');
-  const path = await import('node:path');
-  const { fileURLToPath } = await import('node:url');
-  const root = fileURLToPath(new URL('..', import.meta.url));
 
-  /* --- seven sheets, seven vehicles ------------------------------------- */
-  note('the fleet', VEHICLE_IDS.map(id => `${id} (${VEHICLES[id].use})`).join(', '));
-  check('every vehicle in the index is in the fleet',
-    VEHICLE_IDS.length === Object.keys(VEHICLES).length &&
-    VEHICLE_IDS.every(id => VEHICLES[id] && VEHICLES[id].id === id));
-  check('and the civilian list is the vehicles a shopper might own',
-    CIVILIAN.length > 0 && CIVILIAN.every(id => VEHICLES[id].use === 'civil') &&
-    VEHICLE_IDS.filter(id => VEHICLES[id].use === 'civil').length === CIVILIAN.length,
-    CIVILIAN.join(', '));
-  check('and there is a riot van and an APC that are not on it',
-    VEHICLE_IDS.some(id => VEHICLES[id].use === 'police') &&
-    VEHICLE_IDS.some(id => VEHICLES[id].use === 'military'));
-
-  /* EACH SHEET IS OVER-DETERMINED and that is the only reason to trust
-     it. Three of the four views claim a width — the front, the rear and
-     the plan — and if they did not agree, nothing measured off any of
-     them would mean anything. tools/prep-car.mjs records the residual;
-     the riot van manages one percent and the pickup, whose side view
-     draws it taller for its length than its own head-on views do, eleven
-     and a half. */
-  const worst = VEHICLE_IDS.reduce((a, b) => VEHICLES[a].shape.agree > VEHICLES[b].shape.agree ? a : b);
-  note('the views on the width', VEHICLE_IDS.map(id =>
-    `${id} ${(VEHICLES[id].shape.agree * 100).toFixed(1)}%`).join(', '));
-  check('every sheet agrees with itself about how wide its vehicle is',
-    VEHICLE_IDS.every(id => VEHICLES[id].shape.agree < 0.14),
-    `worst is ${worst} at ${(VEHICLES[worst].shape.agree * 100).toFixed(1)}%`);
-
-  for (const id of VEHICLE_IDS) {
-    const v = VEHICLES[id], s = v.shape;
-    const ratio = 1 / s.width, tall = s.height / s.width;
-    check(`the ${id} has the proportions of a vehicle`,
-      ratio > 1.7 && ratio < 3.2 && tall > 0.6 && tall < 1.5,
-      `${ratio.toFixed(2)} : 1 : ${tall.toFixed(2)} (length : width : height)`);
-    check(`the ${id} stands on the ground with its body clear of it`,
-      s.sill >= 0 && s.sill < 0.2);
-    /* THE HULL IS THREE CURVES: columns nose to tail carrying the side
-       view's top edge and the plan's half width, levels sill to roof
-       carrying the head-on views' half width — each one to a few dozen
-       breakpoints, ordered, reaching the ends, none of it wider than the
-       vehicle. Every one of those is something js/car.js leans on. */
-    const C = s.columns, Lv = s.levels;
-    check(`the ${id}'s hull is a few dozen columns and a handful of levels`,
-      C.length >= 10 && C.length <= 64 && Lv.length >= 4 && Lv.length <= 32, `${C.length} columns, ${Lv.length} levels`);
-    check(`and the columns run nose to tail, the whole length`,
-      Math.abs(C[0][0] - 0.5) < 1e-6 && Math.abs(C[C.length - 1][0] + 0.5) < 1e-6 &&
-      C.every((c, i) => !i || c[0] < C[i - 1][0]));
-    check(`and every column stands above the sill and none above the roof, which one reaches`,
-      C.every(c => c[1] > s.sill && c[1] <= s.height + 1e-9) && Math.abs(Math.max(...C.map(c => c[1])) - s.height) < 0.002,
-      `tops ${Math.min(...C.map(c => c[1]))}..${Math.max(...C.map(c => c[1]))} of ${s.height}`);
-    check(`and the levels run sill to roof`,
-      Math.abs(Lv[0][0] - s.sill) < 1e-6 && Math.abs(Lv[Lv.length - 1][0] - s.height) < 0.002 &&
-      Lv.every((l, i) => !i || l[0] > Lv[i - 1][0]));
-    check(`and nowhere is either curve wider than the vehicle`,
-      C.every(c => c[2] > 0.02 && c[2] <= s.width / 2 * 1.001) && Lv.every(l => l[1] > 0.02 && l[1] <= s.width / 2 * 1.001),
-      `plan ${Math.min(...C.map(c => c[2]))}..${Math.max(...C.map(c => c[2]))}, head-on ${Math.min(...Lv.map(l => l[1]))}..${Math.max(...Lv.map(l => l[1]))} of ${s.width / 2}`);
-    /* and the body is the narrower of the two, everywhere: what the
-       wheels and the debris ask of it */
-    check(`and the body at any point is the narrower of the two`,
-      car.bodyHalfAt(v, 0, s.height) <= car.headHalfAt(v, s.height) + 1e-9 &&
-      car.bodyHalfAt(v, 0.5, s.sill) <= car.planHalfAt(v, 0.5) + 1e-9 &&
-      car.bodyTopAt(v, 0.5) === C[0][1] && car.bodyTopAt(v, -0.5) === C[C.length - 1][1]);
-    /* a wheel is a wheel and not a slab across the underside — which is
-       what the custom van's bull bar was read as until the tyre stopped
-       being "the longest run at the bottom of the front view" */
-    check(`the ${id}'s tyres are tyres`,
-      s.tyre > 0.06 * s.width && s.tyre < 0.45 * s.width,
-      `${(s.tyre / s.width).toFixed(2)} of the width`);
-    /* the roof line is what the head-on views were anchored on, so the
-       body has to reach it and stop somewhere at or below the top — see
-       the pale band this once painted along the nose */
-    check(`and its roof line is inside its own height`,
-      s.roof > 0.6 * s.height && s.roof <= s.height + 1e-9,
-      `${s.roof} of ${s.height}`);
-  }
-  /* four wheels each, except the one on tracks */
-  note('wheels', VEHICLE_IDS.map(id => `${id} ${VEHICLES[id].shape.wheels.length * 2}`).join(', '));
-  check('every wheeled vehicle has four wheels and the tracked one has none',
-    VEHICLE_IDS.every(id => VEHICLES[id].shape.wheels.length === (VEHICLES[id].use === 'military' ? 0 : 2)));
-  /* and nothing parked is longer than the bay it goes in */
-  check('every civilian vehicle fits in a bay', CIVILIAN.every(id => VEHICLES[id].length <= 180),
-    CIVILIAN.map(id => `${id} ${VEHICLES[id].length}`).join(', '));
-
-  /* --- one atlas for the lot ---------------------------------------- */
-  const atlasFile = path.join(root, CAR_ATLAS.file);
-  check('the atlas is where the data says', fs.existsSync(atlasFile), CAR_ATLAS.file);
-  const allRects = [];
-  for (const id of VEHICLE_IDS)
-    for (const [k, r] of Object.entries(VEHICLES[id].views)) allRects.push({ id, k, ...r });
-  if (fs.existsSync(atlasFile)) {
-    const img = readPNG(atlasFile);
-    check('and it is the size the data says', img.w === CAR_ATLAS.w && img.h === CAR_ATLAS.h,
-      `${img.w}x${img.h} against ${CAR_ATLAS.w}x${CAR_ATLAS.h}`);
-    /* NO CHROMA KEY SURVIVES. Every pixel outside a vehicle was filled
-       with the nearest paint, so a face that overhangs the silhouette by
-       a pixel lands on the van rather than on a green screen. One green
-       pixel anywhere means the fill missed. */
-    let green = 0, tint = 0, clear = 0;
-    for (let i = 0; i < img.w * img.h; i++) {
-      const r = img.data[i * 4], g = img.data[i * 4 + 1], b = img.data[i * 4 + 2];
-      if (g > r + 28 && g > b + 28) green++;
-      if (g > Math.max(r, b)) tint++;
-      if (img.data[i * 4 + 3] !== 255) clear++;
-    }
-    check('and not one pixel of it is still chroma key', green === 0, `${green} green pixels`);
-    /* AND NONE OF IT IS EVEN GREENISH. The screen throws green light on
-       what stands in front of it and white paint takes it: the panel van
-       came out six units greener than red or blue everywhere, which
-       reads as white against the green field of the sheet and as a pale
-       green van once it is parked on tarmac. No pixel may be greener
-       than its own strongest other channel. */
-    check('and none of it is so much as tinted green', tint === 0, `${tint} pixels`);
-    check('and none of it is transparent, because the boxes are the silhouette', clear === 0);
-  }
-  check('all twenty-four views fit inside the atlas', allRects.every(r =>
-    r.x >= 0 && r.y >= 0 && r.x + r.w <= CAR_ATLAS.w && r.y + r.h <= CAR_ATLAS.h),
-    `${allRects.length} views`);
-  /* AND NO TWO OF THEM OVERLAP. With one vehicle in the atlas a packing
-     bug showed up as a vehicle painted with itself; with six it shows up
-     as a hatchback painted with an APC, which is worth a test. */
-  let clash = null;
-  for (let i = 0; i < allRects.length && !clash; i++)
-    for (let j = i + 1; j < allRects.length; j++) {
-      const a = allRects[i], b = allRects[j];
-      if (a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h) {
-        clash = `${a.id}.${a.k} over ${b.id}.${b.k}`; break;
-      }
-    }
-  check('and no two of them overlap', !clash, clash || 'none');
-
-  /* --- the models --------------------------------------------------- */
-  let triTotal = 0, strayTotal = 0, wrongTotal = 0, decidedTotal = 0;
-  for (const id of VEHICLE_IDS) {
-    const v = VEHICLES[id], L = v.length;
-    const g = car.carGeometry(v, { angle: 0.4 });
-    const tris = g.position.length / 9;
-    triTotal += tris;
-    /* a grid of a few dozen columns by a handful of levels, capped, and
-       four wheels: some hundreds of triangles, a couple of thousand at
-       the most — a body that follows three pictures, not a scan */
-    check(`the ${id} is a grid of a few hundred polygons, not a scan`, tris >= 200 && tris < 3000, `${tris} triangles`);
-    check(`and every vertex of it has a uv, a light, a sky and a char`,
-      g.uv.length === g.position.length / 3 * 2 && g.light.length === g.position.length / 3 &&
-      g.sky.length === g.light.length && g.charred.length === g.light.length);
-
-    /* it has to fit in its own bounding box, because the projection maps
-       that box onto the pictures and nothing outside it has any paint */
-    let lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
-    for (let i = 0; i < g.position.length / 3; i++)
-      for (let k = 0; k < 3; k++) {
-        const t = g.position[i * 3 + k];
-        if (t < lo[k]) lo[k] = t; if (t > hi[k]) hi[k] = t;
-      }
-    const near = (a, b) => Math.abs(a - b) < 0.8;
-    /* THE WIDTH A MODEL HAS IS THE WIDTH ITS HULL DRAWS, which is not
-       quite `shape.width`: that is the reconciled average of what three
-       views claim, and it is what SCALES the views. The hull is what the
-       plan and the head-on views actually draw, and the narrower of the
-       two. On the riot van the two agree to a thousandth; on the
-       hatchback, whose sheet agrees with itself to only five percent,
-       they differ by two and a half — so the box is checked against the
-       drawing and the two numbers are then checked against each other. */
-    const drawn = car.carDrawnWidth(v);
-    check(`the ${id} is as long, as wide and as tall as its own layers say`,
-      near(hi[0] - lo[0], L) && near(hi[2] - lo[2], drawn) && near(hi[1] - lo[1], car.carHeight(v)),
-      `${(hi[0] - lo[0]).toFixed(1)} x ${(hi[2] - lo[2]).toFixed(1)} x ${(hi[1] - lo[1]).toFixed(1)}`);
-    check(`and that is the width the three views reconciled to`,
-      Math.abs(drawn - car.carWidth(v)) / car.carWidth(v) < 0.08,
-      `${drawn.toFixed(1)} drawn against ${car.carWidth(v).toFixed(1)} measured`);
-    check(`and it stands on the tarmac`, near(lo[1], 0), `${lo[1].toFixed(2)}`);
-
-    /* EVERY UV LANDS IN ONE OF THIS VEHICLE'S OWN FOUR VIEWS. A stray
-       one is a face reading the gutter between two pictures; a uv in
-       ANOTHER vehicle's rectangle is a hatchback painted with an APC,
-       which is the failure a shared atlas makes possible and a
-       per-vehicle one did not. */
-    const rects = Object.entries(v.views).map(([k, r]) => ({ k,
-      u0: r.x / CAR_ATLAS.w, u1: (r.x + r.w) / CAR_ATLAS.w,
-      v0: 1 - (r.y + r.h) / CAR_ATLAS.h, v1: 1 - r.y / CAR_ATLAS.h }));
-    const used = new Set();
-    let stray = 0;
-    for (let i = 0; i < g.uv.length / 2; i++) {
-      const u = g.uv[i * 2], w = g.uv[i * 2 + 1];
-      const r = rects.find(r => u >= r.u0 - 1e-9 && u <= r.u1 + 1e-9 && w >= r.v0 - 1e-9 && w <= r.v1 + 1e-9);
-      if (r) used.add(r.k); else stray++;
-    }
-    strayTotal += stray;
-    check(`every uv on the ${id} lands inside one of ITS OWN four views`, stray === 0, `${stray} strays`);
-    check(`and all four of them get used`, used.size === 4, [...used].join(' '));
-
-    /* EVERY FACE POINTS OUT, and there is an exact way to know. The body
-       is a capped grid and each wheel a prism, all of them CLOSED: so
-       every edge of every triangle must be shared by exactly one other
-       triangle going the other way, and the signed volume — the
-       divergence sum over the triangles — must come out positive and
-       about the size of a car. A face wound inside out breaks the first
-       (its edges run the same way as its neighbours') and a whole
-       inside-out solid breaks the second. Neither needs air on one side
-       of a face to decide it, which is what let a tyre's tread stay
-       inside out through the test that used to be here. */
-    const flat = car.carGeometry(v, { angle: 0 });
-    const edges = new Map();
-    let vol = 0;
-    const key = (i) => `${flat.position[i * 3].toFixed(4)},${flat.position[i * 3 + 1].toFixed(4)},${flat.position[i * 3 + 2].toFixed(4)}`;
-    for (let t = 0; t < flat.position.length / 9; t++) {
-      const ids = [key(t * 3), key(t * 3 + 1), key(t * 3 + 2)];
-      for (let k = 0; k < 3; k++) {
-        const e = ids[k] + '>' + ids[(k + 1) % 3];
-        edges.set(e, (edges.get(e) || 0) + 1);
-      }
-      const P = flat.position, o = t * 9;
-      vol += (P[o] * (P[o + 4] * P[o + 8] - P[o + 5] * P[o + 7])
-            - P[o + 1] * (P[o + 3] * P[o + 8] - P[o + 5] * P[o + 6])
-            + P[o + 2] * (P[o + 3] * P[o + 7] - P[o + 4] * P[o + 6])) / 6;
-    }
-    let open = 0;
-    for (const [e, c] of edges) {
-      const [a, b] = e.split('>');
-      if (c !== 1 || edges.get(b + '>' + a) !== 1) open++;
-    }
-    const box = L * car.carWidth(v) * car.carHeight(v);
-    check(`the ${id} is a closed solid`, open === 0, `${open} unmatched edges`);
-    check(`and it has the volume of a vehicle, the right way out`,
-      vol > 0.25 * box && vol < 0.95 * box, `${(vol / box).toFixed(2)} of its bounding box`);
-    let decided = 1, wrong = open ? 1 : 0;
-    decidedTotal += decided; wrongTotal += wrong;
-
-    /* AND EVERY FACE IS WOUND THE WAY IT SAYS IT IS. The test above can
-       only decide a face with air on one side of it, which leaves every
-       tyre's tread — buried under a wheel arch — unexamined, and all
-       sixty-four of them were inside out for as long as there was one
-       van. This one is exact and covers the lot: the builder records
-       which way it meant each face to point, and the winding has to
-       agree with it. */
-    let flipped = 0;
-    for (let t = 0; t < flat.position.length / 3; t += 3) {
-      const q = k => [flat.position[(t + k) * 3], flat.position[(t + k) * 3 + 1], flat.position[(t + k) * 3 + 2]];
-      const a = q(0), b = q(1), c = q(2);
-      const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], w = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
-      const gx = u[1] * w[2] - u[2] * w[1], gy = u[2] * w[0] - u[0] * w[2], gz = u[0] * w[1] - u[1] * w[0];
-      /* the declared normal is in model space; the mesh is (x, z, -y) */
-      const n = [flat.normal[t * 3], flat.normal[t * 3 + 1], flat.normal[t * 3 + 2]];
-      if (gx * n[0] + gy * n[2] + gz * -n[1] <= 0) flipped++;
-    }
-    check(`and every face of the ${id} is wound the way it says it is`,
-      flipped === 0, `${flipped} of ${flat.position.length / 9} flipped`);
-
-    /* LIGHT. Doom's fake contrast, so a box has visible corners in a
-       renderer that does no shading. */
-    const lights = [...new Set(g.light.map(t => +t.toFixed(4)))];
-    check(`the ${id}'s faces are not all the same brightness`, lights.length >= 4, `${lights.length}`);
-    check(`and its roof is the brightest of them and its underside the darkest`,
-      Math.max(...lights) > 0.74 && Math.min(...lights) < 0.74 * 0.5);
-  }
-  note('the whole fleet', `${triTotal} triangles, ${strayTotal} stray uvs, ${wrongTotal} of ${decidedTotal} solids open`);
-
-  /* --- a piece torn off one ----------------------------------------- */
+  /* --- the turn, which the tumble is built on ----------------------- */
   {
-    /* VEHICLES.van was the drawn panel van and it has been deleted (the
-       car park is one modelled van now, which answers to the same id).
-       Any van-shaped member of the fleet makes this point. */
-    const v = VEHICLES.van2, cut = { x0: -0.1, x1: 0.02, y0: -0.06, y1: 0.05, z0: 0.2, z1: 0.3 };
-    const c = car.chunkGeometry(v, cut, { angle: 0, light: 0.7, sky: 1, charred: 0.85 });
-    check('a torn-off chunk is one box', c.position.length / 9 === 12);
-    check('and it is charred', c.charred.every(t => t === 0.85));
-    /* it turns about its own middle, so its vertices straddle zero */
-    let lo = 1e9, hi = -1e9;
-    for (let i = 0; i < c.position.length; i += 3) { lo = Math.min(lo, c.position[i]); hi = Math.max(hi, c.position[i]); }
-    check('and it is centred on itself, so it tumbles about its middle',
-      Math.abs(lo + hi) < 1e-6, `${lo.toFixed(2)}..${hi.toFixed(2)}`);
-    /* AND IT IS PAINTED WITH THE PART OF THE VAN IT CAME OFF, because it
-       goes through the same projection at the same model coordinates */
-    const rects = Object.values(v.views).map(r => ({
-      u0: r.x / CAR_ATLAS.w, u1: (r.x + r.w) / CAR_ATLAS.w,
-      v0: 1 - (r.y + r.h) / CAR_ATLAS.h, v1: 1 - r.y / CAR_ATLAS.h }));
-    let stray = 0;
-    for (let i = 0; i < c.uv.length / 2; i++) {
-      const u = c.uv[i * 2], w = c.uv[i * 2 + 1];
-      if (!rects.some(r => u >= r.u0 - 1e-9 && u <= r.u1 + 1e-9 && w >= r.v0 - 1e-9 && w <= r.v1 + 1e-9)) stray++;
-    }
-    check('and every uv on it is still the van it came off', stray === 0, `${stray} strays`);
-  }
-
-  /* --- the arithmetic the tumble stands on -------------------------- */
-  {
-    const v = VEHICLES.van2, corners = car.carCorners(v);
-    check('a vehicle has eight corners', corners.length === 8);
-    const mesh = corners.map(p => [(p[0] - 0) * v.length, (p[2] - v.shape.height / 2) * v.length, -(p[1] - 0) * v.length]);
-    const half = car.carHeight(v) / 2;
-    const flatE = veh.extentOf(mesh, 0, 0);
-    check('sitting flat, its middle is half its height off the ground',
-      Math.abs(flatE.lo + half) < 1e-6 && Math.abs(flatE.hi - half) < 1e-6,
-      `${flatE.lo.toFixed(2)}..${flatE.hi.toFixed(2)}`);
-    /* THE WHOLE FLIGHT TIME RESTS ON THIS: a box turned half a turn
-       about its own length is exactly as tall as it was, so a car that
-       leaves the ground upright and lands on its roof has its middle
-       back where it started, and the flight lasts 2v/g. */
-    const overE = veh.extentOf(mesh, Math.PI, 0);
-    check('and turned onto its roof it is exactly as tall as it was',
-      Math.abs(overE.lo - flatE.lo) < 1e-9 && Math.abs(overE.hi - flatE.hi) < 1e-9);
-    /* and turning about the up axis cannot change a height */
-    const spun = veh.turn([10, 20, 30], 1.1, 0, 0);
-    check('yawing something does not move it up or down', Math.abs(spun[1] - 20) < 1e-9);
+    /* a quarter turn about the up axis takes the nose onto the left */
+    const t = veh.turn([1, 0, 0], Math.PI / 2, 0, 0);
+    check('turning a point a quarter round the up axis is exact',
+      Math.abs(t[0]) < 1e-9 && Math.abs(t[2] + 1) < 1e-9,
+      `[${t.map(q => q.toFixed(2)).join(', ')}]`);
     check('and turning by nothing leaves it where it was',
-      veh.turn([3, 4, 5], 0, 0, 0).every((t, i) => Math.abs(t - [3, 4, 5][i]) < 1e-9));
+      veh.turn([3, 4, 5], 0, 0, 0).every((t2, i) => Math.abs(t2 - [3, 4, 5][i]) < 1e-9));
   }
 
-  /* --- THE VAN THAT ARRIVED MODELLED -------------------------------
-     Everything above measures the drawn fleet: seven bodies built out of
-     boxes and painted by projecting four drawings onto them. None of it
-     is in the car park any more. What is out there is one van, modelled,
-     put into the same model space by car.modelVehicle — so these checks
-     are about the conversion, which is where a wrong axis or a flipped v
-     would put seventy-seven vans on their sides. */
+  /* --- THE MODEL, INTO THE GAME'S OWN SPACE ------------------------
+     car.modelVehicle is the whole of the preparation that happens at
+     load time: the axes swapped, the scale set from the length in
+     metres, the ground line subtracted, the UVs taken as they are and
+     the untextured primitive pointed at the dark texel. */
   const van = await (async () => {
     const glb = await import('../js/glb.js');
     const bytes = fs.readFileSync('assets/models/van.glb');
     const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
     const { json, bin } = glb.parseGLB(ab);
     const ex = json.asset?.extras?.vehicle;
-    check('the van model has been through tools/prep-van.mjs', !!ex && !!ex.views);
+    check('the van model has been through tools/prep-van.mjs',
+      !!ex && !!ex.black && !!ex.sheet && typeof ex.noseSign === 'number');
     note('the van', `${ex.length} long, ${ex.width} wide, ${ex.height} tall, ` +
       `nose at ${ex.noseSign > 0 ? '+' : '-'}${'XYZ'[ex.lengthAxis]}`);
     const v = car.modelVehicle(json, bin);
-    note('its triangles', `${v.model.tris.length}, against ` +
-      `${car.carGeometry(car.VEHICLES.van2).position.length / 9} for a drawn one`);
+    note('its triangles', `${v.model.tris.length}, drawn as they are`);
     check('it has triangles', v.model.tris.length > 200, `${v.model.tris.length}`);
 
     /* --- AND IT IS DRAWN THE WAY IT WAS AUTHORED ----------------------
@@ -2258,8 +1971,8 @@ section('the fleet');
     check('the van carries its own UVs',
       v.model.tris.every(t => t.ta && t.tb && t.tc &&
         t.ta.length === 2 && t.ta.every(q => q >= -1e-6 && q <= 1 + 1e-6)));
-    check('and the four measured views as well, for the debris',
-      !!v.views && ['front', 'rear', 'side', 'top'].every(k => v.views[k]));
+    check('and nothing else — no measured views, no silhouette',
+      !('views' in v) && !('shape' in v), Object.keys(v).join(', '));
     /* THE UNWRAP IS ORDINARY, which is the claim that was got wrong.
        Measured over the TEXTURED primitive only: a sane four-view unwrap
        covers a good fraction of the sheet with no single triangle
@@ -2291,56 +2004,43 @@ section('the fleet');
         flat.sum > 1.5, `${(flat.sum * 100).toFixed(0)}%, which cannot be a layout`);
     }
     /* AND THE FLAT MATERIAL COMES OUT DARK. Every one of its 490
-       triangles is pointed at one texel that tools/prep-van.mjs painted
+       triangles is pointed at one texel that tools/prep-van.mjs paints
        into a corner of the sheet, so the glass and the tyres are black
        without a second material and without a second draw call. */
     check('the sheet has somewhere black to point the flat material at',
-      !!ex.black && ex.black.x > 0 && ex.black.y > 0,
-      ex.black ? `${ex.black.x},${ex.black.y}` : 'missing');
+      !!ex.black && ex.black.x > 0 && ex.black.y > 0 && ex.sheet.w > 0,
+      ex.black ? `${ex.black.x},${ex.black.y} of ${ex.sheet.w}x${ex.sheet.h}` : 'missing');
     check('and every triangle of it points there',
       (() => {
-        const A2 = v.views.atlas;
-        const u = ex.black.x / A2.w, w = 1 - ex.black.y / A2.h;
+        const u = ex.black.x / ex.sheet.w, w = 1 - ex.black.y / ex.sheet.h;
         let flat = 0;
         for (const t of v.model.tris)
           if (Math.abs(t.ta[0] - u) < 1e-6 && Math.abs(t.ta[1] - w) < 1e-6) flat++;
         return flat > 400;
       })(), 'the 490 untextured triangles');
-    check('and they say which picture they are rectangles in',
-      v.views.atlas.w > 0 && v.views.atlas.h > 0,
-      `${v.views.atlas.w}x${v.views.atlas.h}`);
-    /* Every rectangle inside the sheet, and every window the model's own
-       size — the two ways this can be wrong are a rectangle off the edge
-       of the picture and a window that does not match the mesh. */
-    const A = v.views.atlas;
-    check('every view is inside the sheet',
-      ['front', 'rear', 'side', 'top'].every(k => {
-        const r = v.views[k];
-        return r.x >= 0 && r.y >= 0 && r.x + r.w <= A.w + 0.01 && r.y + r.h <= A.h + 0.01;
-      }), ['front', 'rear', 'side', 'top'].map(k => JSON.stringify(v.views[k])).join(' '));
-    check('and every window is the model\'s own height and half width',
-      Math.abs(v.views.side.z1 - v.shape.height) < 1e-3 &&
-      Math.abs(v.views.front.half - v.shape.width / 2) < 1e-3 &&
-      Math.abs(v.views.top.half - v.shape.width / 2) < 1e-3);
-    /* THE SHEET IS OVER-DETERMINED and this is the residual: the side
-       and the plan view both contain the vehicle's LENGTH, so they can
-       be held against each other. They agree to under one per cent. */
-    note('the two lengths in the sheet', `${(ex.agree.length * 100).toFixed(1)}% apart`);
-    check('the side and plan views agree about how long the van is',
-      ex.agree.length < 0.02, `${(ex.agree.length * 100).toFixed(1)}%`);
-    /* and the paint lands where the model is, not where the picture is:
-       the wing mirrors are in the sheet and not in the mesh, which is
-       why the windows are the model's proportions and not the keyed
-       bounding box */
-    note('mirror overhang', ['front', 'rear', 'side', 'top']
-      .map(k => `${k} ${(ex.agree[k] * 100).toFixed(0)}%`).join(', '));
-    check('and the mirrors are in the picture rather than the mesh',
-      ex.agree.front > 0.1 && ex.agree.side < 0.2,
-      'the head-on views are much wider than the model and the flank is not');
-    /* every projected UV inside the picture, which is what a rectangle
-       running off the edge of the sheet would break */
+    /* AND THAT TEXEL IS ACTUALLY DARK, in the sheet, which is the half of
+       the claim the geometry cannot make. A UV pointed at white paint is
+       a van with white tyres and nothing in here would say so. */
+    {
+      const { readPNG } = await import('./png-read.mjs');
+      const imj = json.images[0], bvj = json.bufferViews[imj.bufferView];
+      const bytes = new Uint8Array(bin.buffer, bin.byteOffset + (bvj.byteOffset || 0), bvj.byteLength);
+      fs.writeFileSync('/tmp/van-sheet-check.png', bytes);
+      const sheet = readPNG('/tmp/van-sheet-check.png');
+      const px = (x, y) => {
+        const o = ((y | 0) * sheet.w + (x | 0)) * 4;
+        return (sheet.data[o] * 0.3 + sheet.data[o + 1] * 0.6 + sheet.data[o + 2] * 0.1) / 255;
+      };
+      const dark = px(ex.black.x, ex.black.y);
+      note('the dark texel', `${dark.toFixed(3)} against ${px(sheet.w / 2, sheet.h / 2).toFixed(3)} mid-sheet`);
+      check('the texel the tyres point at is dark', dark < 0.15, `${dark.toFixed(3)}`);
+      check('and the sheet is the size the file says',
+        sheet.w === ex.sheet.w && sheet.h === ex.sheet.h,
+        `${sheet.w}x${sheet.h} against ${ex.sheet.w}x${ex.sheet.h}`);
+    }
+    /* every UV inside the picture */
     const uvs = car.carGeometry(v, { angle: 0 }).uv;
-    check('every projected UV is inside the sheet',
+    check('every UV is inside the sheet',
       uvs.every(u => u >= -1e-6 && u <= 1 + 1e-6),
       `${uvs.filter(u => u < 0 || u > 1).length} of ${uvs.length} outside`);
     /* AND NOTHING IS STRETCHED ACROSS THE SHEET, measured on the
@@ -2363,6 +2063,83 @@ section('the fleet');
        about a vector that is not a direction. */
     check('and every triangle carries its own unit normal',
       v.model.tris.every(t => Math.abs(Math.hypot(t.n[0], t.n[1], t.n[2]) - 1) < 1e-5));
+
+    /* --- ITS OWN BOX, which the collision and the tumble want --------
+       Measured off the triangles rather than declared, now that there is
+       no sheet to declare it. */
+    note('its box', `${(v.box.half * 2 * v.length).toFixed(0)} wide, ` +
+      `${(v.box.height * v.length).toFixed(0)} tall, sill at ${(v.box.sill * v.length).toFixed(0)}`);
+    check('the box is the model\'s own size',
+      Math.abs(car.carWidth(v) - ex.width) < 1 && Math.abs(car.carHeight(v) - ex.height) < 1,
+      `${car.carWidth(v).toFixed(1)}x${car.carHeight(v).toFixed(1)} against ${ex.width}x${ex.height}`);
+    check('and its eight corners are the corners of that box',
+      car.carCorners(v).length === 8 &&
+      car.carCorners(v).every(([x, y, z]) =>
+        Math.abs(Math.abs(x) - 0.5) < 1e-9 &&
+        Math.abs(Math.abs(y) - v.box.half) < 1e-9 &&
+        (z === 0 || Math.abs(z - v.box.height) < 1e-9)));
+
+    /* --- AND A PIECE OFF IT IS A PIECE OF IT ------------------------
+       A chunk used to be a fresh BOX cut out of model space with the
+       four views projected onto its six faces. There is no projection
+       now, so a chunk is the model's own triangles inside the cut —
+       which is a better piece, and needs nothing but a filter.
+
+       Three ways for that to be wrong and all three are quiet: a chunk
+       that is empty (an invisible thing with a collision box), a chunk
+       whose paint is not the model's, and a chunk that is not centred on
+       itself, which makes it tumble about a point outside it. */
+    {
+      /* a cut around a triangle near the roof, the way shed() picks */
+      let high = v.model.tris[0];
+      for (const t of v.model.tris)
+        if ((t.a[2] + t.b[2] + t.c[2]) / 3 > (high.a[2] + high.b[2] + high.c[2]) / 3) high = t;
+      const mx = (high.a[0] + high.b[0] + high.c[0]) / 3;
+      const my = (high.a[1] + high.b[1] + high.c[1]) / 3;
+      const mz = (high.a[2] + high.b[2] + high.c[2]) / 3;
+      const cut = { x0: mx - 0.06, x1: mx + 0.06, y0: my - 0.06, y1: my + 0.06,
+                    z0: mz - 0.04, z1: mz + 0.04 };
+      const c = car.chunkGeometry(v, cut, { angle: 0, light: 0.7, sky: 1, charred: 0.85 });
+      const n = c.position.length / 9;
+      note('a piece off the roof', `${n} of the van's own triangles`);
+      check('a chunk is the model\'s own triangles', n >= 1 && n < v.model.tris.length);
+      check('and it is charred', c.charred.every(t => t === 0.85));
+      /* IT WEARS A PIECE OF THE VAN'S PAINT. Not the same UVs — the clip
+         puts new vertices on the cut planes and interpolates their u and
+         v with their position, which is the point of clipping — so the
+         claim is that the piece's paint is a SMALL PATCH of the sheet
+         and is inside it. A chunk whose UVs spanned the sheet would be a
+         piece with the whole van smeared over it. */
+      let u0 = 9, u1 = -9, w0 = 9, w1 = -9;
+      for (let i = 0; i < c.uv.length; i += 2) {
+        u0 = Math.min(u0, c.uv[i]); u1 = Math.max(u1, c.uv[i]);
+        w0 = Math.min(w0, c.uv[i + 1]); w1 = Math.max(w1, c.uv[i + 1]);
+      }
+      note('and the paint on it', `${((u1 - u0) * 100).toFixed(0)}% by ` +
+        `${((w1 - w0) * 100).toFixed(0)}% of the sheet`);
+      check('and it wears a small patch of the van\'s own paint',
+        u0 >= -1e-6 && u1 <= 1 + 1e-6 && (u1 - u0) < 0.3 && (w1 - w0) < 0.3,
+        `u ${u0.toFixed(2)}..${u1.toFixed(2)}, v ${w0.toFixed(2)}..${w1.toFixed(2)}`);
+      /* and it is no bigger than the cut, which is what clipping buys */
+      check('and it is no bigger than the box it was cut with',
+        (() => {
+          let lo2 = 1e9, hi2 = -1e9;
+          for (let i = 0; i < c.position.length; i += 3) {
+            lo2 = Math.min(lo2, c.position[i]); hi2 = Math.max(hi2, c.position[i]);
+          }
+          return hi2 - lo2 <= (cut.x1 - cut.x0) * v.length + 1e-3;
+        })(), 'whole triangles would be a roof panel two thirds of the van long');
+      /* it turns about its own middle, so its vertices straddle zero */
+      let lo = 1e9, hi = -1e9;
+      for (let i = 0; i < c.position.length; i += 3) { lo = Math.min(lo, c.position[i]); hi = Math.max(hi, c.position[i]); }
+      check('and it is centred on the cut, so it tumbles about its middle',
+        Math.abs(lo + hi) < v.length * 0.14, `${lo.toFixed(1)}..${hi.toFixed(1)}`);
+      /* AND A CUT THAT CATCHES NOTHING IS NOT NOTHING */
+      const empty = car.chunkGeometry(v, { x0: 0.48, x1: 0.49, y0: 0.24, y1: 0.25, z0: 0.9, z1: 0.95 },
+        { angle: 0, light: 0.7, sky: 1, charred: 0 });
+      check('a cut that catches nothing still comes out as something',
+        empty.position.length / 9 === 1, `${empty.position.length / 9} triangles`);
+    }
     return v;
   })();
 
@@ -2455,8 +2232,8 @@ section('the fleet');
   check('and every one of them knows which vehicle it is part of',
     blocks.every(a => a.vehicle && V.all.includes(a.vehicle)));
   check('and a hatchback gets a smaller cylinder than a van',
-    car.carBlockRadius(VEHICLES.hatchback) < car.carBlockRadius(VEHICLES.van2),
-    `${car.carBlockRadius(VEHICLES.hatchback)} against ${car.carBlockRadius(VEHICLES.van2)}`);
+    car.carBlockRadius(van) === Math.max(12, Math.round(car.carWidth(van) / 2)),
+    `${car.carBlockRadius(van)} for a van ${car.carWidth(van).toFixed(0)} wide`);
   const p0 = gm.player, one = V.all[0];
   check('you cannot walk into the middle of one', p0.thingInWay(one.x, one.y));
   check('nor into either end of it',
