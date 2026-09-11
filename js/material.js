@@ -170,6 +170,41 @@ float emberHash(vec3 c) {
   return fract(sin(dot(c, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
 }
 
+/* ---------------------------------------------------------------------
+   A PATCH THAT IS NOT A CUBE
+
+   Everything the burn draws is a scatter over floor(wpos * k), which is
+   a lattice of axis-aligned cells — and an axis-aligned cell on a floor
+   or a ceiling is a SQUARE. One scale of them reads as a chequerboard,
+   which is what the soot and the ash were doing: rectangles a bay across
+   with dead-straight edges, in step with the rectangles on the ceiling
+   above them.
+
+   The fix is not a finer lattice, which only makes smaller squares. It
+   is to move the point before looking it up. emberWarp offsets wpos by a
+   coarse vector field, so the lattice boundaries wander by most of a
+   cell and a patch comes out with a ragged outline at the warp's scale
+   rather than a straight one at its own.
+
+   Four hashes and a multiply, and none of it runs anywhere nothing has
+   burnt: every caller tests its amount before asking.
+   ------------------------------------------------------------------- */
+vec3 emberWarp(vec3 wpos, float cells, float amount) {
+  vec3 c = floor(wpos * cells);
+  return wpos + (vec3(emberHash(c),
+                      emberHash(c + 13.0),
+                      emberHash(c + 29.0)) - 0.5) * amount;
+}
+
+/* A patch field: three scales of scatter over a warped lattice, so it
+   has structure at a bay, at a shelf and at a hand. */
+float emberPatch(vec3 wpos) {
+  vec3 w = emberWarp(wpos, 0.09, 26.0);
+  return emberHash(floor(w * 0.028)) * 0.52          // a bay across
+       + emberHash(floor(w * 0.075) + 31.0) * 0.29   // the shape in it
+       + emberHash(floor(w * 0.21) + 71.0) * 0.19;   // and its torn edge
+}
+
 vec3 emberOf(float charAmt, vec3 wpos, float lum, float depth) {
   if (charAmt <= 0.001) return vec3(0.0);
   /* CHUNKY, AND THERE ARE NOT MANY. The first cut used cells five units
@@ -178,9 +213,28 @@ vec3 emberOf(float charAmt, vec3 wpos, float lum, float depth) {
      as television static rather than as a fire going out. Fourteen-unit
      cells are about the size of a coal you would see across a shop, and
      one in twelve of them is alight. */
-  vec3 cell = floor(wpos * 0.07);
+  /* TWO SIZES OF COAL, and the smaller one is the detail the first cut
+     of this could not have had. Fourteen-unit cells are the size of a
+     coal you see across a shop and one in twelve is alight, which is
+     right and is also, on its own, one dot repeated. A second scatter at
+     four units — rarer, and cut off much harder by distance so it can
+     never become the aliasing the big one was tuned away from — is the
+     SPARK in among them, and the pair read as a fire going out rather
+     than as a texture of dots. */
+  vec3 lat = emberWarp(wpos, 0.2, 15.0) * 0.07;
+  vec3 cell = floor(lat);
   float h = emberHash(cell);
   float h2 = fract(h * 197.13);
+  float fine = emberHash(floor(wpos * 0.26) + 53.0);
+  /* A COAL IS A BLOB IN ITS CELL, NOT THE CELL. Lighting the whole cell
+     makes every coal the same axis-aligned rectangle and every one of
+     them the same size, which on a ceiling seen down its own length is a
+     tiling pattern. Falling off from the middle of the cell gives it a
+     round edge, a dark gap between it and its neighbour, and — because
+     the radius is the cell's own hash — a SIZE, which is the detail that
+     makes a scatter of them read as coals of different ages. */
+  vec3 off = fract(lat) - 0.5;
+  float blob = 1.0 - smoothstep(0.34 + h2 * 0.16, 0.58 + h2 * 0.16, length(off));
   /* And they fade out with distance for the same reason. A coal is a
      small bright thing; small bright things at three thousand units are
      one pixel of aliasing each. */
@@ -188,8 +242,13 @@ vec3 emberOf(float charAmt, vec3 wpos, float lum, float depth) {
   if (near <= 0.001) return vec3(0.0);
   /* a scatter, in the DARK parts — coals live in the recesses, and a
      burnt texture's own dark places are exactly those recesses */
-  float sit = smoothstep(0.93 - charAmt * 0.05, 0.995 - charAmt * 0.04, h)
-            * (1.0 - smoothstep(0.07, 0.32, lum)) * near;
+  float dark = 1.0 - smoothstep(0.07, 0.34, lum);
+  float sit = smoothstep(0.88 - charAmt * 0.07, 0.975 - charAmt * 0.04, h) * dark * near * blob;
+  /* the sparks: a third the size, a third as many, and gone by a
+     thousand units — a one-pixel bright thing at range is aliasing */
+  float grit = 1.0 - smoothstep(300.0, 1000.0, depth);
+  sit += smoothstep(0.986 - charAmt * 0.012, 0.999, fine) * dark * grit * 0.55;
+  sit = min(sit, 1.2);
   if (sit <= 0.001) return vec3(0.0);
   /* Two sines beaten against each other so neighbouring coals are out of
      step — the trees' trick, and the reason a burnt surface breathes
@@ -198,12 +257,26 @@ vec3 emberOf(float charAmt, vec3 wpos, float lum, float depth) {
     * sin(emberTime * 9.0 + h * 31.4 + wpos.y * 0.17)
     * sin(emberTime * 3.7 + h2 * 12.0 + wpos.x * 0.11);
   float heat = clamp(sit * (0.45 + 0.75 * charAmt), 0.0, 1.0);
-  /* and the palette cycle: quantised to whole steps of the ramp, so it
-     flips between real colours instead of sliding through the gaps */
+  /* AND THE PALETTE CYCLE, quantised to whole steps of the ramp so it
+     flips between real colours instead of sliding through the gaps.
+
+     BIASED DOWN THE RAMP, which is the difference between a coal and a
+     speck of confetti. The top of the ember ramp is #f8d0a0 — a pale
+     warm cream, correct for the white-hot heart of a fire and nothing
+     like the colour of a coal in a burnt-out aisle. heat lands near 1 on
+     anything fully charred, so the index clamped at the top and every
+     coal in the store came out the same pale tan: brighter, yes, and
+     reading as litter rather than as fire. Two thirds of the way is
+     #985800 to #c07820, which is what a coal is, and the wave still
+     takes the odd one to the top and back. */
   float ph = emberTime * 0.9 + h * 6.28 + h2 * 2.1;
   float wave = abs(fract(ph) * 2.0 - 1.0) - 0.5;
-  float idx = clamp(heat + wave * 0.40, 0.0, 1.0);
-  return emberRamp[int(floor(idx * 7.0 + 0.5))] * (heat * flick * 0.55);
+  float idx = clamp(heat * 0.60 + wave * 0.46, 0.0, 1.0);
+  /* AND THEY ARE BRIGHTER. 0.55 was set against a CHARRED surface at a
+     lit region's own light. A gutted one is darker, further through, and
+     lit by nothing but this — so the one thing left in the room that is
+     still a fire was the one thing that had not been turned up. */
+  return emberRamp[int(floor(idx * 7.0 + 0.5))] * (heat * flick * 1.45);
 }
 
 /* ---------------------------------------------------------------------
@@ -260,11 +333,15 @@ float sootAmount(float burn, vec3 wpos) {
      Both are driven by the same number, so the hand-off cannot drift. */
   float pre = smoothstep(0.015, 0.40, burn) * (1.0 - smoothstep(0.44, 0.58, burn));
   if (pre <= 0.002) return 0.0;
-  float h = emberHash(floor(wpos * 0.028)) * 0.74      // a bay across
-          + emberHash(floor(wpos * 0.115) + 31.0) * 0.26;  // and its ragged edge
+  /* THREE SCALES OVER A WARPED LATTICE — see emberPatch. Two scales of
+     plain floor() is a chequerboard of soot. */
+  float h = emberPatch(wpos);
   float crawl = 0.05 * sin(emberTime * 0.55 + h * 26.0)
               + 0.03 * sin(emberTime * 0.19 + h * 7.3);
-  return clamp((pre * 1.3 - h + crawl) / 0.26, 0.0, 1.0);
+  /* and a TIGHTER ramp from clean to black: 0.26 spread the transition
+     over a third of the field, so most of a burning wall sat at halfway
+     sooty and the boundary was a gradient rather than a front. */
+  return clamp((pre * 1.3 - h + crawl) / 0.17, 0.0, 1.0);
 }
 
 vec3 sootOn(vec3 c, float soot, vec3 wpos) {
@@ -284,19 +361,33 @@ vec3 sootOn(vec3 c, float soot, vec3 wpos) {
      floating in it. So it keeps about half, patchily, and gets its own
      ash for the same reason the textures have theirs. */
   float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
-  float h2 = emberHash(floor(wpos * 0.09) + 7.0);
+  /* the ash gets a patch field of its own, warped for the reason the
+     soot is: eleven-unit cubes of pale grey on a floor is graph paper */
+  vec3 aw = emberWarp(wpos, 0.14, 11.0);
+  float h2 = emberHash(floor(aw * 0.09) + 7.0) * 0.7
+           + emberHash(floor(aw * 0.30) + 17.0) * 0.3;
   float keep = 0.38 + h2 * 0.22;
   vec3 burnt = mix(c, vec3(lum), 0.55) * keep + vec3(0.022, 0.018, 0.015);
   vec3 out_ = mix(c, burnt, soot);
   /* the ash, pale and patchy, which is the only thing you can see the
      shape of a sooty wall by */
-  out_ += vec3(0.055, 0.052, 0.050) * smoothstep(0.66, 0.98, h2) * soot;
-  /* and the rim, which is the only part of it still alight: the product
-     of the amount and its complement peaks exactly at the boundary, so
-     the advancing edge glows and the burnt side behind it does not */
-  float edge = soot * (1.0 - soot) * 4.0;
-  float flick = 0.7 + 0.3 * sin(emberTime * 7.0 + wpos.x * 0.09 + wpos.y * 0.13);
-  return out_ + vec3(0.24, 0.07, 0.014) * edge * flick;
+  out_ += vec3(0.062, 0.058, 0.055) * smoothstep(0.62, 0.97, h2) * soot;
+  /* AND THE RIM, which is the only part of it still alight and was the
+     part doing the least work. The product of the amount and its
+     complement peaks exactly at the boundary; SQUARED, it peaks in a
+     band a third as wide, which turns a warm wash over half the patch
+     into a LINE of fire creeping across it — and a line can be several
+     times brighter than a wash without washing anything out.
+
+     Two colours on it, because a burning edge is not one temperature: a
+     broad orange shoulder, and a pale core that only the very boundary
+     reaches. */
+  float rim = soot * (1.0 - soot) * 4.0;
+  float edge = rim * rim;
+  float core = edge * edge;
+  float flick = 0.72 + 0.34 * sin(emberTime * 7.0 + wpos.x * 0.09 + wpos.y * 0.13)
+                     * sin(emberTime * 2.3 + wpos.z * 0.07);
+  return out_ + (vec3(0.62, 0.19, 0.030) * edge + vec3(0.55, 0.40, 0.16) * core) * flick;
 }
 
 float worldBand(float lightIn, float depth, float sky, float fullbright) {

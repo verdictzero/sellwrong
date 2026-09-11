@@ -621,14 +621,24 @@ fetch. A byte is enough resolution: a 256th of a region's fuel is a tenth
 of a second of it burning.
 
 SOOT ARRIVES BEFORE THE FIRE DOES, and it arrives in PATCHES. Where it
-lands first is a world-space field at two scales — cells about a shelf
-bay across decide which patches go early, cells a few units across
-ragged the edge of each one — so the soot has a SHAPE of its own rather
-than a level of its own, and it spreads across a wall as the region's
-number climbs: the lowest-numbered cells first, joining up, until the
-wall is black. Nothing about it is per-region except the number, so two
-aisles burning at once are never in step, because they are not in the
-same place.
+lands first is a world-space field, so the soot has a SHAPE of its own
+rather than a level of its own, and it spreads across a wall as the
+region's number climbs: the lowest-numbered cells first, joining up,
+until the wall is black. Nothing about it is per-region except the
+number, so two aisles burning at once are never in step, because they
+are not in the same place.
+
+A PATCH IS NOT A CUBE, which took a second pass to fix. Every scatter in
+here is a hash over floor(wpos * k), and an axis-aligned cell on a floor
+or a ceiling is a SQUARE — two scales of them read as a chequerboard of
+soot with dead-straight edges, in step with the chequerboard on the
+ceiling above. The fix is not a finer lattice, which only makes smaller
+squares: it is to MOVE THE POINT before looking it up. A coarse vector
+field offsets wpos by most of a cell before the floor(), so a patch comes
+out with a ragged outline at the warp's scale rather than a straight one
+at its own — and then three scales of scatter over that warped lattice
+give it structure at a bay, at a shelf and at a hand. The same warp is
+used by the ash and by the coals, for the same reason.
 
 AND THE EDGE CRAWLS, on the same clock the coals run on, which is what
 makes a wall halfway through catching still be doing something while you
@@ -778,6 +788,35 @@ sliding through the gaps, and it costs nothing at all where nothing has
 burnt. The first cut used cells five units across and lit a quarter of
 them, which at a grazing angle put more coals on a ceiling than there
 were pixels to draw them in and read as television static.
+
+THEY ARE BRIGHTER NOW, at the user's request, and turning them up was
+three changes rather than one, because the first attempt at it made them
+WORSE. Multiplying the output by two thirds again gave a burnt aisle
+covered in pale cream confetti: heat lands near 1 on anything fully
+charred, so the palette index clamped at the top of the ramp, and the top
+of the ember ramp is #f8d0a0 — correct for the white-hot heart of a fire
+and nothing like the colour of a coal. So the index is biased two thirds
+of the way down, into #985800 and #c07820, which is what a coal actually
+is, and the wave still takes the odd one to the top and back. Turned up
+from there they read as fire rather than as litter.
+
+AND A COAL IS A BLOB IN ITS CELL, NOT THE CELL. Lighting the whole cell
+makes every coal the same axis-aligned rectangle and every one of them
+the same size; falling off from the middle gives it a round edge, a dark
+gap between it and its neighbour, and — because the radius comes from the
+cell's own hash — a SIZE, which is the detail that makes a scatter of
+them read as coals of different ages. There is a second scatter at a
+third the size for the SPARKS in among them, much rarer and cut off by a
+thousand units rather than two, because a one-pixel bright thing at range
+is aliasing and not a spark.
+
+AND THE CREEPING EDGE IS A LINE RATHER THAN A WASH. The rim of a
+spreading soot patch is the product of the amount and its complement,
+which peaks exactly at the boundary; SQUARED, it peaks in a band a third
+as wide, and a band a third as wide can be several times brighter without
+washing anything out. It carries two colours now, because a burning edge
+is not one temperature: a broad orange shoulder, and a pale core that
+only the very boundary reaches.
 
 The light fittings are taken away rather than switched off when the roof
 over them goes, because there is no wiring left in a roof that is not
