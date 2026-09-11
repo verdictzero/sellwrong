@@ -110,7 +110,12 @@ import { readPNG, writePNG } from './png-read.mjs';
    --------------------------------------------------------------------- */
 const FLEET = [
   { id: 'hatchback', name: 'Hatchback',  file: 'art/hatchback.png', metres: 3.70, use: 'civil',    wheels: 2, nose: 'left' },
-  { id: 'van',       name: 'Panel van',  file: 'art/van.png',       metres: 5.45, use: 'civil',    wheels: 2, nose: 'right' },
+  /* THE OLD VAN IS GONE, at the user's request. It was the drawn panel
+     van off art/van.png, and the car park is one modelled van now
+     (assets/models/van.glb), which also calls itself 'van' — two
+     different vans answering to one id is the kind of thing that is
+     fine until the day it is not. The sheet stays in art/ if it is ever
+     wanted back; nothing here reads it. */
   { id: 'van2',      name: 'Work van',   file: 'art/van2.png',      metres: 5.45, use: 'civil',    wheels: 2, nose: 'left' },
   { id: 'pickup',    name: 'Pickup',     file: 'art/pickup.png',    metres: 5.20, use: 'civil',    wheels: 2, nose: 'left' },
   { id: 'muralvan',  name: 'Custom van', file: 'art/muralvan.png',  metres: 5.45, use: 'civil',    wheels: 2, nose: 'right' },

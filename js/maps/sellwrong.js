@@ -932,16 +932,21 @@ export function buildSellWrong() {
      heading, and which of them it is. Read `level.carSlots`, put a model
      at each, and the lot is parked.
 
-     A car park that is FULL is wrong for this: the place is half empty
-     because half the town has already left, so bays are taken at about
-     one in three, thinning towards the road. */
+     A car park that is FULL is wrong for this, and at the user's request
+     it is now SPARSE rather than merely half empty: about one bay in
+     six near the doors, thinning to almost nothing by the road. Half
+     the town left, and the ones who stayed parked close. It reads better
+     than a full lot — a van on its own in a bay says something, and
+     seventy-seven of them said "the loader worked" — and it is the
+     cheapest frame this game has going: the lot was 48,000 triangles of
+     van, and it is about 13,000 now. */
   {
     let seed = 20250907;
     const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
     bayRows.forEach((row, ri) => {
       const cy = (row.y0 + row.y1) / 2;
       const n = Math.floor((LOT_X1 - LOT_X0) / BAY_W);
-      const take = 0.42 - ri * 0.045;                 // emptier towards the road
+      const take = 0.17 - ri * 0.026;                 // emptier towards the road
       for (let i = 0; i < n; i++) {
         if (rnd() > take) continue;
         const cx = LOT_X0 + (i + 0.5) * BAY_W;
@@ -954,10 +959,22 @@ export function buildSellWrong() {
         });
       }
     });
-    /* and three abandoned across the lanes, because everyone left at once */
-    carSlots.push({ x: 1500, y: ROAD_Y0 - 60,  angle: 0.35,  variant: 2 });
-    carSlots.push({ x: 3100, y: ROAD_Y0 - 80,  angle: -0.25, variant: 4 });
-    carSlots.push({ x: 620,  y: ROAD_Y0 - 700, angle: 1.4,   variant: 1 });
+    /* --- and three abandoned across the lanes, because everyone left at
+       once. IN a lane, which has to be FOUND rather than guessed: the
+       rows come back-to-back in pairs, and the gap between one pair and
+       the next is the driving lane. The three of these used to be put at
+       ROAD_Y0 minus a guess, which is a band with no lane in it — one of
+       them ended up thirty-two units from a parked van, two vehicles in
+       one bay. Invisible while the lot was full; the first thing you see
+       once it is sparse. */
+    const lanes = [];
+    for (let i = 0; i + 1 < bayRows.length; i++) {
+      const gap = bayRows[i].y0 - bayRows[i + 1].y1;
+      if (gap > 100) lanes.push(bayRows[i].y0 - gap / 2);
+    }
+    [[1500, 0, 0.35], [3100, 1, -0.25], [620, 2, 1.4]].forEach(([x, li, angle]) => {
+      if (lanes[li] !== undefined) carSlots.push({ x, y: lanes[li], angle, variant: 0 });
+    });
   }
 
   /* --- the furniture of a shop front --------------------------------- */

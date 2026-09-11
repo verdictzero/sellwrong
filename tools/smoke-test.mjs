@@ -356,7 +356,11 @@ const level = buildSellWrong();
   {
     const slots = level.carSlots || [];
     note('parking slots', slots.length);
-    check('the lot has cars marked out', slots.length > 40, `${slots.length}`);
+    /* SPARSE, at the user's request: about one bay in six near the doors
+       and almost nothing by the road. The claim is that there IS a car
+       park and that it is not full — an empty lot and a full one are
+       both wrong for a shop half the town has already left. */
+    check('the lot has cars marked out', slots.length > 12 && slots.length < 45, `${slots.length}`);
     check('nothing is still spawning placeholder cars',
       !level.things.some(t => t.type === 'CAR'));
     const shape = slots.every(c =>
@@ -367,8 +371,17 @@ const level = buildSellWrong();
       const sec = level.sectorAt(c.x, c.y);
       return !sec || (sec.name !== 'bays' && sec.name !== 'fire lane');
     });
-    check('every car is parked in a bay',
-      stray.length === 0,
+    /* ALL BUT THREE. Three are abandoned across the driving lanes on
+       purpose — everybody left at once — and a van standing in a lane is
+       the whole point of those three, so the claim is "in a bay, or in a
+       lane and one of the three", not "in a bay". What it still refuses
+       is a van on the verge, in the road, on the footway, or nowhere. */
+    const abandoned = stray.filter(c => (level.sectorAt(c.x, c.y) || {}).name === 'driving lane');
+    const lost = stray.filter(c => !abandoned.includes(c));
+    note('and where they are', `${slots.length - stray.length} in bays, ` +
+      `${abandoned.length} abandoned in the lanes`);
+    check('every car is parked in a bay, or abandoned in a lane',
+      lost.length === 0 && abandoned.length <= 3,
       stray.slice(0, 4).map(c => {
         const sec = level.sectorAt(c.x, c.y);
         return `${c.x | 0},${c.y | 0} in ${sec ? sec.name : 'nothing'}`;
@@ -1924,7 +1937,10 @@ section('the fleet');
 
   /* --- a piece torn off one ----------------------------------------- */
   {
-    const v = VEHICLES.van, cut = { x0: -0.1, x1: 0.02, y0: -0.06, y1: 0.05, z0: 0.2, z1: 0.3 };
+    /* VEHICLES.van was the drawn panel van and it has been deleted (the
+       car park is one modelled van now, which answers to the same id).
+       Any van-shaped member of the fleet makes this point. */
+    const v = VEHICLES.van2, cut = { x0: -0.1, x1: 0.02, y0: -0.06, y1: 0.05, z0: 0.2, z1: 0.3 };
     const c = car.chunkGeometry(v, cut, { angle: 0, light: 0.7, sky: 1, charred: 0.85 });
     check('a torn-off chunk is one box', c.position.length / 9 === 12);
     check('and it is charred', c.charred.every(t => t === 0.85));
@@ -1948,7 +1964,7 @@ section('the fleet');
 
   /* --- the arithmetic the tumble stands on -------------------------- */
   {
-    const v = VEHICLES.van, corners = car.carCorners(v);
+    const v = VEHICLES.van2, corners = car.carCorners(v);
     check('a vehicle has eight corners', corners.length === 8);
     const mesh = corners.map(p => [(p[0] - 0) * v.length, (p[2] - v.shape.height / 2) * v.length, -(p[1] - 0) * v.length]);
     const half = car.carHeight(v) / 2;
@@ -1987,8 +2003,71 @@ section('the fleet');
     note('the van', `${ex.length} long, ${ex.width} wide, ${ex.height} tall, ` +
       `nose at ${ex.noseSign > 0 ? '+' : '-'}${'XYZ'[ex.lengthAxis]}`);
     const v = car.modelVehicle(json, bin);
-    note('its triangles', `${v.model.tris.length}, against ${car.carGeometry(car.VEHICLES.van).position.length / 9} for the drawn one`);
+    note('its triangles', `${v.model.tris.length}, against ` +
+      `${car.carGeometry(car.VEHICLES.van2).position.length / 9} for a drawn one`);
     check('it has triangles', v.model.tris.length > 200, `${v.model.tris.length}`);
+
+    /* --- AND IT IS THE RIGHT WAY ROUND ---------------------------------
+       THIS IS THE ONE THAT MATTERED. The file declares which way each
+       face points twice — the winding of its three corners and the
+       NORMAL on them — and this model's two agree with each other and
+       both point INWARD. Self-consistent, invisible in any viewer that
+       draws both sides, and fatal here: every face of every van was a
+       back face, every back face was culled, and the car park was
+       seventy-seven vans seen from the inside. It also chose the wrong
+       picture for every panel, since the projection picks a view by
+       where a face points.
+
+       So the geometry that goes to the GPU is held against the solid it
+       is meant to be. Signed volume, in the frame the vertices are
+       actually in, about their own centre: positive for a shell wound
+       outward, negative for one wound in. Interior geometry subtracts —
+       this van has seats and door cards — so the claim is the SIGN, and
+       the drawn fleet above, which is solid boxes, is the calibration at
+       55 to 69 per cent of its bounding box.
+       ------------------------------------------------------------------ */
+    const volumeOf = (pos) => {
+      const b = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+      for (let i = 0; i < pos.length; i += 3) for (let k = 0; k < 3; k++) {
+        if (pos[i + k] < b[k]) b[k] = pos[i + k];
+        if (pos[i + k] > b[3 + k]) b[3 + k] = pos[i + k];
+      }
+      const c = [(b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2];
+      let vol = 0;
+      for (let i = 0; i < pos.length; i += 9) {
+        const A = [pos[i] - c[0], pos[i + 1] - c[1], pos[i + 2] - c[2]];
+        const B = [pos[i + 3] - c[0], pos[i + 4] - c[1], pos[i + 5] - c[2]];
+        const C = [pos[i + 6] - c[0], pos[i + 7] - c[1], pos[i + 8] - c[2]];
+        vol += (A[0] * (B[1] * C[2] - B[2] * C[1]) +
+                A[1] * (B[2] * C[0] - B[0] * C[2]) +
+                A[2] * (B[0] * C[1] - B[1] * C[0])) / 6;
+      }
+      return vol / Math.max(1e-9, (b[3] - b[0]) * (b[4] - b[1]) * (b[5] - b[2]));
+    };
+    const frac = volumeOf(car.carGeometry(v, { length: v.length }).position);
+    note('which way round it is', `${(frac * 100).toFixed(0)}% of its box, ` +
+      `and the file had it ${v.model.inverted ? 'inside out' : 'the right way round'}`);
+    check('the van is not inside out', frac > 0.05, `${(frac * 100).toFixed(0)}%`);
+    check('and the conversion said so rather than guessing', v.model.inverted === true,
+      'the model arrived wound inward, and modelVehicle measured it');
+    for (const drawn of car.VEHICLE_IDS.slice(0, 3)) {
+      const f = volumeOf(car.carGeometry(car.VEHICLES[drawn], { length: car.VEHICLES[drawn].length }).position);
+      check(`and the drawn ${drawn} is not either`, f > 0.4, `${(f * 100).toFixed(0)}%`);
+    }
+    /* THE ROOF POINTS UP, which is the same claim stated where you can
+       see it: of the triangles in the top tenth of the van, the ones
+       facing anywhere near vertical face UP. */
+    {
+      let top = 0;
+      for (const t of v.model.tris) for (const p of [t.a, t.b, t.c]) if (p[2] > top) top = p[2];
+      let up = 0, down = 0;
+      for (const t of v.model.tris) {
+        const mid = (t.a[2] + t.b[2] + t.c[2]) / 3;
+        if (mid < top * 0.9 || Math.abs(t.n[2]) < 0.7) continue;
+        if (t.n[2] > 0) up++; else down++;
+      }
+      check('the roof faces the sky', up >= 2 && down === 0, `${up} up, ${down} down`);
+    }
     /* IN THE SPACE THE REST OF THIS FILE SPEAKS: x is +0.5 at the nose
        and -0.5 at the tail, y is across, z is 0 on the tarmac. Getting
        any of the three wrong is a van standing on its nose. */
@@ -2090,7 +2169,24 @@ section('the fleet');
   });
   const V = gm.vehicles;
   note('the car park', `${V.count} vehicles in ${(level.carSlots || []).length} bays`);
-  check('every bay in the lot has something in it', V.count === (level.carSlots || []).length && V.count > 20);
+  check('every slot in the lot got a vehicle',
+    V.count === (level.carSlots || []).length && V.count > 12, `${V.count}`);
+  /* AND THEY ARE SPREAD OUT, at the user's request. Counting empty bays
+     would mean knowing how many there are, which is arithmetic inside
+     the map; what "sparse" actually means is visible from the vans
+     themselves — how far it is to the next one. A bay is 186 wide, so
+     neighbours in adjacent bays are 186 apart and a sparse lot is not.  */
+  {
+    const all = V.all;
+    const near = all.map(v => Math.min(...all.filter(o => o !== v)
+      .map(o => Math.hypot(o.x - v.x, o.y - v.y))));
+    near.sort((a, b) => a - b);
+    const mid = near[near.length >> 1];
+    note('and how spread out', `nearest neighbour: closest ${near[0].toFixed(0)}, ` +
+      `median ${mid.toFixed(0)}, furthest ${near[near.length - 1].toFixed(0)}`);
+    check('the lot is sparse rather than full', mid > 300, `median ${mid.toFixed(0)} apart`);
+    check('and no two vans are in the same bay', near[0] > 150, `${near[0].toFixed(0)} apart`);
+  }
   /* THE ASK WAS FOR A CUSTOMER CAR PARK. The riot van and the APC are
      measured, packed and ready and neither of them is out there. */
   check('and none of it is police or military',
@@ -2148,8 +2244,8 @@ section('the fleet');
   check('and every one of them knows which vehicle it is part of',
     blocks.every(a => a.vehicle && V.all.includes(a.vehicle)));
   check('and a hatchback gets a smaller cylinder than a van',
-    car.carBlockRadius(VEHICLES.hatchback) < car.carBlockRadius(VEHICLES.van),
-    `${car.carBlockRadius(VEHICLES.hatchback)} against ${car.carBlockRadius(VEHICLES.van)}`);
+    car.carBlockRadius(VEHICLES.hatchback) < car.carBlockRadius(VEHICLES.van2),
+    `${car.carBlockRadius(VEHICLES.hatchback)} against ${car.carBlockRadius(VEHICLES.van2)}`);
   const p0 = gm.player, one = V.all[0];
   check('you cannot walk into the middle of one', p0.thingInWay(one.x, one.y));
   check('nor into either end of it',

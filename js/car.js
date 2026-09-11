@@ -564,12 +564,61 @@ export function modelVehicle(json, bin, opts = {}) {
       tris.push({ a, b, c, n });
     }
   }
+
+  /* ------------------------------------------------------------------
+     WHICH WAY ROUND THE MODEL IS, and this is not a detail.
+
+     A GLB says which way a face points twice: by the order of its three
+     corners and by the NORMAL attribute on them. This file's two agree
+     with each other on all 624 triangles — and both point INWARD. That
+     is a thing a modeller can do without ever seeing it, because a
+     flipped normal plus a flipped winding is self-consistent and most
+     viewers draw both sides anyway.
+
+     This renderer does not draw both sides. Every face of the van was a
+     back face, every back face was culled, and what you saw across the
+     car park was the INSIDE of a van — a dark plate where the roof's
+     underside was, white boxes where the far panels were, and no van.
+     Seventy-seven times. It also wrecked the paint, because the view a
+     face reads is chosen by where it points, so the left flank was
+     painted with the right flank's picture and the roof with the
+     underside's.
+
+     So the orientation is MEASURED rather than trusted: the signed
+     volume of the whole mesh about its own centre, which is positive for
+     a solid wound outward and negative for one wound in. A van's own
+     interior — seats, the inside of the doors, the cargo bay — subtracts
+     from it, so the threshold is the sign and not the size: this model
+     comes out at -27% of its bounding box, and flipped, +27%.
+     ------------------------------------------------------------------ */
+  const c3 = [0, 0, 0];
+  const bb = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+  for (const t of tris) for (const p of [t.a, t.b, t.c]) for (let k = 0; k < 3; k++) {
+    if (p[k] < bb[k]) bb[k] = p[k];
+    if (p[k] > bb[3 + k]) bb[3 + k] = p[k];
+  }
+  for (let k = 0; k < 3; k++) c3[k] = (bb[k] + bb[3 + k]) / 2;
+  let vol = 0;
+  for (const t of tris) {
+    const A = [t.a[0] - c3[0], t.a[1] - c3[1], t.a[2] - c3[2]];
+    const B = [t.b[0] - c3[0], t.b[1] - c3[1], t.b[2] - c3[2]];
+    const C = [t.c[0] - c3[0], t.c[1] - c3[1], t.c[2] - c3[2]];
+    vol += (A[0] * (B[1] * C[2] - B[2] * C[1]) +
+            A[1] * (B[2] * C[0] - B[0] * C[2]) +
+            A[2] * (B[0] * C[1] - B[1] * C[0])) / 6;
+  }
+  if (vol < 0)
+    for (const t of tris) {
+      const b = t.b; t.b = t.c; t.c = b;
+      t.n = [-t.n[0], -t.n[1], -t.n[2]];
+    }
+
   return {
     id: opts.id || 'van', name: opts.name || 'Van', use: 'civil',
     length: ex.length,
     shape: ex.shape,
     views: ex.views,
-    model: { tris },
+    model: { tris, volume: Math.abs(vol), inverted: vol < 0 },
   };
 }
 

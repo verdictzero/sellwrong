@@ -40,7 +40,7 @@ somewhere else: the people, the trees, the sky, and the gun.
   tools/prep-forest.sh  copies the wood's art over from the golf project
   tools/bake-sky.mjs    the sky: 8k panorama to 1024 palette pixels
   tools/prep-model.mjs  strips the marker spheres out of a .glb, keeps their positions
-  tools/prep-car.mjs    measures seven vehicles off their sheets and packs them
+  tools/prep-car.mjs    measures six vehicles off their sheets and packs them
   tools/prep-van.mjs    measures the van model and halves its texture
   tools/build-site.sh   assembles public/ — what actually gets published
   tools/bake-icons.mjs  the home-screen icon, out of the game's own fire
@@ -71,7 +71,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         653 checks, no install and no browser
+  the smoke test         639 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -1434,6 +1434,39 @@ The axis swap from (z, x, y) to (nose, left, up) is a cyclic permutation,
 so it preserves handedness — which is the one thing that would otherwise
 turn every triangle in the model inside out.
 
+AND WHICH WAY ROUND IT IS IS NOT IN THE FILE EITHER, which is the same
+lesson twice and cost three rounds of work to learn. That paragraph above
+is correct and it is not the whole story: the conversion preserves
+handedness, and the vans were still inside out, because the MODEL is.
+
+A GLB states which way a face points twice over — the order of its three
+corners, and the NORMAL attribute on them — and in this file the two
+agree with each other on all 624 triangles and both point INWARD. That is
+a thing a modeller can do without ever seeing it: flip a normal and its
+winding together and the file is self-consistent, and most viewers draw
+both sides anyway. This renderer does not draw both sides. Every face was
+a back face, every back face was culled, and what stood in the car park
+was the INSIDE of a van: a dark plate where the roof's underside was,
+white boxes where the far panels were, no wheels, no grille, no van.
+Seventy-seven times, through a smoke test that was checking the axes, the
+scale, the ground line and the UVs and never once asked whether the thing
+was the right way out.
+
+It also wrecked the paint, and that is why this took three goes. The view
+a face reads is chosen by WHERE IT POINTS, so with every normal inverted
+the left flank was painted with the right flank's picture and the roof
+with the underside's. Reported as "the van UV mapping is super fucked",
+which it was; the UVs were a symptom.
+
+So orientation is measured rather than trusted, the same way the length
+and the nose are: the signed volume of the whole mesh about its own
+centre, which is positive for a shell wound outward and negative for one
+wound in, and if it is negative every triangle is reversed. A van's own
+interior — seats, door cards, the cargo bay — subtracts from that, so the
+claim is the SIGN and not the size: this model comes out at minus 27 per
+cent of its bounding box, and reversed, plus 27. The drawn fleet, which is
+solid boxes, sits between 55 and 69, and is the calibration.
+
 THE FLAT MATERIAL IS THE INTERESTING PROBLEM. The model has two
 primitives: the body, textured, and a second one — glass, tyres,
 bumpers, chassis — with no texture at all, just a base colour of
@@ -1677,11 +1710,17 @@ that, being the face pointing at the floodlights, and the underside goes
 dark. Four brightnesses is the whole of the shading and it is the
 difference between a vehicle and a black rectangle.
 
-THE LOT IS ONE MESH. There are seventy-seven bays and every one of them is
-filled — a car park that is only two-fifths full, thinning towards the
-road, because half the town has already left; that is the map's decision
-and js/vehicles.js just fills what it was given. Seventy-seven meshes
-would be seventy-seven draw calls for a row of things that never move, so
+THE LOT IS ONE MESH. There are a couple of hundred bays and about twenty
+vehicles in them — sparse at the user's request, roughly one bay in six
+near the doors and almost nothing by the road, because half the town has
+already left; that is the map's decision and js/vehicles.js just fills
+what it was given. Three of the twenty are abandoned across the driving
+lanes, which are FOUND from the row geometry rather than guessed at: the
+first cut put them at a hand-picked distance south of the road, where
+there is no lane at all, and one of them ended up thirty-two units from a
+parked van. Two vehicles in one bay — invisible while the lot was full,
+and the first thing you see once it is not. Twenty meshes
+would be twenty draw calls for a row of things that never move, so
 a parked car is not a mesh: it is a slab of vertices baked into world
 space and concatenated into ONE geometry, the same bargain js/mapgeo.js
 makes with the walls. A car gets a mesh of its own for the second and a
@@ -1700,7 +1739,7 @@ forty. But a floor tiles from the WORLD ORIGIN, which is right for tarmac
 and lino and anything else with no feature to line up, and wrong for a
 texture whose repeat means something: the lot starts at x = -1400, which
 is not a multiple of 186, so the painted lines fell five units from the
-middle of every bay and all seventy-seven cars were parked ON a line
+middle of every bay and every car in the lot was parked ON a line
 rather than between two of them. A sector can now say where its floor
 texture starts, and the bay rows say their own corner — which does not
 move a single car, it makes the arithmetic the parking already used come
@@ -1790,7 +1829,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-653 checks. Every one of them earns its place by having caught something
+639 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -1940,6 +1979,15 @@ that had already reached a screenshot:
     corner. The check holds the widest single triangle's share of the
     sheet against a tenth of it: a fan collapses to nothing and a
     stretched sliver covers everything
+  and then seventy-seven vans seen from the INSIDE, which was the real
+    fault under that one and took three reports to find. The model
+    declares which way its faces point twice, by winding and by normal,
+    and its two declarations agree with each other and both point
+    inward; every face was culled, and the projection painted each panel
+    with the picture of the opposite one. The test measured the axes,
+    the scale, the ground line and the UV spread — everything except
+    whether the van was the right way out. It measures the signed
+    volume now, and the drawn fleet beside it is the calibration
   a fatal, silent break. A comment rewritten with a text splice whose end
     offset was one line too far took the function between the two offsets
     with it, and js/main.js was left importing a name js/car.js no longer
@@ -1984,12 +2032,14 @@ WHAT IS NOT DONE
   a shopper is drawn from one angle, so a crowd seen from the side is a
     crowd all facing you. At Doom's sprite scale in a dark shop this
     reads; in daylight it would not
-  a vehicle is five kinds of vehicle, two of them white vans. Every one
-    of the seventy-seven bays is filled, but from five sheets, so the
-    same hatchback is in the lot twenty times and only its heading is
-    different — no
-    colour variation, no dents, nothing that would break the repeat.
-    The atlas has room and the tool takes a sheet a line
+  every vehicle in the car park is the same van. It is the user's model
+    and it is the only one out there: about twenty of them, sparse, and
+    only the heading differs — no colour variation, no dents, nothing
+    that would break the repeat. Six more vehicles are measured and
+    ready in js/car-data.js (a hatchback, a work van, a pickup, a custom
+    van, a riot van and an APC) and none of them is placed; the drawn
+    panel van that used to be in there has been deleted at the user's
+    request, since the modelled one answers to the same name
   the windows are the renderer's, not the game's. The four civilian
     sheets were rendered with see-through glass, so a windscreen shows
     the seats and, past them, the green screen; the tool paints the
