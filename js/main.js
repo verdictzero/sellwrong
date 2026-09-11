@@ -46,13 +46,42 @@ const status = (text, pct) => {
   if (b) b.style.width = (pct * 100).toFixed(0) + '%';
 };
 
-/* How chunky. The vertical resolution of the internal buffer — width
-   follows the window's shape, so a wider monitor shows more store rather
-   than the same store stretched. 400 is the default: twice what it was,
-   at the user's request, and still very much a buffer you can see the
-   pixels of. */
+/* HOW MUCH THE WORLD IS DRAWN WITH. The vertical resolution of the
+   buffer the 3D goes into — width follows the window's shape, so a wider
+   monitor shows more store rather than the same store stretched. 400 is
+   the default: twice what it was, at the user's request. This is the
+   frame rate control; halving it quarters the pixels being shaded. */
 const DETAIL = [120, 150, 200, 240, 300, 400, 480, 600];
 const DEFAULT_DETAIL = 5;
+
+/* AND HOW BIG A PIXEL IS, which is a different question and used to be
+   the same one. This is the grid the finished frame is filtered down
+   onto — each chunky pixel the AVERAGE of the buffer under it, so a
+   600-row render at a 200-row grid is a 320x200 picture with every
+   square correct to an eighth of itself. It costs almost nothing: the
+   filter runs once per chunky pixel, and the palette search that used to
+   run once per screen pixel now runs there too.
+
+   OFF is last because it is the finest setting there is — the grid
+   becomes the buffer, which is exactly what this game did before the two
+   were pulled apart, and it is the default so that nobody's picture
+   changed the day they did. */
+const PIXELS = [120, 150, 200, 240, 300, 400, 480, 600, 0];
+const PIXELS_OFF = PIXELS.length - 1;
+
+/* THE SHAPE OF ONE, width over height as displayed. 320x200 filling a
+   4:3 monitor is not a square-pixel mode and never was: each pixel stood
+   five wide to six tall, and every Doom sprite was drawn by somebody
+   looking at that. A square-pixel 320x200 is a squashed Doom. The other
+   way round is a console's 256x224 on the same screen, which is the same
+   trick in the other direction. Nothing in the world moves when this
+   changes — the camera reads the BUFFER's shape, and the buffer's pixels
+   are always square. */
+const PIXEL_ASPECT = [
+  { v: 1.0,     n: 'SQUARE' },
+  { v: 0.83333, n: 'TALL 5:6' },      // 320x200 on a 4:3 monitor
+  { v: 1.16667, n: 'WIDE 7:6' },      // 256x224 on the same
+];
 
 /* ---------------------------------------------------------------------
    WHAT TO SPEND THE FRAME ON
@@ -90,7 +119,8 @@ const WOOD   = [{ v: 1, n: 'ALL OF IT' }, { v: 0.6, n: 'NEARER' }, { v: 0.35, n:
 const PREF_KEY = 'sellwrong.prefs';
 const PREF_VERSION = 2;
 const DEFAULT_PREFS = { v: PREF_VERSION, sens: 1, invert: false, lefty: false, haptics: true,
-                        detail: DEFAULT_DETAIL, crowd: 0, fx: 0, wood: 0, fps: false };
+                        detail: DEFAULT_DETAIL, pixels: PIXELS_OFF, pixar: 0,
+                        crowd: 0, fx: 0, wood: 0, fps: false };
 function loadPrefs() {
   try {
     const saved = JSON.parse(localStorage.getItem(PREF_KEY) || '{}');
@@ -146,6 +176,8 @@ async function loadForestArt() {
 async function boot() {
   const prefs = loadPrefs();
   let detailIndex = Math.max(0, Math.min(DETAIL.length - 1, prefs.detail | 0));
+  let pixelIndex = Math.max(0, Math.min(PIXELS.length - 1, prefs.pixels | 0));
+  let pixarIndex = Math.max(0, Math.min(PIXEL_ASPECT.length - 1, prefs.pixar | 0));
   let started = false;
 
   const container = $('game');
@@ -256,7 +288,12 @@ async function boot() {
   console.log(`wood: ${game.forest.treeCount} trees, ${game.forest.plantCount} plants`);
 
   status('OPENING', 0.95); await breathe();
-  const pipeline = new LofiPipeline(renderer, { height: DETAIL[detailIndex], dither: 1.0, snap: 1.0 });
+  const pipeline = new LofiPipeline(renderer, {
+    height: DETAIL[detailIndex],
+    pixelHeight: PIXELS[pixelIndex],
+    pixelAspect: PIXEL_ASPECT[pixarIndex].v,
+    dither: 1.0, snap: 1.0,
+  });
 
   function resize() {
     const w = container.clientWidth || window.innerWidth;
@@ -265,7 +302,12 @@ async function boot() {
     camera.aspect = r.width / r.height;
     camera.updateProjectionMatrix();
     weapon3d.setAspect(camera.aspect);
-    hud.resize(r.width, r.height);
+    /* THE READOUT IS MEASURED IN CHUNKY PIXELS, not in buffer ones. Its
+       camera is orthographic, so its extents are a unit of measure
+       rather than a resolution: a six-pixel glyph is six of the pixels
+       you can SEE at any render size, and at a whole-number ratio the
+       block average puts every one of its texels back exactly. */
+    hud.resize(r.gridWidth, r.gridHeight);
     /* nothing is drawn along the bottom of the picture any more, so the
        controls sit on the edge */
     $('touch').style.setProperty('--bar', '0px');
@@ -304,11 +346,23 @@ async function boot() {
     setTog('opt-invert', prefs.invert);
     setTog('opt-lefty', prefs.lefty);
     setTog('opt-haptic', prefs.haptics);
-    /* the buffer's own size, because "400P" says nothing about how wide
-       it is and the width is where the pixels are */
+    /* BOTH SIZES SHOWN IN FULL, because "400P" says nothing about how
+       wide it is and the width is where the pixels are — and because the
+       grid is clamped to the buffer, so the second number is the only
+       place you can see that asking for pixels finer than the render did
+       nothing. */
     $('opt-res-v').textContent = DETAIL[detailIndex] + 'P  ' + pipeline.width + '\u00d7' + pipeline.height;
     $('opt-res-down').disabled = detailIndex === 0;
     $('opt-res-up').disabled = detailIndex === DETAIL.length - 1;
+    $('opt-pix-v').textContent = (PIXELS[pixelIndex] ? PIXELS[pixelIndex] + 'P' : 'OFF') +
+      '  ' + pipeline.gridWidth + '\u00d7' + pipeline.gridHeight;
+    $('opt-pix-down').disabled = pixelIndex === 0;
+    $('opt-pix-up').disabled = pixelIndex === PIXELS.length - 1;
+    $('opt-pixar').textContent = 'PIXEL ASPECT: ' + PIXEL_ASPECT[pixarIndex].n;
+    /* WITH NO GRID THERE IS NOTHING FOR AN ASPECT TO BE THE ASPECT OF.
+       A button that is present and inert is worse than one that is
+       plainly unavailable, so it greys out with the filter. */
+    $('opt-pixar').disabled = !PIXELS[pixelIndex];
     $('opt-crowd').textContent = 'CROWD: ' + CROWD[prefs.crowd].n;
     $('opt-fx').textContent = 'EFFECTS: ' + FX[prefs.fx].n;
     $('opt-wood').textContent = 'THE WOOD: ' + WOOD[prefs.wood].n;
@@ -335,12 +389,20 @@ async function boot() {
   toggle('opt-haptic', 'haptics');
   $('opt-res-down').addEventListener('click', () => setDetail(detailIndex - 1));
   $('opt-res-up').addEventListener('click', () => setDetail(detailIndex + 1));
+  $('opt-pix-down').addEventListener('click', () => setPixels(pixelIndex - 1));
+  $('opt-pix-up').addEventListener('click', () => setPixels(pixelIndex + 1));
   /* THE LADDERS WRAP, because three states is short enough to walk
      round and a stepper for three is two buttons doing one job. */
-  const ladder = (id, key, list) => $(id).addEventListener('click', () => {
+  const ladder = (id, key, list, after) => $(id).addEventListener('click', () => {
     prefs[key] = (prefs[key] + 1) % list.length;
+    if (after) after();                 // the ones that resize the picture
     applyPrefs();
     game.message($(id).textContent);
+  });
+  ladder('opt-pixar', 'pixar', PIXEL_ASPECT, () => {
+    pixarIndex = prefs.pixar;
+    pipeline.setPixelAspect(PIXEL_ASPECT[pixarIndex].v);
+    resize();
   });
   ladder('opt-crowd', 'crowd', CROWD);
   ladder('opt-fx', 'fx', FX);
@@ -407,8 +469,10 @@ async function boot() {
   addEventListener('keydown', e => {
     if (!started && (e.code === 'Space' || e.code === 'Enter')) { start(); return; }
     if (started && game.state !== 'play' && e.code === 'Space') location.reload();
-    if (e.code === 'BracketLeft') setDetail(Math.max(0, detailIndex - 1));
-    if (e.code === 'BracketRight') setDetail(Math.min(DETAIL.length - 1, detailIndex + 1));
+    /* SHIFT MOVES THE OTHER ONE. Two brackets for two sizes: the picture
+       on its own, and the pixels it is made of with shift held. */
+    if (e.code === 'BracketLeft') e.shiftKey ? setPixels(pixelIndex - 1) : setDetail(detailIndex - 1);
+    if (e.code === 'BracketRight') e.shiftKey ? setPixels(pixelIndex + 1) : setDetail(detailIndex + 1);
     if (e.code === 'KeyN') {                       // palette off, for comparison
       const u = pipeline.material.uniforms.uSnap;
       u.value = u.value > 0.5 ? 0 : 1;
@@ -424,7 +488,18 @@ async function boot() {
     prefs.detail = detailIndex;
     savePrefs(prefs);
     syncMenu();
-    game.message('DETAIL ' + DETAIL[detailIndex] + 'P');
+    game.message('RENDER ' + DETAIL[detailIndex] + 'P');
+  }
+
+  function setPixels(i) {
+    pixelIndex = Math.max(0, Math.min(PIXELS.length - 1, i));
+    pipeline.setPixels(PIXELS[pixelIndex]);
+    resize();
+    prefs.pixels = pixelIndex;
+    savePrefs(prefs);
+    syncMenu();
+    game.message('PIXELS ' + (PIXELS[pixelIndex]
+      ? pipeline.gridWidth + '\u00d7' + pipeline.gridHeight : 'OFF'));
   }
 
   /* ---- the loop ---------------------------------------------------- */

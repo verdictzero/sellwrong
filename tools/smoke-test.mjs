@@ -1672,6 +1672,133 @@ await (async () => {
   check('the render ladder goes from a phone to a desktop',
     /const DETAIL = \[120,/.test(main) && /600\]/.test(main));
 
+  /* --- THE TWO SIZES, WHICH WERE ONE SIZE -------------------------
+     RENDER says how much the world is drawn with; PIXELS says how big
+     one of them is. They were the same number until they were not, and
+     the arithmetic that pulls them apart is js/lofi.js's lofiSizes —
+     pure, and exported so this can hold it against 320x200 without a
+     GPU anywhere.
+     --------------------------------------------------------------- */
+  {
+    const { lofiSizes } = await import('../js/lofi.js');
+    const DOOM = 5 / 6, WIDE = 7 / 6;
+    /* a 4:3 window, which is the only window these numbers mean
+       anything on, and a widescreen one to prove they still hold */
+    const at = (dw, dh, o) => lofiSizes(dw, dh, o);
+
+    check('the pixel ladder has an OFF on the end of it',
+      /const PIXELS = \[120,[^\]]*, 0\]/.test(main) &&
+      /const PIXELS_OFF = PIXELS\.length - 1/.test(main));
+    const par = [...(main.match(/const PIXEL_ASPECT = \[([^\]]*)\]/) || ['', ''])[1]
+      .matchAll(/v:\s*([0-9.]+),\s*n:\s*'([^']+)'/g)].map(m => ({ v: +m[1], n: m[2] }));
+    note('the pixel shapes', par.map(e => `${e.n} ${e.v}`).join(', '));
+    check('and a shape ladder with a square one and a taller one',
+      par.length >= 2 && par.some(e => e.v === 1) && par.some(e => Math.abs(e.v - DOOM) < 0.001),
+      par.map(e => e.n).join(', '));
+
+    /* THE ONE THAT MATTERS. Two hundred rows of 5:6 pixels filling a
+       4:3 window is 320x200, and it is 320x200 because that is what
+       the arithmetic says and not because anybody typed it. */
+    const doom = at(1024, 768, { height: 600, pixelHeight: 200, pixelAspect: DOOM });
+    note('doom, asked for by its shape', `${doom.gridWidth}x${doom.gridHeight} ` +
+      `out of a ${doom.width}x${doom.height} buffer, ${doom.taps.join(' by ')} samples a pixel`);
+    check('two hundred rows of 5:6 pixels on a 4:3 screen is 320x200',
+      doom.gridWidth === 320 && doom.gridHeight === 200,
+      `${doom.gridWidth}x${doom.gridHeight}`);
+    check('and square ones at the same height are not',
+      at(1024, 768, { height: 600, pixelHeight: 200, pixelAspect: 1 }).gridWidth === 267);
+    check('and wide ones are fewer still',
+      at(1024, 768, { height: 600, pixelHeight: 200, pixelAspect: WIDE }).gridWidth === 229);
+
+    /* AND THE SHAPE IS THE SHAPE ASKED FOR, on any window. One chunky
+       pixel is the window divided by the grid, both ways. */
+    for (const [dw, dh] of [[1024, 768], [1920, 1080], [800, 1200]]) {
+      for (const pa of [1, DOOM, WIDE]) {
+        const g = at(dw, dh, { height: 600, pixelHeight: 200, pixelAspect: pa });
+        const got = (dw / g.gridWidth) / (dh / g.gridHeight);
+        check(`a chunky pixel on ${dw}x${dh} comes out the shape it was asked for`,
+          Math.abs(got - pa) < 0.02, `${got.toFixed(3)} against ${pa.toFixed(3)}`);
+      }
+    }
+
+    /* THE BUFFER IS ALWAYS THE WINDOW'S SHAPE, which is what stops the
+       grid stretching the world: the camera reads the buffer, and a
+       quantisation laid over a finished frame has no say in what is in
+       it. Get this wrong and a tall-pixel setting squashes the store. */
+    for (const pa of [1, DOOM, WIDE]) {
+      const g = at(1920, 1080, { height: 480, pixelHeight: 160, pixelAspect: pa });
+      check('the buffer keeps the window\'s shape whatever shape the pixels are',
+        Math.abs(g.width / g.height - 1920 / 1080) < 0.01,
+        `${g.width}x${g.height} is ${(g.width / g.height).toFixed(3)}`);
+    }
+
+    /* OFF IS OFF, AND NOT "SQUARE". With no grid of its own there is
+       nothing for an aspect to be the aspect of, and a WIDE setting
+       left standing would quietly keep filtering. */
+    for (const pa of [1, DOOM, WIDE]) {
+      const g = at(1024, 768, { height: 400, pixelHeight: 0, pixelAspect: pa });
+      check('with the filter off the grid is the buffer, exactly',
+        g.gridWidth === g.width && g.gridHeight === g.height &&
+        g.taps[0] === 1 && g.taps[1] === 1,
+        `${g.gridWidth}x${g.gridHeight} of ${g.width}x${g.height}`);
+    }
+
+    /* AND NEVER FINER THAN THE BUFFER, because more chunky pixels than
+       there are rasterised ones is not more detail, it is a readout
+       telling you about rows that were never drawn. */
+    const over = at(1024, 768, { height: 120, pixelHeight: 600, pixelAspect: 1 });
+    check('asking for more pixels than the render has does not invent any',
+      over.gridHeight <= over.height && over.gridWidth <= over.width,
+      `${over.gridWidth}x${over.gridHeight} out of ${over.width}x${over.height}`);
+
+    /* AND WHEN THE BUFFER HAS NOT GOT THE COLUMNS IT IS THE ROWS THAT
+       GIVE WAY. Tall pixels need MORE columns than square ones at the
+       same row count — that is what makes them tall — so clamping the
+       width would hand back square pixels and a control that looks
+       broken. */
+    const tight = at(1024, 768, { height: 200, pixelHeight: 200, pixelAspect: DOOM });
+    note('5:6 pixels with no columns to spare', `${tight.gridWidth}x${tight.gridHeight} ` +
+      `out of a ${tight.width}x${tight.height} buffer`);
+    check('a shape that will not fit costs rows, not its shape',
+      tight.gridWidth <= tight.width &&
+      Math.abs((1024 / tight.gridWidth) / (768 / tight.gridHeight) - DOOM) < 0.02,
+      `${tight.gridWidth}x${tight.gridHeight}`);
+
+    /* THE SAMPLES PER CHUNKY PIXEL, which is the whole of what the
+       separation buys: one is a point sample and the two controls are
+       one control again. */
+    const off = at(1024, 768, { height: 400, pixelHeight: 0 });
+    check('a grid the size of the buffer takes one sample a pixel',
+      off.taps[0] === 1 && off.taps[1] === 1);
+    const three = at(1024, 768, { height: 600, pixelHeight: 200, pixelAspect: 1 });
+    check('and a third of it takes three, so the extra render is averaged in',
+      three.taps[1] === 3, three.taps.join(','));
+    const lots = at(1024, 768, { height: 600, pixelHeight: 60, pixelAspect: 1 });
+    check('and nothing takes more than four, or the filter costs more than the frame',
+      lots.taps[0] <= 4 && lots.taps[1] <= 4, lots.taps.join(','));
+  }
+
+  /* --- AND THE READOUT SHRINKS RATHER THAN RUNS OFF THE EDGE ------
+     A 160-column grid is a thing you would now CHOOSE, so the four
+     numbers along the top have to survive one. They go one scale down
+     first and then one READOUT down, from the middle out: the wood
+     goes, then the count of the living, and STORE and FUEL stay because
+     they are the two a player acts on. */
+  {
+    const hudMod = await import('../js/hud.js');
+    const pix = await import('../js/pixel.js');
+    const wide = pix.textWidth(hudMod.Hud.TOP_WIDEST) + 8;
+    const mid = pix.textWidth(hudMod.Hud.TOP_NO_WOOD) + 8;
+    const narrow = pix.textWidth(hudMod.Hud.TOP_NARROW) + 8;
+    note('the top line', `${wide} columns for all four, ${mid} without the wood, ${narrow} for two`);
+    check('the four numbers do not fit the chunkiest grid, which is why there are three lines',
+      wide > 160 && narrow <= 160, `${wide} and ${narrow} against 160`);
+    check('and each shorter one is shorter', narrow < mid && mid < wide);
+    check('and every one of them keeps the two a player acts on',
+      [hudMod.Hud.TOP_WIDEST, hudMod.Hud.TOP_NO_WOOD, hudMod.Hud.TOP_NARROW]
+        .every(t => t.includes('STORE') && t.includes('FUEL')));
+  }
+
   /* --- AND THE SIMULATION CANNOT SEE THEM --- */
   const THREE5 = await import('three');
   const { Game } = await import('../js/game.js');

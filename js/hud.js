@@ -136,8 +136,24 @@ export class Hud {
      from two numbers to four in one afternoon, and on a phone held
      upright — a 235-pixel buffer — the fourth one ran off the right-hand
      edge and the tank was invisible on the one device where knowing
-     about the tank matters most. */
-  static TOP_WIDEST = 'STORE 100%  WOOD 100%  LEFT 999  FUEL 100%';
+     about the tank matters most.
+
+     AND THE SAME THING AGAIN, from the other end, the day the pixel
+     filter stopped being the render size. A 160-column grid is now
+     something you would CHOOSE — the chunkiest setting on a full-detail
+     render, which is the look the whole filter exists for — where before
+     it only came with a 160-column picture to match. Four readouts do
+     not go on 160 columns at any scale, and the one that ran off the
+     edge was FUEL: the last one drawn and, by this panel's own
+     reckoning, the one it is least able to spare.
+
+     So they are given up from the middle out. How much of the shop has
+     gone and whether there is anything left to burn it with are the two
+     a player acts on; how many are still alive is the third; the wood is
+     scenery. */
+  static TOP_WIDEST  = 'STORE 100%  WOOD 100%  LEFT 999  FUEL 100%';
+  static TOP_NO_WOOD = 'STORE 100%  LEFT 999  FUEL 100%';
+  static TOP_NARROW  = 'STORE 100%  FUEL 100%';
 
   buildTop(p) {
     /* One step down rather than clipped: at 235 across the four numbers
@@ -145,6 +161,12 @@ export class Hud {
        panel's own scale either way. */
     let s = this.scale;
     while (s > 1 && textWidth(Hud.TOP_WIDEST) * s + 8 * s > this.width) s--;
+    /* and then one READOUT down rather than clipped, once the scale has
+       nowhere left to go */
+    const fits = str => textWidth(str) * s + 8 * s <= this.width;
+    const showWood = fits(Hud.TOP_WIDEST);
+    const showLeft = showWood || fits(Hud.TOP_NO_WOOD);
+    const widest = showWood ? Hud.TOP_WIDEST : showLeft ? Hud.TOP_NO_WOOD : Hud.TOP_NARROW;
     const g = this.game;
     const burn = Math.round(g.burnPercent), wood = Math.round(g.forestPercent);
     const left = g.peopleLeft;
@@ -161,13 +183,14 @@ export class Hud {
        it exactly while the answer is "not yet". */
     const mark = p ? (p.refireMark || 0) : 0;
     const key = [this.width, this.scale, s, burn, wood, left, fuel, mark,
+                 showWood, showLeft,
                  this.messages.map(m => m.text).join('/')].join('|');
     if (key === this._topKey) return;
     this._topKey = key;
 
     const M2 = this.scale;                    // the messages keep their own size
     const w = Math.min(this.width, Math.max(
-      textWidth(Hud.TOP_WIDEST) * s + 8 * s,
+      textWidth(widest) * s + 8 * s,
       ...this.messages.map(m => (textWidth(m.text) + 8) * M2)));
     const h = 16 * s + 8 * M2 * this.messages.length + 4;
     const pix = new Pix(w, h, 1, false);
@@ -181,12 +204,16 @@ export class Hud {
       const on = f * 100 <= burn;
       for (let k = 0; k < s; k++) pix.ink(gx0 + i, gy + k, on ? 'fire' : 'grey', on ? 0.5 + f * 0.45 : 0.18);
     }
-    x = bigText(pix, 'WOOD', x + 6 * s, M, 'grey', 0.55, s);
-    x = bigText(pix, `${wood}%`, x + 2 * s, M, 'fire', wood > 0 ? 0.66 : 0.3, s);
+    if (showWood) {
+      x = bigText(pix, 'WOOD', x + 6 * s, M, 'grey', 0.55, s);
+      x = bigText(pix, `${wood}%`, x + 2 * s, M, 'fire', wood > 0 ? 0.66 : 0.3, s);
+    }
     /* and how many are still alive, which since the fire exits went in is
        the number the player is actually playing against */
-    x = bigText(pix, 'LEFT', x + 6 * s, M, 'grey', 0.55, s);
-    x = bigText(pix, `${left}`, x + 2 * s, M, 'bone', left > 0 ? 0.78 : 0.34, s);
+    if (showLeft) {
+      x = bigText(pix, 'LEFT', x + 6 * s, M, 'grey', 0.55, s);
+      x = bigText(pix, `${left}`, x + 2 * s, M, 'bone', left > 0 ? 0.78 : 0.34, s);
+    }
     /* and how much is in the tank, with its own hairline under it: the
        two numbers a player acts on are how much of the shop has gone and
        whether there is anything left to burn it with */

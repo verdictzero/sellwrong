@@ -2,39 +2,189 @@
    GROCERY STORE SIMULATOR — the lo-fi pipeline
    =====================================================================
 
-   The whole game is drawn into a buffer about 320 pixels tall and then
-   thrown at the screen with no smoothing whatsoever. Everything else in
-   here follows from that one decision.
+   The whole game is drawn into a buffer, filtered down onto a grid of
+   chunky pixels, and thrown at the screen with no smoothing whatsoever.
+   Everything else in here follows from that.
 
-   WHY A FIXED HEIGHT AND NOT A FIXED SIZE. Doom was 320x200 on a 4:3
-   monitor, which nobody has any more. Lock the width too and a modern
-   window gets black bars down both sides; let both float and the game
-   gets sharper on a bigger monitor, which is the exact opposite of the
-   point. So the vertical resolution is fixed — that is the "how chunky
-   is it" control — and the width follows the window's shape. The camera's
-   field of view is vertical, so a wider window shows you MORE STORE
-   rather than the same store stretched, which is how a widescreen port
-   ought to behave.
+   THOSE ARE TWO SIZES AND THEY USED TO BE ONE. For most of this
+   project's life there was a single number — the buffer's height — and
+   it answered two questions at once: how much detail the world is drawn
+   with, and how big a pixel is. Which is how it worked in 1993, because
+   the buffer WAS the screen, and it is a bad control because the two
+   answers pull opposite ways. Turn it up for a sharper picture and the
+   pixels vanish; turn it down for the pixels and the far end of the shop
+   turns to mush. There is no setting at which the store is legible AND
+   the picture is made of visible squares, which is the look.
+
+   So there are two now:
+
+     RENDER  the size of the buffer the world is rasterised into. This
+             is the detail control and it is where the frame rate goes:
+             halving it quarters the pixels being shaded.
+
+     PIXELS  the size of the grid that buffer is filtered down onto,
+             which is what you actually see. This is the LOOK control
+             and it is nearly free — the filter runs once per chunky
+             pixel, not once per screen pixel.
+
+   AND FILTERED DOWN MEANS AVERAGED, which is the entire reason the two
+   are worth separating. Point-sampling a 600-row buffer onto a 200-row
+   grid picks one row in three and throws the rest away, and the result
+   is a 200-row picture that cost three times as much — the two controls
+   would be one control again, wearing a hat. Averaging each block
+   instead spends that extra buffer on the CONTENT of the chunky pixel:
+   an edge that falls two thirds of the way across a block comes out two
+   thirds of the way between the two colours. A 320x200 picture with
+   every square correct to an eighth of itself is a thing no 1993 machine
+   could draw and it is what the setting is for.
+
+   WHY A FIXED HEIGHT AND NOT A FIXED SIZE, for both of them. Doom was
+   320x200 on a 4:3 monitor, which nobody has any more. Lock the width
+   too and a modern window gets black bars down both sides; let both
+   float and the game gets sharper on a bigger monitor, which is the
+   exact opposite of the point. So the heights are fixed and the widths
+   follow the window's shape. The camera's field of view is vertical, so
+   a wider window shows you MORE STORE rather than the same store
+   stretched, which is how a widescreen port ought to behave.
+
+   AND THE PIXELS NEED NOT BE SQUARE. 320x200 filling a 4:3 monitor is
+   not a square-pixel mode and never was: each pixel stood five wide to
+   six tall, and every Doom sprite was drawn by somebody looking at that
+   screen. A square-pixel 320x200 is a squashed Doom. So the grid takes a
+   PIXEL ASPECT — the width of one chunky pixel over its height, as
+   displayed — and the grid's width is the window's shape divided by it.
+   Ask for 5:6 on a 4:3 window at two hundred rows and you get 320x200,
+   which is not a coincidence and is the whole of the arithmetic.
+
+   NOTHING ABOUT THE WORLD MOVES WHEN THAT CHANGES. The camera's aspect
+   is the BUFFER's, and the buffer's pixels are always square; the grid
+   is a quantisation laid over the finished frame, and quantising a frame
+   anisotropically does not stretch what is in it. So a tall-pixel
+   picture shows exactly the same store as a square-pixel one, in taller
+   squares.
 
    WHY THE HUD AND THE GUN GO IN THE SAME BUFFER. If the numbers and the
    weapon in your hands are drawn at native resolution over a chunky
    world, the whole illusion collapses — you get a crisp modern overlay
    sitting on a retro photograph. So every overlay scene renders into the
-   same low-res target, at the same chunk size, and the palette snap eats
-   all of it together. There can be several: the flamethrower is a 3D
-   model with its own perspective camera, the readout is a flat quad
-   with an orthographic one, and they draw in order, each clearing depth
-   so it lands over whatever came before.
+   same buffer and goes through the same filter. There can be several:
+   the flamethrower is a 3D model with its own perspective camera, the
+   readout is a flat quad with an orthographic one, and they draw in
+   order, each clearing depth so it lands over whatever came before.
 
-   THE ORDER MATTERS. Dither, then snap. Dithering after the snap would
-   just put colours back that the palette does not contain. Dither first
-   and the error the snap is about to make gets spread into a fine
-   checker instead of a hard band, which is how a 256-colour gradient
-   ever looked like a gradient.
+   THE HUD IS LAID OUT IN CHUNKY PIXELS, not in buffer pixels, which is
+   what keeps it the same size on screen when the RENDER control moves.
+   Its camera is orthographic, so its extents are a unit of measure
+   rather than a resolution: give it the grid's size and a six-pixel
+   glyph is six CHUNKY pixels at any buffer size. At an integer ratio the
+   block average puts each of its texels back exactly, so the readout
+   comes out of a 600-row buffer bit-for-bit identical to the one drawn
+   straight into a 200-row one.
+
+   THE ORDER MATTERS. Average, then dither, then snap. Dithering after
+   the snap would just put colours back that the palette does not
+   contain. Dither first and the error the snap is about to make gets
+   spread into a fine checker instead of a hard band, which is how a
+   256-colour gradient ever looked like a gradient — and it is dithered
+   ON THE GRID, one threshold per chunky pixel, because a checker finer
+   than the pixels is a checker the averaging has already eaten.
+
+   WHICH FIXED SOMETHING NOBODY HAD NOTICED. The old pass ran at SCREEN
+   resolution and worked out the Bayer index as floor(vUv * bufferSize)
+   — the buffer texel this screen pixel is standing on. That is the right
+   quantity and it was not always the right ANSWER: the hardware's
+   nearest fetch does its own floor of the same product, in its own
+   arithmetic, and on a 600-row window over a 400-row buffer that product
+   lands on a whole number every other row. Where the two floors fell
+   either side of it, a row of pixels got its neighbour's threshold. It
+   was a row of dither one step out on a 256-colour picture, which is why
+   it survived: nobody can see it, and diffing the frame with the dither
+   turned off is what proves it was ever there. Computing both at grid
+   fragment centres makes them the same number by construction.
+
+   THREE PASSES, AND IT IS CHEAPER THAN THE TWO IT REPLACED. World into
+   the buffer; buffer into the grid, averaged and dithered and snapped;
+   grid onto the screen, nearest, no arithmetic at all. The palette
+   search used to run once per SCREEN pixel — two million of them on a
+   1080p monitor — and now runs once per chunky pixel, which at 320x200
+   is sixty-four thousand.
    ===================================================================== */
 
 import * as THREE from 'three';
 import { buildLutAtlas, LUT_SIZE } from './palette.js';
+
+/* How many samples the block average is allowed to take across one
+   chunky pixel, per axis. Four is not arbitrary: at a ratio of four or
+   less the taps land exactly on source texel centres and the average is
+   a true box filter, and above it they land between texels and the
+   bilinear fetch under each one covers the gap. Sixteen taps at grid
+   resolution is nothing; sixteen at screen resolution would not be,
+   which is the other reason this pass renders where it does. */
+const MAX_TAPS = 4;
+
+/**
+ * Every size the pipeline runs at, from the window and the two
+ * controls. Pure arithmetic, and exported on purpose — this is where
+ * the aspect ratio actually happens, and a function is something the
+ * smoke test can hold against 320x200 without a GPU anywhere.
+ *
+ * @param displayW, displayH   the canvas, in real pixels
+ * @param opts.height          RENDER: the buffer's height
+ * @param opts.pixelHeight     PIXELS: the grid's height, or 0 for off,
+ *                             in which case the grid IS the buffer
+ * @param opts.pixelAspect     the width of one chunky pixel over its
+ *                             height, as displayed. 1 is square; 5/6 is
+ *                             Doom's
+ * @param opts.maxWidth        a ceiling, for very wide windows
+ */
+export function lofiSizes(displayW, displayH, opts = {}) {
+  const dw = Math.max(1, Math.round(displayW)), dh = Math.max(1, Math.round(displayH));
+  const aspect = dw / dh;
+  const maxWidth = opts.maxWidth ?? 2048;
+
+  /* the buffer: square pixels, so the camera's aspect is the window's */
+  const height = Math.max(60, Math.round(opts.height ?? 200));
+  const width = Math.min(maxWidth, Math.max(64, Math.round(height * aspect)));
+
+  /* THE GRID IS NEVER FINER THAN THE BUFFER. Asking for more chunky
+     pixels than there are rasterised ones does not make detail; it makes
+     a finer grid of the same picture, and a readout claiming six hundred
+     rows of a picture that has a hundred and twenty. So it is clamped,
+     and the readout then shows what you are actually looking at, which
+     is the honest thing for a number on a menu to do.
+
+     AND WHEN THE CEILING BITES IT IS THE ROW COUNT THAT GIVES WAY, not
+     the pixel's shape. Tall pixels need MORE columns than square ones at
+     the same row count — that is what makes them tall — so clamping the
+     width instead would quietly hand back square pixels, which is a
+     control that looks like it is doing nothing. Taking rows off keeps
+     the shape you asked for and says so in the second number.
+
+     OFF IS OFF, and not "square". With no grid of its own there is
+     nothing for an aspect to be the aspect OF: the grid is the buffer,
+     exactly, and the filter below is a straight copy. */
+  const pa = opts.pixelAspect > 0 ? opts.pixelAspect : 1;
+  const want = opts.pixelHeight > 0 ? Math.round(opts.pixelHeight) : 0;
+  let gridWidth = width, gridHeight = height;
+  if (want > 0) {
+    gridHeight = Math.max(30, Math.min(want, height));
+    gridWidth = Math.max(16, Math.round(gridHeight * aspect / pa));
+    if (gridWidth > width) {
+      gridWidth = width;
+      gridHeight = Math.max(30, Math.round(width * pa / aspect));
+    }
+  }
+
+  /* HOW MANY SAMPLES PER CHUNKY PIXEL, which is the block's size in
+     buffer texels, rounded. Rounding rather than rounding UP is
+     deliberate: a ratio of 1.2 takes one sample and stays crisp, where
+     two would soften a picture that is barely being filtered at all. */
+  const taps = [
+    Math.max(1, Math.min(MAX_TAPS, Math.round(width / gridWidth))),
+    Math.max(1, Math.min(MAX_TAPS, Math.round(height / gridHeight))),
+  ];
+  return { width, height, gridWidth, gridHeight, taps };
+}
 
 const POST_VERT = /* glsl */`
 precision highp float;
@@ -47,11 +197,13 @@ void main() {
 }
 `;
 
-const POST_FRAG = /* glsl */`
+const FILTER_FRAG = /* glsl */`
 precision highp float;
 uniform sampler2D tFrame;
 uniform sampler2D tLut;
-uniform vec2  uFrameSize;     // the low-res buffer, in pixels
+uniform vec2  uFrameSize;     // the 3D buffer, in pixels
+uniform vec2  uGridSize;      // the chunky pixel grid
+uniform vec2  uTaps;          // samples across one chunky pixel, 1..4
 uniform float uDither;        // 0 = off, ~1 = one palette step of wobble
 uniform float uLutSize;
 uniform float uSnap;          // 0 = truecolour passthrough, 1 = full palette
@@ -87,14 +239,46 @@ vec3 palSnap(vec3 c) {
 }
 
 void main() {
-  vec3 c = texture2D(tFrame, vUv).rgb;
+  /* WHICH CHUNKY PIXEL THIS IS. The pass renders AT the grid's own
+     resolution — one fragment is one chunky pixel — so this floor is
+     exact rather than an approximation of one. */
+  vec2 cell = floor(vUv * uGridSize);
+  vec2 uv0 = cell / uGridSize;             // the block's corner, in uv
+  vec2 span = 1.0 / uGridSize;             // and its size
+
+  vec3 c;
+  if (uTaps.x < 1.5 && uTaps.y < 1.5) {
+    /* NOTHING TO AVERAGE: the grid is as fine as the buffer, or finer.
+       One sample, SNAPPED to the middle of a source texel — the buffer
+       is filtered linearly for the sake of the branch below, and a fetch
+       at a texel's centre comes back as that texel exactly, so the
+       promise of no smoothing survives the setting being off. */
+    vec2 p = (uv0 + 0.5 * span) * uFrameSize;
+    c = texture2D(tFrame, (floor(p) + 0.5) / uFrameSize).rgb;
+  } else {
+    /* THE BLOCK, AVERAGED. Taps spread evenly across it, which puts them
+       on source texel centres exactly when the ratio is a whole number
+       up to four; past that they fall between texels and the bilinear
+       fetch under each tap covers what is skipped. */
+    vec3 sum = vec3(0.0);
+    float n = 0.0;
+    for (int j = 0; j < 4; j++) {
+      for (int i = 0; i < 4; i++) {
+        vec2 t = vec2(float(i), float(j));
+        if (t.x < uTaps.x && t.y < uTaps.y) {
+          sum += texture2D(tFrame, uv0 + (t + 0.5) / uTaps * span).rgb;
+          n += 1.0;
+        }
+      }
+    }
+    c = sum / n;
+  }
 
   if (uDither > 0.0) {
-    vec2 px = vUv * uFrameSize;
-    /* Bayer as an ordered threshold in -0.5..0.5, scaled to about one
-       palette step. Bigger than that and it stops being dither and
-       starts being noise. */
-    float t = (bayer4(px) / 15.0 - 0.5) * uDither * (1.0 / 32.0);
+    /* ON THE GRID and not on the buffer: one threshold per chunky pixel.
+       A checker finer than the pixels is a checker the averaging above
+       has already eaten. */
+    float t = (bayer4(vUv * uGridSize) / 15.0 - 0.5) * uDither * (1.0 / 32.0);
     c += t;
   }
 
@@ -103,28 +287,59 @@ void main() {
 }
 `;
 
+/* The last pass does nothing but make the squares big. */
+const BLIT_FRAG = /* glsl */`
+precision highp float;
+uniform sampler2D tGrid;
+varying vec2 vUv;
+void main() { gl_FragColor = vec4(texture2D(tGrid, vUv).rgb, 1.0); }
+`;
+
 export class LofiPipeline {
   /**
    * @param {THREE.WebGLRenderer} renderer
    * @param {object} opts
-   *   height   internal vertical resolution — the chunkiness control
-   *   dither   ordered-dither strength before the palette snap
-   *   snap     0..1 blend toward the palette; 1 is the honest answer
+   *   height       RENDER: the 3D buffer's vertical resolution
+   *   pixelHeight  PIXELS: the chunky grid's height; 0 leaves the grid
+   *                equal to the buffer, which is the old behaviour
+   *   pixelAspect  the width of one chunky pixel over its height
+   *   dither       ordered-dither strength before the palette snap
+   *   snap         0..1 blend toward the palette; 1 is the honest answer
    */
   constructor(renderer, opts = {}) {
     this.renderer = renderer;
     this.height = opts.height ?? 200;
+    this.pixelHeight = opts.pixelHeight ?? 0;
+    this.pixelAspect = opts.pixelAspect ?? 1;
     this.maxWidth = opts.maxWidth ?? 2048;
 
+    /* THE BUFFER. Filtered LINEARLY, which reads like a betrayal of the
+       whole file and is not: every fetch out of it is either a block
+       average, where linear is the point, or a sample snapped to a texel
+       centre, where linear returns that texel exactly. Nearest would
+       make the first case a point sample and the second no better. */
     this.target = new THREE.WebGLRenderTarget(320, this.height, {
-      minFilter: THREE.NearestFilter,
-      magFilter: THREE.NearestFilter,
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
       format: THREE.RGBAFormat,
       type: THREE.UnsignedByteType,
       depthBuffer: true,
       stencilBuffer: false,
     });
     this.target.texture.generateMipmaps = false;
+
+    /* THE GRID, which is what you are actually looking at. Nearest both
+       ways, because the only thing that ever happens to it is being
+       blown up to the size of the window. */
+    this.grid = new THREE.WebGLRenderTarget(320, this.height, {
+      minFilter: THREE.NearestFilter,
+      magFilter: THREE.NearestFilter,
+      format: THREE.RGBAFormat,
+      type: THREE.UnsignedByteType,
+      depthBuffer: false,
+      stencilBuffer: false,
+    });
+    this.grid.texture.generateMipmaps = false;
 
     /* The palette, as a texture. Built once — 32768 nearest-colour
        searches, about 40ms, and then never again. */
@@ -141,18 +356,29 @@ export class LofiPipeline {
         tFrame:     { value: this.target.texture },
         tLut:       { value: this.lut },
         uFrameSize: { value: new THREE.Vector2(320, this.height) },
+        uGridSize:  { value: new THREE.Vector2(320, this.height) },
+        uTaps:      { value: new THREE.Vector2(1, 1) },
         uDither:    { value: opts.dither ?? 1.0 },
         uLutSize:   { value: LUT_SIZE },
         uSnap:      { value: opts.snap ?? 1.0 },
       },
       vertexShader: POST_VERT,
-      fragmentShader: POST_FRAG,
+      fragmentShader: FILTER_FRAG,
+      depthTest: false,
+      depthWrite: false,
+    });
+
+    this.blitMaterial = new THREE.RawShaderMaterial({
+      uniforms: { tGrid: { value: this.grid.texture } },
+      vertexShader: POST_VERT,
+      fragmentShader: BLIT_FRAG,
       depthTest: false,
       depthWrite: false,
     });
 
     /* One triangle, not two. A full-screen triangle has no seam down the
-       diagonal and shades every pixel exactly once. */
+       diagonal and shades every pixel exactly once. Both passes draw it,
+       so there is one of it and the material is swapped. */
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3));
     geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([0, 0, 2, 0, 0, 2]), 2));
@@ -163,39 +389,72 @@ export class LofiPipeline {
     this.postCamera = new THREE.Camera();
 
     this.width = 320;
+    this.gridWidth = 320;
+    this.gridHeight = this.height;
+    this.taps = [1, 1];
     this.displayW = 640;
     this.displayH = 400;
   }
 
-  /* Called on resize, and whenever the chunkiness control moves. */
+  /* Called on resize, and whenever either control moves. Returns the
+     sizes the rest of the game needs: the buffer, which is what the
+     camera's aspect comes off, and the grid, which is what the HUD is
+     laid out in. */
   resize(displayW, displayH) {
     this.displayW = Math.max(1, displayW);
     this.displayH = Math.max(1, displayH);
-    const aspect = this.displayW / this.displayH;
-    const h = this.height;
-    const w = Math.min(this.maxWidth, Math.max(64, Math.round(h * aspect)));
-    if (w !== this.width || this.target.height !== h) {
-      this.width = w;
-      this.target.setSize(w, h);
-      this.material.uniforms.uFrameSize.value.set(w, h);
+    const s = lofiSizes(this.displayW, this.displayH, this);
+    if (s.width !== this.width || s.height !== this.target.height) {
+      this.target.setSize(s.width, s.height);
+      this.material.uniforms.uFrameSize.value.set(s.width, s.height);
     }
+    if (s.gridWidth !== this.gridWidth || s.gridHeight !== this.gridHeight) {
+      this.grid.setSize(s.gridWidth, s.gridHeight);
+      this.material.uniforms.uGridSize.value.set(s.gridWidth, s.gridHeight);
+    }
+    this.width = s.width;
+    this.height = s.height;
+    this.gridWidth = s.gridWidth;
+    this.gridHeight = s.gridHeight;
+    this.taps = s.taps;
+    this.material.uniforms.uTaps.value.set(s.taps[0], s.taps[1]);
     this.renderer.setSize(this.displayW, this.displayH, false);
-    return { width: w, height: h };
+    return s;
   }
 
+  /** RENDER: how much the world is drawn with. */
   setHeight(h) {
     this.height = Math.max(60, Math.round(h));
-    this.resize(this.displayW, this.displayH);
+    return this.resize(this.displayW, this.displayH);
   }
 
+  /** PIXELS: how big one of them is. 0, or anything false, is off — the
+   *  grid becomes the buffer and the filter is a straight copy. */
+  setPixels(h) {
+    this.pixelHeight = h > 0 ? Math.round(h) : 0;
+    return this.resize(this.displayW, this.displayH);
+  }
+
+  /** The width of one chunky pixel over its height, as displayed. */
+  setPixelAspect(a) {
+    this.pixelAspect = a > 0 ? a : 1;
+    return this.resize(this.displayW, this.displayH);
+  }
+
+  /* The camera's, and therefore the world's. The BUFFER's shape and not
+     the grid's: the grid is a quantisation of a finished frame and has
+     no say in what the frame contains. */
   get aspect() { return this.width / this.height; }
+
+  /* Whether the pixel filter is doing anything at all. */
+  get filtering() { return this.taps[0] > 1 || this.taps[1] > 1; }
 
   /**
    * World first, then each overlay on top of it in turn, all into the
-   * low-res buffer; then the whole buffer through the palette and onto
-   * the screen. Every overlay clears depth but not colour, so the gun
-   * draws over the world and the readout over the gun without anybody's
-   * depth values fighting.
+   * buffer; the buffer down onto the grid, averaged and dithered and
+   * snapped; the grid onto the screen. Every overlay clears depth but
+   * not colour, so the gun draws over the world and the readout over the
+   * gun without anybody's depth values fighting.
    *
    * `overlays` is a list of { scene, camera }; a null entry, or one
    * marked visible: false, is skipped — which is how a scene that has
@@ -212,6 +471,11 @@ export class LofiPipeline {
       r.clearDepth();
       r.render(o.scene, o.camera);
     }
+    this.quad.material = this.material;
+    r.setRenderTarget(this.grid);
+    r.clear(true, true, true);
+    r.render(this.postScene, this.postCamera);
+    this.quad.material = this.blitMaterial;
     r.setRenderTarget(null);
     r.clear(true, true, true);
     r.render(this.postScene, this.postCamera);

@@ -71,7 +71,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         573 checks, no install and no browser
+  the smoke test         601 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -1062,9 +1062,15 @@ everywhere, with no scale factor to carry around.
 
 THE EYE IS AT 49, NOT 41. Doom's is 41 — and Doom drew that on a 4:3
 monitor at 320x200, every pixel a fifth taller than it was wide, so the
-eye it SHOWED was 41 stretched by 1.2, which is 49. This pipeline draws
-square pixels (a fixed height, and the width follows the window), so 49
-here is Doom's eye as Doom showed it. It was 41 for a long time and nothing
+eye it SHOWED was 41 stretched by 1.2, which is 49. This pipeline
+rasterises square pixels — the buffer's height is fixed and its width
+follows the window — so 49 here is Doom's eye as Doom showed it.
+
+And it stays 49 with the PIXEL ASPECT set to 5:6, which looks like it
+ought to stretch it twice and does not. That setting shapes the GRID the
+finished frame is quantised onto, not the frame: the content of a
+tall-pixel picture is identical to a square-pixel one, in taller squares.
+Doom's 1.2 was a stretch of what it had drawn; this is not one. It was 41 for a long time and nothing
 in the store said otherwise, because the store is Doom-sized: a gondola
 is taller than you either way. The cars said otherwise. They are drawn at
 32 units to the metre, a hatchback's roof is 45 units up, and from 41 the
@@ -1238,22 +1244,87 @@ awkward fractions are 25/32 and 50/32, the numbers in Doom's own table.
 HOW IT LOOKS
 ------------
 
-Everything is drawn into a buffer a few hundred pixels tall and thrown at
-the screen with no smoothing. The vertical resolution is a SETTING — the
-RENDER stepper in the pause menu, or [ and ], from 120 up to 600 — and the
-width follows the window's shape, so a wider monitor shows MORE STORE
-rather than the same store stretched. The menu shows the buffer's actual
-size beside the setting, because "400P" says nothing about how wide it is
-and the width is where the pixels are.
-The status bar and the weapon go into the same buffer, at the same chunk
-size, because a crisp overlay on a chunky world reads as a filter applied to
-a photograph.
+Everything is drawn into a buffer a few hundred pixels tall, filtered down
+onto a grid of chunky pixels, and thrown at the screen with no smoothing.
+
+THOSE ARE TWO SIZES AND THEY USED TO BE ONE. For most of this project's
+life there was a single number — the buffer's height — answering two
+questions at once: how much detail the world is drawn with, and how big a
+pixel is. Which is how it worked in 1993, because the buffer WAS the
+screen, and it is a bad control because the two answers pull opposite
+ways. Turn it up for a sharper picture and the pixels vanish; turn it down
+for the pixels and the far end of the shop turns to mush. There was no
+setting at which the store was legible AND the picture was made of visible
+squares, which is the look. So there are two now, both steppers in the
+pause menu:
+
+  RENDER    the buffer's height, 120 to 600, on [ and ]. How much the
+            world is drawn with, and where the frame rate goes
+  PIXELS    the height of the grid it is filtered onto, 120 to 600 or
+            OFF, on shift-[ and shift-]. How big a pixel is, and it
+            costs almost nothing
+
+The widths follow the window's shape either way, so a wider monitor shows
+MORE STORE rather than the same store stretched, and the menu prints both
+actual sizes beside their settings, because "400P" says nothing about how
+wide it is and the width is where the pixels are.
+
+FILTERED DOWN MEANS AVERAGED, which is the entire reason the two are worth
+separating. Point-sampling a 600-row buffer onto a 200-row grid picks one
+row in three and throws the rest away — a 200-row picture that cost three
+times as much, and two controls that are one control wearing a hat.
+Averaging each block spends the extra buffer on the CONTENT of the chunky
+pixel instead: an edge falling two thirds of the way across a block comes
+out two thirds of the way between the two colours. A 320x200 picture with
+every square correct to an eighth of itself is a thing no 1993 machine
+could draw, and it is what the setting is for.
+
+AND THE PIXELS NEED NOT BE SQUARE, which is the PIXEL ASPECT ladder beside
+them. 320x200 filling a 4:3 monitor is not a square-pixel mode and never
+was: each pixel stood five wide to six tall, and every Doom sprite was
+drawn by somebody looking at that screen, so a square-pixel 320x200 is a
+squashed Doom. The setting is the width of one chunky pixel over its
+height — SQUARE, TALL 5:6, or WIDE 7:6, which is a console's 256x224 on
+the same screen — and the grid's width is the window's shape divided by
+it. Ask for 5:6 at two hundred rows on a 4:3 window and you get 320x200,
+which is not a coincidence and is the whole of the arithmetic.
+
+Nothing about the world moves when that changes. The camera reads the
+BUFFER's shape and the buffer's pixels are always square; the grid is a
+quantisation laid over a finished frame, and quantising a frame
+anisotropically does not stretch what is in it. Two things fall out of
+that and are held by the smoke test: OFF means OFF rather than "square",
+because with no grid of its own there is nothing for an aspect to be the
+aspect of; and when the buffer has not got the columns a shape asks for,
+it is the ROW COUNT that gives way and not the shape, because tall pixels
+need more columns than square ones and clamping the width would quietly
+hand back square pixels and a control that looks broken.
+
+The status bar and the weapon go into the same buffer and through the same
+filter, because a crisp overlay on a chunky world reads as a filter applied
+to a photograph. The bar is laid out in CHUNKY pixels rather than buffer
+ones — its camera is orthographic, so its extents are a unit of measure
+rather than a resolution — which is what keeps it the same size on screen
+when RENDER moves, and at a whole-number ratio the block average puts each
+of its texels back exactly. It also has to survive a 160-column grid now
+that one is a thing you would choose, so the four numbers along the top go
+one scale down and then one READOUT down, from the middle out: the wood
+goes, then the count of the living, and STORE and FUEL stay because they
+are the two a player acts on.
+
+THREE PASSES, AND IT IS CHEAPER THAN THE TWO IT REPLACED. World into the
+buffer; buffer onto the grid, averaged and dithered and snapped; grid onto
+the screen, nearest, no arithmetic at all. The palette search used to run
+once per SCREEN pixel — two million of them on a 1080p monitor — and now
+runs once per chunky pixel, which at 320x200 is sixty-four thousand.
 
 WHAT TO SPEND THE FRAME ON. Four settings, and they are in the order of
 what they are worth, measured:
 
   RENDER    the buffer's height. Halving it quarters the pixels, and on
-            anything with a weak fill rate that is the whole answer
+            anything with a weak fill rate that is the whole answer.
+            PIXELS is not on this list: it is a look, not a cost, and
+            turning it down does not make the world any cheaper to draw
   THE WOOD  how far into the trees the chunks are kept. Twenty-eight
             thousand plants in distance-culled chunks, and pulling the
             range in was worth two to three times the frame rate on its
@@ -1881,7 +1952,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-573 checks. Every one of them earns its place by having caught something
+601 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -2064,6 +2135,31 @@ that had already reached a screenshot:
     double-sided now and the file's winding is untouched. The test
     reports both shells' volumes rather than the mesh's, which is the
     number that would have said so in the first place
+  A ROW OF DITHER ONE STEP OUT, every other row, for the whole life of
+    the project, and found by accident on the way to something else.
+    The post pass ran at SCREEN resolution and worked out its Bayer
+    index as floor(uv * bufferSize) — the buffer texel this screen
+    pixel is standing on, which is the right quantity and was not
+    always the right ANSWER. The hardware's nearest fetch does its own
+    floor of the same product in its own arithmetic, and on a 600-row
+    window over a 400-row buffer that product lands on a whole number
+    every other row; where the two floors fell either side of it, a row
+    got its neighbour's threshold. Nobody can see it on a 256-colour
+    picture, which is why it lasted. What found it was diffing a frame
+    before and after the pipeline was rebuilt: seven per cent of the
+    pixels moved, in regular stripes, and with the dither turned off in
+    both the two frames came out byte-identical. The filter now works
+    the threshold out at grid fragment centres, where it is the same
+    number as the fetch by construction
+  THE FOUR NUMBERS ALONG THE TOP running off a 160-column grid, which
+    had been true since the day there were four of them and only
+    became reachable on purpose the day the pixel filter stopped being
+    the render size. The bar already stepped its scale down to fit and
+    the floor of that is 1, below which it clipped — and what it
+    clipped was FUEL, the last one drawn and the one this panel can
+    least spare. It gives up a READOUT now once the scale has nowhere
+    to go, from the middle out, and the test holds the three lengths
+    against the chunkiest grid there is
   and a van painted by projection when it was already unwrapped, on a
     measurement that pooled the body's UVs with the flat material's.
     The flat material has no texture, so its UVs are junk — 490
