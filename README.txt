@@ -71,7 +71,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         618 checks, no install and no browser
+  the smoke test         627 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -516,6 +516,59 @@ since a fire door has no handle on this side and no keyhole on the other.
 
 AND THEN IT FALLS DOWN
 ----------------------
+
+FIRST, THOUGH, IT GOES BLACK — which it did not used to, at the user's
+request. The store knew three things about the fire: untouched, charred,
+gutted. Two stages, both of them a texture swap, and between them
+nothing. An aisle could lose half its stock without a pixel of it
+changing and then change all at once, so the whole first half of every
+region's life was invisible and the second half was a step.
+
+WHAT WAS MISSING WAS NOT ART, IT WAS A WIRE. The simulation has always
+known exactly how far through burning every region is — js/fire.js keeps
+burnt and total fuel per sector — and there was no way from that number
+to the fragment shader. It cannot be a per-vertex attribute: the level's
+geometry is batched by TEXTURE, so a region's vertices are scattered
+across every batch it touches and updating one region would mean walking
+the whole store. So it is a DATA TEXTURE, one texel per sector, updated
+once a tic, and every wall carries its own region index as an attribute.
+The whole store is a few hundred bytes; the shader reads it with one
+fetch. A byte is enough resolution: a 256th of a region's fuel is a tenth
+of a second of it burning.
+
+SOOT ARRIVES BEFORE THE FIRE DOES, and it arrives in PATCHES. Where it
+lands first is a world-space field at two scales — cells about a shelf
+bay across decide which patches go early, cells a few units across
+ragged the edge of each one — so the soot has a SHAPE of its own rather
+than a level of its own, and it spreads across a wall as the region's
+number climbs: the lowest-numbered cells first, joining up, until the
+wall is black. Nothing about it is per-region except the number, so two
+aisles burning at once are never in step, because they are not in the
+same place.
+
+AND THE EDGE CRAWLS, on the same clock the coals run on, which is what
+makes a wall halfway through catching still be doing something while you
+look at it. The advancing edge is also the only part of it that is HOT: a
+scorch mark is orange at its rim and dead black behind it, and that is
+one line of arithmetic — the product of the amount and its complement,
+which peaks exactly where the boundary is. It is the difference between
+soot spreading and a texture fading.
+
+HOW DARK IS NOT A MATTER OF TASTE. It has to match what it hands over to.
+The soot rises over a region's first two fifths, holds, and fades out
+again across the halfway mark as the charred textures arrive and take the
+job over — both driven by the same number, so the hand-off cannot drift.
+The first cut of it took the albedo to a fifth, which the room light then
+took to nothing, and a 40%-burnt aisle was a black void with shoppers
+floating in it. It keeps about half now, patchily, and gets its own pale
+ash for exactly the reason charVariant has some: a burnt store dark
+enough to be accurate is a store you cannot walk back out of.
+
+The coals arrive on the region's number too, rather than on its stage, so
+the first few show up in the recesses while there is still stock on the
+shelves and they thicken from there. It all costs nothing where nothing
+has burnt, which is most of the game and all of it until you do
+something.
 
 CHARRED IS A SURFACE. GUTTED IS A STRUCTURE. They are two stages and the
 second one is the end the whole fire is for.
@@ -1624,7 +1677,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-618 checks. Every one of them earns its place by having caught something
+627 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -1732,6 +1785,11 @@ that had already reached a screenshot:
   a customer standing on top of a till, a gondola or the deli counter,
     found by testing the sector under them rather than the rectangle
     round the shop
+  a 40%-burnt aisle drawn as a black void with shoppers floating in it,
+    because the soot took the albedo to a fifth and the room light took
+    that to nothing. What a surface part-way through burning has to look
+    like is set by what it hands over to, not by what a burnt surface
+    reflects
   a burnt-out store with no ceiling anywhere, because the first gutting
     opened every region to the sky. The check now demands BOTH — some of
     the roof fallen in and most of it still up — since either alone is a

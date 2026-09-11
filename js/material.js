@@ -71,6 +71,28 @@ export const world = {
      glowing after the flame has gone — the burning trees run on it, and
      so does every charred and gutted surface in the store. Seconds. */
   emberTime: { value: 0.0 },
+
+  /* HOW FAR THROUGH BURNING EVERY REGION IS, as a picture.
+
+     The store's surfaces used to know three things about the fire:
+     untouched, charred, gutted. Two steps, both of them a texture swap,
+     and between them nothing — an aisle could lose half its stock
+     without a pixel of it changing, and then change all at once.
+
+     A region's progress is a number the simulation has had all along
+     (js/fire.js keeps burnt and total fuel per sector); what it did not
+     have is a way to the fragment shader. It cannot be a per-vertex
+     attribute, because the geometry is batched by TEXTURE and a region's
+     vertices are scattered across every batch it touches — updating one
+     would mean walking the lot. So it is a data texture, one texel per
+     sector, and every wall carries its own region index. Updating the
+     whole store is then a few hundred bytes a tic, and the shader reads
+     it with one fetch.
+
+     `regionSide` is the square it is laid out in, so a map with more
+     sectors than this one costs one bigger texture and no code. */
+  regionBurn: { value: null },
+  regionSide: { value: 1.0 },
   emberRamp: { value: EMBER_RAMP.map(c => new THREE.Vector3(c[0], c[1], c[2])) },
 };
 
@@ -91,6 +113,8 @@ uniform float fireLight;
 uniform vec3  fireLightColor;
 uniform float emberTime;
 uniform vec3  emberRamp[8];
+uniform sampler2D regionBurn;
+uniform float regionSide;
 `;
 
 /* The two halves of the lighting, as functions.
@@ -165,6 +189,97 @@ vec3 emberOf(float charAmt, vec3 wpos, float lum, float depth) {
   return emberRamp[int(floor(idx * 7.0 + 0.5))] * (heat * flick * 0.55);
 }
 
+/* ---------------------------------------------------------------------
+   A REGION BEING BURNT, RATHER THAN HAVING BEEN
+
+   How far through burning the region this pixel belongs to is, read out
+   of the one-texel-per-sector picture above. Region 0 is "no region" —
+   a sprite, a door leaf, anything that is not a piece of the building —
+   and never burns, so every wall's index is its sector's plus one.
+   ------------------------------------------------------------------- */
+float regionBurnt(float r) {
+  if (r < 0.5) return 0.0;
+  float s = max(1.0, regionSide);
+  float i = r - 1.0;
+  return texture2D(regionBurn, (vec2(mod(i, s), floor(i / s)) + 0.5) / s).r;
+}
+
+/* ---------------------------------------------------------------------
+   SOOT, WHICH ARRIVES BEFORE THE FIRE DOES
+
+   The thing a burning shop does that this game was not drawing: it goes
+   BLACK, gradually, in patches, starting at the corners and the joints,
+   long before anything in it has actually burnt. Two texture swaps — one
+   at half the region's fuel and one at nearly all of it — cannot say
+   that, and the first half of every region's life was therefore
+   invisible: an aisle lost half its stock without a pixel changing and
+   then changed all at once.
+
+   WHERE IT LANDS FIRST is a world-space field, two scales of it: cells
+   about a shelf bay across decide which patches go early, and cells a
+   few units across ragged the edge of each one. So the soot has a SHAPE
+   of its own rather than a level of its own, and it spreads across a
+   wall as the region's number climbs — the lowest-numbered cells first,
+   joining up, until the wall is black. Nothing about it is per-region
+   except the number, so two aisles burning at once are never in step,
+   because they are not in the same place.
+
+   AND THE EDGE CRAWLS, on the coals' own clock, which is what makes a
+   wall halfway through catching still be doing something while you look
+   at it. The advancing edge is also the only part of it that is HOT: a
+   scorch mark is orange at its rim and dead black behind it, which is
+   one line of arithmetic (the product of the amount and its complement,
+   which peaks exactly where the boundary is) and is the difference
+   between soot spreading and a texture fading.
+
+   It costs nothing where nothing has burnt, which is most of the game
+   and all of it until you do something.
+   ------------------------------------------------------------------- */
+float sootAmount(float burn, vec3 wpos) {
+  /* Up over the region's first two fifths, and then OUT again as the
+     charred textures arrive at the halfway mark and take the job over.
+     Both are driven by the same number, so the hand-off cannot drift. */
+  float pre = smoothstep(0.015, 0.40, burn) * (1.0 - smoothstep(0.44, 0.58, burn));
+  if (pre <= 0.002) return 0.0;
+  float h = emberHash(floor(wpos * 0.028)) * 0.74      // a bay across
+          + emberHash(floor(wpos * 0.115) + 31.0) * 0.26;  // and its ragged edge
+  float crawl = 0.05 * sin(emberTime * 0.55 + h * 26.0)
+              + 0.03 * sin(emberTime * 0.19 + h * 7.3);
+  return clamp((pre * 1.3 - h + crawl) / 0.26, 0.0, 1.0);
+}
+
+vec3 sootOn(vec3 c, float soot, vec3 wpos) {
+  if (soot <= 0.002) return c;
+  /* Soot is not a grey filter. It is carbon: it takes the colour out
+     first and the brightness after, so a red fascia goes brown and then
+     black rather than pink and then grey.
+
+     HOW DARK IS NOT A MATTER OF TASTE, it is a matter of matching what
+     this hands over to. At half a region's fuel the charred textures
+     arrive, and charVariant in js/textures.js keeps between a third and
+     four fifths of every pixel and then puts pale ash over the top of
+     it — deliberately, twice over, because a burnt store dark enough to
+     be accurate is a store you cannot walk back out of. The first cut of
+     this took the albedo to a fifth, which the room light then took to
+     nothing, and a 40%-burnt aisle was a black void with shoppers
+     floating in it. So it keeps about half, patchily, and gets its own
+     ash for the same reason the textures have theirs. */
+  float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  float h2 = emberHash(floor(wpos * 0.09) + 7.0);
+  float keep = 0.38 + h2 * 0.22;
+  vec3 burnt = mix(c, vec3(lum), 0.55) * keep + vec3(0.022, 0.018, 0.015);
+  vec3 out_ = mix(c, burnt, soot);
+  /* the ash, pale and patchy, which is the only thing you can see the
+     shape of a sooty wall by */
+  out_ += vec3(0.055, 0.052, 0.050) * smoothstep(0.66, 0.98, h2) * soot;
+  /* and the rim, which is the only part of it still alight: the product
+     of the amount and its complement peaks exactly at the boundary, so
+     the advancing edge glows and the burnt side behind it does not */
+  float edge = soot * (1.0 - soot) * 4.0;
+  float flick = 0.7 + 0.3 * sin(emberTime * 7.0 + wpos.x * 0.09 + wpos.y * 0.13);
+  return out_ + vec3(0.24, 0.07, 0.014) * edge * flick;
+}
+
 float worldBand(float lightIn, float depth, float sky, float fullbright) {
   /* Distance diminishing. Linear in depth, because Doom's was too, and
      because an inverse-square falloff in a corridor lit by nothing in
@@ -214,6 +329,7 @@ varying float vDepth;
 varying vec3  vWorld;
 varying float vSky;
 varying float vChar;
+varying float vRegion;
 
 #ifdef PER_VERTEX_LIGHT
   attribute float light;
@@ -234,10 +350,15 @@ varying float vChar;
   /* how burnt this surface's region is: 0 untouched, about a half
      charred, 1 gutted. Set by js/mapgeo.js, read by emberOf. */
   attribute float charred;
+  /* WHICH region it belongs to, plus one — see regionBurnt. This is how
+     a wall finds out how far through burning it is, continuously, rather
+     than in the two steps the charred attribute can say. */
+  attribute float region;
 #else
   uniform float light;
   uniform float sky;
   uniform float charred;
+  uniform float region;
 #endif
 
 #ifdef BILLBOARD
@@ -251,6 +372,7 @@ void main() {
   vLight = light;
   vSky = sky;
   vChar = charred;
+  vRegion = region;
 
   vec3 p = position;
 
@@ -288,16 +410,30 @@ varying float vDepth;
 varying vec3  vWorld;
 varying float vSky;
 varying float vChar;
+varying float vRegion;
 
 ${WORLD_SHADE_GLSL}
 
 void main() {
   vec4 t = texture2D(map, vUv);
   if (t.a < alphaTest) discard;
+  /* HOW FAR THROUGH BURNING THIS REGION IS, continuously. The soot goes
+     on the ALBEDO, before the light and before the smoke, because that
+     is where it is: a wall with soot on it is a darker wall, and it
+     diminishes down an aisle and catches the firelight exactly as the
+     wall does. Adding it afterwards would have made a sooty wall in the
+     dark end of aisle nine darker than the air in front of it. */
+  float burn = regionBurnt(vRegion);
+  float soot = sootAmount(burn, vWorld);
+  vec3 albedo = sootOn(t.rgb, soot, vWorld);
   float l = worldBand(vLight, vDepth, vSky, fullbright);
-  vec3 c = worldShade(t.rgb, l, vDepth, vWorld, fullbright);
-  /* the coals go on AFTER the smoke, so a burnt aisle glows through it */
-  c += emberOf(vChar, vWorld, dot(t.rgb, vec3(0.2126, 0.7152, 0.0722)), vDepth);
+  vec3 c = worldShade(albedo, l, vDepth, vWorld, fullbright);
+  /* The coals go on AFTER the smoke, so a burnt aisle glows through it —
+     and they arrive on the region's own number rather than on its stage,
+     so the first few show up in the recesses while there is still stock
+     on the shelves and they thicken from there. */
+  c += emberOf(max(vChar, smoothstep(0.06, 0.92, burn)), vWorld,
+               dot(albedo, vec3(0.2126, 0.7152, 0.0722)), vDepth);
   gl_FragColor = vec4(c, t.a);
 }
 `;
@@ -319,6 +455,8 @@ export function worldUniforms() {
     tint:         world.tint,
     emberTime:    world.emberTime,
     emberRamp:    world.emberRamp,
+    regionBurn:   world.regionBurn,
+    regionSide:   world.regionSide,
   };
 }
 
@@ -365,6 +503,9 @@ export function createSpriteMaterial(texture, opts = {}) {
   const u = baseUniforms(texture, opts);
   u.light         = { value: opts.light ?? 1.0 };
   u.sky           = { value: opts.sky ?? 0.0 };
+  /* 0 is "no region", which never burns: a sprite is a thing standing in
+     a room, not a piece of one. */
+  u.region        = { value: 0.0 };
   u.billboardRot  = { value: 0.0 };
   u.spriteScale   = { value: new THREE.Vector2(opts.width ?? 64, opts.height ?? 64) };
   u.spriteOffset  = { value: new THREE.Vector2(0, 0) };
@@ -394,6 +535,7 @@ export function createHudMaterial(texture) {
   const u = baseUniforms(texture, { alphaTest: 0.5, fullbright: true });
   u.light = { value: 1.0 };
   u.sky = { value: 0.0 };
+  u.region = { value: 0.0 };
   return new THREE.ShaderMaterial({
     uniforms: u,
     vertexShader: COMMON_VERT,

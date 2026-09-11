@@ -794,6 +794,20 @@ section('fire');
       !!u.emberTime && Array.isArray(u.emberRamp.value) && u.emberRamp.value.length === 8);
     check('and the shader has the coals in it',
       /vec3 emberOf\(/.test(mat.WORLD_SHADE_GLSL) && /emberRamp\[/.test(mat.WORLD_SHADE_GLSL));
+    /* --- AND SOOT, WHICH ARRIVES BEFORE THE FIRE DOES ---
+       The store used to know three things about the fire: untouched,
+       charred, gutted. Two texture swaps, and between them nothing — an
+       aisle could lose half its stock without a pixel of it changing.
+       The middle of a region's life is drawn now, continuously, off a
+       number the simulation always had. */
+    check('and it sooties a surface before anything has burnt off it',
+      /float sootAmount\(/.test(mat.WORLD_SHADE_GLSL) && /vec3 sootOn\(/.test(mat.WORLD_SHADE_GLSL));
+    check('off a per-region number rather than a per-region stage',
+      /float regionBurnt\(/.test(mat.WORLD_SHADE_GLSL) &&
+      /uniform sampler2D regionBurn/.test(mat.WORLD_UNIFORMS_GLSL));
+    check('and the soot creeps in world space and crawls on the coals clock',
+      /emberHash\(floor\(wpos/.test(mat.WORLD_SHADE_GLSL) &&
+      /crawl[\s\S]{0,80}emberTime/.test(mat.WORLD_SHADE_GLSL));
     check('the trees and the store share one ramp',
       pal.EMBER_RAMP.length === 8 && pal.EMBER_RAMP.every(c => c.length === 3));
     const F = await import('../js/forest.js');
@@ -806,6 +820,63 @@ section('fire');
   check('every charrable texture has a burnt twin',
     tex.CHARRABLE.every(n => bank.has(n)),
     tex.CHARRABLE.filter(n => !bank.has(n)).join(', '));
+
+  /* --- THE PICTURE THE SHADER READS IT OUT OF ---
+     One texel per sector, plus a texel 0 that means "no region" and
+     never burns, because a sprite is a thing standing in a room and not
+     a piece of one. Three ways for this to be wrong and all three are
+     silent: the picture too small to hold every sector, a wall carrying
+     the wrong region, or texel 0 catching fire and sooting every sprite
+     in the game. */
+  {
+    const THREE3 = await import('three');
+    const { Game } = await import('../js/game.js');
+    const mat = await import('../js/material.js');
+    const geo = await import('../js/mapgeo.js');
+    const lv3 = MAP.buildSellWrong();
+    const scene3 = new THREE3.Scene();
+    const g3 = new Game({
+      level: lv3, scene: scene3, camera: {},
+      textures: tex.bakeTextures(), sprites: spr.bakeSprites(),
+      hud: { message() {}, ticMessages() {} }, audio: null,
+      input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
+               attack: false, use: false, run: false, sample() {}, sensitivity: 0 },
+    });
+    const side = mat.world.regionSide.value;
+    note('the region picture', `${side}x${side} for ${lv3.sectors.length} sectors`);
+    check('the region picture holds every sector and the null one',
+      side * side >= lv3.sectors.length + 1, `${side * side} texels`);
+    check('and a sector index is its own region minus one',
+      geo.regionOf(lv3.sectors[7]) === 8 && geo.regionOf(null) === 0);
+    /* every wall's region inside the picture, and never 0 */
+    let walls = 0, bad = 0;
+    /* the level's geometry is groups of groups of meshes — a static set
+       and a dynamic one, each batched by texture */
+    const walk = o => {
+      const r = o.geometry?.getAttribute?.('region');
+      if (r) for (let i = 0; i < r.array.length; i++) {
+        walls++;
+        if (r.array[i] < 1 || r.array[i] > side * side) bad++;
+      }
+      for (const c of o.children || []) walk(c);
+    };
+    walk(g3.geo.group);
+    check('every piece of the building carries a region in range', walls > 1000 && bad === 0,
+      `${bad} of ${walls} outside 1..${side * side}`);
+    /* and the progress lands in the right texel */
+    const si = lv3.sectors.findIndex((_, i) => g3.fire.sectorFuel[i] > 0);
+    g3.fire.sectorBurnt[si] = g3.fire.sectorFuel[si] * 0.5;
+    g3.ticRegionBurn();
+    const data = mat.world.regionBurn.value.image.data;
+    check('a region half burnt reads as half way through the picture',
+      Math.abs(data[(si + 1) * 4] - 128) <= 1, `${data[(si + 1) * 4]}`);
+    check('and the null region never burns, whatever the shop is doing',
+      data[0] === 0 && data[1] === 0 && data[2] === 0);
+    /* the car park has no fuel, so it can never soot */
+    const lot = lv3.sectors.findIndex(s => s.name === 'bays' || s.floorTex === 'BAYROW');
+    check('and nothing outdoors with no fuel in it can ever soot',
+      lot < 0 || g3.fire.sectorFuel[lot] === 0);
+  }
 
   /* --- HOW IT IS DRAWN ---
      Four claims, and each of them was a visible fault at some point this

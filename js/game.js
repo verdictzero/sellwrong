@@ -118,6 +118,7 @@ export class Game {
     this.idle = false;                 // the title: the world stands still and the eye wanders
     this._nozzle = { x: 0, y: 0, z: 0 };
     this._scared = [];                 // scratch for Game.scare
+    this._initRegionBurn();
 
     /* the flame the player is holding, and everything else that needs a
        quad but is not an actor */
@@ -345,6 +346,7 @@ export class Game {
     this.fx.tic();
     this.giblets.tic();
     this.applyChar();
+    this.ticRegionBurn();
     this.hud.ticMessages();
 
     if (this.bigMessageTics > 0 && --this.bigMessageTics === 0) this.bigMessage = null;
@@ -625,6 +627,55 @@ export class Game {
       o.damage(Math.round(damage * (1 - d / radius)), null, { fire: true });
       o.ignite?.(ignite);
     }
+  }
+
+  /* ------------------------------------------------------------------
+     HOW FAR THROUGH BURNING EVERY REGION IS, as a picture
+
+     One texel per sector, laid out in the smallest square that holds
+     them, updated once a tic. The shader reads it per pixel and sooties
+     the wall in proportion — see regionBurn and sootAmount in
+     js/material.js for what it is for and why it cannot be an attribute.
+
+     A BYTE IS ENOUGH. The number is a fraction and the shader turns it
+     into a smoothstep; a 256th of a region's fuel is a tenth of a second
+     of it burning. Red-only would be tidier and is not worth the
+     format-support argument: RGBA of a 16-by-16 picture is a kilobyte.
+     ------------------------------------------------------------------ */
+  _initRegionBurn() {
+    const n = this.level.sectors.length + 1;      // +1: texel 0 is "no region"
+    const side = Math.max(1, Math.ceil(Math.sqrt(n)));
+    this._regionData = new Uint8Array(side * side * 4);
+    const tex = new THREE.DataTexture(this._regionData, side, side);
+    tex.magFilter = THREE.NearestFilter;
+    tex.minFilter = THREE.NearestFilter;
+    tex.generateMipmaps = false;
+    tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.needsUpdate = true;
+    world.regionBurn.value = tex;
+    world.regionSide.value = side;
+    this._regionTex = tex;
+    this._regionDirty = false;
+  }
+
+  /** Push the fire's per-sector progress into it. Only uploads when a
+   *  byte actually changed, which for a shop that is not on fire is
+   *  never and for one that is, is most tics. */
+  ticRegionBurn() {
+    const f = this.fire;
+    if (!f || !this._regionData) return;
+    const d = this._regionData;
+    let dirty = false;
+    for (let i = 0; i < this.level.sectors.length; i++) {
+      const total = f.sectorFuel[i];
+      if (total <= 0) continue;
+      const v = Math.min(255, Math.round(255 * f.sectorBurnt[i] / total));
+      const o = (i + 1) * 4;
+      if (d[o] === v) continue;
+      d[o] = v; d[o + 1] = v; d[o + 2] = v; d[o + 3] = 255;
+      dirty = true;
+    }
+    if (dirty) this._regionTex.needsUpdate = true;
   }
 
   /** Clear a room. Anything that can be frightened and is within
