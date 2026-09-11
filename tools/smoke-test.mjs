@@ -769,20 +769,92 @@ section('fire');
     if (rack) check('a gutted gondola is bare shelving', /^RUINRACK\d$/.test(of(rack).wallTex),
       of(rack).wallTex);
 
-    /* THE ROOF DOES NOT ALL GO. A burnt-out store with no ceiling
-       anywhere is a demolition; what is wanted is a roof that has fallen
-       in where the span was long enough to fall and is still up, holed
-       and charred, everywhere else. Both have to happen, and the check
-       is that neither is zero. */
+    /* THE ROOF DOES NOT ALL GO, AND IT GOES IN THREE STAGES. A burnt-out
+       store with no ceiling anywhere is a demolition; what is wanted is a
+       deck that is still up and charred over the short spans, HOLED over
+       some of the long ones, and gone over the rest — with steel where it
+       has gone. All three have to happen, and the check is that none of
+       them is zero and that nothing falls outside them. */
     const roofs = level.sectors.filter(s => s.gutted && !s.outdoor && s.ceilTex && s.ceilTex !== 'SKY')
       .map(of).filter(t => t.ceilTex);
     const open = roofs.filter(t => t.ceilTex === 'SKY').length;
+    const holed = roofs.filter(t => /^RUINHOLE\d$/.test(t.ceilTex)).length;
     const kept = roofs.filter(t => /^RUINDECK\d$/.test(t.ceilTex)).length;
-    note('gutted roofs: fallen in / still up', `${open} / ${kept}`);
+    note('gutted roofs: gone / holed / still up', `${open} / ${holed} / ${kept}`);
     check('some of the roof falls in', open > 3, `${open}`);
-    check('and most of it is still up, burnt through', kept > open, `${kept} up, ${open} open`);
-    check('every gutted ceiling is one or the other', open + kept === roofs.length,
-      `${roofs.length - open - kept} were neither`);
+    check('some of it is holed but still overhead', holed > 3, `${holed}`);
+    check('and most of it is still up, burnt through', kept + holed > open,
+      `${kept + holed} up, ${open} open`);
+    check('every gutted ceiling is one of the three',
+      open + holed + kept === roofs.length,
+      `${roofs.length - open - holed - kept} were neither`);
+    /* AND A ROOF THAT HAS FAILED SAYS SO, because that flag is the only
+       thing that makes anything get built up there. */
+    check('a failed roof is flagged for the framing',
+      roofs.every(t => (t.ceilTex === 'SKY' || /^RUINHOLE/.test(t.ceilTex))
+        === (t.ruinRoof === 'open' || t.ruinRoof === 'holed')),
+      roofs.filter(t => !!t.ruinRoof !== (t.ceilTex === 'SKY' || /^RUINHOLE/.test(t.ceilTex))).length + ' disagreed');
+
+    /* --- AND THE STEEL ITSELF -----------------------------------------
+       js/ruin.js hangs a lattice of joists and beams over any region
+       whose deck has failed, so that looking up in a burnt-out aisle is
+       looking at a frame rather than at a rectangular hole in the world.
+       Three claims, and the second is the one that took the design: the
+       lattice is a function of WORLD position, so two regions either side
+       of a wall get the same joists in the same places. */
+    {
+      const ruin = await import('../js/ruin.js');
+      /* the smallest thing a BatchSet has to be for this */
+      const fakeSet = () => {
+        const bins = new Map();
+        return { bins, get(n) { let b = bins.get(n); if (!b) bins.set(n, b = { q: [] }); 
+          return { quad: (p, u, l, sk, ch) => b.q.push({ p, l, ch }) }; } };
+      };
+      const big = level.sectors.find(s => s.gutted && !s.outdoor && s.bbox[2] - s.bbox[0] > 600);
+      const sec = { ...big, ruinRoof: 'open', ruinVariant: 0 };
+      const one = fakeSet();
+      const n = ruin.roofFraming(one, sec);
+      const quads = [...one.bins.values()].reduce((t, b) => t + b.q.length, 0);
+      note('the steel over one gutted region', `${n} members, ${quads} quads`);
+      check('a region with no roof gets a frame', n > 2 && quads > 10, `${n} members`);
+      check('and a region that still has one gets nothing',
+        ruin.roofFraming(fakeSet(), { ...big, ruinRoof: null }) === 0);
+      /* EVERY PIECE OF IT IS UNDER THE ROOF LINE AND INSIDE THE REGION,
+         which is the pair of mistakes a lattice in world coordinates
+         makes: steel poking through the ceiling next door, or steel that
+         starts at the sector edge instead of where the grid says. */
+      const pts = [...one.bins.values()].flatMap(b => b.q).flatMap(q => q.p);
+      check('every piece of it is inside the region it is over',
+        pts.every(([x, y, z]) => x >= big.bbox[0] - 1 && x <= big.bbox[2] + 1 &&
+          -z >= big.bbox[1] - 1 && -z <= big.bbox[3] + 1));
+      check('and hangs below the line the deck was on',
+        pts.every(([, y]) => y <= big.ceil + 1e-6 && y > big.ceil - 140),
+        `${Math.min(...pts.map(p => p[1])).toFixed(0)}..${Math.max(...pts.map(p => p[1])).toFixed(0)} against a ceiling at ${big.ceil}`);
+      check('and it is charred, so the coals are in it',
+        [...one.bins.values()].flatMap(b => b.q).every(q => q.ch === 1));
+      /* THE LATTICE IS THE WORLD'S, not the region's: the same joist
+         drawn from two different regions is at the same y. */
+      const wide = { ...big, bbox: [big.bbox[0], big.bbox[1], big.bbox[2], big.bbox[3] + 400],
+                     ruinRoof: 'open', ruinVariant: 0 };
+      const two = fakeSet();
+      ruin.roofFraming(two, wide);
+      /* A JOIST'S TWO LONG FACES SIT AT j * pitch ± half, for an integer
+         j measured from the world origin — that is the claim, and it is
+         what makes the steel over one region line up with the steel over
+         the next. Everything else up there (the beams, whose ends are
+         the region's own edges) is filtered out by exactly that test. */
+      const P = ruin.ROOF.joistPitch, H = ruin.ROOF.joistHalf;
+      const rows = b => [...new Set([...b.bins.values()].flatMap(x => x.q)
+        .flatMap(q => q.p.map(pp => -pp[2])))]
+        .filter(v => Number.isInteger((v + H) / P) || Number.isInteger((v - H) / P))
+        .sort((a, c) => a - c);
+      const r1 = rows(one), r2 = rows(two);
+      check('every joist sits on the world lattice rather than the region edge',
+        r1.length >= 2 && r1.every(v => r2.includes(v)),
+        `${r1.length} faces, and the wider region has ${r2.length}`);
+      check('and a wider region gets more of the same lattice, not a new one',
+        r2.length > r1.length, `${r1.length} -> ${r2.length}`);
+    }
 
     /* AND IT IS NOT ALL THE SAME RUIN. One texture across a whole gutted
        store reads as a pattern, which is the one thing a ruin must not. */
@@ -1056,7 +1128,23 @@ section('the wood');
   }
   check('no tree stands in the car park or the store', inClearing === 0, `${inClearing} did`);
   check('the store has no forest fuel under it', !forest.fuel[forest.idx(forest.cellX(2000), forest.cellY(1000))]);
-  check('the fuel grid stops at the store', level.fireBounds[0] === -1400 && level.fireBounds[2] === 5680 && level.fireBounds[3] === 3400, level.fireBounds.join());
+  /* THE FUEL GRID STOPS AT THE STORE, and the claim is about what is
+     INSIDE it rather than about four numbers. It used to be three typed
+     coordinates, which is a check that fails the first time the building
+     changes size — and the building changed size the moment fourteen
+     more tenancies went into the parade. What has to be true is that the
+     grid covers the whole parade and the car park it stands in, that it
+     stops at the back wall of the anchor, and that it is nowhere near
+     the nine thousand units of wood on every side, which has its own
+     fire. */
+  check('the fuel grid covers the whole building and its lot',
+    level.fireBounds[0] < MAP.PARADE_X0 && level.fireBounds[2] > MAP.PARADE_X1 &&
+    level.fireBounds[3] === MAP.ANCHOR_Y1,
+    level.fireBounds.join());
+  check('and stops well short of the wood',
+    level.fireBounds[0] > level.forestBounds[0] + 4000 &&
+    level.fireBounds[2] < level.forestBounds[2] - 4000,
+    `${level.fireBounds.join()} inside ${level.forestBounds.join()}`);
   const roadOut = level.sectors.filter(s => s.outside);
   check('the road runs out through the wood on both sides', roadOut.some(s => s.bbox[2] <= -1400) && roadOut.some(s => s.bbox[0] >= 5680), `${roadOut.length} outside sectors`);
   check('and is not the store\'s fuel', roadOut.every(s => s.fuel === 0) && roadOut.every(s => s.bbox[0] >= level.fireBounds[2] || s.bbox[2] <= level.fireBounds[0]));
@@ -1161,7 +1249,27 @@ section('the flame');
     p.flameTic(d); p.flameTic(d);
     check('an empty tank stops the pour mid-pour', p.ammo.fuel === 0 && p.fireIndex === -1);
     check('and the trigger does nothing until there is fuel again', !p.hasAmmo('FLAMER'));
+    /* --- AND IT WILL NOT LIGHT AGAIN UNTIL IT IS HALF FULL ----------
+       At the user's request, and it is the difference between a budget
+       and a decision: a tank that refuses only when it is empty is one
+       you hold the trigger on until it stops and then hold again the
+       moment a tenth of a unit is back. This is the latch, both ways. */
+    check('an empty tank latches, and one unit does not unlatch it',
+      p.dry === true && (p.ammo.fuel = 1, p.regenTick = 0, p.fuelTic(), !p.armed('FLAMER')),
+      `${p.ammo.fuel} in it and ${p.armed('FLAMER') ? 'armed' : 'not armed'}`);
+    check('and the gauge says which half it is waiting for',
+      p.refireMark === pl.REFIRE_AT && pl.REFIRE_AT === 0.5, `${p.refireMark}`);
+    /* one below the mark is still no, and one above it is yes */
+    p.ammo.fuel = Math.floor(pl.TANK * pl.REFIRE_AT) - 2; p.regenTick = 0;
+    for (let k = 0; k < pl.REGEN_EVERY; k++) p.fuelTic();
+    check('a tank one short of half still will not fire', !p.armed('FLAMER'),
+      `${p.ammo.fuel} of ${pl.TANK}`);
+    for (let k = 0; k < pl.REGEN_EVERY * 3; k++) p.fuelTic();
+    check('and half a tank lights it again', p.armed('FLAMER') && !p.dry,
+      `${p.ammo.fuel} of ${pl.TANK}`);
+    check('and the mark goes away once it has', p.refireMark === 0);
     /* the refill, which is the only source there is */
+    p.ammo.fuel = 0; p.dry = false;
     p.regenTick = 0;
     for (let k = 0; k < pl.REGEN_EVERY * 4; k++) p.fuelTic();
     check('the tank fills itself', p.ammo.fuel === 4, `${p.ammo.fuel} after ${pl.REGEN_EVERY * 4} tics`);
@@ -1773,10 +1881,62 @@ section('the way out');
     g.blockmap.moved(calm);
   }
 
+  /* --- SOMEBODY ALIGHT ---
+     A shopper the fire reaches does not die where they stand any more,
+     at the user's request: they run, on fire, for a few seconds, laying
+     a line of it behind them, and then they go off. Four claims, and the
+     last one is the one that makes the mechanic worth having. */
+  {
+    const who = g.actors.find(a => a.type === 'SHOPPER' && !a.dead && !a.removed);
+    const was = [who.x, who.y];
+    who.ignite(400);
+    check('a shopper who catches fire starts burning rather than dying',
+      !who.dead && who.state.name.startsWith('SHOP_BURN') && who.torch > 0,
+      `${who.state.name}, ${who.torch} tics left`);
+    check('and more fire does not hurry them along',
+      (who.damage(999, null, { fire: true }), !who.dead), 'a torch burns for as long as it burns');
+    let ran = 0, lit = 0;
+    for (let t = 0; t < 400 && !who.removed; t++) {
+      const bx = who.x, by = who.y;
+      const before = g.fire.heatAt(who.x, who.y);
+      g.tic();
+      if (!who.dead) ran += Math.hypot(who.x - bx, who.y - by);
+      if (before < 0.2 && g.fire.heatAt(bx, by) >= 0.2) lit++;
+    }
+    note('one shopper, set alight', `${ran.toFixed(0)} units of running, ` +
+      `${lit} cells of fire dropped behind them`);
+    check('they run a long way while they are alight', ran > 300, `${ran.toFixed(0)} units`);
+    check('and they drag the fire with them', lit > 3, `${lit} cells`);
+    check('and then they are gone', who.removed || who.dead,
+      `${who.state?.name ?? 'removed'}`);
+    check('and the giblets happened, so it was an explosion and not a nap',
+      g.giblets ? g.giblets.bursts > 0 : true);
+  }
+
   /* --- AND THE MEASUREMENT ---
      One fire, in the middle of the shop, and then nothing: no player, no
-     second ignition, no help. Sixty seconds later most of the shop
-     should be standing outside in the car park and in the trees. */
+     second ignition, no help. Sixty seconds later, what?
+
+     IT USED TO BE "MOST OF THE SHOP IS OUTSIDE", and that claim is gone
+     with the change above. When a burning shopper stood still and died
+     in a second, a fire in the middle of the sales floor took about a
+     quarter of the building in a minute and six hundred of the seven
+     hundred and thirty-six walked out of it. Now every person the fire
+     reaches carries it somewhere else for five seconds and then explodes
+     there, so the same single ignition takes four fifths of the store in
+     the same minute and about half the shop does not get out.
+
+     That is not a regression, it is the mechanic: the fire moves through
+     the CROWD now, and a crowd is the fastest thing in the building.
+     What is still true, and what is worth checking, is that the fire
+     exits work — the building EMPTIES, by one route or the other, and
+     hundreds of people leave through doors rather than dying where they
+     were standing. That claim is also the stable one: this is a
+     percolation cascade sitting near its critical point, so the survivor
+     count swings by a hundred and fifty on a change of one in the trail
+     numbers, and a threshold pinned just under it is a coin flip. "Alive
+     and still inside" comes out at nought, one or two every single
+     time. */
   {
     const crowd = () => g.actors.filter(a => a.type === 'SHOPPER' && !a.dead && !a.removed);
     const running = () => g.actors.reduce((n, a) => n + (a.type === 'SHOPPER' && !a.dead && a.panic > 0 ? 1 : 0), 0);
@@ -1798,10 +1958,24 @@ section('the way out');
     }
     const alive = crowd();
     const out = alive.filter(a => a.sector && a.sector.outdoor);
+    const inside = alive.length - out.length;
     note('one fire, sixty seconds', `${out.length} of ${start} outside, ` +
-      `${alive.length - out.length} still in, ${start - alive.length} lost`);
-    check('most of the shop gets out of the building', out.length > start * 0.5,
-      `${out.length} of ${start}`);
+      `${inside} still in, ${start - alive.length} lost, ` +
+      `${(g.fire.burnFraction * 100).toFixed(0)}% of the store gone`);
+    check('the building empties: nobody alive is still standing in it',
+      inside <= start * 0.02, `${inside} still inside`);
+    /* A QUARTER, and the bar is low on purpose. The claim is that the
+       exits are LOAD-BEARING — that a large part of the shop leaves
+       through a door rather than dying where it stood — and the exact
+       number is a draw from a cascade sitting on its own critical point:
+       it moves by a hundred and fifty on a change of one in the trail
+       numbers, or on a change to the floor plan that shifts where the
+       fire meets the crowd. A threshold pinned near the observed value
+       is a coin flip that any later edit can flip. */
+    check('and a large part of the shop gets out through the doors',
+      out.length > start * 0.25, `${out.length} of ${start}`);
+    check('and the fire took most of the store doing it',
+      g.fire.burnFraction > 0.5, `${(g.fire.burnFraction * 100).toFixed(0)}%`);
     check('and they scatter rather than pile up at one door',
       new Set(out.map(a => a.sector.name)).size >= 3,
       [...new Set(out.map(a => a.sector.name))].slice(0, 5).join(', '));

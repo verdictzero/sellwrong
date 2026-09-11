@@ -4,30 +4,29 @@
 
    SellWrong is not a building, it is the middle of a building. It is the
    anchor of a strip mall: one long shed cut into tenancies, with the big
-   one in the centre paying most of the rent and six small ones either
+   one in the centre paying most of the rent and ten small ones either
    side hanging on. That framing is doing more work than it looks like it
    is, because it answers the two questions the level otherwise cannot:
    why the store is this shape, and what is on the other side of a wall
    you have just set fire to.
 
-                 P Y L O N
-     y -2600 ┌──────────────────────────────────────────────────┐
-             │  verge, and the way in off the road               │
-             │  ── seven rows of bays, three driving lanes ──    │  start
-     y  -296 │  fire lane: nobody parks in front of the doors    │
-     y  -136 ├────────────── canopy, piers, fascias ────────────┤
-     y   -96 │  FOOTWAY, one kerb step up, running the whole     │
-     y   -16 │  length of the parade                            │
-             ├──┬──┬──┬═══════════════════════════════┬──┬──┬───┤
-     y     0 │V │W │C ║  S E L L W R O N G            ║K │P │V  │
-             │  │  │  ║  front end                    ║  │  │   │
-     y   400 │  │  │  ║  twelve gondola runs, three   ║  │  │   │
-             └──┴──┴──╢  deep, with cross-aisles      ╟──┴──┴───┘
-     y  2620 ─────────╢  back cross-aisle, deli       ╟
-     y  2776 ═════════╬══════ STAFF ONLY ═════════════╬
+     y -2600 ┌────────────────────────────────────────────────────────┐
+             │  verge, and the way in off the road                     │
+             │  ─── seven rows of bays, three driving lanes ───        │  start
+     y  -296 │  fire lane: nobody parks in front of the doors          │
+     y  -136 ├──────────────── canopy, piers, fascias ────────────────┤
+     y   -96 │  FOOTWAY, one kerb step up, running the whole           │
+     y   -16 │  length of the parade                                  │
+             ├─┬─┬─┬─┬─┬─┬─┬──┬──┬──┬══════════┬──┬──┬──┬─┬─┬─┬─┬─┬─┬─┤
+     y     0 │ │ │ │ │ │ │ │V │W │C ║ SELLWRONG║K │P │V │ │ │ │ │ │ │ │
+             │ seven unnamed │  │  ║ front end ║  │  │  │ seven more   │
+     y   400 │ │ │ │ │ │ │ │ │  │  ║ twelve    ║  │  │  │ │ │ │ │ │ │ │
+             └─┴─┴─┴─┴─┴─┴─┴─┴──┴──╢ runs,     ╟──┴──┴──┴─┴─┴─┴─┴─┴─┴─┘
+     y  2620 ──────────────────────╢ butchery  ╟
+     y  2776 ══════════════════════╬═══ STAFF ═╬
              │  STOCKROOM   │   DOCK    │   OFFICE    │
      y  3400 └──────────────────────────────────────────┘
-           x -1176                                        x 5440
+           x -4560                                        x 8840
 
    THE SIZE. Three times the floor area of the first cut, and spent on
    MORE RUNS rather than on wider ones: twelve columns of gondola instead
@@ -180,6 +179,96 @@ const DOOR_TOP = 128;             // how tall a leaf is
 const ENTRY_W = 160;              // clear opening, so a leaf runs 80
 
 /* =====================================================================
+   THE TENANCIES
+
+   Twenty in-line units, ten each side, and four of them have a name.
+
+   IT WAS SIX, three each side, and fourteen more went in at the user's
+   request — seven a side, unbranded. That is a different building: the
+   parade was six and a half thousand units long and is nearly thirteen
+   now, about three hundred and seventy metres of frontage, and it
+   changes what the place IS. Six units either side of a superstore is a
+   shopping parade with an anchor on it. Twenty is a STRIP MALL, and the
+   difference is that the anchor stops being most of what you can see —
+   from the mouth of the car park the building runs off both edges of the
+   screen and the store is the lit part in the middle of it.
+
+   WHY UNBRANDED. A named unit is a joke — CHEMIST, KEBAB, PHONES — and
+   four jokes along an elevation is a parade with character. Eighteen is
+   a comedy routine, and worse, it is eighteen legible words competing
+   with the one sign that is supposed to matter. So the new fourteen get
+   a painted fascia tray with nothing in it, in six colours, and what
+   tells one from the next is what tells one unnamed unit from the next
+   in a real parade: whether the lights are on, the roller is down, or
+   the glass has been whitewashed from the inside.
+
+   `in` is true for the ones you can walk into, and the rule is now
+   visible from the car park: if the lights are on, the door works. The
+   rest are a shopfront and nothing behind it, which costs one wall and
+   buys the whole read of the place — a parade with two thirds of it dark
+   is a parade that has been dying for years, and the anchor going up is
+   the last thing that was ever going to happen to it.
+   ===================================================================== */
+const UNIT_W = 432;
+const UNIT_Y1 = 620;                          // in-line units are shallow
+
+/* How many unbranded ones go on each wing, past the ones with names. */
+const PLAIN_PER_WING = 7;
+/* The three states an unnamed unit can be in, and the six trays somebody
+   painted. Both are walked by one index, so the front and the fascia
+   move together and the wing does not repeat until the two cycles do. */
+const PLAIN_FRONTS = ['UNITGLAS', 'UNITSHUT', 'UNITVOID'];
+const PLAIN_FASCIAS = 6;
+
+/** One tenancy with no name on it. Deterministic in its wing and its
+ *  index, so two runs of the map put the same shutters in the same
+ *  places and a screenshot is a screenshot of something. */
+const plainUnit = (side, k) => {
+  const i = k * 2 + (side === 'east' ? 1 : 0);
+  const front = PLAIN_FRONTS[i % PLAIN_FRONTS.length];
+  return {
+    name: `${side} unit ${k + 1}`,
+    front,
+    fascia: 'FASPLAIN' + (i % PLAIN_FASCIAS),
+    /* THE LIGHTS ARE THE DOOR. The builder further down lays a sales
+       floor, a counter and a back room into any unit with `in` on it,
+       and the player finds out which those are by looking: lit glass is
+       open, a roller or whitewash is not. */
+    in: front === 'UNITGLAS',
+  };
+};
+const plainWing = side => Array.from({ length: PLAIN_PER_WING }, (_, k) => plainUnit(side, k));
+
+/* each wing runs AWAY from the anchor, so the three with names are the
+   three nearest the doors — which is also where the rent is */
+const WEST_UNITS = [
+  { name: 'chemist',    front: 'UNITGLAS', fascia: 'FASCHEM', in: true },
+  { name: 'laundrette', front: 'UNITSHUT', fascia: 'FASWASH', in: false },
+  { name: 'vacant unit west', front: 'UNITVOID', fascia: 'FASVOID', in: false },
+  ...plainWing('west'),
+];
+const EAST_UNITS = [
+  { name: 'kebab shop', front: 'UNITGLAS', fascia: 'FASFOOD', in: true },
+  { name: 'phone shop', front: 'UNITGLAS', fascia: 'FASPHON', in: false },
+  { name: 'vacant unit east', front: 'UNITSHUT', fascia: 'FASVOID', in: false },
+  ...plainWing('east'),
+];
+
+/* THE ENDS OF THE PARADE.
+
+   One unit takes UNIT_W of frontage plus the WALL beside it, and that is
+   the whole arithmetic — the wall belongs to the unit, not to the joint.
+   Writing it as `ANCHOR_X0 - WALL - n * (UNIT_W + WALL)` counts the wall
+   next to the anchor twice, which leaves a sixteen-unit void between the
+   west wing and the anchor: no sector, so a wall, so the footway is
+   severed and the west half of the parade is unreachable on foot. It
+   showed up as the fire refusing to spread west while spreading three
+   thousand units east, which is the kind of symptom that takes an hour
+   to trace back to an off-by-one in a constant. */
+export const PARADE_X0 = ANCHOR_X0 - WEST_UNITS.length * (UNIT_W + WALL);
+export const PARADE_X1 = ANCHOR_X1 + EAST_UNITS.length * (UNIT_W + WALL);
+
+/* =====================================================================
    THE CAR PARK
 
    Bays are drawn with a TEXTURE, not with a sector each. One repeat of
@@ -189,27 +278,50 @@ const ENTRY_W = 160;              // clear opening, so a leaf runs 80
    the same arithmetic, which is the only way they stay in the bays.
    ===================================================================== */
 const BAY_W = 186, BAY_D = 180, LANE_D = 160;
-const LOT_X0 = -1400, LOT_X1 = 5680;
+/* THE LOT IS AS LONG AS THE PARADE AND THEN SOME, and it is derived
+   rather than typed. The wood down each flank of the building is the
+   strip between the lot's edge and the end of the parade, so a parade
+   longer than its own car park is a rectangle with a negative width and
+   a map that will not build — which is exactly what two hand-typed
+   numbers bought the moment fourteen units went in under them. */
+const LOT_MARGIN = 280;                      // tarmac past the last pier
+const LOT_X0 = PARADE_X0 - LOT_MARGIN, LOT_X1 = PARADE_X1 + LOT_MARGIN;
 const CANOPY_Y = -136;                       // the outer edge of the canopy
 const FIRELANE_Y = CANOPY_Y - LANE_D;        // -296: nobody parks here
-/* TWO ROADS, and they are different things.
+/* THE ROADS, WHICH ARE NOW A RING.
 
-   THE FRONTAGE LANE runs along the front of the lot between the fire
-   lane and the first row of bays. It is the store's own: you drive along
-   it to reach a row, and it stops at the ends of the lot.
+   There were two of them and they did not meet. A frontage lane along
+   the front of the lot that stopped dead at both ends, and a traversal
+   road across the far end that ran on through the wood — two roads, four
+   loose ends, and nothing joining them, which is fine until you stand at
+   the west end of the lot and look at where the tarmac simply stops.
 
-   THE TRAVERSAL ROAD is the public one and it is at the FAR end, past
-   the last row of bays, running the whole width of the lot and on
-   through the wood in both directions until the forest ends. It is the
-   way you drove in, the way everyone else is going to arrive, and the
-   only firebreak in the wood. Putting it there rather than against the
-   shopfront is what makes the lot read as a lot: a road, then a car
-   park, then a shop, in that order, which is the order they are in.
+   At the user's request it is a PERIMETER ROAD now: one loop all the way
+   round the car park, four straights and four junctions, with the
+   through road crossing it at the bottom corners and carrying on into
+   the trees in both directions. Which is what a lot this size has —
+   nobody drives through a strip mall's parking, they drive round the
+   edge of it and turn in — and it is also the only firebreak in the
+   wood, so the loop is the shape of the safe ground.
 
-   Both are 300 deep and drawn by the same five strips; only the y
-   changes. See `roadAcross`. */
+     RING_X0 ┌──────── the frontage lane ────────┐ RING_X1
+             │ ┌───────────────────────────────┐ │
+      west   │ │          seven rows           │ │  east
+       leg   │ │           of bays             │ │   leg
+             │ └───────────────────────────────┘ │
+    ═════════╪═══════ the traversal road ════════╪═════════  on into
+             SW                                  SE           the wood
+
+   Every straight is five strips — an edge line, a lane, the centre line,
+   a lane, an edge line — and every junction is a box with NO centre line
+   in it and its edge lines turning the corner. See `roadRun` and
+   `roadBox`, and the notes on them for why those are two functions and
+   not one. */
 const ROAD_D = 300;
+const ROAD_LINE = 6;                         // how wide a painted line is
 const ROAD_Y1 = FIRELANE_Y, ROAD_Y0 = FIRELANE_Y - ROAD_D;
+/* the outside of the loop: the lot, and a road's width past it */
+const RING_X0 = LOT_X0 - ROAD_D, RING_X1 = LOT_X1 + ROAD_D;
 
 /* Seven rows in three back-to-back pairs and a single, with a driving
    lane between each pair. Written as a script so the lot reads top to
@@ -222,32 +334,6 @@ const LOT_PLAN = [
   { kind: 'bay',  n: 2 },
   { kind: 'lane' },
   { kind: 'bay',  n: 2 },
-];
-
-/* =====================================================================
-   THE TENANCIES
-
-   Six in-line units, three each side, and only two of them are open.
-   The rest are a shopfront and nothing behind it, which costs one wall
-   and buys the whole read of the place: a parade with two thirds of it
-   dark is a parade that has been dying for years, and the anchor going
-   up is the last thing that was ever going to happen to it.
-
-   `in` is true for the ones you can walk into.
-   ===================================================================== */
-const UNIT_W = 432;
-const UNIT_Y1 = 620;                          // in-line units are shallow
-
-/* west wing, running away from the anchor; east wing mirrors it */
-const WEST_UNITS = [
-  { name: 'chemist',    front: 'UNITGLAS', fascia: 'FASCHEM', in: true },
-  { name: 'laundrette', front: 'UNITSHUT', fascia: 'FASWASH', in: false },
-  { name: 'vacant unit west', front: 'UNITVOID', fascia: 'FASVOID', in: false },
-];
-const EAST_UNITS = [
-  { name: 'kebab shop', front: 'UNITGLAS', fascia: 'FASFOOD', in: true },
-  { name: 'phone shop', front: 'UNITGLAS', fascia: 'FASPHON', in: false },
-  { name: 'vacant unit east', front: 'UNITSHUT', fascia: 'FASVOID', in: false },
 ];
 
 /* =====================================================================
@@ -283,20 +369,6 @@ export function buildSellWrong() {
   const rm = new RectMap(mb);
   const carSlots = [];
 
-  /* The ends of the parade, once the wings are laid out.
-
-     One unit takes UNIT_W of frontage plus the WALL beside it, and that
-     is the whole arithmetic — the wall belongs to the unit, not to the
-     joint. Writing it as `ANCHOR_X0 - WALL - n * (UNIT_W + WALL)` counts
-     the wall next to the anchor twice, which leaves a sixteen-unit void
-     between the west wing and the anchor: no sector, so a wall, so the
-     footway is severed and the west half of the parade is unreachable on
-     foot. It showed up as the fire refusing to spread west while
-     spreading three thousand units east, which is the kind of symptom
-     that takes an hour to trace back to an off-by-one in a constant. */
-  const PARADE_X0 = ANCHOR_X0 - WEST_UNITS.length * (UNIT_W + WALL);
-  const PARADE_X1 = ANCHOR_X1 + EAST_UNITS.length * (UNIT_W + WALL);
-
   /* =================================================================
      THE CAR PARK
      ================================================================= */
@@ -322,8 +394,8 @@ export function buildSellWrong() {
   const TALL_X0 = SIGN_X0 - 60, TALL_X1 = SIGN_X1 + 60, TALL_Y = S2_Y - 48;
   const lane = (extra = {}) => lot('fire lane', { floorTex: 'HATCHKEEP', ...extra });
 
-  rm.add(LOT_X0, FIRELANE_Y, PORCH_X0, CANOPY_Y, lane());
-  rm.add(PORCH_X1, FIRELANE_Y, LOT_X1, CANOPY_Y, lane());
+  rm.add(RING_X0, FIRELANE_Y, PORCH_X0, CANOPY_Y, lane());
+  rm.add(PORCH_X1, FIRELANE_Y, RING_X1, CANOPY_Y, lane());
   /* the lane in front of the tower, carved round the sign box */
   rm.add(PORCH_X0, FIRELANE_Y, TALL_X0, PORCH_Y, lane());
   rm.add(TALL_X1, FIRELANE_Y, PORCH_X1, PORCH_Y, lane());
@@ -357,21 +429,92 @@ export function buildSellWrong() {
   rm.add(SIGN_XM, S1_Y, SIGN_X1, PORCH_Y, signStrip('sign box', 328 + SIGN_ROW, 'LOGO1'));
   rm.add(SIGN_X0, S2_Y, SIGN_X1, S1_Y, signStrip('sign cap', 328 + SIGN_H, 'PARAPET'));
 
-  /* The road across the lot: an edge line, a lane, the centre line, a
-     lane, an edge line. The lines are sectors of their own because a
-     floor is textured to the world grid and a 64-unit tile cannot hold
-     one line across a 300-unit road; a strip a few units wide wearing a
-     tile that is line all the way through can. */
-  const roadAcross = (x0, x1, y0, y1, tag, extra = {}) => {
-    const mid = (y0 + y1) / 2;
-    const strip = (a, b, tex, name) => rm.add(x0, a, x1, b, lot(name, { floorTex: tex, light: 0.56, ...extra }));
-    strip(y0, y0 + 6, 'ROADEDGE', `road edge, ${tag}`);
-    strip(y0 + 6, mid - 3, 'ROADTAR', `road, ${tag}`);
-    strip(mid - 3, mid + 3, 'ROADLINE', `road centre, ${tag}`);
-    strip(mid + 3, y1 - 6, 'ROADTAR', `road, ${tag}`);
-    strip(y1 - 6, y1, 'ROADEDGE', `road edge, ${tag}`);
+  /* =================================================================
+     THE ROAD, AND WHAT IS PAINTED ON IT
+
+     A ROAD IS FIVE STRIPS: an edge line, a lane, the centre line, a
+     lane, an edge line. They are sectors of their own because a floor is
+     textured to the WORLD grid — u is x/64 and v is y/64 — so a 64-unit
+     tile cannot hold one line across a 300-unit road. A strip six units
+     wide wearing a tile that is line all the way through can, and that
+     is the whole trick.
+
+     And it is why `along` exists. The same world-grid mapping means a
+     texture whose dash runs along x draws a SOLID stripe down a road
+     running along y, so the two legs of the ring want ROADLINV and the
+     two straights want ROADLINE. One function, one flag, rather than two
+     functions that drift apart.
+     ================================================================= */
+  const tarmac = (x0, y0, x1, y1, tex, name, extra) =>
+    rm.add(x0, y0, x1, y1, lot(name, { floorTex: tex, light: 0.56, ...extra }));
+
+  const roadRun = (x0, y0, x1, y1, along, tag, extra = {}) => {
+    const L = ROAD_LINE, H = 3;                  // the edge lines, and half a centre
+    if (along === 'x') {
+      const m = (y0 + y1) / 2;
+      tarmac(x0, y0, x1, y0 + L, 'ROADEDGE', `road edge, ${tag}`, extra);
+      tarmac(x0, y0 + L, x1, m - H, 'ROADTAR', `road, ${tag}`, extra);
+      tarmac(x0, m - H, x1, m + H, 'ROADLINE', `road centre, ${tag}`, extra);
+      tarmac(x0, m + H, x1, y1 - L, 'ROADTAR', `road, ${tag}`, extra);
+      tarmac(x0, y1 - L, x1, y1, 'ROADEDGE', `road edge, ${tag}`, extra);
+    } else {
+      const m = (x0 + x1) / 2;
+      tarmac(x0, y0, x0 + L, y1, 'ROADEDGE', `road edge, ${tag}`, extra);
+      tarmac(x0 + L, y0, m - H, y1, 'ROADTAR', `road, ${tag}`, extra);
+      tarmac(m - H, y0, m + H, y1, 'ROADLINV', `road centre, ${tag}`, extra);
+      tarmac(m + H, y0, x1 - L, y1, 'ROADTAR', `road, ${tag}`, extra);
+      tarmac(x1 - L, y0, x1, y1, 'ROADEDGE', `road edge, ${tag}`, extra);
+    }
   };
-  roadAcross(LOT_X0, LOT_X1, ROAD_Y0, ROAD_Y1, 'the frontage lane');
+
+  /**
+   * A JUNCTION, which is the part that is always left out and is the
+   * part that makes a road look like a road.
+   *
+   * Two things happen at one and they are both ABSENCES. There is no
+   * centre line through it, because you do not paint a lane divider
+   * across the place two streams of traffic cross — a ring road with the
+   * dashes carried straight through its own corners reads as two roads
+   * laid on top of each other. And the edge lines TURN: they run down
+   * whichever sides are still kerb and stop dead at the sides that are a
+   * mouth, which is what draws the corner.
+   *
+   * `open` is the sides that are mouths, as letters of NSEW; everything
+   * else gets an edge line. `give` is the one mouth that has to give way
+   * — the minor road's, at a T — and gets a bar across it.
+   *
+   * The decomposition is four strips and a middle, with the east and
+   * west ones taking the full height so the corners belong to somebody.
+   */
+  const roadBox = (x0, y0, x1, y1, open, tag, extra = {}) => {
+    const L = ROAD_LINE;
+    const shut = d => !open.includes(d);
+    const ax0 = x0 + (shut('W') ? L : 0), ax1 = x1 - (shut('E') ? L : 0);
+    const ay0 = y0 + (shut('S') ? L : 0), ay1 = y1 - (shut('N') ? L : 0);
+    if (shut('W')) tarmac(x0, y0, ax0, y1, 'ROADEDGE', `junction kerb, ${tag}`, extra);
+    if (shut('E')) tarmac(ax1, y0, x1, y1, 'ROADEDGE', `junction kerb, ${tag}`, extra);
+    if (shut('S')) tarmac(ax0, y0, ax1, ay0, 'ROADEDGE', `junction kerb, ${tag}`, extra);
+    if (shut('N')) tarmac(ax0, ay1, ax1, y1, 'ROADEDGE', `junction kerb, ${tag}`, extra);
+    /* and the give way across the mouth of the minor road, inside the
+       box so the major road's own markings are untouched by it */
+    const B = 10;
+    if (extra.give === 'N') {
+      tarmac(ax0, ay1 - B, ax1, ay1, 'ROADGIVE', `give way, ${tag}`, extra);
+      tarmac(ax0, ay0, ax1, ay1 - B, 'ROADTAR', `junction, ${tag}`, extra);
+    } else if (extra.give === 'S') {
+      tarmac(ax0, ay0, ax1, ay0 + B, 'ROADGIVE', `give way, ${tag}`, extra);
+      tarmac(ax0, ay0 + B, ax1, ay1, 'ROADTAR', `junction, ${tag}`, extra);
+    } else {
+      tarmac(ax0, ay0, ax1, ay1, 'ROADTAR', `junction, ${tag}`, extra);
+    }
+  };
+
+  /* THE FRONTAGE LANE and its two corners. The corners are shut on the
+     outside and on the top — the wood is on both — and open to the
+     straight beside them and to the leg below. */
+  roadBox(RING_X0, ROAD_Y0, LOT_X0, ROAD_Y1, 'ES', 'the north-west corner');
+  roadRun(LOT_X0, ROAD_Y0, LOT_X1, ROAD_Y1, 'x', 'the frontage lane');
+  roadBox(LOT_X1, ROAD_Y0, RING_X1, ROAD_Y1, 'WS', 'the north-east corner');
 
   /* and then the rows, walking south */
   let y = ROAD_Y0;
@@ -401,12 +544,24 @@ export function buildSellWrong() {
       y -= BAY_D;
     }
   }
-  /* THE TRAVERSAL ROAD, where the bays stop. South of it the verge and
-     the spot you are standing in when the game starts — so the opening
-     shot is across a road, over a car park, at a supermarket, which is
-     what arriving at one looks like. */
+  /* THE TWO LEGS OF THE RING, down the outside of the bays. They are
+     the only north-south roads on the map, which is why ROADLINV exists
+     at all — see roadRun. */
+  roadRun(RING_X0, y, LOT_X0, ROAD_Y0, 'y', 'the west leg');
+  roadRun(LOT_X1, y, RING_X1, ROAD_Y0, 'y', 'the east leg');
+
+  /* THE TRAVERSAL ROAD, where the bays stop, and the two T-junctions at
+     the ends of it where the legs come down and the through road carries
+     on into the trees. South of it the verge and the spot you are
+     standing in when the game starts — so the opening shot is across a
+     road, over a car park, at a supermarket, which is what arriving at
+     one looks like. */
   const THRU_Y1 = y, THRU_Y0 = y - ROAD_D;
-  roadAcross(LOT_X0, LOT_X1, THRU_Y0, THRU_Y1, 'across the lot');
+  roadBox(RING_X0, THRU_Y0, LOT_X0, THRU_Y1, 'NEW', 'the south-west junction',
+          { give: 'N' });
+  roadRun(LOT_X0, THRU_Y0, LOT_X1, THRU_Y1, 'x', 'across the lot');
+  roadBox(LOT_X1, THRU_Y0, RING_X1, THRU_Y1, 'NEW', 'the south-east junction',
+          { give: 'N' });
   const VERGE_Y1 = THRU_Y0;
   const LOT_Y0 = VERGE_Y1 - 460;
 
@@ -421,7 +576,7 @@ export function buildSellWrong() {
 
      What replaced eight rectangles is one: the verge runs clean from
      the road to the mouth. */
-  rm.add(LOT_X0, LOT_Y0, LOT_X1, VERGE_Y1, lot('verge'));
+  rm.add(RING_X0, LOT_Y0, RING_X1, VERGE_Y1, lot('verge'));
 
   /* =================================================================
      THE CANOPY AND THE FOOTWAY
@@ -642,12 +797,16 @@ export function buildSellWrong() {
     }));
   });
 
-  /* --- back cross-aisle, with the deli counter in it ----------------- */
-  rm.add(ANCHOR_X0, Y_BACKX, 1200, Y_BACKXEND, shop('back cross-aisle', 0.22, FUEL.walk));
-  rm.add(1200, Y_BACKX, 2200, Y_BACKXEND, shop('deli', 0.30, FUEL.deli, {
-    floor: H_FIXTURE, floorTex: 'SHELFBAK', lowerTex: 'DELICASE',
-  }));
-  rm.add(2200, Y_BACKX, 2900, Y_BACKXEND, shop('back cross-aisle', 0.20, FUEL.walk));
+  /* --- the back cross-aisle ------------------------------------------
+     THERE WAS A DELI COUNTER HERE and it is gone at the user's request:
+     a thousand units of case between the west walkway and the middle of
+     the shop, mirroring the butchery further east. What replaces it is
+     FLOOR, which the back of the store had very little of — the strip
+     that joins the west fire exit to the staff door to the east fire
+     exit ran the whole width of the building and half of it was
+     counter. The butchery stays, because one counter down there reads
+     as a department and two read as a wall. */
+  rm.add(ANCHOR_X0, Y_BACKX, 2900, Y_BACKXEND, shop('back cross-aisle', 0.21, FUEL.walk));
   rm.add(2900, Y_BACKX, 3600, Y_BACKXEND, shop('butchery', 0.28, FUEL.deli, {
     floor: H_FIXTURE, floorTex: 'SHELFBAK', lowerTex: 'DELICASE',
   }));
@@ -719,7 +878,7 @@ export function buildSellWrong() {
   const EXIT_Y = [
     (ROWS[0].y1 + ROWS[1].y0) / 2,     // 1150, between run one and run two
     (ROWS[1].y1 + ROWS[2].y0) / 2,     // 1970, between run two and run three
-    (Y_BACKX + Y_BACKXEND) / 2,        // 2690, the back cross-aisle past the deli
+    (Y_BACKX + Y_BACKXEND) / 2,        // 2690, the back cross-aisle past the butchery
   ];
   const WHICH = ['mid', 'rear', 'back'];
   EXIT_Y.forEach((cy, i) => {
@@ -785,8 +944,22 @@ export function buildSellWrong() {
     rm.add(b.x1 - 110, 380, b.x1, 440, base(`${b.name} flap`, 0.42, FUEL.walk));
     rm.add(b.x0, 440, b.x1, UNIT_Y1, base(kitchen ? 'kitchen' : 'dispensary', 0.34,
       kitchen ? FUEL.kitchen : FUEL.office));
-    /* the way in, bridging the shopfront wall */
-    rm.add(mid - 60, -WALL, mid + 60, 0, base(`${b.name} door`, 0.50, FUEL.walk, {
+    /* THE WAY IN, bridging the shopfront wall — and it carries the
+       FOOTWAY'S fuel rather than a walkway's, which is a change the
+       parade getting longer forced.
+
+       A doorway is 120 by 16: two or three cells of a thirty-two-unit
+       grid, in a line, and it is the ONLY way the fire gets from the
+       fuse outside into the unit behind it. At an aisle's fuel the fire
+       stalled in exactly one of them out of twenty, and that unit — its
+       shelving, its counter, its back room, five regions — never burned
+       at all on a map where every other one did. That is the
+       one-dimensional failure the note on FUEL.footway is about, in its
+       smallest possible form: a front two cells wide only has to fail
+       once. So a shop doorway holds what the pavement outside it holds,
+       which is also true of a real one: the mat, the menu board, the
+       free papers and whatever the wind put there. */
+    rm.add(mid - 60, -WALL, mid + 60, 0, base(`${b.name} door`, 0.50, FUEL.footway, {
       ceil: 192, wallTex: 'UNITGLAS', upperTex: 'UNITGLAS', lowerTex: 'STORBASE',
     }));
   }
@@ -823,22 +996,25 @@ export function buildSellWrong() {
   };
   const MALL_Y1 = UNIT_Y1 + WALL;              // behind the in-line units
   const BACK_Y = ANCHOR_Y1 + WALL;             // behind the anchor
-  const OX0 = LOT_X0 - FOREST_REACH, OX1 = LOT_X1 + FOREST_REACH;
+  const OX0 = RING_X0 - FOREST_REACH, OX1 = RING_X1 + FOREST_REACH;
   const OY0 = LOT_Y0 - FOREST_REACH, OY1 = BACK_Y + FOREST_REACH;
   woodRect(OX0, OY0, OX1, LOT_Y0, 'wood, behind you');
-  /* the traversal road goes on through the wood on both sides, so the
-     two side strips are each split around it */
-  roadAcross(OX0, LOT_X0, THRU_Y0, THRU_Y1, 'west', { outside: true });
-  roadAcross(LOT_X1, OX1, THRU_Y0, THRU_Y1, 'east', { outside: true });
-  woodRect(OX0, LOT_Y0, LOT_X0, THRU_Y0, 'wood, west, this side of the road');
-  woodRect(OX0, THRU_Y1, LOT_X0, OY1, 'wood, west');
-  woodRect(LOT_X1, LOT_Y0, OX1, THRU_Y0, 'wood, east, this side of the road');
-  woodRect(LOT_X1, THRU_Y1, OX1, OY1, 'wood, east');
-  woodRect(LOT_X0, CANOPY_Y, PARADE_X0 - 2 * WALL, MALL_Y1, 'wood, west flank');
-  woodRect(PARADE_X1 + 2 * WALL, CANOPY_Y, LOT_X1, MALL_Y1, 'wood, east flank');
-  woodRect(LOT_X0, MALL_Y1, ANCHOR_X0 - WALL, BACK_Y, 'wood, behind the west wing');
-  woodRect(ANCHOR_X1 + WALL, MALL_Y1, LOT_X1, BACK_Y, 'wood, behind the east wing');
-  woodRect(LOT_X0, BACK_Y, LOT_X1, OY1, 'wood, behind the store');
+  /* THE THROUGH ROAD carries on past both T-junctions and out through
+     the wood until the forest ends. It is the same five strips as the
+     traversal road it continues, so the lines run on across the junction
+     without a step in them, and it is `outside` — which keeps it out of
+     the store's fuel grid and lets the wood have it instead. */
+  roadRun(OX0, THRU_Y0, RING_X0, THRU_Y1, 'x', 'west', { outside: true });
+  roadRun(RING_X1, THRU_Y0, OX1, THRU_Y1, 'x', 'east', { outside: true });
+  woodRect(OX0, LOT_Y0, RING_X0, THRU_Y0, 'wood, west, this side of the road');
+  woodRect(OX0, THRU_Y1, RING_X0, OY1, 'wood, west');
+  woodRect(RING_X1, LOT_Y0, OX1, THRU_Y0, 'wood, east, this side of the road');
+  woodRect(RING_X1, THRU_Y1, OX1, OY1, 'wood, east');
+  woodRect(RING_X0, CANOPY_Y, PARADE_X0 - 2 * WALL, MALL_Y1, 'wood, west flank');
+  woodRect(PARADE_X1 + 2 * WALL, CANOPY_Y, RING_X1, MALL_Y1, 'wood, east flank');
+  woodRect(RING_X0, MALL_Y1, ANCHOR_X0 - WALL, BACK_Y, 'wood, behind the west wing');
+  woodRect(ANCHOR_X1 + WALL, MALL_Y1, RING_X1, BACK_Y, 'wood, behind the east wing');
+  woodRect(RING_X0, BACK_Y, RING_X1, OY1, 'wood, behind the store');
 
   rm.build();
 
@@ -943,13 +1119,29 @@ export function buildSellWrong() {
   {
     let seed = 20250907;
     const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    /* AND IT THINS IN TWO DIRECTIONS NOW, which is what a lot twice as
+       long asked for. Scaling the old rule up put the same one bay in
+       six along thirteen thousand units of tarmac, and what that draws
+       is not a sparse car park, it is an evenly stocked one that happens
+       to be mostly gaps — a hundred and eighty units between neighbours
+       at the far end of a lot nobody parks at.
+
+       People park near the DOORS. So the chance falls off with distance
+       from the entrance as well as with distance from the road, down to
+       a fifth of it past REACH, and what comes out is a cluster round
+       the porch thinning to the odd abandoned one at the ends. Which is
+       also the frame: a lot this wide with cars only in the middle of it
+       says how much of this place is already over. */
+    const DOORS_X = ENT_A0 + ENTRY_W;                 // between the two sliders
+    const REACH = 3400;                               // how far anyone will walk
     bayRows.forEach((row, ri) => {
       const cy = (row.y0 + row.y1) / 2;
       const n = Math.floor((LOT_X1 - LOT_X0) / BAY_W);
-      const take = 0.17 - ri * 0.026;                 // emptier towards the road
+      const take = 0.24 - ri * 0.026;                 // emptier towards the road
       for (let i = 0; i < n; i++) {
-        if (rnd() > take) continue;
         const cx = LOT_X0 + (i + 0.5) * BAY_W;
+        const near = Math.max(0, 1 - Math.abs(cx - DOORS_X) / REACH);
+        if (rnd() > take * (0.22 + 0.78 * near)) continue;
         /* nobody parks in the two bays either side of the entrance */
         if (Math.abs(cx - (ENT_A0 + ENTRY_W)) < 200 && ri === 0) continue;
         carSlots.push({
@@ -1124,7 +1316,8 @@ export function buildSellWrong() {
   const APART = 54;
   const TRIES = 20;                 // how many goes at a spot before giving up
   /* A slice keeps a run spread out, and a slice can also be entirely
-     inside the deli counter, where re-rolling within it will never help.
+     inside the butchery counter, where re-rolling within it will never
+     help.
      So the first few goes stay in your own slice and the rest are
      anywhere along the run. */
   const WIDEN = 4;
@@ -1243,7 +1436,7 @@ export function buildSellWrong() {
       [500, 320, 3600, 320, 9],     // the front cross-aisle, the busiest floor there is
       [500, 1150, 3600, 1150, 6],   // the mid cross-aisle, between run one and run two
       [500, 1970, 3600, 1970, 6],   // the rear one
-      [400, 2690, 3900, 2690, 4],   // the back one, past the deli
+      [400, 2690, 3900, 2690, 4],   // the back one, past the butchery
     ];
     for (const [x0, y0, x1, y1, base] of WALKS)
       for (let i = 0, n = base * CROWD; i < n; i++)

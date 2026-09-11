@@ -33,6 +33,7 @@
 
 import * as THREE from 'three';
 import { createWallMaterial } from './material.js';
+import { roofFraming } from './ruin.js';
 
 /* A batch collects triangles for one texture and hands back a mesh. */
 class Batch {
@@ -160,6 +161,12 @@ export function buildLevelGeometry(level, bank) {
     const set = new BatchSet();
     for (const s of staticSectors) addFlats(set, level, s, bank);
     for (const l of staticLines) addLine(set, level, l, bank);
+    /* AND THE STEEL, over whichever regions have lost their deck. It
+       goes in the same BatchSet as everything else, so the whole ruined
+       roof of a burnt-out store is one more draw call and not one per
+       region — and it is rebuilt with the rest of the level, which is
+       what keeps it in step with a fire that is still spreading. */
+    for (const s of staticSectors) if (s.ruinRoof) roofFraming(set, s);
     staticGroup.add(set.toGroup(bank));
   }
   rebuildStatic();

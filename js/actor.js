@@ -199,6 +199,11 @@ export class Actor {
     /* fire */
     this.burning = 0;            // tics left alight
     this.burnTick = 0;
+    /* How long something that catches fire has left before it goes off.
+       Only things with a `burn` state have one — see ignite() — and
+       while it is running they are immune to more fire, because what is
+       killing them has already been decided. */
+    this.torch = 0;
     this.burnSprite = null;
 
     this.variant = opts.variant ?? 0;
@@ -411,6 +416,14 @@ export class Actor {
 
   damage(amount, source, opts = {}) {
     if (this.dead || this.removed || !this.shootable) return;
+    /* ALREADY ON FIRE IS ALREADY DEAD, and more fire does not hurry it.
+       Something with a `burn` state has a clock running the moment it
+       catches (see ignite), and that clock is the only thing that ends
+       it — otherwise the stream that lit them kills them in the same
+       tenth of a second it always did and nobody ever runs anywhere.
+       Everything that is not fire still lands: a boxcutter through
+       somebody who is alight still drops them. */
+    if (opts.fire && this.torch > 0) return;
     /* THREE CYLINDERS ARE ONE VAN. A vehicle is too long to be one of
        Doom's things, so it is three of them in a row (see carBlockers),
        and a shot into any third of it is a shot into the vehicle — the
@@ -463,6 +476,28 @@ export class Actor {
     if (this.vehicle) { this.vehicle.ignite(tics); return; }
     const wasAlight = this.burning > 0;
     this.burning = Math.max(this.burning, tics);
+    /* AND SOME THINGS RUN WITH IT. A `burn` state is a thing that does
+       not simply stand there and take the damage: it is set alight, it
+       is given a countdown, and what it does with the countdown is its
+       own business — for a shopper, A_Torch, which is running. The fire
+       is made to outlast the countdown so nobody goes out before they go
+       off. */
+    if (!wasAlight && this.info.burn && !this.dead) {
+      const [lo, hi] = this.info.burnTics ?? [120, 240];
+      this.torch = Math.round(lo + (pRandom() / 255) * (hi - lo));
+      this.burning = Math.max(this.burning, this.torch + 20);
+      /* THEIR OWN FRIGHT FIRST, and this order is not cosmetic: the
+         scare below reaches everybody in range and A_Scare puts a
+         first-time panicker into `info.see`, which for a shopper is the
+         ordinary running state. Frighten them before they are in it and
+         the burn state is clobbered one line after it was set. Already
+         at full panic, A_Scare leaves them alone. */
+      this.panic = this.info.panicTics ?? 280;
+      this.setState(this.info.burn);
+      /* and everybody near them leaves: a person on fire is the loudest
+         warning in the building, and it is running towards them */
+      if (this.info.burnScare) this.game.scare?.(this.x, this.y, this.info.burnScare);
+    }
     if (!wasAlight) {
       this.game.sound?.play('ignite', this);
       /* and anything with a voice uses it */
@@ -477,11 +512,23 @@ export class Actor {
   burnTic() {
     this.burning--;
     if (this.burning <= 0) { this.burning = 0; if (this.burnSprite) { this.burnSprite.remove(); this.burnSprite = null; } return; }
-    if (++this.burnTick >= 12) {
+    /* A TORCH DROPS FIRE MORE OFTEN than a thing standing still burning,
+       and for a reason that is arithmetic rather than drama: it is
+       moving eight units a tic, so twelve tics between drops is a trail
+       with ninety-six-unit holes in it — three cells of a thirty-two
+       unit grid, missed. Close the gaps and a burning shopper CARRIES
+       the fire across a cross-aisle instead of merely dying on the far
+       side of it. */
+    const torched = this.torch > 0;
+    if (++this.burnTick >= (torched ? this.info.burnTrail ?? 12 : 12)) {
       this.burnTick = 0;
       if (!this.dead) this.damage(this.monster ? 4 : 8, this.game.player, { fire: true });
-      /* it drags the fire along behind it */
-      this.game.fire?.ignite(this.x, this.y, 26);
+      /* it drags the fire along behind it, and something that is RUNNING
+         drags a line rather than a dot — see burnTrail, burnFuel and
+         burnRadius on the actor type for why those three numbers are the
+         ones they are. */
+      if (torched) this.game.fire?.ignite(this.x, this.y, this.info.burnFuel ?? 26, this.info.burnRadius ?? 1);
+      else this.game.fire?.ignite(this.x, this.y, 26);
     }
   }
 
@@ -661,6 +708,45 @@ export const ACTIONS = {
      it is in js/people.js; this is the one line of state table that sets
      it off. */
   A_Gib(a) { a.game.giblets?.burst(a); },
+
+  /* ------------------------------------------------------------------
+     ON FIRE AND STILL GOING
+
+     One call every two tics for as long as the countdown ignite() set
+     has left, and then they go off. Three things happen in it and all
+     three matter:
+
+     THEY RUN, on A_Flee, which is the same door-seeking walk a
+     frightened shopper uses — so somebody alight heads for an exit and
+     takes the fire through every cross-aisle on the way rather than
+     wandering.
+
+     THEY DO NOT CALM DOWN. The panic is put back every call, which also
+     makes them the strongest source of the contagion in A_Watch: a
+     burning person running down an aisle empties it, and the people it
+     empties carry the fright on.
+
+     AND THEN THEY GO OFF, wherever they got to — health to zero and the
+     ordinary death, so it is the same fireball, the same thirteen
+     pieces and the same nine hundred units of everybody else leaving
+     that the stream used to produce on the spot. The bang is not extra
+     code; it is the code that was always there, moved to the end of a
+     run rather than the start of one.
+     ------------------------------------------------------------------ */
+  A_Torch(a) {
+    a.panic = Math.max(a.panic, a.info.panicTics ?? 280);
+    ACTIONS.A_Flee(a);
+    if (a.dead || a.removed) return;
+    /* BY THE LENGTH OF THE FRAME, not by one. This runs every two tics,
+       so decrementing by one made `burnTics` mean twice what it says and
+       a shopper burn for fourteen seconds where the table asked for
+       seven. The frame knows how long it is; ask it. */
+    a.torch -= a.state.tics;
+    if (a.torch > 0) return;
+    a.torch = 0;
+    a.health = 0;
+    a.die(a.game.player, 0, { fire: true });
+  },
 
   /* ------------------------------------------------------------------
      RUNNING AWAY

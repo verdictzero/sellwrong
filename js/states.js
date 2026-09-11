@@ -76,6 +76,34 @@ S('SHOP_STAND2', 'SHOP', 'A', 8, 'A_Watch', 'SHOP_STAND');
    harder while it does — see swayOf in js/people.js. */
 S('SHOP_RUN1',   'SHOP', 'A', 3, 'A_Flee', 'SHOP_RUN2');
 S('SHOP_RUN2',   'SHOP', 'A', 3, 'A_Flee', 'SHOP_RUN1');
+
+/* AND THEN THERE IS BEING ON FIRE, which is a third way of standing in
+   the same drawing and the most useful thing a person in this building
+   does.
+
+   Somebody the flame touches used to come apart where they stood: twelve
+   health against eight a tic is a person deleted in the first tenth of a
+   second, and what the fire got out of it was thirteen pieces thrown a
+   couple of aisles and a pool of heat where they had been. At the user's
+   request they now RUN — alight, for several seconds, dropping fire the
+   whole way — and go off wherever they get to.
+
+   That is not a death animation, it is a DELIVERY MECHANISM. A fire
+   spreads at a cell every second or so through bare lino; a burning
+   shopper covers eight units a tic in a straight line towards a door
+   they are never going to reach, through the cross-aisles the fire
+   cannot cross by itself, and then explodes in the middle of whatever is
+   on the other side. Set light to the queue at the tills and the back of
+   the store is alight in twenty seconds — not because the fire travelled
+   but because the people did.
+
+   Two tics a frame rather than three, so somebody alight outruns
+   somebody merely frightened. A_Torch does the rest: it tops the panic
+   up (nobody calms down while they are burning), and it counts down to
+   the bang. Fullbright, because they are lit by the fire on them and
+   that is what makes one legible across a dark shop. */
+S('SHOP_BURN1',  'SHOP', 'A', 2, 'A_Torch', 'SHOP_BURN2', { fullbright: true });
+S('SHOP_BURN2',  'SHOP', 'A', 2, 'A_Torch', 'SHOP_BURN1', { fullbright: true });
 S('SHOP_GIB',    'SHOP', 'A', 1, 'A_Gib', null);      // null next: remove me
 
 /* ---------------------------------------------------------------------
@@ -156,6 +184,43 @@ export const ACTORS = {
        can walk after. */
     speed: 16,
     monster: true, flammable: true, fuel: 90, painSound: 'shopper',
+    /* WHAT CATCHING FIRE DOES TO ONE. `burn` is the state they go to the
+       moment they are alight, and `burnTics` is how long they have: three
+       and a half to seven seconds of running before they go off, rolled
+       per person so a queue that catches together does not pop together.
+
+       The range is the whole of the feel. Under two seconds and it reads
+       as a delayed death rather than as somebody on fire; over ten and
+       the shop fills up with torches that never resolve and the player
+       stops watching any of them. Three to seven is about the length of
+       an aisle at a panicked run, which is the distance that makes the
+       mechanic mean something. */
+    burn: 'SHOP_BURN1', burnTics: [3.5 * TICRATE, 7 * TICRATE],
+    /* AND WHAT THEY LEAVE BEHIND THEM. A drop every eight tics at eight
+       units a tic is a line of fire with sixty-four-unit steps in it,
+       which on a thirty-two-unit grid is two cells lit and one skipped —
+       near enough continuous that the fire behind them joins up.
+
+       burnFuel is FOURTEEN and the number is chosen against a threshold
+       rather than by feel: a cell that is ignited starts at 55 heat plus
+       the strength, js/fire.js lights anything standing in a cell above
+       70, and 55 + 14 is 69. So the trail starts a FIRE and does not
+       itself set light to the person it is running past — that cell
+       climbs over the threshold a fire tic or two later, by which time
+       the runner is fifty units away and whoever catches, catches off
+       the floor like everybody else. One below the line, deliberately:
+       a trail that lights bystanders directly turns a crowd into a
+       chain reaction with nothing in between.
+
+       burnRadius is ONE, meaning the cell they are standing in and not
+       the ninety-six-unit square the default lights. A person is a
+       person wide. */
+    burnTrail: 8, burnFuel: 14, burnRadius: 1,
+    /* and how far the sight of them clears. Less than the nine hundred
+       a fireball clears, more than the three hundred and twenty a fire
+       is noticed at: somebody alight coming down the aisle is worse news
+       than the fire they came from and better news than the bang. */
+    burnScare: 520,
     /* how far a fire has to be before it is somebody else's problem, and
        how long a fright lasts once nothing is chasing it */
     scareRange: 320, panicTics: 8 * TICRATE,

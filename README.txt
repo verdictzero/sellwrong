@@ -6,10 +6,11 @@ flamethrower and burn it down. Then the forest it stands in.
 
 The store is SellWrong, the anchor of a strip mall — one long shed cut
 into tenancies, with the big one in the middle paying most of the rent
-and six small ones either side hanging on. Two of those you can walk
-into. All of them burn. Round the whole parade, for nine thousand units
-in every direction, is a wood of fifty thousand firs and bushes, and
-that burns too.
+and ten small ones either side hanging on. Four of them have a name on
+the fascia and the rest never did. Seven of them you can walk into. All
+of them burn. Round the lot is a perimeter road, and round the whole
+parade, for nine thousand units in every direction, is a wood of fifty
+thousand firs and bushes, and that burns too.
 
 Open index.html in a browser. No install, no build step. Every texture,
 every sprite, every sound and the whole level are generated in the page
@@ -23,7 +24,8 @@ somewhere else: the people, the trees, the sky, and the gun.
   manifest.webmanifest  what a phone calls it when it is added to a home screen
   icon.png              and what it draws there — node tools/bake-icons.mjs
   vendor/three.module.js  three r160, local so the game runs off a memory stick
-  js/                   the game
+  js/                   the game — js/ruin.js is the newest of it: the
+                          steel frame a burnt-out roof leaves behind
   art/                  the logo, the old sprite weapon, the seven four-view
                           vehicle sheets and the atlas packed out of them —
                           which nothing loads any more, and waits there for
@@ -69,7 +71,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         522 checks, no install and no browser
+  the smoke test         564 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -131,6 +133,19 @@ play is short bursts a long way apart. The forty-two fuel cans that used
 to be laid out over the shop floor are gone with it: a can on the floor
 and a tank that regenerates are two answers to the same question, and
 having both means the regeneration never matters.
+
+AND IT WILL NOT LIGHT AGAIN UNTIL IT IS HALF FULL, which is the knob that
+turns that budget into a decision. A tank that refuses only when it is
+empty is a tank you hold the trigger on until it stops and then hold it
+again the moment one unit has trickled back: twelve seconds of flame
+becomes twelve seconds and then a stutter of tenths, and the ten-seconds
+of-walking-per-second-of-flame arithmetic never actually bites. A tank
+that will not light below half is a tank you have to WALK AWAY FROM for a
+full minute — and that minute is the one the fire you have already set
+does its own work in. It latches on empty and clears at half, so the
+gauge only ever has two things to say, and while it is latched the fuel
+percentage on the status bar is replaced by the mark it is climbing to
+with a pip on the bar where that is.
 
 That also gives the BOXCUTTER its job back, so it is issued now — the
 note at the top of js/player.js has said since the day it was written
@@ -196,6 +211,47 @@ that sampled the pause key, so nothing could ever unpause, and on the
 desktop Escape drops the pointer lock and the browser swallows the key
 anyway. Now a lost pointer lock is a pause, the menu releases the mouse
 so it can be pointed at, and a hidden tab pauses too.
+
+
+THE PARADE
+----------
+
+TWENTY IN-LINE UNITS, ten each side, and four of them have a name. It was
+six, three each side, and fourteen more went in at the user's request.
+That is a different building: the frontage was six and a half thousand
+units long and is nearly thirteen now, about three hundred and seventy
+metres, and it changes what the place IS. Six units either side of a
+superstore is a shopping parade with an anchor on it. Twenty is a STRIP
+MALL, and the difference is that the anchor stops being most of what you
+can see — from the mouth of the car park the building runs off both edges
+of the screen and the store is the lit part in the middle of it.
+
+THE FOURTEEN ARE UNBRANDED, which is what was asked for and is also the
+only honest way to draw fourteen more. A fascia is one repeat of a
+96-tall texture and a 432-wide unit says its name seven times, so
+eighteen NAMES along that elevation is a hundred and twenty-six legible
+words shouting over the one sign the level is about. Four is a parade
+with character. Eighteen is noise. So the new ones carry the TRAY and the
+paint in it and nothing else — six colours, muted, because a row of
+saturated boards reads as bunting — and what tells one from the next is
+what tells one unnamed unit from the next in a real parade: whether the
+lights are on, the roller is down, or the glass has been whitewashed from
+the inside.
+
+AND THE RULE IS VISIBLE FROM THE CAR PARK: if the lights are on, the door
+works. Seven of the twenty are open now, up from two, each with a run of
+shelving down both sides, a counter with a flap in it and a back room.
+
+THE CAR PARK HAD TO GROW WITH IT, because the wood down each flank of the
+building is the strip between the lot's edge and the end of the parade —
+a parade longer than its own car park is a rectangle with a negative
+width and a map that will not build. So the lot is derived from the
+parade now instead of being two typed numbers, and the parking thins in
+two directions rather than one: people park near the DOORS, so the
+chance of a bay being taken falls off with distance from the entrance as
+well as with distance from the road. A lot this wide with cars only in
+the middle of it is the cheapest frame in the game for how much of this
+place is already over.
 
 
 THE ONE IDEA
@@ -345,21 +401,51 @@ the end of an aisle is the one that goes round the gondola, and picking
 at random instead threw that away half the time.
 
 WHAT IT LOOKS LIKE, MEASURED. One fire in the middle of the shop, no
-player, no help, sixty seconds: 583 of the 736 end up outside the
-building, scattered across the wood on both flanks, the bays, the driving
-lanes, the verge and the road; about a hundred are still inside in parts
-the fire never reached, and fewer than fifty do not make it. The count of
-people running drops to nothing after the first wave and climbs back over
-a hundred a minute later as the fire reaches the second run of shelving
-and finds the people who had gone back to shopping.
+player, no help, sixty seconds: three hundred of the seven hundred and
+thirty-six end up outside the building, scattered across the wood on both
+flanks, the bays, the driving lanes, the verge and the road; the fire
+takes four fifths of the store in that minute, and nobody alive is still
+standing inside at the end of it. The count of people running drops to
+nothing after the first wave and climbs back a minute later as the fire
+reaches the second run of shelving and finds the people who had gone back
+to shopping.
 
-THE CROWD is the third way it travels, and the fastest. A shopper has
-twelve health, which is under a fifth of what one tic of the stream
-delivers, so anything you point it at comes apart at once: a fireball
-where they were, thirteen pieces of them thrown sixty or seventy units on
-fire, and a little heat in the floor wherever each lands. Torch the queue
-at the tills and you have not started one fire, you have started nine, in
-a fan, in the part of the shop with the most cardboard in it.
+Those numbers used to read six hundred out and fewer than fifty lost,
+with a quarter of the store gone, and the difference between then and now
+is one change: a person the fire reaches now RUNS.
+
+THE CROWD is the third way fire travels and it is by a long way the
+fastest, because the crowd is the only thing in the building that moves.
+A shopper the flame touches used to come apart where they stood — twelve
+health against eight a tic is a person deleted in the first tenth of a
+second — and what the fire got out of it was thirteen pieces thrown a
+couple of aisles and a pool of heat where they had been. At the user's
+request they now catch, RUN for three and a half to seven seconds
+dropping a line of fire behind them, and explode wherever they get to.
+
+That is not a death animation, it is a DELIVERY MECHANISM. Fire spreads
+at about a cell a second through bare lino; a burning shopper covers
+eight units a tic in a straight line toward a door they are never going
+to reach, through the cross-aisles the fire cannot cross by itself, and
+then goes off in the middle of whatever is on the other side. Set light
+to the queue at the tills and the back of the store is alight in twenty
+seconds — not because the fire travelled but because the people did.
+
+THE TRAIL IS ONE BELOW A THRESHOLD, and that number is the whole of the
+tuning. A cell that is ignited starts at 55 heat plus whatever strength
+lit it; js/fire.js sets light to anything standing in a cell above 70; so
+a trail of 14 starts a FIRE and does not itself set light to the person
+it is running past. That cell climbs over the threshold a fire tic or two
+later, by which time the runner is fifty units away and whoever catches,
+catches off the floor like everybody else. A trail that lights bystanders
+directly turns a crowd into a chain reaction with nothing in between, and
+the shop dies in ten seconds flat.
+
+It is still a cascade — this whole system sits near its own critical
+point, and the survivor count moves by a hundred and fifty on a change of
+one in those numbers — which is why the test measures the things that do
+not move: the building empties, hundreds leave through doors, and most of
+the store goes.
 
 THERE ARE SEVEN HUNDRED AND THIRTY-SIX OF THEM, at the user's request,
 up from four hundred and sixty and before that ninety-two. Ninety-two was
@@ -587,20 +673,74 @@ that is not a darker room, it is a room that is no longer there:
                  the light in a gutted aisle comes from
   the shelves  bare uprights, leaning where the heat was worst, with
                  whatever shelf did not fall
-  the roof     mostly STILL THERE, and holed. The profiled deck goes in
-                 patches and the steel purlins never do; where the span
-                 was long enough to fall it has fallen and the ceiling is
-                 sky, and you are standing in a supermarket looking up at
-                 the Milky Way
+  the roof     THREE STAGES, and the last of them is a STEEL FRAME
+                 against the sky rather than a hole in the world — see
+                 below, because it is the part of a burnt building people
+                 actually picture
 
 THE ROOF DOES NOT ALL GO, and getting that wrong made the first cut of
 this look like a demolition rather than a fire. Every gutted region
 opening straight to the sky left a burnt-out store with no ceiling
 anywhere, which is neither what a burnt building looks like nor what
-holds one up. A region needs two things to lose its ceiling now: a span
-long enough to fall — how many cells of the fuel grid it covers — and the
-luck of the draw. Corridors, doorways and small rooms keep theirs. About
-two in five of the big ones come down.
+holds one up. A region needs two things to lose its deck: a span long
+enough to fall — how many cells of the fuel grid it covers — and the luck
+of the draw. Corridors, doorways and small rooms keep theirs.
+
+AND IT GOES IN THREE STAGES, at the user's request, because two was one
+too few. What a region used to do was keep a charred deck or become SKY,
+and "become sky" draws NOTHING — a sky ceiling is a hole the engine does
+not build a surface for — so half a burnt store was a clean rectangular
+absence with a hard edge where the next aisle's ceiling was still up.
+That is a hole in the world, not a roof that has gone. Now:
+
+  the deck holds    RUINDECK: the charred underside of a roof that is
+                      still a roof. Short spans, and the long ones that
+                      got lucky
+  the deck is holed RUINHOLE, which is MASKED — the burnt-through parts
+                      are not drawn at all, so you see the framing under
+                      it and the night past that, and the deck is still
+                      overhead between the holes. Every torn edge glows,
+                      because every hole is somewhere the fire came
+                      through. This is the stage that was missing and it
+                      is the one that does most of the work: it is what a
+                      roof looks like WHILE it is failing rather than
+                      after
+  the deck is gone  sky, as before — and the STEEL the deck was sitting
+                      on, built as real geometry by js/ruin.js
+
+THE STEEL IS THE POINT. A shed this size is a frame with a deck on it;
+the deck burns and the frame is what is standing in the photograph the
+next morning. So a region whose deck has failed gets joists across the
+span at a pitch of ninety-six, beams under them on a column grid of three
+hundred and eighty-four, about a third of the joists sagging between
+supports, one in six simply gone, and the odd panel of deck still lying
+across a bay. Thirteen members over a gutted aisle, twelve triangles
+each, in the same batch as every other piece of steel in the building —
+the whole ruined roof of a fully burnt store is about seven thousand
+triangles and one draw call.
+
+THE ROOF IS ONE ROOF, which is the thing that file exists to get right.
+The fire guts REGIONS, an aisle at a time, so the obvious way to build
+this is per region and the obvious way is wrong: two aisles either side
+of a gutted gondola would each get their own joists, at their own
+offsets, meeting the shelf between them at nothing in particular. What is
+drawn instead is one LATTICE over the whole world, and a region draws the
+piece of it that falls inside its own outline. Which joists sag, which
+are missing, how far one has drooped at a given x — all of it is a hash
+or a curve over the WORLD coordinate, never a number drawn at build time,
+so the steel over one region lines up with the steel over the next and a
+rebuild puts the same frame back in the same place. There are twenty
+rebuilds in a level.
+
+AND IT IS NOT BLACK, which is a decision and not an error. Charred steel
+really is nearly black, and nearly black at this game's brightness —
+everything is written to the framebuffer in linear, so a surface at a
+tenth of the grey ramp lands at about two of 255 — is nothing at all. The
+frame is the only thing in a gutted region with the sky behind it and it
+has to read as a shape, so it sits a third of the way up the ramp with
+rust in its seams and coals down its web. A coal is bright at any
+exposure, and a joist with a line of them along it is legible across a
+dark shop in a way a grey bar is not.
 
 FOUR TEXTURES DO ALL OF IT, chosen by which SLOT a surface fills rather
 than by what it used to be, because past a certain point a partition, a
@@ -614,9 +754,10 @@ across a reload, different from its neighbour's.
 
 IT HAPPENS REGION BY REGION, which is the part worth watching. The roof
 goes in patches, so there is a long stretch where half the shop is still
-a shop and the other half is a shell open to the night with fire in the
-floor of it — and the join between them, a hard edge of ceiling against
-stars, is the best thing in the game.
+a shop, some of it is a deck with holes burnt through it, and the rest is
+open steel with fire in the floor under it — and the join between them, a
+hard edge of ceiling against a frame against stars, is the best thing in
+the game.
 
 AND ALL OF IT IS STILL ALIGHT. The burning trees have always run an
 eight-colour ember ramp against a clock in their shader; a charred wall
@@ -795,26 +936,45 @@ third of the download.
 THE ROAD, AND WHO COMES DOWN IT
 -------------------------------
 
-THERE ARE TWO ROADS AND THEY ARE DIFFERENT THINGS. The FRONTAGE LANE
-runs along the front of the lot between the fire lane and the first row
-of bays; it is the store's own, you drive along it to reach a row, and
-it stops at the ends of the lot. The TRAVERSAL ROAD is the public one
-and it is at the far end, past the last row of bays, running the whole
-width of the lot and on through the wood in both directions until the
-forest ends — the way you drove in, the way everyone else is going to
-arrive, and the only firebreak in the wood.
+IT IS A LOOP, at the user's request. There were two roads and they did
+not meet — a frontage lane along the front of the lot that stopped dead
+at both ends, and a traversal road across the far end that ran on through
+the wood — which is fine until you stand at the west end of the lot and
+look at where the tarmac simply stops. Now there is one PERIMETER ROAD
+all the way round the car park: four straights, four junctions, and the
+public road crossing it at the two bottom corners and carrying on into
+the trees in both directions. Which is what a lot this size has — nobody
+drives through a strip mall's parking, they drive round the edge of it
+and turn in — and it is also the only firebreak in the wood, so the loop
+is the shape of the safe ground.
 
-Which order they are in is the whole reason the second one moved down
-there. A road, then a car park, then a shop, in that order, is what
+Which order the bands are in is the whole reason the through road is at
+the far end. A road, then a car park, then a shop, in that order, is what
 arriving at a supermarket looks like; a road against the shopfront with
 the car park behind it is not a lot, it is a forecourt. You start on the
-verge south of the traversal road, so the opening shot is across a road,
-over a car park, at a supermarket.
+verge south of it, so the opening shot is across a road, over a car park,
+at a supermarket.
 
-Both are five strips of sector (an edge line, a lane, the centre line, a
-lane, an edge line), because a floor is textured to the world grid and a
-64-unit tile cannot hold one line across a 300-unit road, but a strip six
-units wide wearing a tile that is line all the way through can.
+A STRAIGHT IS FIVE STRIPS of sector — an edge line, a lane, the centre
+line, a lane, an edge line — because a floor is textured to the world
+grid and a 64-unit tile cannot hold one line across a 300-unit road, but
+a strip six units wide wearing a tile that is line all the way through
+can. That same world-grid mapping is why there are TWO centre-line
+textures: a tile whose dash runs along x draws one solid unbroken stripe
+down a road that runs along y, which is a different marking meaning a
+different thing, so the two legs of the loop wear ROADLINV and the two
+straights wear ROADLINE.
+
+AND A JUNCTION IS THE PART EVERYBODY LEAVES OUT. Two things happen at
+one and both of them are ABSENCES: there is no centre line through it,
+because you do not paint a lane divider across the place two streams of
+traffic cross, and the edge lines TURN — they run down whichever sides
+are still kerb and stop dead at the sides that are a mouth. A ring road
+with its dashes carried straight through its own corners reads as two
+roads laid on top of each other. The two bottom corners are T-junctions
+rather than bends, so they get the other thing a junction has: a give-way
+bar across the mouth of the minor road, which is the marking that says
+"this is a junction" before you have looked at anything else.
 
 js/responders.js is the PLACEHOLDER for what comes down it: the shape of
 the thing, with nothing in it that can hurt you yet. One number, the
@@ -1649,7 +1809,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-522 checks. Every one of them earns its place by having caught something
+564 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -1754,7 +1914,7 @@ that had already reached a screenshot:
     which is not the same statement: thirty-six apart is not touching and
     is still nowhere to go, because a step is sixteen. The check asks
     every one of them for a step it could take
-  a customer standing on top of a till, a gondola or the deli counter,
+  a customer standing on top of a till, a gondola or the butchery
     found by testing the sector under them rather than the rectangle
     round the shop
   a hard straight line across the shop floor where a burnt aisle met a
@@ -1839,6 +1999,35 @@ that had already reached a screenshot:
     the fan of slivers the flanks were condemned for. The body's own
     unwrap is 134 triangles over 39 per cent of it. The test measures
     the textured primitive alone, and asserts the other one IS the junk
+  ONE SHOP DOORWAY OUT OF TWENTY that the fire never got through, and
+    five rooms behind it that never burned on a map where every other
+    room did. A doorway is 120 by 16 — two or three cells of a
+    thirty-two-unit grid, in a line — and it is the only way in from the
+    footway. At an aisle's fuel a front two cells wide only has to fail
+    once, which is the note on the footway's own fuel in its smallest
+    possible form, and it did not show up until the parade got long
+    enough to have twenty of them. A doorway holds what the pavement
+    outside it holds now, which is also true of a real one. The check
+    that caught it was already there and phrased correctly: every region
+    of the shop must be REACHED, not 97% of the fuel
+  a car park with two typed coordinates in it, which was correct until
+    the parade grew past them and then described a strip of wood with a
+    negative width. The lot is derived from the parade now. The general
+    form of this one — a number typed twice, in two files, that has to
+    agree — is most of what the checks in tools/smoke-test.mjs are for,
+    and three of them were themselves guilty: they asserted the fuel
+    grid's bounds and the ends of the road as literal coordinates, and
+    they all failed the moment the building changed size. They ask
+    structural questions now (is the grid wider than the parade, does
+    the road leave the map at both ends) rather than arithmetic ones
+  a burn timer that ran at half the speed it said, because the state
+    that counts it down runs every TWO tics and the countdown was
+    decremented by one. A shopper asked to burn for seven seconds burned
+    for fourteen. Nothing errors, nothing looks broken, and the only
+    symptom is that every number tuned against it is wrong by a factor
+    of two — which it was, through an entire afternoon of tuning. It
+    decrements by the frame's own length now: the frame knows how long
+    it is, so ask it
   a fatal, silent break. A comment rewritten with a text splice whose end
     offset was one line too far took the function between the two offsets
     with it, and js/main.js was left importing a name js/car.js no longer
@@ -1884,9 +2073,11 @@ WHAT IS NOT DONE
     crowd all facing you. At Doom's sprite scale in a dark shop this
     reads; in daylight it would not
   every vehicle in the car park is the same van. It is the user's model
-    and it is the only one in the project: about twenty of them, sparse,
-    and only the heading differs — no colour variation, no dents,
-    nothing that would break the repeat. The six drawn vehicles that
+    and it is the only one in the project: about thirty-six of them now
+    that the lot is twice as long, sparse, clustered near the doors and
+    thinning to almost nothing at the ends, and only the heading differs
+    — no colour variation, no dents, nothing that would break the
+    repeat. The six drawn vehicles that
     used to be measured and waiting are deleted with the system that
     built them; their sheets are still in art/ if anybody wants them
     back, and a second GLB would drop in beside the van with no code at

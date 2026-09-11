@@ -1396,6 +1396,41 @@ T.ROADLINE = () => {
   return p.snap(0.5);
 };
 
+T.ROADLINV = () => {
+  /* THE SAME LINE, TURNED. A flat is textured to the WORLD grid — u is
+     x/64 and v is y/64, always — so a texture whose dash runs along x
+     draws one continuous stripe down a road that runs along y, which is
+     a solid centre line and means something else entirely. The perimeter
+     road has two legs running north-south, so there is a second dash.
+
+     Forty on and twenty-four off, the same as its neighbour, because
+     they meet at the corners and a dash that changes length halfway
+     round a lot reads as two roads. */
+  const p = T.ASPHALT();
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+    if (y >= 40) continue;
+    if (((y * 5 + x * 3) % 13) < 2) continue;              // worn through
+    p.ink(x, y, 'yellow', 0.60 + ((x + y) & 1) * 0.08);
+  }
+  return p.snap(0.5);
+};
+
+T.ROADGIVE = () => {
+  /* THE LINE YOU STOP AT. Where a leg of the perimeter road meets the
+     through road there is a junction, and what makes a junction read as
+     one rather than as a wide bit of tarmac is the bar across its mouth.
+     Painted as blocks with gaps — a give way rather than a stop, because
+     nothing here is signalled — running along x, since every mouth in
+     this map is a leg arriving from the north or the south. */
+  const p = T.ASPHALT();
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+    if ((x % 16) >= 11) continue;
+    if (((x * 7 + y * 11) % 19) < 2) continue;
+    p.ink(x, y, 'bone', 0.66 + ((x + y) & 1) * 0.06);
+  }
+  return p.snap(0.5);
+};
+
 T.ROADEDGE = () => {
   /* The white line along each edge, same idea: line all the way through. */
   const p = T.ASPHALT();
@@ -1614,6 +1649,34 @@ T.FASWASH = fascia(156, 'WASH', 'cyan', 0.26, 'blue', 0.55);
 /* The dead one. Same tray as its neighbours and no name in it, because
    the tenant took the letters when they left and nobody put any back. */
 T.FASVOID = fascia(158, '', 'grey', 0.22, 'grey', 0.55);
+
+/* --- AND FOURTEEN THAT NEVER HAD ONE ------------------------------
+   Fourteen more tenancies went into the parade at the user's request and
+   none of them is named. That is not a shortcut: a fascia is one repeat
+   of a 96-tall texture and a 432-wide unit says its name seven times, so
+   eighteen NAMES along a three-hundred-and-seventy-metre elevation is a
+   hundred and twenty-six legible words shouting over the one sign the
+   level is about. Four is a parade with character. Eighteen is noise.
+
+   So what these carry is the TRAY and the paint in it, which is all a
+   fascia is before anybody screws letters to it: a coloured board with a
+   lit top edge, a shadow under it and a decade of weather on it. Six
+   colours, and they are the six a shopfitter has in the van — a green,
+   a red, a blue, a cream, a brown and a grey-blue — deliberately muted,
+   because a row of saturated boards reads as bunting.
+
+   THEY GO DARKER THAN THE NAMED ONES, and that is the point of the
+   number rather than an accident of picking it: an unlit board with
+   nothing on it is what the far end of a parade looks like at two in the
+   morning, and the four that DO have names are the four that still pay
+   somebody to leave the lighting on. */
+const PLAIN_FASCIA = [
+  ['green',  0.20], ['red',    0.18], ['blue',   0.22],
+  ['bone',   0.24], ['brown',  0.20], ['cyan',   0.15],
+];
+PLAIN_FASCIA.forEach(([key, t], i) => {
+  T['FASPLAIN' + i] = fascia(170 + i * 2, '', key, t, key, t + 0.2);
+});
 
 /* THERE WAS A PYLON SIGN HERE and it is gone, along with the ring of
    four thin sectors in the map that carried it. It was declared 340
@@ -2104,6 +2167,133 @@ for (let v = 0; v < RUIN_VARIANTS; v++) {
 }
 
 /* ---------------------------------------------------------------------
+   THE DECK, BURNT THROUGH
+
+   The stage between a deck that is charred and a deck that is not there
+   — and the stage that was missing, which is why a gutted store used to
+   go from "ceiling" to "sky" with nothing in between.
+
+   This one is MASKED: where the deck has burnt through there is no
+   texel at all, and what you see through the hole is whatever is behind
+   it, which up here is the framing this roof was sitting on and then the
+   night. That is the whole point of drawing it rather than swapping
+   straight to sky: a roof with holes in it reads as a ROOF, and a ceiling
+   that has been deleted reads as a rendering fault.
+
+   Declared at 128 world units to the tile rather than 64, so a hole is
+   about sixty units across and the repeat is coarse enough that a long
+   run of it does not read as wallpaper. The ribs and the beam line come
+   from the same numbers as RUINDECK, because these are the same roof at
+   two different stages of going.
+   ------------------------------------------------------------------- */
+for (let v = 0; v < RUIN_VARIANTS; v++) {
+  const OPEN = [0.40, 0.33, 0.48][v];          // how much of it is a hole now
+  const PURLIN = [26, 12, 40][v];
+  T['RUINHOLE' + v] = () => {
+    const p = new Pix(64, 64, 520 + v * 11);
+    p.clear();                                  // nothing is here until it is
+    const height = new Float32Array(64 * 64);
+    const gone = fbm(64, 64, 5, 3, 521 + v * 23);
+    const n = fbm(64, 64, 14, 2, 522 + v * 13);
+    /* WHAT IS LEFT OF THE DECK, with the holes actually open. The noise
+       is coarser than RUINDECK's — a hole you can see the sky through is
+       a metre of missing roof, not a scorch mark. */
+    for (let y = 0; y < 64; y++) {
+      for (let x = 0; x < 64; x++) {
+        /* the beam line holds whatever happens either side of it */
+        const onBeam = ((y - PURLIN + 64) % 64) < 7;
+        if (!onBeam && gone[y * 64 + x] > OPEN) continue;   // burnt through
+        const r = x % 16;
+        const t = r < 2 ? 0.04 : r < 4 ? 0.11 : r < 12 ? 0.085 : r < 14 ? 0.06 : 0.04;
+        p.ink(x, y, 'grey', t + n[y * 64 + x] * 0.04);
+        height[y * 64 + x] = r < 4 ? 0.78 : 0.5;
+      }
+    }
+    /* the beam under it, the one thing up here that did not move */
+    for (let k = 0; k < 7; k++) {
+      const y = (PURLIN + k) & 63;
+      const t = k < 2 ? 0.18 : k < 5 ? 0.12 : 0.06;
+      for (let x = 0; x < 64; x++) { p.ink(x, y, 'grey', t); height[y * 64 + x] = k < 2 ? 0.95 : 0.78; }
+    }
+    for (let x = 6; x < 64; x += 16) p.ink(x, (PURLIN + 3) & 63, 'rust', 0.16);
+    p.emboss(height, 0.40, 0.85);
+    /* A TORN EDGE GLOWS. Every hole in this is a place the fire came
+       through, and the metal round one is the last of it still hot —
+       which is also what stops the mask reading as a die-cut. */
+    for (let y = 0; y < 64; y++)
+      for (let x = 0; x < 64; x++) {
+        if (!p.alphaAt(x, y)) continue;
+        const open = !p.alphaAt(x + 1, y) || !p.alphaAt(x - 1, y) ||
+                     !p.alphaAt(x, y + 1) || !p.alphaAt(x, y - 1);
+        if (open) p.wash(x, y, 'fire', 0.30 + (n[y * 64 + x] * 0.22), 0.55);
+      }
+    speckle(64, 64, 110, 523 + v * 5, (x, y, a, b) => {
+      if (p.alphaAt(x, y) && a > 0.93) p.ink(x, y, 'fire', 0.30 + b * 0.32);
+    });
+    return p.snap(0.4);
+  };
+}
+
+/* ---------------------------------------------------------------------
+   THE STEEL THE ROOF WAS SITTING ON
+
+   Not a surface of the building: the SKIN of the joists and beams that
+   js/ruin.js builds as geometry over a region whose deck has gone. So it
+   is a material rather than a picture of anything — charred paint over
+   hot-rolled steel, soot down the web, rust where the paint went before
+   the fire did, and the odd coal still in a seam.
+
+   It tiles both ways, because a member is a box and its ends are drawn
+   with the same texture as its sides. The light comes from the top left
+   like everything else in here.
+   ------------------------------------------------------------------- */
+T.RUINSTEL = () => {
+  const p = new Pix(64, 64, 540);
+  const n = fbm(64, 64, 12, 3, 541);
+  const soot = fbm(64, 64, 6, 3, 542);
+  const height = new Float32Array(64 * 64);
+  for (let y = 0; y < 64; y++)
+    for (let x = 0; x < 64; x++) {
+      /* NOT BLACK, AND THE REASON IS THE PICTURE RATHER THAN THE
+         MATERIAL. Charred steel really is nearly black, and nearly black
+         against a night sky at this game's brightness — everything is
+         written to the framebuffer in linear, so a surface at a tenth of
+         the ramp lands at about two of 255 — is NOTHING. The frame is
+         the only thing in a gutted region with the sky behind it and it
+         has to read as a shape, so it sits a third of the way up the
+         grey rather than a tenth: bright enough to be a silhouette's
+         near edge, dark enough to still be burnt. */
+      p.ink(x, y, 'grey', 0.26 + n[y * 64 + x] * 0.10);
+      height[y * 64 + x] = 0.45 + n[y * 64 + x] * 0.1;
+    }
+  /* soot running DOWN it, which is the direction smoke went */
+  for (let x = 0; x < 64; x++)
+    for (let y = 0; y < 64; y++)
+      if (soot[y * 64 + x] > 0.55) p.wash(x, y, 'grey', 0.08, (soot[y * 64 + x] - 0.55) * 1.5);
+  /* rust in the seams, and a flange line down each side so a member
+     reads as a section rather than as a bar */
+  for (const fx of [1, 2, 61, 62]) {
+    for (let y = 0; y < 64; y++) {
+      p.ink(fx, y, 'rust', 0.24 + n[y * 64 + fx] * 0.10);
+      height[y * 64 + fx] = 0.85;
+    }
+  }
+  speckle(64, 64, 90, 543, (x, y, a, b) => {
+    if (a > 0.86) { p.ink(x, y, 'rust', 0.20 + b * 0.14); height[y * 64 + x] = 0.6; }
+  });
+  p.emboss(height, 0.40, 0.92);
+  /* AND WHAT IS STILL ALIGHT IN THE SEAMS OF IT, which is the other half
+     of making it read: a coal is bright at any exposure, and a frame
+     with a line of them down its web is legible across a dark shop in a
+     way a grey bar is not. The live ones are the shader's, on the same
+     clock as the burnt aisles under it; these are the ones baked in. */
+  speckle(64, 64, 150, 544, (x, y, a, b) => {
+    if (a > 0.88) p.ink(x, y, 'fire', 0.30 + b * 0.34);
+  });
+  return p.snap(0.4);
+};
+
+/* ---------------------------------------------------------------------
    THE SHELVING
 
    Uprights and whatever shelf did not fall. The uprights lean where the
@@ -2164,6 +2354,8 @@ export const CHARRABLE = [
      out of the anchor and along the footway */
   'SHELFMIX', 'BAKECASE', 'UNITGLAS', 'UNITSHUT', 'UNITVOID', 'SOFFIT',
   'FASCHEM', 'FASPHON', 'FASFOOD', 'FASWASH', 'FASVOID', 'PILASTER',
+  /* and the fourteen unnamed ones, which burn like any other board */
+  ...Array.from({ length: 6 }, (_, i) => 'FASPLAIN' + i),
   /* and the sign goes with it, which is the shot worth having */
   'LOGO0', 'LOGO1', 'LOGO2', 'LOGO3',
 ];
@@ -2182,8 +2374,11 @@ const FIXTURES = new Set([
 ]);
 
 /** Every ruin texture there is, for whatever wants to check they exist. */
-export const RUIN = ['WALL', 'FLR', 'DECK', 'RACK']
-  .flatMap(k => Array.from({ length: RUIN_VARIANTS }, (_, v) => `RUIN${k}${v}`));
+export const RUIN = [
+  ...['WALL', 'FLR', 'DECK', 'RACK', 'HOLE']
+    .flatMap(k => Array.from({ length: RUIN_VARIANTS }, (_, v) => `RUIN${k}${v}`)),
+  'RUINSTEL',
+];
 
 /* A region's own number, stable across a reload and different from its
    neighbour's. Knuth's multiplicative hash, which is enough for this. */
@@ -2218,12 +2413,52 @@ export function guttedSurfaces(s, opts = {}) {
   if (s.wallTex && s.wallTex !== 'NONE') out.wallTex = (fixture ? 'RUINRACK' : 'RUINWALL') + v;
   if (s.floorTex && s.floorTex !== 'NONE') out.floorTex = (fixture ? 'RUINRACK' : 'RUINFLR') + v;
 
+  /* ------------------------------------------------------------------
+     AND THE ROOF, WHICH FAILS IN THREE STAGES
+
+     It used to fail in one and a half: a small region kept a charred
+     deck, and a big one either kept it or became SKY on a coin flip.
+     What "became SKY" draws is NOTHING — the engine treats a sky ceiling
+     as a hole and does not build a surface — so half a burnt store was a
+     clean rectangular absence with a hard edge on it where the next
+     aisle's ceiling was still up. That is a hole in the world, not a
+     roof that has gone, and it is the thing the user asked to stop
+     seeing.
+
+     So, in order of how much fire has been through:
+
+       THE DECK HOLDS. A small span, or a big one that got lucky:
+       RUINDECK, which is the charred underside of a roof that is still
+       a roof.
+
+       THE DECK IS HOLED. RUINHOLE, which is MASKED — the burnt-through
+       parts are not drawn at all, so you see the framing under it and
+       the night past that, and the deck is still overhead between the
+       holes. Half its light comes from the sky now, which is what `sky`
+       is for.
+
+       THE DECK IS GONE. Sky, as before — but the region is also flagged
+       `ruinRoof`, and js/ruin.js builds the steel the deck was sitting
+       on: joists across the span, beams on the column lines, some of
+       them sagging and some of them down, with the odd panel of deck
+       still lying across a bay. Which is what is standing in the
+       photograph the morning after a shed like this goes.
+
+     The middle stage is the one that was missing and it is the one that
+     does most of the work, because it is what a roof looks like WHILE it
+     is failing rather than after.
+     ------------------------------------------------------------------ */
   if (s.ceilTex && s.ceilTex !== 'SKY') {
     const cells = opts.cells ?? 0;
     const bigSpan = cells >= 24;                      // about 25,000 square units
-    const collapses = bigSpan && ruinHash(s.index | 0, 0x9e37) < 0.45;
-    if (collapses) { out.ceilTex = 'SKY'; out.sky = 1; }
+    const h = ruinHash(s.index | 0, 0x9e37);
+    if (!bigSpan) out.ceilTex = 'RUINDECK' + v;
+    else if (h < 0.42) { out.ceilTex = 'SKY'; out.sky = 1; out.ruinRoof = 'open'; }
+    else if (h < 0.78) { out.ceilTex = 'RUINHOLE' + v; out.sky = 0.55; out.ruinRoof = 'holed'; }
     else out.ceilTex = 'RUINDECK' + v;
+    /* which of the three ruins this region is, so the steel js/ruin.js
+       hangs over it wears the same deck the region next door still has */
+    out.ruinVariant = v;
   }
   /* and what a neighbour sees of the roof's edge where the heights step */
   if (s.upperTex && s.upperTex !== 'NONE') out.upperTex = 'RUINDECK' + v;
@@ -2292,6 +2527,13 @@ const SIZES = {
   FASFOOD:  { w: 64, h: 96 },
   FASWASH:  { w: 64, h: 96 },
   FASVOID:  { w: 64, h: 96 },
+  /* the unbranded ones, same band as every other fascia */
+  ...Object.fromEntries(Array.from({ length: 6 }, (_, i) => ['FASPLAIN' + i, { w: 64, h: 96 }])),
+  /* A ROOF WITH HOLES IN IT is masked and coarse: 128 world units to
+     the tile, so a hole is sixty across and the repeat is long enough
+     not to read as a pattern down a burnt-out aisle. */
+  ...Object.fromEntries(Array.from({ length: 3 }, (_, i) =>
+    ['RUINHOLE' + i, { w: 128, h: 128, masked: true }])),
   TROLLRAI: { w: 64, h: 48, masked: true },
   /* Door leaves are mapped 0..1 by the slider, never by the wall
      builder, so these numbers only matter if one ends up on a line. */

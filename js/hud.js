@@ -154,7 +154,13 @@ export class Hud {
        every tenth of a second would rebuild it three times a second all
        night for a digit nobody reads. */
     const fuel = p ? Math.round(100 * p.ammoFor(p.weapon) / (p.maxAmmo.fuel || 1)) : 0;
-    const key = [this.width, this.scale, s, burn, wood, left, fuel,
+    /* AND WHETHER IT WILL FIRE, which since the tank started latching at
+       empty is a different question from how much is in it. `refireMark`
+       is the fraction it has to reach before the flamer lights again, or
+       0 when it is not waiting on anything — so the gauge has a pip on
+       it exactly while the answer is "not yet". */
+    const mark = p ? (p.refireMark || 0) : 0;
+    const key = [this.width, this.scale, s, burn, wood, left, fuel, mark,
                  this.messages.map(m => m.text).join('/')].join('|');
     if (key === this._topKey) return;
     this._topKey = key;
@@ -185,13 +191,27 @@ export class Hud {
        two numbers a player acts on are how much of the shop has gone and
        whether there is anything left to burn it with */
     x = bigText(pix, 'FUEL', x + 6 * s, M, 'grey', 0.55, s);
-    bigText(pix, `${Math.min(100, fuel)}%`, x + 2 * s, M,
-      fuel > 40 ? 'cyan' : fuel > 12 ? 'yellow' : 'red', fuel > 12 ? 0.62 : 0.72, s);
+    /* WAITING reads differently from LOW, because they call for opposite
+       things: low is "use it carefully", waiting is "you cannot use it
+       at all yet, go and look at what you have already lit". So a
+       latched tank is drawn red however full it is, and the number is
+       replaced by the mark it is climbing to. */
+    bigText(pix, mark ? `${Math.round(mark * 100)}%?` : `${Math.min(100, fuel)}%`, x + 2 * s, M,
+      mark ? 'red' : fuel > 40 ? 'cyan' : fuel > 12 ? 'yellow' : 'red',
+      mark || fuel <= 12 ? 0.72 : 0.62, s);
     const fx0 = gx0 + gw + 8 * s, fw = 40 * s;
     for (let i = 0; i < fw; i++) {
-      const on = i / fw * 100 <= fuel;
+      const f = i / fw;
+      const on = f * 100 <= fuel;
       for (let k = 0; k < s; k++)
-        pix.ink(fx0 + i, gy + k, on ? (fuel > 12 ? 'cyan' : 'red') : 'grey', on ? 0.5 : 0.18);
+        pix.ink(fx0 + i, gy + k, on ? (mark ? 'red' : fuel > 12 ? 'cyan' : 'red') : 'grey',
+                on ? 0.5 : 0.18);
+    }
+    /* and the pip it has to get to, one column of bone standing clear of
+       the bar above and below it so it reads against a filling gauge */
+    if (mark) {
+      const px = fx0 + Math.round(mark * fw);
+      for (let k = -1; k < s + 1; k++) pix.ink(px, gy + k, 'bone', 0.8);
     }
 
     this.messages.forEach((m, i) =>

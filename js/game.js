@@ -433,7 +433,13 @@ export class Game {
         const s = this.level.sectors[si];
         const to = guttedSurfaces(s, { cells: f.sectorCells[si] });
         for (const k of Object.keys(to)) {
-          if (k === 'sky') { s.sky = to.sky; continue; }
+          /* THREE OF THESE ARE NOT TEXTURES. `sky` is how much of the
+             region's light comes from overhead; `ruinRoof` says whether
+             the deck is holed or gone, which is what makes js/ruin.js
+             hang steel over it; `ruinVariant` is which of the three
+             ruins this region drew. All three would fail the "is there a
+             texture called that" test below and be silently dropped. */
+          if (k === 'sky' || k === 'ruinRoof' || k === 'ruinVariant') { s[k] = to[k]; continue; }
           if (to[k] === 'SKY' || this.textures.map.has(to[k])) s[k] = to[k];
         }
         /* Lit by what is left of it: the cracks in the slab and the sky.

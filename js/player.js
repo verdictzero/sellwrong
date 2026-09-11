@@ -69,6 +69,25 @@ export const INVULNERABLE = true;
 export const TANK = 420;
 export const REGEN_EVERY = 10;
 
+/* AND IT WILL NOT FIRE AGAIN UNTIL IT IS HALF FULL, at the user's
+   request, which is the knob that turns a budget into a DECISION.
+
+   A tank that refuses only when it is empty is a tank you hold the
+   trigger on until it stops and then hold it again the moment one unit
+   has trickled back: twelve seconds of flame becomes twelve seconds
+   followed by a stutter of tenths, and the ten-seconds-of-walking-per-
+   second-of-flame arithmetic above never actually bites. A tank that
+   will not light again below half is a tank you have to WALK AWAY FROM
+   — a full minute of it — and that minute is the one the fire you have
+   already set is doing its own work in.
+
+   Half rather than full because the point is a cooldown and not a
+   punishment: coming back at 210 is six seconds of flame, enough to
+   commit to the next aisle, and the player who waits longer gets more.
+   It latches on empty and clears at half, so the gauge only ever has
+   two things to say. */
+export const REFIRE_AT = 0.5;
+
 const FRICTION   = 0.90625;
 const WALK_FWD   = 25 / 32,  RUN_FWD  = 50 / 32;
 const WALK_SIDE  = 24 / 32,  RUN_SIDE = 40 / 32;
@@ -101,6 +120,9 @@ export const WEAPONS = {
        stream pours every tic the trigger is down whatever the animation
        is doing. Bill the thing that comes out of the nozzle. */
     ammo: 'fuel', ammoPerShot: 0, autofire: true,
+    /* and once it is empty it stays out until the tank is back to half
+       — see REFIRE_AT. A weapon without this simply needs one unit. */
+    refire: REFIRE_AT,
     /* A STREAM, not a cone: every tic the trigger is down, js/flame.js
        sends a few particles out of the nozzle and they fly, drop, and
        light whatever they land on. The reach is theirs to decide. */
@@ -145,6 +167,10 @@ export class Player {
 
     this.ammo = { fuel: TANK, bottles: 0 };
     this.maxAmmo = { fuel: TANK, bottles: 12 };
+    /* THE LATCH. True from the moment the tank runs out until it is back
+       to REFIRE_AT of full, and the only thing that stops the flamer
+       firing while there is fuel in it. */
+    this.dry = false;
     this.regenTick = 0;
     /* TWO WEAPONS NOW. The molotov is built and tested and stays
        switched off; the boxcutter is issued because the tank empties —
@@ -282,6 +308,11 @@ export class Player {
      mid-pour, which flameTic notices. */
   hasAmmo(w) { const d = WEAPONS[w]; return !d.ammo || this.ammo[d.ammo] >= Math.max(1, d.ammoPerShot ?? 1); }
 
+  /** Whether it will actually go off. Two different refusals and the
+   *  player is told which: nothing in the tank, or something in the tank
+   *  and not yet enough of it — see REFIRE_AT. */
+  armed(w) { return this.hasAmmo(w) && !(WEAPONS[w].refire && this.dry); }
+
   selectSlot(n) {
     for (const [k, d] of Object.entries(WEAPONS))
       if (d.slot === n && this.owned[k]) { if (k !== this.weapon) this.pendingWeapon = k; return; }
@@ -309,7 +340,7 @@ export class Player {
       if (this.fireIndex >= d.fire.length) {
         this.fireIndex = -1;
         /* holding the button on an automatic goes straight round again */
-        if (d.autofire && input.attack && this.hasAmmo(this.weapon)) this.startFire();
+        if (d.autofire && input.attack && this.armed(this.weapon)) this.startFire();
         return;
       }
       this.fireTics = d.fire ? d.fireTics[Math.min(this.fireIndex, d.fireTics.length - 1)] : 4;
@@ -324,8 +355,12 @@ export class Player {
       return;
     }
     if (input.attack) {
-      if (this.hasAmmo(this.weapon)) this.startFire();
-      else if (!this._dryClick) { this.game.message('NO ' + (this.def.ammo || 'AMMO').toUpperCase()); this._dryClick = true; }
+      if (this.armed(this.weapon)) this.startFire();
+      else if (!this._dryClick) {
+        this.game.message(this.dry ? 'NOT ENOUGH PRESSURE'
+                                   : 'NO ' + (this.def.ammo || 'AMMO').toUpperCase());
+        this._dryClick = true;
+      }
     } else this._dryClick = false;
   }
 
@@ -362,11 +397,17 @@ export class Player {
     if (d.ammo) {
       if (this.ammo[d.ammo] <= 0) {
         this.fireIndex = -1;
-        if (!this._dry) { g.message('THE TANK IS EMPTY'); this._dry = true; }
+        /* AND IT LATCHES. Empty is not "wait for one unit", it is "wait
+           for half a tank" — see REFIRE_AT — so the refusal has to
+           survive the trickle that starts the moment this happens. */
+        if (!this.dry) {
+          g.message(d.refire ? 'THE TANK IS EMPTY — HALF A TANK TO RESTART'
+                             : 'THE TANK IS EMPTY');
+          this.dry = true;
+        }
         return;
       }
       this.ammo[d.ammo]--;
-      this._dry = false;
     }
     if (!g.flame) return;
     g.flame.fire(g.nozzle(), this.angle, this.pitch);
@@ -380,10 +421,25 @@ export class Player {
    *  holding the trigger still empties it in about twelve seconds. */
   fuelTic() {
     const cap = this.maxAmmo.fuel;
-    if (this.ammo.fuel >= cap) { this.regenTick = 0; return; }
+    if (this.ammo.fuel >= cap) { this.regenTick = 0; this.dry = false; return; }
     if (++this.regenTick < REGEN_EVERY) return;
     this.regenTick = 0;
     this.ammo.fuel = Math.min(cap, this.ammo.fuel + 1);
+    /* and the latch comes off at half, once, with a word for it: the
+       player has been walking for a minute and the only thing they want
+       to know is whether the gun works again */
+    if (this.dry && this.ammo.fuel >= cap * REFIRE_AT) {
+      this.dry = false;
+      this.game.message('HALF A TANK');
+    }
+  }
+
+  /** How full the tank has to be before the flamer will light again,
+   *  as a fraction — 0 when it is not waiting on anything. What the HUD
+   *  draws the pip at. */
+  get refireMark() {
+    const d = WEAPONS[this.weapon];
+    return this.dry && d.refire ? d.refire : 0;
   }
 
   throwBottle() {

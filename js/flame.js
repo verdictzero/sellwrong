@@ -165,8 +165,15 @@ export class FlameStream {
   }
 
   _burnActor(a, x, y, z) {
-    a.damage(5 + (pRandom() % 5), this.game.player, { fire: true });
+    /* LIGHT IT FIRST, THEN HURT IT, and the order is the whole of why a
+       shopper now runs instead of coming apart where they stood. A
+       shopper has twelve health and this does five to nine, so the
+       second particle of the stream — same tic — used to finish them
+       before anything had a chance to set them alight. Igniting first
+       starts the countdown in Actor.ignite, and a thing with a countdown
+       running ignores fire damage until it runs out. */
     if (a.flammable) a.ignite?.(300);
+    a.damage(5 + (pRandom() % 5), this.game.player, { fire: true });
     this.game.fire?.ignite(x, y, STREAM.heat, 24);
     this.game.fx?.splash(x, y, z);
   }
