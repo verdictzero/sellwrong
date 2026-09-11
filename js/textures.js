@@ -427,12 +427,19 @@ T.CEILTILE = () => {
    units instead of one, which is nothing on a surface three metres over
    your head that is never seen square on.
 
-   THE TEXTURE ONLY DRAWS THE HOUSING. The light itself is a separate
-   object hanging in that housing — because a light you can shoot out is
-   worth ten you cannot, and a lamp painted into the ceiling can never be
-   anything but painted. The recess here is dark and stays dark; what
-   makes it look lit is the thing hanging in it, and when that thing
-   bursts the recess is what is left.
+   THE TEXTURE IS THE WHOLE LIGHT. There used to be a LAMP sprite hung
+   34 units under the ceiling doing the lit part, and it is gone: the
+   fitting is paint, so the paint has to be ALIGHT — a near-white
+   diffuser, four tubes at the top of the ramp, and a glow thrown onto
+   the tiles around the flange, which is the part that actually says the
+   thing is on.
+
+   The old objection to painting a light into a ceiling was that it stays
+   lit after you have broken it. It does not, and no sprite was needed to
+   fix that: a flat is shaded by its sector's light level like every
+   other surface, and the sector's light level IS these fittings (see
+   Game.relight). Kill the lights over an aisle and the ceiling that was
+   throwing the light goes down with the aisle it was throwing it on.
 
    The fitting is centred in the texture on purpose. Flats are aligned to
    the world grid and the vertical axis is flipped on upload, so anything
@@ -449,20 +456,17 @@ T.CEILFIT = () => {
      same 256 pitch at the same offset — a fitting drawn anywhere else is
      a lamp hanging beside a hole.
 
-     WHAT IS DRAWN HERE IS THE HARDWARE AND NOT THE LIGHT. That division
-     is the whole reason a light in this game is an object: the tray, the
-     lampholders and the ribbed diffuser are painted into the ceiling and
-     stay there for ever, and whether anything is coming out of them is
-     the LAMP sprite's business, which is per fitting and can be shot
-     out. Paint a lit fixture into the ceiling and every fitting in the
-     shop stays lit after you have broken it.
+     WHAT IS DRAWN HERE IS A LIGHT THAT IS ON, and every fitting in the
+     shop is the same one, because a tiling texture cannot be anything
+     else. That is the trade for having no sprite, and it is the right
+     way round: a shop lit evenly by its ceiling is what a shop looks
+     like, and the unevenness that matters — the run of lights over a
+     fire going out together — comes from the sectors darkening and the
+     ceiling charring, both of which this can draw.
 
-     So the diffuser is drawn at about the brightness of the tiles around
-     it: pale ribbed glass with the tubes showing through as slightly
-     lighter bands. Neither a hole nor a lamp. From the user's reference:
-     four tubes, a prismatic diffuser ribbed across the short way, dark
-     lampholders at both ends of every tube, and a pale works-painted
-     tray with a flange round it. */
+     From the user's reference: four tubes, a prismatic diffuser ribbed
+     across the short way, dark lampholders at both ends of every tube,
+     and a pale works-painted tray with a flange round it. */
   const p = new Pix(64, 64, 44);
 
   const n = fbm(64, 64, 16, 2, 44);
@@ -503,69 +507,134 @@ T.CEILFIT = () => {
    one that does not. At one texel they alias into a flat grey the moment
    the ceiling is at any angle, which is always, because it is a ceiling.
    ------------------------------------------------------------------ */
-function fitTray(p, x0, y0, w, h, seed) {
+function fitTray(p, x0, y0, w, h, seed, lit = true) {
   const rng = makeRng(seed);
   const x1 = x0 + w - 1, y1 = y0 + h - 1;
-
-  /* the shadow the flange casts on the tiles, then the flange itself */
-  p.frame(x0 - 2, y0 - 2, w + 4, h + 4, 'grey', 0.22);
-  for (let y = y0 - 1; y <= y1 + 1; y++)
-    for (let x = x0 - 1; x <= x1 + 1; x++)
-      p.ink(x, y, 'bone', 0.50 + (y < y0 ? 0.10 : 0));
-  /* and the corner joints, which is where a works-painted tray shows */
-  for (const cx of [x0 - 1, x1 + 1]) for (const cy of [y0 - 1, y1 + 1]) p.ink(cx, cy, 'grey', 0.34);
-
-  /* the tray, white inside, with the reflector turning down at the ends */
-  for (let y = y0; y <= y1; y++)
-    for (let x = x0; x <= x1; x++)
-      p.ink(x, y, 'bone', 0.38);
-  p.vline(x0, y0, y1, 'grey', 0.30); p.vline(x1, y0, y1, 'grey', 0.26);
-
   /* FOUR TUBES. Even spacing across the tray's depth, one texel each,
      which at four units to the texel is a fat tube — and a fat tube is
      the right answer at this size, because the alternative is a tube
      that is there in some ceiling tiles and not in others. */
   const rows = [y0 + 2, y0 + 5, y0 + 8, y0 + 11];
+  /* how far outside the flange a texel is */
+  const out = (x, y) => Math.hypot(Math.max(0, x0 - 1 - x, x - x1 - 1),
+                                   Math.max(0, y0 - 1 - y, y - y1 - 1));
+
+  const R = 6;
+  for (let y = y0 - 1 - R; y <= y1 + 1 + R; y++)
+    for (let x = x0 - 1 - R; x <= x1 + 1 + R; x++) {
+      const d = out(x, y);
+      if (d <= 0 || d > R) continue;
+      /* WHAT IT THROWS ON THE TILES AROUND IT, which is the one thing
+         that says a fitting is lit rather than merely pale. Measured out
+         from the flange and falling off, so the tile beside a fitting is
+         visibly brighter than the tile halfway between two of them —
+         which is what a ceiling under fluorescent light does, and the
+         reason you can tell at a glance from the ceiling alone whether a
+         shop's lights are on.
+
+         The flange's SHADOW is the other half of that. A fitting that is
+         lit does not cast one onto the tiles it is lighting; a dead one
+         in a burnt ceiling does nothing else. */
+      if (lit) p.wash(x, y, 'bone', 0.98, (1 - d / (R + 1)) * 0.40);
+      else p.wash(x, y, 'grey', 0.10, (1 - d / (R + 1)) * 0.55);
+    }
+
+  /* THE FLANGE: works-painted steel with its own tubes shining on it,
+     so it is the brightest thing on the ceiling short of the glass. */
+  for (let y = y0 - 1; y <= y1 + 1; y++)
+    for (let x = x0 - 1; x <= x1 + 1; x++)
+      p.ink(x, y, lit ? 'bone' : 'grey', lit ? 0.80 + (y < y0 ? 0.06 : 0) : 0.22);
+  /* the corner joints, which is where a works-painted tray shows — a
+     seam in something lit, and a dark notch in something dead */
+  for (const cx of [x0 - 1, x1 + 1]) for (const cy of [y0 - 1, y1 + 1])
+    p.ink(cx, cy, lit ? 'bone' : 'grey', lit ? 0.60 : 0.10);
+
+  /* the tray, white inside, with the reflector turning down at the ends */
+  for (let y = y0; y <= y1; y++)
+    for (let x = x0; x <= x1; x++)
+      p.ink(x, y, lit ? 'bone' : 'grey', lit ? 0.66 : 0.13);
+  p.vline(x0, y0, y1, lit ? 'bone' : 'grey', lit ? 0.56 : 0.10);
+  p.vline(x1, y0, y1, lit ? 'bone' : 'grey', lit ? 0.52 : 0.09);
+
   for (const ty of rows)
     for (let x = x0 + 2; x <= x1 - 2; x++) {
-      /* Brighter than the ceiling tiles around it, and that is correct
-         for a fitting that is OFF: a tube behind prismatic glass is
-         white, and a ceiling tile is thirty years old. */
-      p.ink(x, ty, 'bone', 0.84);            // the tube through the glass
-      p.ink(x, ty + 1, 'bone', 0.62);        // and the light it throws on the tray
+      if (!lit) {
+        /* WHAT IS LEFT OF A TUBE THAT COOKED: a dark line with pieces
+           missing out of it, and nothing behind where the glass was but
+           the inside of the tray. */
+        if (((x * 7 + ty * 13) & 7) < 3) continue;
+        p.ink(x, ty, 'grey', 0.26); p.ink(x, ty + 1, 'grey', 0.16);
+        continue;
+      }
+      /* THE TUBES ARE COOL AND THE PAINT ROUND THEM IS WARM. Grey at the
+         top of its ramp is 248,248,252 and bone at the top is
+         244,238,216 — the same luminance, a different white — and a cool
+         tube over warm paint is what makes white read as LIGHT rather
+         than as more white paint. They are also the only thing in the
+         shop drawn at the very top of a ramp, which is what being the
+         light source means.
+
+         THE BANDS HAVE TO BEAT THE RIBS. Two bright texels against one
+         dim one is four tubes; anything closer than that crossed with
+         the ribbing below is a grille, and a grille in a ceiling is not
+         a light, it is a vent. */
+      p.ink(x, ty, 'grey', 1.0);             // the tube through the glass
+      p.ink(x, ty + 1, 'bone', 0.94);        // and the light it throws on the tray
     }
 
   /* THE PRISMATIC DIFFUSER over the lot of it: ribs across the short
      way, two texels to a rib, so the facet that faces the light and the
-     one that does not each get one.
+     one that does not each get one. Gone entirely on a dead one — the
+     glass is the first thing off a fitting that has been in a fire.
 
      ONE ALPHA THE WHOLE HEIGHT OF THE TRAY, which is the difference
      between ribs and a dot grid. The first cut washed the tube rows and
      the gaps between them by different amounts, and the ribbing crossed
      with the banding came out as a chequer — which is what a diffuser
-     does NOT look like, and which at ceiling distance is just noise. */
-  for (let x = x0 + 1; x <= x1 - 1; x++) {
-    const lit = ((x - x0) & 2) === 0;
-    for (let y = y0 + 1; y <= y1 - 1; y++)
-      p.wash(x, y, 'bone', lit ? 0.90 : 0.24, 0.15);
-  }
+     does NOT look like, and which at ceiling distance is just noise.
+     It is faint for the same reason: at four units to the texel a rib is
+     under a pixel from the floor, so its whole job is to take the shine
+     off, not to be seen. */
+  if (lit)
+    for (let x = x0 + 1; x <= x1 - 1; x++) {
+      const face = ((x - x0) & 2) === 0;
+      for (let y = y0 + 1; y <= y1 - 1; y++)
+        p.wash(x, y, 'bone', face ? 1.0 : 0.58, 0.12);
+    }
 
   /* THE LAMPHOLDERS, last, because they are the one thing on a fitting
      that is genuinely dark and the diffuser does not go over them: the
      glass stops short of the holders at both ends. Two texels square, one
-     per tube per end, so four of them read as four. */
+     per tube per end, so four of them read as four — and against a lit
+     tray they are the detail that keeps this from being a white slab. */
   for (const ty of rows)
     for (const ex of [x0 + 1, x1 - 2])
       for (let j = 0; j < 2; j++) for (let i = 0; i < 2; i++)
-        p.ink(ex + i, ty + j, 'grey', j ? 0.12 : 0.18);
+        p.ink(ex + i, ty + j, 'grey', lit ? (j ? 0.12 : 0.18) : (j ? 0.06 : 0.09));
+
+  if (!lit) {
+    /* the scorch where the ballast went, and the last of the fire in it.
+       The ember speckle charVariant lays over the whole ceiling is
+       painted out by everything above — the fitting is hardware, not
+       tile — so a little of it goes back. */
+    const sx = x0 + 2 + Math.floor(rng() * (w - 9));
+    for (let y = y0 - 2; y <= y0 + 3; y++)
+      for (let x = sx; x < sx + 7; x++) p.wash(x, y, 'grey', 0.04, 0.5);
+    for (let y = y0; y <= y1; y++)
+      for (let x = x0; x <= x1; x++)
+        if (rng() < 0.03) p.ink(x, y, 'fire', 0.26 + rng() * 0.30);
+    return;
+  }
 
   /* and thirty years of dust on the inside of the glass, which is why
-     the ends of a fitting are always greyer than its middle */
+     the ends of a fitting are always greyer than its middle. Lighter
+     than it was: the tubes are alight now and they wash some of it out,
+     but not all of it, and a fitting with no grime in it is a render. */
   for (let y = y0; y <= y1; y++)
     for (let x = x0; x <= x1; x++) {
       const e = Math.min(x - x0, x1 - x) / (w / 2);
-      if (e < 0.34) p.wash(x, y, 'grey', 0.24, (0.34 - e) * 0.5);
-      if (rng() < 0.06) p.wash(x, y, 'olive', 0.30, 0.20);
+      if (e < 0.34) p.wash(x, y, 'grey', 0.30, (0.34 - e) * 0.38);
+      if (rng() < 0.05) p.wash(x, y, 'olive', 0.34, 0.16);
     }
 }
 
@@ -1786,7 +1855,7 @@ T.MISSING = () => {
        what stop it reading as "the lights went out"
      a few EMBERS survive, and they are the only saturated colour left
    ------------------------------------------------------------------ */
-export function charVariant(src, seed) {
+export function charVariant(src, seed, after = null) {
   const p = new Pix(src.w, src.h, seed, src.wrap);
   p.data.set(src.data);
 
@@ -1827,6 +1896,12 @@ export function charVariant(src, seed) {
     if (a > 0.80) p.ink(x, y, 'fire', 0.34 + b * 0.34);
     else if (a > 0.45) p.wash(x, y, 'fire', 0.18, 0.40);
   });
+  /* AND ANYTHING THAT WAS NOT A SURFACE. Charring is a filter over
+     pixels: it can darken a light fitting but it cannot know that the
+     thing it just darkened has stopped being a light and needs drawing
+     again, dead. That is what `after` is for. Before the snap, so the
+     whole texture is quantised once. */
+  if (after) after(p);
   return p.snap(0.4);
 }
 
@@ -2228,6 +2303,18 @@ const SIZES = {
   CEILFIT:  { w: 256, h: 256 },
 };
 
+/* THE ONE SURFACE THE FIRE DOES MORE THAN DARKEN. Everything else in
+   the shop is a material and charring it is enough; the ceiling has a
+   LIGHT painted into it, and a darker picture of a light is still a
+   picture of a light. So the fitting is drawn again over the charred
+   ceiling with `lit` false — dead tubes with pieces out of them, no
+   diffuser, the flange's shadow back, and the ballast's scorch — which
+   is the burst lamp sprite's old job, done in the place that knows the
+   fire has been through. Same box fitTray is called with above. */
+const AFTER_THE_FIRE = {
+  CEILFIT: p => fitTray(p, 16, 25, 32, 14, 47, false),
+};
+
 export function bakeTextures() {
   const bank = new TextureBank();
   const t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
@@ -2240,7 +2327,8 @@ export function bakeTextures() {
   /* and the same surfaces again, after the fire has been through */
   CHARRABLE.forEach((name, i) => {
     if (!raw[name]) { console.warn('nothing to char:', name); return; }
-    bank.add(name + '_B', charVariant(raw[name], 3300 + i * 31), SIZES[name] || {});
+    bank.add(name + '_B', charVariant(raw[name], 3300 + i * 31, AFTER_THE_FIRE[name]),
+             SIZES[name] || {});
   });
   const ms = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
   console.log(`baked ${bank.map.size} textures in ${ms.toFixed(0)}ms`);

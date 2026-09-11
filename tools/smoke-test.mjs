@@ -587,8 +587,12 @@ section('lighting');
   check('the ambient survives, so it is dark and not blind',
         aisle.light >= aisle.ambient - 1e-6 && aisle.light > 0.1,
         `${aisle.light.toFixed(2)} vs ambient ${aisle.ambient}`);
-  check('a burst lamp is dead and shows its broken frame',
-        g.lamps.some(l => l.dead && l.state && l.state.sprite === 'LAMP'));
+  /* A DEAD LIGHT HAS NOTHING TO SHOW ANY MORE — there is no broken
+     frame, because there is no frame — so what has to be true is that
+     it is out of the grid the relight is built from. */
+  check('a burst lamp is dead and out of the relight',
+        g.lamps.some(l => l.dead) && g._lampGrid.size > 0 &&
+        [...g._lampGrid.values()].flat().every(l => !l.dead && !l.removed));
   check('bursting a lamp throws sparks', g.projectiles.some(p => p.kind === 'SPARK'));
 
   /* ---- and the pause, while there is a real Game to hand ----
@@ -1299,94 +1303,154 @@ section('the crowd');
 
 /* ---------- the lights ---------- */
 /* A FOUR-TUBE TROFFER BEHIND A PRISMATIC DIFFUSER, at the user's
-   request, and the division of labour is the thing worth testing: the
-   ceiling texture paints the FITTING and the sprite says whether
-   anything is coming out of it. Paint a lit fixture into the ceiling and
-   every light in the shop stays lit after you have shot it out. */
+   request, and there is no sprite any more: the ceiling texture is the
+   whole of the fitting. So what has to be tested is what the PAINT
+   says, because the paint is now the only thing that says a light is on.
+
+   The failure this section exists to catch is the one the texture was
+   originally written to be: a fitting drawn at the brightness of the
+   ceiling tiles around it is a fitting that is SWITCHED OFF, and a shop
+   full of those looks like a power cut with the fog lights on. Nothing
+   else in the game would say so — a flat has no opinion about whether
+   it is meant to be a light — so it is measured here. */
 section('the lights');
 {
   const st = await import('../js/states.js');
   const bank = spr.bakeSprites();
-  const lamp = L => bank.get('LAMP', L);
-  check('the fitting is drawn four ways', 'ABCD'.split('').every(L => lamp(L).key === 'LAMP' + L),
-    'lit, burst, a tube gone, and striking');
-  check('and all four are the same fitting at the same size',
-    new Set('ABCD'.split('').map(L => `${lamp(L).w}x${lamp(L).h}`)).size === 1,
-    `${lamp('A').w}x${lamp('A').h}`);
-  /* THE LIT ONE IS THE BRIGHT ONE, the burst one is not, and the two in
-     between are in between. Measured, because "it looks lit" is what a
-     fullbright flag says and not what the pixels say. */
-  const lum = L => {
-    const p = lamp(L).views[0];
-    let n = 0, t = 0;
-    for (let i = 0; i < p.w * p.h; i++) {
-      if (p.data[i * 4 + 3] < 128) continue;
-      n++; t += p.data[i * 4] * 0.3 + p.data[i * 4 + 1] * 0.6 + p.data[i * 4 + 2] * 0.1;
-    }
-    return t / Math.max(1, n) / 255;
-  };
-  const [lit, burst, fail, strike] = ['A', 'B', 'C', 'D'].map(lum);
-  note('how bright each one is', `lit ${lit.toFixed(2)}, a tube gone ${fail.toFixed(2)}, ` +
-    `striking ${strike.toFixed(2)}, burst ${burst.toFixed(2)}`);
-  check('a lit fitting is the brightest of them', lit > fail && fail > strike && strike > burst,
-    `${lit.toFixed(2)} > ${fail.toFixed(2)} > ${strike.toFixed(2)} > ${burst.toFixed(2)}`);
-  check('and a burst one is nearly dark', burst < 0.22, burst.toFixed(2));
-  check('only the working ones are their own light',
-    lamp('A').fullbright && lamp('C').fullbright && lamp('D').fullbright && !lamp('B').fullbright);
-  /* the ceiling still paints the HARDWARE and not the light: it is in
-     CHARRABLE, so the fire blackens it, and it must not be so bright
-     that a shot-out fitting still glows */
-  check('the ceiling fitting chars with the room', tex.CHARRABLE.includes('CEILFIT'));
 
-  /* --- THE FLICKER --- */
-  check('a fitting on its way out has a ring of states to run round',
-    st.LAMP_FLICKER.length >= 4 && st.LAMP_FLICKER.every(n => st.stateOf(n)));
-  {
-    /* round the ring once: every state has to lead back into it, the
-       frames have to actually change, and the dark half has to be a
-       minority of the cycle or it reads as a broken light rather than a
-       failing one */
-    let name = st.LAMP_FLICKER[0], tics = 0, dark = 0, seen = new Set(), frames = new Set();
-    for (let i = 0; i < 40; i++) {
-      const s2 = st.stateOf(name);
-      seen.add(name); frames.add(s2.frame);
-      tics += s2.tics; if (s2.frame === 'D') dark += s2.tics;
-      name = s2.next;
-      if (name === st.LAMP_FLICKER[0]) break;
+  /* --- NOTHING DRAWS A LAMP --- */
+  check('a light has no sprite', bank.count('LAMP') === 0 && !bank.frames.has('LAMPA'),
+    'the fitting is paint in the ceiling');
+  check('and no state to draw one with',
+    !st.ACTORS.LAMP.spawn && !st.ACTORS.LAMP.death &&
+    !Object.keys(st.STATES).some(n => n.startsWith('LAMP')) &&
+    st.LAMP_FLICKER === undefined,
+    'no lit, no burst, no flicker ring');
+  check('but it is still a source and still a target',
+    st.ACTORS.LAMP.shootable && st.ACTORS.LAMP.hangBelow > 0 && !st.ACTORS.LAMP.solid);
+
+  /* --- WHAT THE CEILING SAYS ---
+     The fitting is drawn dead centre of a 64-texel tile that spans 256
+     world units, which is the same grid and the same offset the lights
+     are laid on; the tray is the 32x14 box fitTray is called with. */
+  const tbank = tex.bakeTextures();
+  const X0 = 16, Y0 = 25, X1 = 47, Y1 = 38;
+  const measure = (name) => {
+    const p = tbank.map.get(name).pix, d = p.data;
+    const L = (x, y) => { const i = (y * p.w + x) * 4; return (d[i] * 0.3 + d[i + 1] * 0.6 + d[i + 2] * 0.1) / 255; };
+    const mean = (x0, y0, x1, y1) => {
+      let t = 0, n = 0;
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { t += L(x, y); n++; }
+      return t / n;
+    };
+    /* how far outside the flange a texel is, so the glow can be measured
+       as a ring without knowing anything about how it was drawn */
+    const out = (x, y) => Math.hypot(Math.max(0, X0 - 1 - x, x - X1 - 1), Math.max(0, Y0 - 1 - y, y - Y1 - 1));
+    let halo = 0, hn = 0, far = 0, fn = 0, max = -1, mx = 0, my = 0, min = 2;
+    for (let y = 0; y < p.h; y++) for (let x = 0; x < p.w; x++) {
+      const v = L(x, y), o = out(x, y);
+      if (o > 0 && o <= 4) { halo += v; hn++; }
+      if (o > 8) { far += v; fn++; }
+      if (v > max) { max = v; mx = x; my = y; }
+      if (o === 0) min = Math.min(min, v);
     }
-    note('the flicker', `${tics} tics round, ${frames.size} frames, dark for ${Math.round(100 * dark / tics)}% of it`);
-    check('the ring closes', name === st.LAMP_FLICKER[0] && seen.size === st.LAMP_FLICKER.length);
-    check('and it is mostly alight', dark / tics < 0.2, `${Math.round(100 * dark / tics)}% dark`);
-    check('and it takes a second or two to come round', tics > 35 && tics < 200, `${tics} tics`);
+    /* and where the light in the picture actually is */
+    const all = [];
+    for (let y = 0; y < p.h; y++) for (let x = 0; x < p.w; x++) all.push([L(x, y), x, y]);
+    all.sort((a, b) => b[0] - a[0]);
+    let sx = 0, sy = 0, sw = 0;
+    for (const [v, x, y] of all.slice(0, Math.round(p.w * p.h * 0.06))) { sx += x * v; sy += y * v; sw += v; }
+    /* the row profile down the tray: four tubes have to read as four */
+    const rows = [];
+    for (let y = Y0; y <= Y1; y++) rows.push(mean(X0 + 2, y, X1 - 2, y));
+    let peaks = 0;
+    for (let i = 1; i < rows.length - 1; i++) if (rows[i] > rows[i - 1] && rows[i] >= rows[i + 1]) peaks++;
+    return {
+      tray: mean(X0, Y0, X1, Y1), halo: halo / hn, far: far / fn, max, min, peaks,
+      inside: mx >= X0 && mx <= X1 && my >= Y0 && my <= Y1,
+      cx: (sx / sw) * 4, cy: (sy / sw) * 4,          // texels are four units
+    };
+  };
+  const m = measure('CEILFIT');
+  note('the ceiling, measured', `fitting ${m.tray.toFixed(2)}, tiles beside it ${m.halo.toFixed(2)}, ` +
+    `tile between fittings ${m.far.toFixed(2)}`);
+  check('the fitting is lit and not switched off', m.tray > m.far * 1.2,
+    `${m.tray.toFixed(2)} against ${m.far.toFixed(2)} of ceiling tile`);
+  check('and it throws light on the tiles around it', m.halo > m.far + 0.025,
+    `${m.halo.toFixed(2)} beside it, ${m.far.toFixed(2)} away from it`);
+  check('the brightest thing on the ceiling is inside a fitting', m.inside && m.max > 0.88,
+    `${m.max.toFixed(2)}`);
+  check('four tubes read as four', m.peaks === 4, `${m.peaks} bands across the tray`);
+  /* THE ONE GENUINELY DARK DETAIL. Without the holders a lit troffer at
+     this size is a white slab, and a white slab in a ceiling is a hole. */
+  check('and the lampholders are still dark', m.min < m.tray * 0.5,
+    `darkest texel in the fitting ${m.min.toFixed(2)}`);
+
+  /* A SOURCE HAS TO SIT IN THE FITTING THAT APPEARS TO BE THROWING IT.
+     Flats are aligned to the world grid, so this is the check that the
+     painted fitting and the light in js/maps/sellwrong.js are the same
+     light and not two things 128 units apart. */
+  {
+    const lampsHere = MAP.buildSellWrong().things.filter(t => t.type === 'LAMP');
+    const off = (v) => ((v % 256) + 256) % 256;
+    const offs = new Set(lampsHere.map(t => `${off(t.x)},${off(t.y)}`));
+    note('the light in the picture / the light in the map',
+      `${m.cx.toFixed(0)},${m.cy.toFixed(0)} against ${[...offs][0]}`);
+    check('every light is on the same 256 grid as the painted fittings', offs.size === 1,
+      `${offs.size} offsets`);
+    const [ox, oy] = [...offs][0].split(',').map(Number);
+    check('and it sits in the fitting that appears to be throwing it',
+      Math.abs(m.cx - ox) <= 8 && Math.abs(m.cy - oy) <= 8,
+      `${Math.abs(m.cx - ox).toFixed(0)} and ${Math.abs(m.cy - oy).toFixed(0)} units out`);
+    check('and they are all the same light now', lampsHere.every(t => !t.variant),
+      'a tiling texture cannot paint one fitting differently from the next');
   }
 
-  /* --- AND THE SHOP IS NOT UNIFORM --- */
+  /* --- AND WHEN IT BURNS, IT STOPS BEING A LIGHT ---
+     This is the answer to the old objection to painting a light into a
+     ceiling: the charred twin is dark, and the sector it was lighting
+     goes dark with it (see the lighting section). */
+  check('the ceiling fitting chars with the room', tex.CHARRABLE.includes('CEILFIT'));
+  const burnt = measure('CEILFIT_B');
+  note('and once the fire has been through', `fitting ${burnt.tray.toFixed(2)}, was ${m.tray.toFixed(2)}; ` +
+    `ceiling round it ${burnt.far.toFixed(2)}`);
+  check('a burnt fitting stops looking like a light', burnt.tray < m.tray * 0.5,
+    `${burnt.tray.toFixed(2)} against ${m.tray.toFixed(2)}`);
+  /* AND THIS IS THE ONE THAT MATTERS. Charring darkens a surface, and a
+     darker picture of a light is still a picture of a light: the dead
+     fitting has to be darker than the burnt ceiling it is set in, or a
+     gutted shop reads as a shop with its lights still on. */
+  check('and reads as a hole with hardware in it', burnt.tray < burnt.far * 0.8,
+    `${burnt.tray.toFixed(2)} against ${burnt.far.toFixed(2)} of burnt ceiling`);
+  check('with the last of the fire still in it',
+    (() => { const p2 = tbank.map.get('CEILFIT_B').pix, d = p2.data; let hot = 0;
+      for (let y = Y0; y <= Y1; y++) for (let x = X0; x <= X1; x++) {
+        const i = (y * p2.w + x) * 4;
+        if (d[i] > 90 && d[i] > d[i + 2] * 2) hot++;
+      }
+      return hot > 4; })(), 'embers in the tray');
+
+  /* --- AND THE THING ITSELF IS INVISIBLE --- */
   {
     const THREE4 = await import('three');
     const { Game } = await import('../js/game.js');
     const lv4 = MAP.buildSellWrong();
-    const lamps = lv4.things.filter(t => t.type === 'LAMP');
-    const by = n => lamps.filter(t => (t.variant || 0) === n).length;
-    note('the fittings', `${lamps.length}: ${by(0)} lit, ${by(1)} with a tube gone, ${by(2)} stuttering`);
-    check('most of the shop is lit', by(0) > lamps.length * 0.7);
-    check('and some of it is not', by(1) > 5 && by(2) > 5, `${by(1)} and ${by(2)}`);
     const g4 = new Game({
       level: lv4, scene: new THREE4.Scene(), camera: {},
-      textures: tex.bakeTextures(), sprites: bank,
+      textures: tbank, sprites: bank,
       hud: { message() {}, ticMessages() {} }, audio: null,
       input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
                attack: false, use: false, run: false, sample() {}, sensitivity: 0 },
     });
-    const states = new Set(g4.lamps.map(a => a.state.name));
-    note('and what they are doing', [...states].sort().join(', '));
-    check('a fitting with a tube gone rests on the frame that shows it',
-      g4.lamps.some(a => a.state.name === 'LAMP_FAIL'));
-    /* EVERY FLICKERING FITTING STARTS SOMEWHERE DIFFERENT IN THE RING,
-       or the whole shop blinks in unison, which is the one way to make a
-       flicker look like a fault in the engine. */
-    const started = new Set(g4.lamps.map(a => a.state.name).filter(n => st.LAMP_FLICKER.includes(n)));
-    check('and the stuttering ones are not in step with each other',
-      started.size >= 4, `${started.size} different points in the ring`);
+    note('lights kept', `${g4.lamps.length} of ${lv4.things.filter(t => t.type === 'LAMP').length} placed`);
+    check('a light has no state and no mesh', g4.lamps.length > 30 &&
+      g4.lamps.every(a => !a.state && !a.mesh), `${g4.lamps.length} of them`);
+    check('and it hangs in the ceiling it is painted in',
+      g4.lamps.every(a => a.sector && a.z > a.sector.ceil - 64 && a.z < a.sector.ceil));
+    /* it draws nothing, and asking it to must not throw or make a mesh */
+    for (const a of g4.lamps.slice(0, 8)) a.render(0, 0, 0);
+    check('and asking it to draw does nothing at all',
+      g4.lamps.slice(0, 8).every(a => !a.mesh));
   }
 }
 

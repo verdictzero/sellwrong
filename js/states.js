@@ -90,42 +90,13 @@ S('CRAT_STAND',  'CRAT', 'A', -1, null, null);
    read as one stamp repeated. */
 S('BLUD_REST',   'BLUD', 'A', -1, null, null);
 
-/* The lights. Lit until something breaks them, then dark for ever — the
-   burst itself is three tics of nothing, long enough for A_Burst to
-   throw the sparks and for the room to notice it has got darker. */
-S('LAMP_LIT',   'LAMP', 'A', -1, null, null, { fullbright: true });
-S('LAMP_BURST', 'LAMP', 'B', 3, 'A_LampBurst', 'LAMP_DEAD');
-S('LAMP_DEAD',  'LAMP', 'B', -1, null, null);
-/* A fitting with one tube gone. Rests for ever like a good one; a shop
-   where every light is perfect is a shop somebody has been maintaining,
-   and this one has not been maintained since about 1994. */
-S('LAMP_FAIL',  'LAMP', 'C', -1, null, null, { fullbright: true });
-
-/* --- AND A FITTING ON ITS WAY OUT -----------------------------------
-   Six states in a ring, 76 tics round, with the two stutters a dying
-   ballast actually does: a long steady spell, a blink, a moment back,
-   two more blinks, and a spell where it is only half struck. D is the
-   frame where the tubes glow at their cathodes and nowhere else.
-
-   IT IS A LOOK AND NOT A LIGHT. The room's brightness is baked into the
-   vertices by Game.relight, which walks every lamp against every sector
-   — that is a few milliseconds and is done when a light is DESTROYED,
-   not eleven times a second. So a flickering fitting flickers and the
-   aisle under it does not. Doom's flickering sectors did change the
-   light; this engine bakes it, and a stuttering sprite over a steady
-   floor is the honest trade.
-
-   Each flickering fitting is started at a DIFFERENT state in the ring
-   (see spawnThings) or the whole shop blinks in unison, which is the one
-   way to make a flicker look like a bug. */
-const LAMP_FLICKER = ['LAMP_FLK1', 'LAMP_FLK2', 'LAMP_FLK3', 'LAMP_FLK4', 'LAMP_FLK5', 'LAMP_FLK6'];
-export { LAMP_FLICKER };
-S('LAMP_FLK1', 'LAMP', 'A', 37, null, 'LAMP_FLK2', { fullbright: true });
-S('LAMP_FLK2', 'LAMP', 'D',  2, null, 'LAMP_FLK3', { fullbright: true });
-S('LAMP_FLK3', 'LAMP', 'A',  4, null, 'LAMP_FLK4', { fullbright: true });
-S('LAMP_FLK4', 'LAMP', 'D',  3, null, 'LAMP_FLK5', { fullbright: true });
-S('LAMP_FLK5', 'LAMP', 'C', 28, null, 'LAMP_FLK6', { fullbright: true });
-S('LAMP_FLK6', 'LAMP', 'D',  2, null, 'LAMP_FLK1', { fullbright: true });
+/* THE LIGHTS HAVE NO STATES, because they have no sprite. There were
+   ten of them here — lit, burst, dead for ever, one tube gone, and a
+   ring of six that a dying ballast stuttered round — and the fitting
+   they all drew is painted into the ceiling now (T.CEILFIT). A light in
+   this game is a source and a target and nothing you can see, so the
+   only trace of one going out is the sparks below it and the aisle
+   above going dark. See ACTORS.LAMP at the bottom of this file. */
 S('SPARK1', 'SPRK', 'A', 3, null, 'SPARK2');
 S('SPARK2', 'SPRK', 'B', 3, null, 'SPARK3');
 S('SPARK3', 'SPRK', 'C', 4, null, null);
@@ -203,13 +174,27 @@ export const ACTORS = {
   CRATE:   { name: 'Stock',   spawn: 'CRAT_STAND', radius: 20, height: 58, solid: true,
              shootable: true, health: 40, flammable: true, fuel: 300 },
 
-  /* A fitting. Not solid — you walk under it — but shootable, and the
-     fire reaches it too: the burn check is two-dimensional, so anything
-     alight on the floor below will eventually take out the light above
-     it, which is exactly right. It does not itself burn. */
-  LAMP:    { name: 'Light', spawn: 'LAMP_LIT', death: 'LAMP_BURST',
-             radius: 26, height: 14, health: 10, shootable: true, solid: false,
-             flammable: false, hangBelow: 34, fullbright: true },
+  /* A FITTING, WHICH DRAWS NOTHING. The picture of it is painted into
+     the ceiling by T.CEILFIT — one per 256-unit tile, on this grid and
+     at this offset — so what is left here is the part paint cannot do:
+     a position for Game.relight to light the shop from, and a box for
+     the fire and for a shot to hit. No spawn state and no death state,
+     which makes it the second thing in the game with neither.
+
+     Not solid — you walk under it — but shootable, and the fire reaches
+     it too: the burn check is two-dimensional, so anything alight on
+     the floor below will eventually take out the light above it, which
+     is exactly right. It does not itself burn.
+
+     WHAT A DEAD LIGHT LOOKS LIKE is the sector it was lighting going
+     dark, which is baked by relight the moment it dies (see
+     Game.onLampDestroyed, which also throws the sparks). The painted
+     fitting goes dark with it, because a flat is lit by its sector's
+     own light level like everything else — so the old objection to
+     painting a light into a ceiling, that it stays lit after you have
+     broken it, is answered by the renderer rather than by a sprite. */
+  LAMP:    { name: 'Light', radius: 26, height: 14, health: 10,
+             shootable: true, solid: false, flammable: false, hangBelow: 34 },
 
   FIRE:    { name: 'Fire',    spawn: 'FIRE1', radius: 12, height: 48, noclip: true, fullbright: true },
   BLAZE:   { name: 'Blaze',   spawn: 'BLAZ1', radius: 20, height: 80, noclip: true, fullbright: true },
@@ -220,8 +205,10 @@ export const ACTORS = {
   BLAST:   { name: 'Fireball', spawn: 'BLAST1', radius: 8, height: 96, noclip: true,
              flat: true, fullbright: true },
 
-  /* A PARKED VEHICLE, and the only thing in the game with no state and
-     no sprite. js/car.js draws it — nine boxes with an orthographic
+  /* A PARKED VEHICLE, one of the two things in the game with no state
+     and no sprite — the other is the light above, for the opposite
+     reason: a van is drawn by something that is not the sprite bank, a
+     light is drawn by the ceiling it is in. js/car.js draws it — nine boxes with an orthographic
      turnaround projected onto them — and this is here for the part of a
      van you cannot walk through. Doom's things are cylinders, so a van
      is three of these in a row; see carBlockers().

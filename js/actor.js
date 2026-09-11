@@ -611,12 +611,6 @@ export const ACTIONS = {
     a.angle = Math.atan2(a.target.y - a.y, a.target.x - a.x);
   },
 
-  /* Glass, a pop, and a shower of sparks that falls. */
-  A_LampBurst(a) {
-    a.game.sound?.play('lampbreak', a);
-    a.game.spawnSparks(a.x, a.y, a.z + 10, 10 + (pRandom() & 7));
-  },
-
   /* A person, briefly, becomes thirteen things and a fireball. All of
      it is in js/people.js; this is the one line of state table that sets
      it off. */

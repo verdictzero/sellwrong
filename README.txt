@@ -71,7 +71,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         649 checks, no install and no browser
+  the smoke test         653 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -641,9 +641,11 @@ them, which at a grazing angle put more coals on a ceiling than there
 were pixels to draw them in and read as television static.
 
 The light fittings are taken away rather than switched off when the roof
-over them goes. A dead fitting still draws, and a row of them hanging in
-the open air over a roofless shop is the one thing in the shot that says
-this is a computer program.
+over them goes, because there is no wiring left in a roof that is not
+there. That used to be about the picture as well — a row of dead fitting
+sprites hanging in the open air over a roofless shop was the one thing in
+the shot that said this is a computer program — and now that a light
+draws nothing it is only about the light.
 
 
 WHAT IS LEFT AFTERWARDS
@@ -1127,13 +1129,19 @@ it uses it. Doom's fake contrast comes with the same idea: walls running
 east-west read a notch brighter and north-south a notch darker, so a corner
 is visible in a renderer that does no shading at all.
 
-THE LIGHTS ARE OBJECTS, NOT PAINT. A suspended ceiling is a grid of tiles
+THE LIGHTS ARE PAINT, NOT OBJECTS. A suspended ceiling is a grid of tiles
 with a fluorescent fitting every so often, and "every so often" is the
 problem: a 64-pixel texture tiling every 64 units puts a fitting in every
 tile. So the ceiling texture is declared as 256 units square — one texture
-is a 4x4 block of tiles with a single housing in it — and the fittings land
-every 256 units. A texel is four units instead of one, which is nothing on
-a surface three metres over your head.
+is a 4x4 block of tiles with a single fitting in it — and the sources land
+every 256 units at the same offset. A texel is four units instead of one,
+which is nothing on a surface three metres over your head.
+
+There used to be a LAMP SPRITE as well: a suspended troffer hung 34 units
+under the ceiling, drawn four ways, with a six-state ring for the
+stuttering ones. It is gone at the user's request — the fitting is the
+ceiling texture and nothing else. What that costs and what it buys is
+below.
 
 THE FITTING IS THE USER'S, from a reference photograph: a four-tube
 recessed troffer behind a prismatic diffuser, dark lampholders at both
@@ -1151,47 +1159,68 @@ along it the long way, so the face of a fitting is crossed both ways.
 The first cut washed the tube rows and the gaps between them by
 different amounts and the crossing came out as a chequerboard, which is
 what a diffuser does not look like; one alpha the whole height of the
-tray fixes it and the tubes then read as tubes because they are
-brighter, not because they are the only thing there.
+tray fixes it. The bands then have to BEAT the ribs — two bright texels
+against one dim one, and the ribs faint enough to be only a shine taken
+off — or the fitting reads as a grille, and a grille in a ceiling is not
+a light, it is a vent.
 
-AND A FITTING THAT IS OFF IS STILL THE BRIGHTEST THING ON THE CEILING. A
-tube behind prismatic glass is white; a ceiling tile in this shop is
-thirty years old. So the painted fixture is brighter than the tiles
-around it, which is correct and is also why it cannot be any brighter
-than that — see the next paragraph.
+AND IT HAD TO BECOME A LIGHT THAT IS ON. The texture was originally drawn
+as a fitting that is OFF, on purpose, because the sprite was doing the lit
+part: pale ribbed glass at about the brightness of the tiles round it,
+neither a hole nor a lamp. With the sprite gone that is a shop full of
+switched-off fittings, which looks like a power cut. So the tubes are the
+only thing in the game drawn at the very top of a ramp, the tray behind
+them is near-white, and the tiles for five texels around the flange are
+washed paler — that last part is what actually says the thing is on,
+because you can tell from a ceiling alone whether a shop's lights are lit,
+and what you are reading is the spill on the tiles. The flange's SHADOW
+went with it: a fitting that is lit does not cast one onto the tiles it is
+lighting. Measured, in the smoke test, because a flat has no opinion about
+whether it is meant to be a light and nothing else in the game would say
+so: the fitting is 0.74 against 0.54 of ceiling tile, 0.63 for the tiles
+beside it, four bands read as four, and the darkest texel in it is a
+lampholder at 0.15. Without the holders a lit troffer at this size is a
+white slab, and a white slab in a ceiling is a hole.
 
-The texture only draws the HARDWARE. The light itself hangs in it as a
-separate object, because a light you can shoot out is worth ten you cannot,
-and a lamp painted into the ceiling can never be anything but painted. Each
-one has ten health. Shoot it, or let a fire get under it — the burn check
-is two-dimensional, so anything alight on the floor below will eventually
-take out the light above it — and it bursts, showers sparks that fall, and
-goes dark for the rest of the level.
+A COOL TUBE OVER WARM PAINT. Grey at the top of its ramp is 248,248,252
+and bone at the top is 244,238,216 — the same luminance, a different
+white — and that split is what makes white read as LIGHT rather than as
+more white paint. It is also the entire reason the palette has two
+near-whites.
 
-FOUR FRAMES, BECAUSE THE MECHANICS NEED FOUR. Lit; one tube gone, with
-the glass stained where it went; striking, which is all four barely
-alight and glowing only at their cathodes; and burst, which is the tray
-with the glass out of it, four broken tube stubs, shards on their way
-down and a scorch where the ballast let go. A tube that cannot strike
-still has two hot ends, and that one detail is what makes a failing
-fluorescent read as failing rather than as switched off.
+WHAT IT COSTS: every fitting in the shop is now the same fitting, because
+a tiling texture cannot be anything else. One in fourteen used to have a
+tube gone and one in eleven used to stutter, and both of those were
+sprites; the hash that picked them is gone too, because a dim patch under
+a fitting that still looks perfect reads as a bug rather than as a
+knackered shop.
 
-A shop where every fitting is perfect is a shop somebody has been
-maintaining. About one in fourteen has a tube gone and about one in
-eleven stutters, picked off the fitting's own position on the grid, so
-they are scattered rather than falling in a line down one aisle and a
-fitting is in the same state every time the map is built.
+WHAT IT BUYS, and this was the old objection to painting a light into a
+ceiling — that it stays lit after you have broken it — is answered by the
+renderer instead of by a sprite. A flat is shaded by its sector's light
+level like every other surface, and the sector's light level IS these
+fittings. Kill the lights over an aisle and the ceiling that was throwing
+the light goes down with the aisle it was throwing it on.
 
-THE FLICKER IS A LOOK AND NOT A LIGHT. Six states in a ring, 76 tics
-round, dark for nine per cent of it, with the two stutters a dying
-ballast actually does. The room's brightness is baked into the vertices
-by a pass that walks every lamp against every sector — a few
-milliseconds, done when a light is DESTROYED, not eleven times a second
-— so a flickering fitting flickers and the aisle under it does not.
-Doom's flickering sectors did change the light; this engine bakes it,
-and a stuttering sprite over a steady floor is the honest trade. Every
-flickering fitting starts at a different point in the ring, because a
-shop that blinks in unison reads as a fault in the engine.
+A LIGHT IS STILL AN OBJECT, with no state and no sprite — the second such
+thing in the game after a parked vehicle. It exists for its position, so
+the relight pass knows where the sources are, and for its box, so a shot
+or a fire can take it out. Ten health. Shoot it, or let a fire get under
+it (the burn check is two-dimensional, so anything alight on the floor
+below will eventually take out the light above it), and it throws sparks
+that fall, pops, and the aisle goes dark for the rest of the level.
+
+AND THE FIRE DOES MORE THAN DARKEN IT. Charring is a filter over pixels:
+it can make a light fitting darker, and a darker picture of a light is
+still a picture of a light — which is exactly what the first attempt
+produced, a gutted black ceiling with four crisp lit panels in it. So the
+charred ceiling has the fitting drawn again over it, dead: four broken
+tube stubs with pieces missing, no diffuser at all (the glass is the first
+thing off a fitting that has been in a fire), the flange's shadow back,
+the ballast's scorch, and a few embers still in the tray. It is the one
+texture in the game with a hand-drawn charred half, and it measures 0.17
+against 0.33 for the burnt ceiling around it — darker than what it is set
+in, which is what a dead recess is.
 
 A sector's brightness is its own AMBIENT — emergency lighting, whatever
 comes through the front — plus every working fitting that can see it. So
@@ -1761,7 +1790,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-649 checks. Every one of them earns its place by having caught something
+653 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -1924,6 +1953,20 @@ that had already reached a screenshot:
     moment the fire got six times faster: two hundred tics of it beside a
     queue takes the neighbours too, so the count in the air was somebody
     else's pieces and the check was asking the wrong question
+  a shop lit by two hundred switched-off light fittings. The ceiling
+    texture was drawn as HARDWARE on purpose, with a sprite doing the lit
+    part, and the day the sprite came out nothing anywhere said the paint
+    was now the only picture of a light in the game — a flat has no
+    opinion about whether it is meant to be luminous. The fitting is
+    measured against the ceiling tile round it now, and so is the glow it
+    throws on that tile, which is the part you actually read
+  and the same bug again in the charred half, which is the one that makes
+    the point: charring is a filter over pixels, and a darker picture of a
+    light is still a picture of a light. A gutted, roofless, black shop
+    with four crisp lit panels in every ceiling tile. The dead fitting is
+    drawn by hand over the charred ceiling now, and the check demands it
+    be darker than the burnt ceiling it is set in rather than merely
+    darker than it used to be
 
 
 WHAT IS NOT DONE

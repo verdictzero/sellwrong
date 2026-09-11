@@ -1002,32 +1002,29 @@ export function buildSellWrong() {
   }
 
   /* --- the lights ----------------------------------------------------
-     One fitting every 256 units on the same grid and at the same offset
-     as the housings drawn into the ceiling texture, so each lamp hangs in
-     a hole rather than beside one. Anything that lands outdoors, in a
-     doorway or under a low ceiling is dropped when the level is
-     populated — covering the building and filtering is much easier than
-     describing the shape of the shop twice. */
+     One light every 256 units on the same grid and at the same offset as
+     the fittings painted into the ceiling texture, so each source sits
+     in the fitting that appears to be throwing it rather than beside
+     one. Anything that lands outdoors, in a doorway or under a low
+     ceiling is dropped when the level is populated — covering the
+     building and filtering is much easier than describing the shape of
+     the shop twice.
+
+     THESE DRAW NOTHING. There is no lamp sprite any more: the fitting is
+     paint (T.CEILFIT), and a light is a source for Game.relight and a
+     box the fire can take out. Which is also why they are all the same
+     now — there used to be a hash here that made one in fourteen a
+     fitting with a tube gone and one in eleven a stuttering one, and
+     both of those were sprites. A tiling texture paints every fitting
+     in the shop identically, so a dim patch under a fitting that still
+     looks perfect reads as a bug rather than as a knackered shop. The
+     shop goes uneven when it BURNS, and that it can draw: the ceiling
+     chars over the fire and the lights in it die together. */
   {
     const PITCH = 256, OFF = 126;
-    /* AND WHAT CONDITION EACH ONE IS IN. Nine in ten are lit, and the
-       rest are the reason the place looks like this: one in about
-       fourteen has a tube gone, one in about eleven has a ballast on its
-       way out and stutters. Picked off the fitting's own grid position
-       rather than off a counter, so a fitting is in the same state every
-       time the map is built and a screenshot is a screenshot of
-       something — and so that the dead ones are scattered rather than
-       falling in a line down one aisle, which is what a counter does.
-
-       The three states are drawn in js/sprites.js and the ring a
-       stuttering one runs round is in js/states.js. */
-    const hash = (gx, gy) => (Math.imul((gx + 71) ^ (gy * 2654435761), 374761393) >>> 9) % 1000;
     for (let gx = Math.floor(PARADE_X0 / PITCH); gx * PITCH + OFF < PARADE_X1; gx++)
-      for (let gy = 0; gy * PITCH + OFF < ANCHOR_Y1; gy++) {
-        const h = hash(gx, gy);
-        const variant = h < 70 ? 1 : h < 160 ? 2 : 0;
-        mb.thing('LAMP', gx * PITCH + OFF, gy * PITCH + OFF, 0, { variant });
-      }
+      for (let gy = 0; gy * PITCH + OFF < ANCHOR_Y1; gy++)
+        mb.thing('LAMP', gx * PITCH + OFF, gy * PITCH + OFF, 0);
   }
 
   /* --- the crowd -----------------------------------------------------

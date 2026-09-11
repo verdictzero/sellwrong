@@ -300,160 +300,22 @@ export function bakeSprites() {
       bank.addFrame(BLAST_SPRITE, LETTERS[i], new Array(8).fill(p), { fullbright: true }));
   }
 
-  /* --- the lights, which are objects and not paint -----------------
-     Hung below the ceiling rather than flush in it, because a Y-billboard
-     seen from directly underneath is edge-on and invisible. A suspended
-     fitting is what a shed this tall would really have anyway, and it
-     reads from across the shop floor, which flush troffers never would. */
-  /* --- THE FITTING, FOUR WAYS ----------------------------------------
-     From the user's reference: a four-tube troffer behind a prismatic
-     diffuser, dark lampholders at both ends of every tube, a pale
-     works-painted tray. The ceiling texture (T.CEILFIT) paints the same
-     fitting from underneath as HARDWARE; this is the part that says
-     whether anything is coming out of it, and it is a sprite because a
-     light you can shoot out is worth ten you cannot.
+  /* --- the lights are paint now ------------------------------------
+     There was a LAMP sprite here: a suspended four-tube troffer drawn
+     four ways — lit, one tube gone, barely striking, shot out — and it
+     is gone, along with the flicker ring that ran between the last two.
 
-     A DOOM SPRITE IS AN ELEVATION. The fitting hangs 34 units under a
-     352 ceiling and your eye is at 49, so you are looking up at it from
-     three metres below and a billboard stays bolt upright — what you see
-     is its near rail and, under that, the face of the diffuser at a
-     steep angle. So that is what is drawn: the rail across the top, the
-     four tube bands under it, the ribbing across them, and the holders
-     at the ends where the glass stops short.
+     A FITTING IS PAINTED INTO THE CEILING AND NOTHING HANGS UNDER IT.
+     T.CEILFIT in js/textures.js draws it, one per 256-unit tile, and it
+     is now drawn ALIGHT rather than as switched-off hardware, because it
+     is the only picture of a light in the shop.
 
-     FOUR MODES, because the mechanics need four:
-
-       lit     all four tubes, and the spill off them
-       fail    one tube gone and the glass stained where it went. A shop
-               where every fitting is perfect is a shop nobody has ever
-               had to maintain, and this is the cheapest possible way to
-               say the opposite
-       strike  all four barely alight, glowing only at the cathodes,
-               which is what a fluorescent tube does when its ballast is
-               going. It is the dark half of the flicker chain, and it is
-               NOT black on purpose: a tube that cannot strike still has
-               two hot ends
-       burst   shot out, or cooked by the fire, which for a light that is
-               shootable and sits in a hot cell amounts to the same
-               thing. The tray survives, the glass does not
-     ------------------------------------------------------------------ */
-  const LAMP_ROWS = [13, 17, 21, 25];          // the four tubes, in the face
-  const fitting = (mode) => {
-    const p = new Pix(64, 34, 620 + ['lit', 'fail', 'strike', 'burst'].indexOf(mode), false);
-    const rng = makeRng(631 + mode.length);
-    const X0 = 7, X1 = 56;                     // the glass, end to end
-    const burst = mode === 'burst';
-
-    /* the drop rods it hangs on */
-    for (const rx of [16, 47]) { p.vline(rx, 0, 6, 'grey', 0.34); p.ink(rx + 1, 0, 'grey', 0.16); }
-
-    /* THE TRAY: a lit top edge where the ceiling light catches it, the
-       near rail, and the flange's shadow under it. */
-    p.hline(4, 59, 7, 'grey', 0.58);
-    for (let y = 8; y <= 10; y++) p.hline(4, 59, y, 'grey', y < 10 ? 0.44 : 0.32);
-    p.hline(5, 58, 11, 'grey', 0.20);
-    for (const ex of [4, 5, 58, 59]) p.vline(ex, 7, 28, 'grey', ex < 10 ? 0.40 : 0.30);
-
-    if (burst) {
-      /* WHAT IS LEFT. The diffuser has gone — there is nothing behind
-         where it was but the inside of the tray — and the tubes are four
-         dark lines with pieces missing out of them. */
-      for (let y = 12; y <= 27; y++)
-        for (let x = X0; x <= X1; x++)
-          p.ink(x, y, 'grey', 0.10 + (y < 14 ? 0.06 : 0));
-      for (const ty of LAMP_ROWS) {
-        for (let x = X0 + 2; x <= X1 - 2; x++) {
-          if (((x * 7 + ty * 13) & 7) < 3) continue;        // the gaps
-          p.ink(x, ty, 'grey', 0.20); p.ink(x, ty + 1, 'grey', 0.13);
-        }
-        for (const ex of [X0, X1 - 1]) {
-          p.ink(ex, ty, 'grey', 0.26); p.ink(ex + 1, ty, 'grey', 0.20);
-        }
-      }
-      /* the glass, on its way down */
-      for (let i = 0; i < 14; i++) {
-        const x = X0 + Math.floor(rng() * (X1 - X0)), y = 12 + Math.floor(rng() * 16);
-        p.ink(x, y, 'cyan', 0.30); p.ink(x, y + 1, 'cyan', 0.18);
-      }
-      /* and the scorch where the ballast went */
-      const sx = 18 + Math.floor(rng() * 24);
-      for (let y = 8; y <= 13; y++)
-        for (let x = sx; x < sx + 7; x++) p.wash(x, y, 'grey', 0.06, 0.55);
-      p.snap(0.3);
-      return new Array(8).fill(p);
-    }
-
-    /* THE DIFFUSER FACE. The tray behind it first, then the tubes, then
-       the ribbing over the lot — the same order and the same reasoning as
-       T.CEILFIT, so the fitting you see across the shop and the one you
-       see over your head are the same fitting. */
-    const dead = mode === 'fail' ? 2 : -1;     // which tube has gone
-    const strike = mode === 'strike';
-    for (let y = 12; y <= 27; y++)
-      for (let x = X0; x <= X1; x++)
-        p.ink(x, y, 'bone', strike ? 0.30 : 0.62);
-
-    LAMP_ROWS.forEach((ty, i) => {
-      const out = i === dead;
-      for (let y = ty; y <= ty + 1; y++)
-        for (let x = X0 + 1; x <= X1 - 1; x++)
-          p.ink(x, y, out ? 'grey' : 'bone',
-            out ? 0.18 : strike ? 0.44 : (y === ty ? 0.99 : 0.86));
-      /* A TUBE THAT CANNOT STRIKE STILL HAS TWO HOT ENDS, which is the
-         one detail that makes a failing fluorescent read as failing
-         rather than as switched off. */
-      if (strike || out)
-        for (const ex of [X0 + 2, X1 - 4])
-          for (let x = ex; x < ex + 3; x++) {
-            p.ink(x, ty, 'fire', 0.44); p.ink(x, ty + 1, 'fire', 0.30);
-          }
-    });
-
-    /* the ribbing: two texels to a rib, one alpha the whole height */
-    for (let x = X0; x <= X1; x++) {
-      const face = ((x - X0) & 2) === 0;
-      for (let y = 12; y <= 27; y++) p.wash(x, y, 'bone', face ? 0.95 : 0.30, strike ? 0.22 : 0.14);
-    }
-    /* the ends of a fitting are always greyer: less light reaches the
-       glass out there and thirty years of dust has settled on it */
-    for (let x = X0; x <= X1; x++) {
-      const e = Math.min(x - X0, X1 - x) / 12;
-      if (e >= 1) continue;
-      for (let y = 12; y <= 27; y++) p.wash(x, y, 'grey', 0.26, (1 - e) * 0.42);
-    }
-    /* and where a dead tube has been dying for a year */
-    if (dead >= 0) {
-      const ty = LAMP_ROWS[dead];
-      for (let y = ty - 2; y <= ty + 3; y++)
-        for (let x = X0; x <= X1; x++)
-          p.wash(x, y, 'olive', 0.30, 0.30 - Math.abs(y - ty - 0.5) * 0.06);
-    }
-
-    /* THE LAMPHOLDERS, last, because the glass stops short of them */
-    for (const ty of LAMP_ROWS)
-      for (const ex of [X0, X1 - 1])
-        for (let j = 0; j < 2; j++) for (let i = 0; i < 2; i++)
-          p.ink(ex + i, ty + j, 'grey', j ? 0.14 : 0.22);
-    p.hline(5, 58, 28, 'grey', 0.16);
-
-    /* THE SPILL. What the fitting throws onto the air around it, which
-       is the only reason a lit one reads as lit from across the shop.
-       Scaled by how much of it is working. */
-    const power = strike ? 0.18 : dead >= 0 ? 0.72 : 1;
-    for (let r = 1; r <= 6; r++) {
-      const k = (1 - r / 7) * 0.38 * power;
-      if (k < 0.01) break;
-      for (let x = X0 - r; x <= X1 + r; x++) p.wash(x, 28 + r, 'bone', 0.94, k);
-      for (let y = 12; y <= 27; y++) { p.wash(X0 - r - 1, y, 'bone', 0.94, k); p.wash(X1 + r + 1, y, 'bone', 0.94, k); }
-    }
-    p.snap(0.3);
-    return new Array(8).fill(p);
-  };
-
-  bank.addFrame('LAMP', 'A', fitting('lit'),    { fullbright: true });
-  bank.addFrame('LAMP', 'B', fitting('burst'));
-  bank.addFrame('LAMP', 'C', fitting('fail'),   { fullbright: true });
-  bank.addFrame('LAMP', 'D', fitting('strike'), { fullbright: true });
+     The light itself is still an object — see ACTORS.LAMP in
+     js/states.js — because relight() has to know where the sources are
+     and the fire has to be able to take them out. It just has no sprite
+     and no state, which makes it the second thing in the game with
+     neither, after a parked vehicle. What a light going out looks like
+     is the sector it lit going dark, plus the sparks below. */
 
   /* what comes out of one when it goes */
   ['A', 'B', 'C'].forEach((L, i) => {

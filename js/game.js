@@ -24,7 +24,7 @@ import { TICRATE, PLAYER_EYE, angleNorm, angleDiff, dist, dist2, pRandom, clamp 
 import { Level } from './level.js';
 import { buildLevelGeometry } from './mapgeo.js';
 import { Actor, ACTIONS, ActorGrid } from './actor.js';
-import { ACTORS, LAMP_FLICKER } from './states.js';
+import { ACTORS } from './states.js';
 import { Player } from './player.js';
 import { FireSystem } from './fire.js';
 import { world } from './material.js';
@@ -177,18 +177,10 @@ export class Game {
       const a = new Actor(this, type, t.x, t.y, t.angle, { variant: t.variant });
       this.actors.push(a);
       if (a.monster) this.totalMonsters++;
-      if (type === 'LAMP') {
-        this.lamps.push(a);
-        /* WHAT CONDITION THIS ONE IS IN. The map decides — it is the
-           thing that knows what kind of shop this is — and carries it on
-           the thing's `variant`: 1 is a fitting with a tube gone, 2 is
-           one whose ballast is going. A flickering fitting starts at a
-           different point in the ring for every lamp, because a shop
-           that blinks in unison reads as a bug rather than as a shop. */
-        if (t.variant === 1) a.setState('LAMP_FAIL');
-        else if (t.variant === 2)
-          a.setState(LAMP_FLICKER[(Math.abs(t.x / 256 + t.y / 128) | 0) % LAMP_FLICKER.length]);
-      }
+      /* A light is kept for relight() and for nothing else: it has no
+         state, so it draws nothing, and the fitting you see above it is
+         painted into the ceiling texture. */
+      if (type === 'LAMP') this.lamps.push(a);
     }
     if (!this.player) throw new Error('map has no START');
   }
@@ -300,9 +292,18 @@ export class Game {
   }
 
   onLampDestroyed(lamp) {
-    /* Relighting walks every lamp against every sector, so it is not done
-       per lamp — a fire takes out a whole run of them within a second or
-       two and one rebuild covers the lot. */
+    /* GLASS, A POP, AND A SHOWER OF SPARKS THAT FALLS. This is the whole
+       of what a light going out looks like up close — the fitting itself
+       is paint in the ceiling and cannot change — and it used to be
+       A_LampBurst on a three-tic death state. There is no death state
+       any more, so it happens here, which is the one place that knows a
+       light has gone. */
+    this.sound?.play('lampbreak', lamp);
+    this.spawnSparks(lamp.x, lamp.y, lamp.z + 10, 10 + (pRandom() & 7));
+    /* And the rest of what it looks like is the aisle going dark.
+       Relighting walks every lamp against every sector, so it is not
+       done per lamp — a fire takes out a whole run of them within a
+       second or two and one rebuild covers the lot. */
     this._geoDirty = true;
     this._geoAt = this.tics + 10;
   }
@@ -426,11 +427,13 @@ export class Game {
         /* Lit by what is left of it: the cracks in the slab and the sky.
            Higher than charred, because there is a hole in the roof. */
         s.ambient = Math.max(s.ambient, 0.66);
-        /* NOTHING HANGS FROM A CEILING THAT IS NOT THERE. They are taken
-           away rather than switched off: a dead fitting still draws, and
-           a row of them hanging in the open night over a roofless shop
-           is the one thing in the shot that says "this is a computer
-           program". */
+        /* AND THERE IS NO WIRING LEFT IN A ROOF THAT IS NOT THERE. They
+           used to be taken away rather than switched off because a dead
+           fitting still DREW, and a row of sprites hanging in the open
+           night over a roofless shop was the one thing in the shot that
+           said "this is a computer program". They draw nothing now, so
+           this is only about the light: a sector open to the sky is not
+           being lit by a fitting that fell into it. */
         for (const lamp of this.lamps)
           if (!lamp.removed && lamp.sector === s) { lamp.dead = true; lamp.remove(); }
       }
