@@ -131,8 +131,20 @@ export class Hud {
      goes into the key, so a frame in which nothing moved costs one
      string comparison.
      ------------------------------------------------------------------ */
+  /* The widest the four numbers ever get, as a string, so the scale they
+     are drawn at can be chosen to FIT rather than hoped at. This grew
+     from two numbers to four in one afternoon, and on a phone held
+     upright — a 235-pixel buffer — the fourth one ran off the right-hand
+     edge and the tank was invisible on the one device where knowing
+     about the tank matters most. */
+  static TOP_WIDEST = 'STORE 100%  WOOD 100%  LEFT 999  FUEL 100%';
+
   buildTop(p) {
-    const s = this.scale;
+    /* One step down rather than clipped: at 235 across the four numbers
+       want 1 and at 640 they get 2, and the messages under them keep the
+       panel's own scale either way. */
+    let s = this.scale;
+    while (s > 1 && textWidth(Hud.TOP_WIDEST) * s + 8 * s > this.width) s--;
     const g = this.game;
     const burn = Math.round(g.burnPercent), wood = Math.round(g.forestPercent);
     const left = g.peopleLeft;
@@ -142,13 +154,16 @@ export class Hud {
        every tenth of a second would rebuild it three times a second all
        night for a digit nobody reads. */
     const fuel = p ? Math.round(100 * p.ammoFor(p.weapon) / (p.maxAmmo.fuel || 1)) : 0;
-    const key = [this.width, s, burn, wood, left, fuel, this.messages.map(m => m.text).join('/')].join('|');
+    const key = [this.width, this.scale, s, burn, wood, left, fuel,
+                 this.messages.map(m => m.text).join('/')].join('|');
     if (key === this._topKey) return;
     this._topKey = key;
 
-    const longest = Math.max(186, ...this.messages.map(m => textWidth(m.text) + 8));
-    const w = Math.min(this.width, longest * s + 6 * s);
-    const h = (16 + 8 * this.messages.length) * s + 4;
+    const M2 = this.scale;                    // the messages keep their own size
+    const w = Math.min(this.width, Math.max(
+      textWidth(Hud.TOP_WIDEST) * s + 8 * s,
+      ...this.messages.map(m => (textWidth(m.text) + 8) * M2)));
+    const h = 16 * s + 8 * M2 * this.messages.length + 4;
     const pix = new Pix(w, h, 1, false);
     const M = 3 * s;
     /* STORE 12%, a hairline gauge under it, and the wood beside it */
@@ -179,7 +194,8 @@ export class Hud {
         pix.ink(fx0 + i, gy + k, on ? (fuel > 12 ? 'cyan' : 'red') : 'grey', on ? 0.5 : 0.18);
     }
 
-    this.messages.forEach((m, i) => bigText(pix, m.text, M, M + (12 + i * 8) * s, 'bone', 0.72, s));
+    this.messages.forEach((m, i) =>
+      bigText(pix, m.text, M, 12 * s + M + i * 8 * M2, 'bone', 0.72, M2));
 
     pix.snap(0);
     if (this.topTex) this.topTex.dispose();
