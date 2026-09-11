@@ -338,6 +338,32 @@ snapImageData({ data: small, width: W, height: H }, 0);
   };
 }
 
+/* ---- AND SOMEWHERE BLACK TO POINT THE BLACK MATERIAL AT ------------
+   The mesh has two primitives. One is the body, textured, with a UV
+   unwrap onto the four views above; the other is 490 triangles of glass,
+   tyres, bumpers and chassis with NO texture at all — just a base colour
+   of near-black. A car park is one texture and one draw call, so rather
+   than a second material those triangles are all pointed at one dark
+   texel in this sheet, and this is where it is painted: a small solid
+   block in the bottom-left corner, which is background grey in every one
+   of these turnarounds and inside no view's box.
+
+   The colour is the model's own baseColorFactor (0.0059 linear, which is
+   about 20 of 255 after the sRGB transfer) lifted a little, because a
+   tyre that is literally black in a night car park is a hole. */
+{
+  const BLK = 6;                            // texels square
+  const c = [26, 25, 24];
+  for (let y = H - BLK; y < H; y++) for (let x = 0; x < BLK; x++) {
+    const o = (y * W + x) * 4;
+    small[o] = c[0]; small[o + 1] = c[1]; small[o + 2] = c[2]; small[o + 3] = 255;
+  }
+  /* the middle of it, in the same top-down pixel coordinates the views
+     use — js/car.js turns it into a texture coordinate the same way */
+  measured.black = { x: BLK / 2, y: H - BLK / 2 };
+  console.log(`  a ${BLK}x${BLK} block of ${c.join(',')} at ${BLK / 2},${H - BLK / 2} for the untextured primitive`);
+}
+
 const png = writePNG(W, H, small);
 fs.unlinkSync(tmp);
 

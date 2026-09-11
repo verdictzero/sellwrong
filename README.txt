@@ -1476,46 +1476,76 @@ The axis swap from (z, x, y) to (nose, left, up) is a cyclic permutation,
 so it preserves handedness — which is the one thing that would otherwise
 turn every triangle in the model inside out.
 
-AND WHICH WAY ROUND IT IS IS NOT IN THE FILE EITHER, which is the same
-lesson twice and cost three rounds of work to learn. That paragraph above
-is correct and it is not the whole story: the conversion preserves
-handedness, and the vans were still inside out, because the MODEL is.
+AND WHICH WAY ROUND IT IS IS NOT IN THE FILE EITHER — but the answer is
+not to work it out, it is to stop needing it. This took four goes and
+three of them were wrong, so it is worth writing down properly.
 
-A GLB states which way a face points twice over — the order of its three
-corners, and the NORMAL attribute on them — and in this file the two
-agree with each other on all 624 triangles and both point INWARD. That is
-a thing a modeller can do without ever seeing it: flip a normal and its
-winding together and the file is self-consistent, and most viewers draw
-both sides anyway. This renderer does not draw both sides. Every face was
-a back face, every back face was culled, and what stood in the car park
-was the INSIDE of a van: a dark plate where the roof's underside was,
-white boxes where the far panels were, no wheels, no grille, no van.
-Seventy-seven times, through a smoke test that was checking the axes, the
-scale, the ground line and the UVs and never once asked whether the thing
-was the right way out.
+A GLB states which way a face points twice over: the order of a triangle's
+three corners, and the NORMAL attribute on them. In this file the two
+agree with each other everywhere and both disagree with the SOLID. The
+body shell — 134 triangles, the ones with the texture on — comes to minus
+a third of its bounding box, which is a shell wound inward. The 490
+triangles of chassis, wheels, bumpers and glass underneath come to plus a
+twentieth, which is an open shell wound the other way.
 
-It also wrecked the paint, and that is why this took three goes. The view
-a face reads is chosen by WHERE IT POINTS, so with every normal inverted
-the left flank was painted with the right flank's picture and the roof
-with the underside's. Reported as "the van UV mapping is super fucked",
-which it was; the UVs were a symptom.
+So the first fix was a global one: measure the whole mesh's signed volume
+and reverse every triangle if it is negative. That turned the body the
+right way out AND the chassis inside out, and the car park went from
+twenty vans seen from the inside to twenty vans with no bodywork — a
+black sill and four wheels, which is worse and looks just as much like a
+rendering bug.
 
-So orientation is measured rather than trusted, the same way the length
-and the nose are: the signed volume of the whole mesh about its own
-centre, which is positive for a shell wound outward and negative for one
-wound in, and if it is negative every triangle is reversed. A van's own
-interior — seats, door cards, the cargo bay — subtracts from that, so the
-claim is the SIGN and not the size: this model comes out at minus 27 per
-cent of its bounding box, and reversed, plus 27. The drawn fleet, which is
-solid boxes, sits between 55 and 69, and is the calibration.
+THE MODEL IS NOT WRONG. It renders perfectly in Blender and on Sketchfab,
+and the reason is embarrassingly simple: both of them draw BOTH SIDES of
+a single-sided material by default. That is the entire oversight. This
+renderer culls back faces, and the model was authored somewhere that
+never mattered. A vehicle is drawn double-sided now, the winding is left
+exactly as the file has it, nothing is measured and nothing is reversed,
+and what comes out is what the author saw. A vehicle is a thin shell you
+are never inside, so the cost is drawing the far face of a solid that
+already covers it.
+
+The NORMALS still have to be sorted out, because the face light reads
+them — Doom's fake contrast wants to know whether a face is a roof, an
+underside or a flank, and a roof triangle whose normal points down is
+given the tarmac's light, which is a third of the brightness. They are
+turned outward from the model's own centre, 376 of the 624, and that IS a
+heuristic, which is exactly why it is used for nothing but the light: a
+triangle it guesses wrong about is one step of shading out on one face.
+It can no longer cull anything or choose anybody's paint.
+
+AND THE PAINT IS THE MODEL'S OWN, which is the other half of the same
+mistake. The mesh is UNWRAPPED — onto the very sheet embedded in it — and
+that unwrap was thrown away here in favour of projecting the four views
+back onto the mesh, on the strength of a measurement that said the flanks
+were a fan of long thin triangles all sharing one corner.
+
+That measurement pooled BOTH primitives. The flat-black one has no
+texture, so its UVs are unused junk — 490 triangles "covering" 321 per
+cent of the sheet, which cannot be a layout at all — and the junk is what
+the fan was. The body's own unwrap is ordinary: 134 triangles over 39 per
+cent of the sheet with a biggest triangle of 3.7 per cent, laid out over
+the four views exactly as you would expect. Reported as "the van UV
+mapping is super fucked", which it was, and the cause was here rather
+than in the file.
+
+So a modelled vehicle is painted with its own UVs, per vertex, and the
+four measured views stay for the DEBRIS — a chunk torn off the van is a
+box built on the fly and has no unwrap of its own. glTF's v runs down
+from the top of the image and a three.js texture is uploaded flipped, so
+it comes through as one minus v.
 
 THE FLAT MATERIAL IS THE INTERESTING PROBLEM. The model has two
 primitives: the body, textured, and a second one — glass, tyres,
 bumpers, chassis — with no texture at all, just a base colour of
 near-black. A car park is ONE material and one draw call, so a second
-material is not available. The answer is to find the darkest texel in the
-texture and point every vertex of the flat primitive at it. One texture,
-one draw call, and the tyres come out the colour tyres are.
+material is not available. The answer is to PAINT somewhere black: a
+six-texel block in the corner of the sheet, which is background grey in
+every one of these turnarounds and inside no view's box, and every vertex
+of the flat primitive points at the middle of it. One texture, one draw
+call, and the tyres come out the colour tyres are. Its colour is the
+model's own baseColorFactor lifted a little, because a tyre that is
+literally black in a night car park is a hole.
 
 AND THE TEXTURE IS HALVED. The gun's diffuse is copied byte for byte
 because resampling pixel art is vandalism; the van's is a 700x382
@@ -2038,12 +2068,29 @@ that had already reached a screenshot:
   and then seventy-seven vans seen from the INSIDE, which was the real
     fault under that one and took three reports to find. The model
     declares which way its faces point twice, by winding and by normal,
-    and its two declarations agree with each other and both point
-    inward; every face was culled, and the projection painted each panel
-    with the picture of the opposite one. The test measured the axes,
-    the scale, the ground line and the UV spread — everything except
-    whether the van was the right way out. It measures the signed
-    volume now, and the drawn fleet beside it is the calibration
+    and its two declarations agree with each other and disagree with the
+    solid; every face of the body was culled, and the projection painted
+    each panel with the picture of the opposite one. The test measured
+    the axes, the scale, the ground line and the UV spread —
+    everything except whether the van was the right way out
+  and then vans with no bodywork, which is the SAME bug fixed wrongly.
+    The fix was a global reversal when the whole mesh's signed volume
+    came out negative, and the mesh is two shells wound opposite ways:
+    the body at minus a third of its box and the chassis at plus a
+    twentieth. Reversing both put the body right and the chassis wrong.
+    There is no single flip, and there did not need to be one — Blender
+    and Sketchfab both draw BOTH SIDES of a single-sided material, which
+    is the whole of what this renderer was not doing. A vehicle is
+    double-sided now and the file's winding is untouched. The test
+    reports both shells' volumes rather than the mesh's, which is the
+    number that would have said so in the first place
+  and a van painted by projection when it was already unwrapped, on a
+    measurement that pooled the body's UVs with the flat material's.
+    The flat material has no texture, so its UVs are junk — 490
+    triangles "covering" 321 per cent of the sheet — and the junk was
+    the fan of slivers the flanks were condemned for. The body's own
+    unwrap is 134 triangles over 39 per cent of it. The test measures
+    the textured primitive alone, and asserts the other one IS the junk
   a fatal, silent break. A comment rewritten with a text splice whose end
     offset was one line too far took the function between the two offsets
     with it, and js/main.js was left importing a name js/car.js no longer

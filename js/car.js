@@ -254,9 +254,15 @@ function pen(v, opts = {}) {
   };
 
   /* model space -> the renderer's, which is y-up with z running back */
-  const vert = (p, n, l) => {
+  const vert = (p, n, l, uvIn) => {
     pos.push((p[0] - origin[0]) * length, (p[2] - origin[2]) * length, -(p[1] - origin[1]) * length);
-    const t = uvOf(views, n, p);        // the UV is of where the piece CAME FROM
+    /* THE MODEL'S OWN UV IF IT HAS ONE, and the projection otherwise.
+       A drawn vehicle has no UVs — it is boxes built from silhouettes,
+       and the only way to paint it is to project its own turnaround back
+       onto it. A MODELLED one arrives unwrapped, and the unwrap is
+       better than any projection: it knows which triangle is a wheel
+       arch and a projection can only guess from a normal. */
+    const t = uvIn || uvOf(views, n, p);
     uv.push(t[0], t[1]);
     lit.push(l); skies.push(sky); chars.push(charred);
     /* WHICH WAY THIS FACE WAS MEANT TO POINT. The shader lights nothing
@@ -273,13 +279,16 @@ function pen(v, opts = {}) {
      product, is what ended the era of a tyre tread being inside out on
      one side and the caps on the other: the builder says which way a
      face points, and the winding follows. */
-  const tri = (a, b, c, n) => {
+  const tri = (a, b, c, n, ta, tb, tc) => {
     const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
     const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
     const gx = uy * vz - uz * vy, gy = uz * vx - ux * vz, gz = ux * vy - uy * vx;
     const l = faceLight(n);
-    if (gx * n[0] + gy * n[1] + gz * n[2] >= 0) { vert(a, n, l); vert(b, n, l); vert(c, n, l); }
-    else { vert(a, n, l); vert(c, n, l); vert(b, n, l); }
+    /* When the winding is turned to agree with the declared normal, the
+       UVs have to turn with it or a corner ends up wearing another
+       corner's paint. */
+    if (gx * n[0] + gy * n[1] + gz * n[2] >= 0) { vert(a, n, l, ta); vert(b, n, l, tb); vert(c, n, l, tc); }
+    else { vert(a, n, l, ta); vert(c, n, l, tc); vert(b, n, l, tb); }
   };
   const face = (q, n) => { tri(q[0], q[1], q[2], n); tri(q[0], q[2], q[3], n); };
   /* A face of the hull: a quad whose corners may have fallen together.
@@ -346,10 +355,10 @@ export function carGeometry(v, opts = {}) {
      heading, the origin the mesh turns about, the charred flag AND THE
      PAINT all come from.
 
-     The paint especially. A modelled vehicle arrives with UVs of its own
-     and they are not used; see modelVehicle for why not. */
+     The paint comes with the triangles here, though. A modelled vehicle
+     arrives UNWRAPPED and the unwrap is used — see modelVehicle. */
   if (v.model) {
-    for (const t of v.model.tris) P.tri(t.a, t.b, t.c, t.n);
+    for (const t of v.model.tris) P.tri(t.a, t.b, t.c, t.n, t.ta, t.tb, t.tc);
     return P.arrays;
   }
 
@@ -537,88 +546,125 @@ export function modelVehicle(json, bin, opts = {}) {
   const prims = json.meshes[0].primitives;
   const s = 1 / (ex.length / ex.unit);        // model units -> fractions of the length
   const tris = [];
+  /* WHERE TO POINT A TRIANGLE THAT HAS NO TEXTURE. tools/prep-van.mjs
+     paints a small dark block into the corner of the sheet for exactly
+     this; the coordinates are top-down pixels, like the views. */
+  const A = ex.views.atlas;
+  const black = ex.black
+    ? [ex.black.x / A.w, 1 - ex.black.y / A.h]
+    : null;
   for (const p of prims) {
     const pos = readAccessor(json, bin, p.attributes.POSITION).array;
     const idx = readAccessor(json, bin, p.indices).array;
+    /* --------------------------------------------------------------
+       THE PAINT, AND THE MISTAKE THAT IS WORTH WRITING DOWN
+
+       This model is UNWRAPPED, onto the very sheet that is embedded in
+       it: 134 body triangles laid out over the four views, which is why
+       it renders correctly in Blender and on Sketchfab. The first cut
+       here threw those UVs away and projected the views back onto the
+       mesh instead, on the strength of a measurement that said the
+       layout was a fan of slivers sharing one corner.
+
+       That measurement pooled BOTH primitives. The second one — 490
+       triangles of glass, tyres, bumpers and chassis — has no texture at
+       all, just a flat near-black base colour, so its UVs are unused
+       junk, and the junk is what the fan was. The body's own unwrap
+       covers 39 per cent of the sheet with a biggest triangle of under
+       four per cent: an ordinary, sane, four-view unwrap.
+
+       So: a textured primitive is painted with its own UVs, and an
+       untextured one is pointed at the dark block. That is the file
+       rendered as the file says, which is all it ever needed.
+
+       glTF's v runs DOWN from the top of the image and a three.js
+       texture is uploaded flipped, so v comes through as 1 - v.
+       -------------------------------------------------------------- */
+    const textured = !!json.materials?.[p.material]?.pbrMetallicRoughness?.baseColorTexture;
+    const uvSrc = textured && p.attributes.TEXCOORD_0 !== undefined
+      ? readAccessor(json, bin, p.attributes.TEXCOORD_0).array : null;
+    const uvAt = i => (uvSrc ? [uvSrc[i * 2], 1 - uvSrc[i * 2 + 1]] : black);
     const at = i => [
       (pos[i * 3 + 2] - ex.centre) * s * ex.noseSign,     // along the length
       pos[i * 3] * s,                                     // to the left
       (pos[i * 3 + 1] - ex.ground) * s,                   // up off the tarmac
     ];
-    /* EVERY PRIMITIVE, textured or not. The model's second primitive is
-       glass, tyres, bumpers and chassis, and it arrives with no texture
-       at all — just a base colour of near-black. Projected, it does not
-       need one: the four views are renders of THIS MESH, so the side
-       view has the tyre in it where the tyre is and the front view has
-       the windscreen where the windscreen is. Painting the whole van
-       from its own photographs gets the black parts black for free and
-       keeps the car park to one material. */
     for (let t = 0; t < idx.length; t += 3) {
       const a = at(idx[t]), b = at(idx[t + 1]), c = at(idx[t + 2]);
+      const ta = uvAt(idx[t]), tb = uvAt(idx[t + 1]), tc = uvAt(idx[t + 2]);
       const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
       const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
       let n = [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx];
       const m = Math.hypot(n[0], n[1], n[2]);
       if (m < 1e-12) continue;                            // a degenerate triangle is nothing
       n = [n[0] / m, n[1] / m, n[2] / m];
-      tris.push({ a, b, c, n });
+      tris.push({ a, b, c, n, ta, tb, tc });
     }
   }
 
   /* ------------------------------------------------------------------
-     WHICH WAY ROUND THE MODEL IS, and this is not a detail.
+     WHICH WAY ROUND THE MODEL IS, and the answer is BOTH
 
-     A GLB says which way a face points twice: by the order of its three
-     corners and by the NORMAL attribute on them. This file's two agree
-     with each other on all 624 triangles — and both point INWARD. That
-     is a thing a modeller can do without ever seeing it, because a
-     flipped normal plus a flipped winding is self-consistent and most
-     viewers draw both sides anyway.
+     A GLB says which way a face points twice — the order of its three
+     corners and the NORMAL attribute on them — and in this file the two
+     agree with each other everywhere and disagree with the SOLID. The
+     body shell's 134 triangles come to minus a third of the bounding
+     box, which is a shell wound inward; the 490 triangles of chassis,
+     wheels and glass under it come to plus a twentieth, which is an open
+     shell wound the other way.
 
-     This renderer does not draw both sides. Every face of the van was a
-     back face, every back face was culled, and what you saw across the
-     car park was the INSIDE of a van — a dark plate where the roof's
-     underside was, white boxes where the far panels were, and no van.
-     Seventy-seven times. It also wrecked the paint, because the view a
-     face reads is chosen by where it points, so the left flank was
-     painted with the right flank's picture and the roof with the
-     underside's.
+     There is no single flip that fixes that, and the first attempt here
+     was one: reverse everything when the total volume is negative. It
+     turned the body the right way out and turned the chassis inside out
+     with it, so the car park went from twenty vans seen from the inside
+     to twenty vans with no bodywork — a black sill and four wheels.
 
-     So the orientation is MEASURED rather than trusted: the signed
-     volume of the whole mesh about its own centre, which is positive for
-     a solid wound outward and negative for one wound in. A van's own
-     interior — seats, the inside of the doors, the cargo bay — subtracts
-     from it, so the threshold is the sign and not the size: this model
-     comes out at -27% of its bounding box, and flipped, +27%.
+     THE MODEL IS NOT WRONG. It renders correctly in Blender and on
+     Sketchfab, and the reason is that both of them draw BOTH SIDES of a
+     single-sided material by default. That is the whole of what was
+     missing: this renderer culls back faces, and the model was authored
+     without that ever mattering. So a vehicle is drawn double-sided (see
+     carMesh) and the winding is left exactly as the file has it. Nothing
+     is guessed, nothing is reversed, and what comes out is what the
+     author saw.
+
+     The NORMALS still have to be sorted out, because the face light
+     reads them: Doom's fake contrast wants to know whether a face is a
+     roof, an underside or a flank, and a roof triangle whose normal
+     points down gets the tarmac's light. They are turned outward from
+     the model's own centre — a heuristic, and only ever a heuristic,
+     which is why it is used for NOTHING but the light. A triangle it
+     guesses wrong about is one step of shading out on one face; it can
+     no longer cull anything or choose anybody's paint.
      ------------------------------------------------------------------ */
-  const c3 = [0, 0, 0];
-  const bb = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
-  for (const t of tris) for (const p of [t.a, t.b, t.c]) for (let k = 0; k < 3; k++) {
-    if (p[k] < bb[k]) bb[k] = p[k];
-    if (p[k] > bb[3 + k]) bb[3 + k] = p[k];
-  }
-  for (let k = 0; k < 3; k++) c3[k] = (bb[k] + bb[3 + k]) / 2;
-  let vol = 0;
-  for (const t of tris) {
-    const A = [t.a[0] - c3[0], t.a[1] - c3[1], t.a[2] - c3[2]];
-    const B = [t.b[0] - c3[0], t.b[1] - c3[1], t.b[2] - c3[2]];
-    const C = [t.c[0] - c3[0], t.c[1] - c3[1], t.c[2] - c3[2]];
-    vol += (A[0] * (B[1] * C[2] - B[2] * C[1]) +
-            A[1] * (B[2] * C[0] - B[0] * C[2]) +
-            A[2] * (B[0] * C[1] - B[1] * C[0])) / 6;
-  }
-  if (vol < 0)
-    for (const t of tris) {
-      const b = t.b; t.b = t.c; t.c = b;
-      t.n = [-t.n[0], -t.n[1], -t.n[2]];
+  let normalsTurned = 0;
+  {
+    const c3 = [0, 0, 0];
+    const bb = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+    for (const t of tris) for (const p of [t.a, t.b, t.c]) for (let k = 0; k < 3; k++) {
+      if (p[k] < bb[k]) bb[k] = p[k];
+      if (p[k] > bb[3 + k]) bb[3 + k] = p[k];
     }
+    for (let k = 0; k < 3; k++) c3[k] = (bb[k] + bb[3 + k]) / 2;
+    let turned = 0;
+    for (const t of tris) {
+      const mx = (t.a[0] + t.b[0] + t.c[0]) / 3 - c3[0];
+      const my = (t.a[1] + t.b[1] + t.c[1]) / 3 - c3[1];
+      const mz = (t.a[2] + t.b[2] + t.c[2]) / 3 - c3[2];
+      if (t.n[0] * mx + t.n[1] * my + t.n[2] * mz < 0) {
+        t.n = [-t.n[0], -t.n[1], -t.n[2]];
+        turned++;
+      }
+    }
+    normalsTurned = turned;
+  }
 
   return {
     id: opts.id || 'van', name: opts.name || 'Van', use: 'civil',
     length: ex.length,
     shape: ex.shape,
     views: ex.views,
-    model: { tris, volume: Math.abs(vol), inverted: vol < 0 },
+    model: { tris, normalsTurned },
   };
 }
 
@@ -636,7 +682,12 @@ export function carGeom(a) {
 
 /** And that geometry as a mesh. */
 export function carMesh(texture, a) {
-  const mesh = new THREE.Mesh(carGeom(a), createWallMaterial(texture, {}));
+  /* BOTH SIDES, because the model was authored in renderers that draw
+     both — see the note in modelVehicle. A vehicle is a thin shell with
+     no interior you are ever inside, so the only cost is drawing the far
+     face of a solid that already covers it, and the alternative is
+     guessing which way round somebody else's mesh is. */
+  const mesh = new THREE.Mesh(carGeom(a), createWallMaterial(texture, { side: THREE.DoubleSide }));
   /* Y then X then Z, applied in that order in the object's own frame:
      yaw it to its heading, roll it about its own length, then tip it
      nose over tail. Which is exactly the order a car leaves the ground

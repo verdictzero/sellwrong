@@ -2164,56 +2164,71 @@ section('the fleet');
       `${car.carGeometry(car.VEHICLES.van2).position.length / 9} for a drawn one`);
     check('it has triangles', v.model.tris.length > 200, `${v.model.tris.length}`);
 
-    /* --- AND IT IS THE RIGHT WAY ROUND ---------------------------------
-       THIS IS THE ONE THAT MATTERED. The file declares which way each
-       face points twice — the winding of its three corners and the
-       NORMAL on them — and this model's two agree with each other and
-       both point INWARD. Self-consistent, invisible in any viewer that
-       draws both sides, and fatal here: every face of every van was a
-       back face, every back face was culled, and the car park was
-       seventy-seven vans seen from the inside. It also chose the wrong
-       picture for every panel, since the projection picks a view by
-       where a face points.
+    /* --- AND IT IS DRAWN THE WAY IT WAS AUTHORED ----------------------
+       THIS IS THE ONE THAT MATTERED, and it took three goes to get
+       right. The file declares which way each face points twice — the
+       winding of its corners and the NORMAL on them — and its two
+       declarations agree with each other and disagree with the SOLID:
+       the body shell's 134 triangles come to minus a third of the
+       bounding box, and the chassis and glass under it to plus a
+       twentieth. One shell wound in, one wound out.
 
-       So the geometry that goes to the GPU is held against the solid it
-       is meant to be. Signed volume, in the frame the vertices are
-       actually in, about their own centre: positive for a shell wound
-       outward, negative for one wound in. Interior geometry subtracts —
-       this van has seats and door cards — so the claim is the SIGN, and
-       the drawn fleet above, which is solid boxes, is the calibration at
-       55 to 69 per cent of its bounding box.
+       The first attempt reversed the lot when the total came out
+       negative, which turned the body the right way and the chassis the
+       wrong way: the car park went from vans seen from the inside to
+       vans with no bodywork, a black sill and four wheels.
+
+       The model is not wrong. It renders correctly in Blender and on
+       Sketchfab because both of them draw BOTH SIDES, and that was the
+       whole of the oversight — this renderer culls back faces and the
+       model was authored where that never mattered. So: the winding is
+       left exactly as the file has it, and the material draws both
+       sides. The normals are turned outward for the FACE LIGHT and
+       nothing else, so a wrong guess costs one step of shading and can
+       no longer cull anything or choose anybody's paint.
        ------------------------------------------------------------------ */
-    const volumeOf = (pos) => {
-      const b = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
-      for (let i = 0; i < pos.length; i += 3) for (let k = 0; k < 3; k++) {
-        if (pos[i + k] < b[k]) b[k] = pos[i + k];
-        if (pos[i + k] > b[3 + k]) b[3 + k] = pos[i + k];
-      }
-      const c = [(b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2];
-      let vol = 0;
-      for (let i = 0; i < pos.length; i += 9) {
-        const A = [pos[i] - c[0], pos[i + 1] - c[1], pos[i + 2] - c[2]];
-        const B = [pos[i + 3] - c[0], pos[i + 4] - c[1], pos[i + 5] - c[2]];
-        const C = [pos[i + 6] - c[0], pos[i + 7] - c[1], pos[i + 8] - c[2]];
-        vol += (A[0] * (B[1] * C[2] - B[2] * C[1]) +
-                A[1] * (B[2] * C[0] - B[0] * C[2]) +
-                A[2] * (B[0] * C[1] - B[1] * C[0])) / 6;
-      }
-      return vol / Math.max(1e-9, (b[3] - b[0]) * (b[4] - b[1]) * (b[5] - b[2]));
-    };
-    const frac = volumeOf(car.carGeometry(v, { length: v.length }).position);
-    note('which way round it is', `${(frac * 100).toFixed(0)}% of its box, ` +
-      `and the file had it ${v.model.inverted ? 'inside out' : 'the right way round'}`);
-    check('the van is not inside out', frac > 0.05, `${(frac * 100).toFixed(0)}%`);
-    check('and the conversion said so rather than guessing', v.model.inverted === true,
-      'the model arrived wound inward, and modelVehicle measured it');
-    for (const drawn of car.VEHICLE_IDS.slice(0, 3)) {
-      const f = volumeOf(car.carGeometry(car.VEHICLES[drawn], { length: car.VEHICLES[drawn].length }).position);
-      check(`and the drawn ${drawn} is not either`, f > 0.4, `${(f * 100).toFixed(0)}%`);
+    const glb2 = await import('../js/glb.js');
+    note('the two shells', (() => {
+      return json.meshes[0].primitives.map(pr => {
+        const P = glb2.readAccessor(json, bin, pr.attributes.POSITION).array;
+        const I = glb2.readAccessor(json, bin, pr.indices).array;
+        const b = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+        for (let i = 0; i < P.length; i += 3) for (let k = 0; k < 3; k++) {
+          if (P[i + k] < b[k]) b[k] = P[i + k];
+          if (P[i + k] > b[3 + k]) b[3 + k] = P[i + k];
+        }
+        const c = [(b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2];
+        let vol = 0;
+        for (let t = 0; t < I.length; t += 3) {
+          const Q = [I[t], I[t + 1], I[t + 2]].map(i => [P[i * 3] - c[0], P[i * 3 + 1] - c[1], P[i * 3 + 2] - c[2]]);
+          vol += (Q[0][0] * (Q[1][1] * Q[2][2] - Q[1][2] * Q[2][1]) +
+                  Q[0][1] * (Q[1][2] * Q[2][0] - Q[1][0] * Q[2][2]) +
+                  Q[0][2] * (Q[1][0] * Q[2][1] - Q[1][1] * Q[2][0])) / 6;
+        }
+        const boxv = (b[3] - b[0]) * (b[4] - b[1]) * (b[5] - b[2]);
+        const nm = json.materials[pr.material].name;
+        return `${nm} ${(100 * vol / boxv).toFixed(0)}%`;
+      }).join(', ');
+    })());
+    /* A VEHICLE IS DRAWN DOUBLE-SIDED, which is the fix and the only
+       thing that makes "it renders perfectly in Blender" true here. */
+    {
+      const THREEc = await import('three');
+      const mesh = car.carMesh({}, car.carGeometry(v, { length: v.length }));
+      check('a vehicle is drawn both sides, as its author saw it',
+        mesh.material.side === THREEc.DoubleSide);
+      mesh.geometry.dispose(); mesh.material.dispose();
     }
-    /* THE ROOF POINTS UP, which is the same claim stated where you can
-       see it: of the triangles in the top tenth of the van, the ones
-       facing anywhere near vertical face UP. */
+    check('and the file\'s own winding is left alone',
+      !('inverted' in v.model) && typeof v.model.normalsTurned === 'number');
+    note('normals turned outward for the light',
+      `${v.model.normalsTurned} of ${v.model.tris.length}`);
+    check('most of them already pointed outward',
+      v.model.normalsTurned < v.model.tris.length * 0.7,
+      `${v.model.normalsTurned} turned`);
+    /* THE ROOF POINTS UP, which is the claim the face light actually
+       needs: a roof triangle whose normal points down is given the
+       tarmac's light, and that is a third of the brightness. */
     {
       let top = 0;
       for (const t of v.model.tris) for (const p of [t.a, t.b, t.c]) if (p[2] > top) top = p[2];
@@ -2225,32 +2240,72 @@ section('the fleet');
       }
       check('the roof faces the sky', up >= 2 && down === 0, `${up} up, ${down} down`);
     }
-    /* IN THE SPACE THE REST OF THIS FILE SPEAKS: x is +0.5 at the nose
-       and -0.5 at the tail, y is across, z is 0 on the tarmac. Getting
-       any of the three wrong is a van standing on its nose. */
-    let x0 = Infinity, x1 = -Infinity, y1 = 0, z0 = Infinity, z1 = -Infinity;
-    for (const t of v.model.tris) for (const p of [t.a, t.b, t.c]) {
-      x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]);
-      y1 = Math.max(y1, Math.abs(p[1]));
-      z0 = Math.min(z0, p[2]); z1 = Math.max(z1, p[2]);
+
+    /* --- AND THE PAINT IS THE MODEL'S OWN, WHICH TOOK THREE GOES ---
+       The mesh is UNWRAPPED, onto the very sheet embedded in it, and
+       that is why it renders correctly in Blender and on Sketchfab. It
+       was condemned here on a measurement that said the flanks were a
+       fan of long thin triangles sharing one corner — and that
+       measurement pooled BOTH primitives. The second one is 490
+       triangles of glass, tyres, bumpers and chassis with no texture at
+       all, just a flat near-black colour, so its UVs are unused junk,
+       and the junk was the fan. The body's own unwrap is ordinary.
+
+       So the paint is per-vertex now: the textured primitive's own UVs,
+       and one dark texel for the untextured one. The four measured views
+       stay, because the DEBRIS still needs them — a chunk torn off the
+       van is a box built on the fly, with no unwrap of its own. */
+    check('the van carries its own UVs',
+      v.model.tris.every(t => t.ta && t.tb && t.tc &&
+        t.ta.length === 2 && t.ta.every(q => q >= -1e-6 && q <= 1 + 1e-6)));
+    check('and the four measured views as well, for the debris',
+      !!v.views && ['front', 'rear', 'side', 'top'].every(k => v.views[k]));
+    /* THE UNWRAP IS ORDINARY, which is the claim that was got wrong.
+       Measured over the TEXTURED primitive only: a sane four-view unwrap
+       covers a good fraction of the sheet with no single triangle
+       stretched across it, and a fan collapses the spread to nothing. */
+    {
+      const glb = await import('../js/glb.js');
+      const prims = json.meshes[0].primitives;
+      const stats = prims.map(pr => {
+        const uv2 = glb.readAccessor(json, bin, pr.attributes.TEXCOORD_0).array;
+        const ix = glb.readAccessor(json, bin, pr.indices).array;
+        let sum = 0, big = 0;
+        for (let t = 0; t < ix.length; t += 3) {
+          const P = [ix[t], ix[t + 1], ix[t + 2]].map(i => [uv2[i * 2], uv2[i * 2 + 1]]);
+          const ar = Math.abs((P[1][0] - P[0][0]) * (P[2][1] - P[0][1]) -
+                              (P[2][0] - P[0][0]) * (P[1][1] - P[0][1])) / 2;
+          sum += ar; big = Math.max(big, ar);
+        }
+        return { textured: !!json.materials[pr.material].pbrMetallicRoughness?.baseColorTexture,
+                 tris: ix.length / 3, sum, big };
+      });
+      const body = stats.find(st => st.textured), flat = stats.find(st => !st.textured);
+      note('the unwrap', `body ${body.tris} tris covering ${(body.sum * 100).toFixed(0)}% of the sheet, ` +
+        `biggest ${(body.big * 100).toFixed(1)}%; the flat material ${flat.tris} tris ` +
+        `"covering" ${(flat.sum * 100).toFixed(0)}%`);
+      check('the textured primitive has an ordinary unwrap',
+        body.sum > 0.2 && body.sum < 0.8 && body.big < 0.05,
+        `${(body.sum * 100).toFixed(0)}% of the sheet, biggest ${(body.big * 100).toFixed(1)}%`);
+      check('and the untextured one is the junk that was mistaken for it',
+        flat.sum > 1.5, `${(flat.sum * 100).toFixed(0)}%, which cannot be a layout`);
     }
-    check('it runs from tail to nose over exactly its own length',
-      Math.abs(x0 + 0.5) < 1e-3 && Math.abs(x1 - 0.5) < 1e-3, `${x0.toFixed(4)}..${x1.toFixed(4)}`);
-    check('it stands on the tarmac rather than in it or over it',
-      Math.abs(z0) < 1e-3, `${z0.toFixed(4)}`);
-    check('it is taller than it is wide and longer than it is tall',
-      z1 > y1 * 2 * 0.9 && z1 < 1,
-      `${(v.length * 2 * y1).toFixed(0)} wide, ${(v.length * z1).toFixed(0)} tall, ${v.length} long`);
-    /* --- AND THE PAINT IS PROJECTED, NOT THE MODEL'S OWN ---
-       The mesh's flanks are UV-mapped as a fan of long thin triangles
-       all sharing one corner, so using its UVs stretched a few pixels
-       across the whole side of the van. Its TEXTURE, though, is a
-       four-view sheet of this very van, which is exactly what this file
-       projects. So the shape comes from the model and the paint comes
-       from the four rectangles tools/prep-van.mjs measured. */
-    check('the van carries four measured views rather than its own UVs',
-      !!v.views && ['front', 'rear', 'side', 'top'].every(k => v.views[k]) &&
-      v.model.tris.every(t => t.ta === undefined));
+    /* AND THE FLAT MATERIAL COMES OUT DARK. Every one of its 490
+       triangles is pointed at one texel that tools/prep-van.mjs painted
+       into a corner of the sheet, so the glass and the tyres are black
+       without a second material and without a second draw call. */
+    check('the sheet has somewhere black to point the flat material at',
+      !!ex.black && ex.black.x > 0 && ex.black.y > 0,
+      ex.black ? `${ex.black.x},${ex.black.y}` : 'missing');
+    check('and every triangle of it points there',
+      (() => {
+        const A2 = v.views.atlas;
+        const u = ex.black.x / A2.w, w = 1 - ex.black.y / A2.h;
+        let flat = 0;
+        for (const t of v.model.tris)
+          if (Math.abs(t.ta[0] - u) < 1e-6 && Math.abs(t.ta[1] - w) < 1e-6) flat++;
+        return flat > 400;
+      })(), 'the 490 untextured triangles');
     check('and they say which picture they are rectangles in',
       v.views.atlas.w > 0 && v.views.atlas.h > 0,
       `${v.views.atlas.w}x${v.views.atlas.h}`);
@@ -2288,11 +2343,10 @@ section('the fleet');
     check('every projected UV is inside the sheet',
       uvs.every(u => u >= -1e-6 && u <= 1 + 1e-6),
       `${uvs.filter(u => u < 0 || u > 1).length} of ${uvs.length} outside`);
-    /* AND THE FLANK IS NOT A FAN. What broke was one corner shared by
-       every triangle down the side of the van; projected, a flank
-       triangle's UVs follow its own outline, so the SPREAD of them
-       across the sheet is the spread of the geometry. A fan collapses
-       that to nothing. */
+    /* AND NOTHING IS STRETCHED ACROSS THE SHEET, measured on the
+       geometry the game actually builds rather than on the file: the
+       body's own unwrap for most of it and one collapsed texel for the
+       flat material, so the widest triangle is a body panel. */
     {
       const g = car.carGeometry(v, { angle: 0 });
       let widest = 0;
@@ -2302,7 +2356,7 @@ section('the fleet');
         widest = Math.max(widest, ar);
       }
       check('and no one triangle is stretched across the whole sheet',
-        widest < 0.10, `the widest covers ${(widest * 100).toFixed(1)}% of it`);
+        widest < 0.05, `the widest covers ${(widest * 100).toFixed(1)}% of it`);
     }
     /* AND THE NORMALS ARE THE TRIANGLES' OWN. Every one unit long, or
        the face light and the winding are both being asked a question
