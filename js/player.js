@@ -29,7 +29,9 @@
                 when the fuel runs out, which it will.
      FLAMER     the verb the game is named after. A short cone, a lot of
                 ignition, and an ammo count that is really a timer on how
-                much of the store you can take.
+                much of the store you can take — which is now literally
+                what it is: one unit a tic while the stream pours, and
+                nothing in the shop to refill it from.
      MOLOTOV    fire with reach. The answer to an aisle you cannot get
                 into and a walkway fire will not cross by itself.
    ===================================================================== */
@@ -37,11 +39,35 @@
 import { PLAYER_RADIUS, PLAYER_HEIGHT, PLAYER_EYE, MAX_STEP, TICRATE,
          angleNorm, clamp, pRandom, pRandomSpread, dist2 } from './util.js';
 
-/* FOR NOW: the player cannot be hurt and the tank never empties. Both
-   are one flag here rather than a hundred missing checks, so switching
-   them back on is switching them back on. */
+/* FOR NOW: the player cannot be hurt. One flag here rather than a
+   hundred missing checks, so switching it back on is switching it back
+   on. */
 export const INVULNERABLE = true;
-export const INFINITE_FUEL = true;
+
+/* THE TANK EMPTIES NOW, at the user's request, and there is nothing in
+   the shop to refill it with — the fuel cans are gone from the level.
+   What is left is a tank that fills itself, very slowly, and that one
+   decision turns the flamethrower from a hose into a budget.
+
+   THE NUMBERS, and the ratio between them is the whole design:
+
+     TANK          420, and the stream costs one a tic, so twelve
+                   seconds of flame with the trigger held down. Enough to
+                   walk a fire into three or four aisles, which is all it
+                   needs to be: the fire spreads by itself, and the gun
+                   is for deciding WHERE.
+     REGEN_EVERY   one unit every ten tics, which is three and a half a
+                   second and a full tank in two minutes. So a second of
+                   firing costs ten seconds of walking, and the honest
+                   way to play is short bursts a long way apart.
+
+   It also gives the boxcutter its job back. The note below has said
+   since the day it was written that a boxcutter is "what is left when
+   the fuel runs out, which it will" — and the fuel did not run out, so
+   the boxcutter was never issued. It is now, because an empty tank with
+   one weapon in your hands is a dead end rather than a decision. */
+export const TANK = 420;
+export const REGEN_EVERY = 10;
 
 const FRICTION   = 0.90625;
 const WALK_FWD   = 25 / 32,  RUN_FWD  = 50 / 32;
@@ -54,8 +80,9 @@ const MAX_PITCH  = 0.72;          // about 41 degrees, the usual port limit
    A four-metre cone at forty-five degrees, enough damage to delete a
    member of staff in a fraction of a second, and it lays down enough
    accelerant that what it touches goes on burning by itself long after
-   you have walked away. There is no aiming and no ammo management worth
-   the name — the tank is enormous and the store is full of cans.
+   you have walked away. There is no aiming. There IS ammo management
+   now: the tank holds twelve seconds and fills itself in two minutes,
+   and there is nothing in the shop to top it up with.
 
    The other two are written and finished and are not issued. A boxcutter
    is a more interesting weapon than a flamethrower in almost every game
@@ -67,7 +94,13 @@ export const WEAPONS = {
   FLAMER: {
     slot: 1, name: 'FLAMER', sprite: 'FLMG',
     ready: 'A', fire: ['B', 'C'], fireTics: [2, 2],
-    ammo: 'fuel', ammoPerShot: 1, autofire: true,
+    /* CHARGED PER TIC OF STREAM, NOT PER SHOT CYCLE, which is why this
+       is 0 and flameTic does the subtracting. A cycle is four tics, so
+       per-shot billing made the tank a count of four-tic bursts — and
+       what the player experiences is SECONDS OF FLAME, because the
+       stream pours every tic the trigger is down whatever the animation
+       is doing. Bill the thing that comes out of the nozzle. */
+    ammo: 'fuel', ammoPerShot: 0, autofire: true,
     /* A STREAM, not a cone: every tic the trigger is down, js/flame.js
        sends a few particles out of the nozzle and they fly, drop, and
        light whatever they land on. The reach is theirs to decide. */
@@ -110,11 +143,13 @@ export class Player {
     this.shootable = true;
     this.monster = false;
 
-    this.ammo = { fuel: 500, bottles: 0 };
-    this.maxAmmo = { fuel: 999, bottles: 12 };
-    /* One weapon issued. The other two are built and tested and stay
-       switched off until there is a reason for them. */
-    this.owned = { FLAMER: true };
+    this.ammo = { fuel: TANK, bottles: 0 };
+    this.maxAmmo = { fuel: TANK, bottles: 12 };
+    this.regenTick = 0;
+    /* TWO WEAPONS NOW. The molotov is built and tested and stays
+       switched off; the boxcutter is issued because the tank empties —
+       see the note on TANK. */
+    this.owned = { FLAMER: true, BOXCUTTER: true };
     this.weapon = 'FLAMER';
     this.pendingWeapon = null;
 
@@ -146,6 +181,7 @@ export class Player {
     this.turn(input);
     this.move(input);
     this.weaponTic(input);
+    this.fuelTic();
 
     if (input.use && this.useCooldown === 0) { this.use(); this.useCooldown = 8; }
   }
@@ -241,8 +277,10 @@ export class Player {
   get def() { return WEAPONS[this.weapon]; }
   get firing() { return this.fireIndex >= 0; }
 
-  ammoFor(w) { const d = WEAPONS[w]; return d.ammo && !(INFINITE_FUEL && d.ammo === 'fuel') ? this.ammo[d.ammo] : Infinity; }
-  hasAmmo(w) { const d = WEAPONS[w]; return !d.ammo || (INFINITE_FUEL && d.ammo === 'fuel') || this.ammo[d.ammo] >= (d.ammoPerShot || 1); }
+  ammoFor(w) { const d = WEAPONS[w]; return d.ammo ? this.ammo[d.ammo] : Infinity; }
+  /* One unit is enough to start: what stops a stream is running dry
+     mid-pour, which flameTic notices. */
+  hasAmmo(w) { const d = WEAPONS[w]; return !d.ammo || this.ammo[d.ammo] >= Math.max(1, d.ammoPerShot ?? 1); }
 
   selectSlot(n) {
     for (const [k, d] of Object.entries(WEAPONS))
@@ -293,7 +331,9 @@ export class Player {
 
   startFire() {
     const d = this.def;
-    if (d.ammo && !(INFINITE_FUEL && d.ammo === 'fuel')) this.ammo[d.ammo] -= d.ammoPerShot || 1;
+    /* `?? 1` and not `|| 1`: the flamethrower declares 0 on purpose,
+       because it is billed per tic of stream rather than per shot. */
+    if (d.ammo) this.ammo[d.ammo] = Math.max(0, this.ammo[d.ammo] - (d.ammoPerShot ?? 1));
     this.fireIndex = 0;
     this.fireTics = d.fireTics[0];
     this.game.sound?.play(d.sound, this);
@@ -316,8 +356,34 @@ export class Player {
    *  flame goes after that is js/flame.js's. */
   flameTic(d) {
     const g = this.game;
+    /* THE TANK IS BILLED HERE, and running dry stops the pour in the
+       middle of it rather than at the end of a shot cycle: the trigger
+       is still down, the arm is still up, and nothing comes out. */
+    if (d.ammo) {
+      if (this.ammo[d.ammo] <= 0) {
+        this.fireIndex = -1;
+        if (!this._dry) { g.message('THE TANK IS EMPTY'); this._dry = true; }
+        return;
+      }
+      this.ammo[d.ammo]--;
+      this._dry = false;
+    }
     if (!g.flame) return;
     g.flame.fire(g.nozzle(), this.angle, this.pitch);
+  }
+
+  /** A TANK THAT FILLS ITSELF, very slowly. There is nothing in the shop
+   *  to refill it from any more, so this is the only source: one unit
+   *  every REGEN_EVERY tics, which is a full tank in two minutes. It
+   *  runs whatever the player is doing, including while firing — the
+   *  stream takes one a tic and this gives back a tenth of one, so
+   *  holding the trigger still empties it in about twelve seconds. */
+  fuelTic() {
+    const cap = this.maxAmmo.fuel;
+    if (this.ammo.fuel >= cap) { this.regenTick = 0; return; }
+    if (++this.regenTick < REGEN_EVERY) return;
+    this.regenTick = 0;
+    this.ammo.fuel = Math.min(cap, this.ammo.fuel + 1);
   }
 
   throwBottle() {

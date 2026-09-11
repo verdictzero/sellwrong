@@ -1004,7 +1004,39 @@ section('the flame');
   for (let k = 0; k < 40; k++) g.flame.tic();
   check('and every particle has landed', g.flame.liveCount === 0 && g.flame._hits > 0, `${g.flame.liveCount} live, ${g.flame._hits} hits`);
   check('the player cannot be hurt for now', (p.damage(50, null), p.health === 100));
-  check('and the tank never empties', p.hasAmmo('FLAMER') && p.ammoFor('FLAMER') === Infinity);
+  /* --- THE TANK, WHICH EMPTIES NOW ---
+     Three claims: the stream is billed per tic rather than per shot
+     cycle, an empty tank stops the pour in the middle of it, and the
+     tank comes back on its own with nothing in the shop to refill it
+     from. The last one is the only source of fuel in the game, so if it
+     is broken the game has twelve seconds in it and then nothing. */
+  {
+    const pl = await import('../js/player.js');
+    const d = pl.WEAPONS.FLAMER;
+    check('the tank is finite', p.ammoFor('FLAMER') === pl.TANK && pl.TANK > 100, `${p.ammoFor('FLAMER')}`);
+    check('and there is nothing in the level to refill it from',
+      !level.things.some(t => t.type === 'FUELCAN'),
+      `${level.things.filter(t => t.type === 'FUELCAN').length} cans`);
+    check('the boxcutter is issued, because the tank runs out', !!p.owned.BOXCUTTER);
+    /* billed per tic of stream: thirty tics of pouring costs thirty */
+    const was = p.ammo.fuel;
+    for (let k = 0; k < 30; k++) p.flameTic(d);
+    check('the stream costs one a tic', p.ammo.fuel === was - 30, `${was} -> ${p.ammo.fuel}`);
+    note('a full tank', `${(pl.TANK / 35).toFixed(0)} seconds of flame, ` +
+      `back in ${(pl.TANK * pl.REGEN_EVERY / 35).toFixed(0)} seconds`);
+    /* and running dry stops it where it stands */
+    p.ammo.fuel = 1; p.fireIndex = 0;
+    p.flameTic(d); p.flameTic(d);
+    check('an empty tank stops the pour mid-pour', p.ammo.fuel === 0 && p.fireIndex === -1);
+    check('and the trigger does nothing until there is fuel again', !p.hasAmmo('FLAMER'));
+    /* the refill, which is the only source there is */
+    p.regenTick = 0;
+    for (let k = 0; k < pl.REGEN_EVERY * 4; k++) p.fuelTic();
+    check('the tank fills itself', p.ammo.fuel === 4, `${p.ammo.fuel} after ${pl.REGEN_EVERY * 4} tics`);
+    check('and very slowly', pl.REGEN_EVERY >= 6, `one every ${pl.REGEN_EVERY} tics`);
+    check('and it stops at full', (p.ammo.fuel = pl.TANK,
+      p.fuelTic(), p.ammo.fuel === pl.TANK));
+  }
 }
 
 /* ---------- the crowd ---------- */

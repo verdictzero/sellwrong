@@ -71,7 +71,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         610 checks, no install and no browser
+  the smoke test         618 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -103,12 +103,14 @@ exits for them to get out of, so the shop empties: light one aisle and
 most of the building is in the car park or in the trees inside a minute.
 The status bar counts how many are left, which is the number the game is
 actually played against once the fire is going — you started it, and now
-you have to go and find them.
+you have to go and find them. It counts the tank too, because the tank
+empties now.
 
   WASD          move            MOUSE     look
-  SHIFT         run             LMB/CTRL  flamethrower
-  SPACE / F     open, use       ESC       pause
-  [  ]          chunkiness      N         palette on / off
+  SHIFT         run             LMB/CTRL  fire
+  SPACE / F     open, use       WHEEL     flamethrower / boxcutter
+  [  ]          chunkiness      ESC       pause
+  N             palette on / off
   `             the frame-rate readout, off by default
 
 Gamepad works. Mouse look needs a click to grab the pointer. On a phone
@@ -121,9 +123,23 @@ to whatever they land on — seven hundred units of reach, on the floor
 about four hundred out if you fire level, further if you lift it. Drawn
 additively, so where they overlap they add up to a white-hot core and
 the whole arc reads as one unbroken tongue. It goes where you point it
-and no further, which is the whole feel of the thing. FOR NOW the player cannot be hurt and the tank never
-empties; both are one flag each at the top of js/player.js. A boxcutter
-and a molotov are written, tested and switched off.
+and no further, which is the whole feel of the thing.
+
+THE TANK EMPTIES, at the user's request, and nothing in the shop refills
+it. It holds twelve seconds of flame with the trigger held down, and it
+fills itself at one unit every ten tics — a full tank in two minutes. So
+a second of firing costs ten seconds of walking, and the honest way to
+play is short bursts a long way apart. The forty-two fuel cans that used
+to be laid out over the shop floor are gone with it: a can on the floor
+and a tank that regenerates are two answers to the same question, and
+having both means the regeneration never matters.
+
+That also gives the BOXCUTTER its job back, so it is issued now — the
+note at the top of js/player.js has said since the day it was written
+that a boxcutter is "what is left when the fuel runs out, which it
+will", and the fuel did not run out. Mouse wheel, or 1. The molotov is
+written, tested and still switched off. The player still cannot be hurt;
+that is one flag at the top of js/player.js.
 
 
 ON A PHONE
@@ -1608,7 +1624,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-610 checks. Every one of them earns its place by having caught something
+618 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -1809,8 +1825,9 @@ WHAT IS NOT DONE
     Chromium, which draws them correctly and slowly; fifty-four thousand
     instances at 400 rows is well inside any real GPU, but nobody has
     yet watched it on one
-  the player cannot be hurt and the tank never empties — asked for, for
-    now, and one flag each in js/player.js
+  the player cannot be hurt — asked for, for now, and one flag in
+    js/player.js. The tank is finite as of this pass and fills itself
+    very slowly; nothing else refills it
   nobody comes down the road yet: js/responders.js escalates, announces
     and records the waves, and spawn() is one function waiting for
     actors and art

@@ -136,11 +136,17 @@ export class Hud {
     const g = this.game;
     const burn = Math.round(g.burnPercent), wood = Math.round(g.forestPercent);
     const left = g.peopleLeft;
-    const key = [this.width, s, burn, wood, left, this.messages.map(m => m.text).join('/')].join('|');
+    /* THE TANK, which is on here because it empties now. Rounded to a
+       percent for the same reason the burn is: this panel is rebuilt
+       whenever anything on it changes, and a raw count that ticks up
+       every tenth of a second would rebuild it three times a second all
+       night for a digit nobody reads. */
+    const fuel = p ? Math.round(100 * p.ammoFor(p.weapon) / (p.maxAmmo.fuel || 1)) : 0;
+    const key = [this.width, s, burn, wood, left, fuel, this.messages.map(m => m.text).join('/')].join('|');
     if (key === this._topKey) return;
     this._topKey = key;
 
-    const longest = Math.max(148, ...this.messages.map(m => textWidth(m.text) + 8));
+    const longest = Math.max(186, ...this.messages.map(m => textWidth(m.text) + 8));
     const w = Math.min(this.width, longest * s + 6 * s);
     const h = (16 + 8 * this.messages.length) * s + 4;
     const pix = new Pix(w, h, 1, false);
@@ -159,7 +165,19 @@ export class Hud {
     /* and how many are still alive, which since the fire exits went in is
        the number the player is actually playing against */
     x = bigText(pix, 'LEFT', x + 6 * s, M, 'grey', 0.55, s);
-    bigText(pix, `${left}`, x + 2 * s, M, 'bone', left > 0 ? 0.78 : 0.34, s);
+    x = bigText(pix, `${left}`, x + 2 * s, M, 'bone', left > 0 ? 0.78 : 0.34, s);
+    /* and how much is in the tank, with its own hairline under it: the
+       two numbers a player acts on are how much of the shop has gone and
+       whether there is anything left to burn it with */
+    x = bigText(pix, 'FUEL', x + 6 * s, M, 'grey', 0.55, s);
+    bigText(pix, `${Math.min(100, fuel)}%`, x + 2 * s, M,
+      fuel > 40 ? 'cyan' : fuel > 12 ? 'yellow' : 'red', fuel > 12 ? 0.62 : 0.72, s);
+    const fx0 = gx0 + gw + 8 * s, fw = 40 * s;
+    for (let i = 0; i < fw; i++) {
+      const on = i / fw * 100 <= fuel;
+      for (let k = 0; k < s; k++)
+        pix.ink(fx0 + i, gy + k, on ? (fuel > 12 ? 'cyan' : 'red') : 'grey', on ? 0.5 : 0.18);
+    }
 
     this.messages.forEach((m, i) => bigText(pix, m.text, M, M + (12 + i * 8) * s, 'bone', 0.72, s));
 

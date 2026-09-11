@@ -967,36 +967,26 @@ export function buildSellWrong() {
   for (const [x, yy] of [[900, 300], [2600, 1500], [3500, 2300], [1700, 900], [400, 2400]])
     mb.thing('TROLLEY', x, yy, 1.2);
 
-  /* --- what you need, and where it is --------------------------------
-     The only ammunition in the game, so there is a lot of it and it is
-     spread over the whole store: running dry with one weapon is not a
-     challenge, it is a soft lock. Laid on a coarse grid through the shop
-     floor and then thickened in the back, rather than listed by hand,
-     because at this size a hand-written list is how a corner of the map
-     ends up with nothing in it. */
-  {
-    const cans = [];
-    /* the shop floor: every other aisle, at four depths, staggered */
-    for (let k = 0; k < NCOL - 1; k += 2)
-      ROWS.forEach((row, ri) => {
-        const t = ((k / 2) + ri) % 2 ? 0.32 : 0.68;
-        cans.push([aisleX(k), row.y0 + (row.y1 - row.y0) * t]);
-      });
-    /* The cross-aisles, where you will be when you run dry crossing one.
-       The BACK cross-aisle has the deli and the butchery counters
-       standing in it, so its cans go in the gaps between them rather than
-       on the same column as the rest. */
-    for (const x of [aisleX(1), aisleX(5), aisleX(9)])
-      cans.push([x, 330], [x, 1150], [x, 1970]);
-    for (const x of [700, 2550, 3850]) cans.push([x, 2690]);
-    /* the back of house, where you will be by the time you need it */
-    cans.push([300, 2900], [520, 3300], [1100, 3050], [1600, 3320],
-              [2000, 2900], [2500, 3300], [2750, 3000],
-              [3100, 2950], [3600, 3300], [3950, 3050]);
-    /* and one in each of the neighbours, for when you go along the row */
-    cans.push([-48, 200], [-48, 560], [4312, 200], [4312, 560]);
-    for (const [x, yy] of cans) mb.thing('FUELCAN', x, yy, 0);
-  }
+  /* --- THERE WERE FORTY-TWO FUEL CANS HERE and they are gone ---------
+     At the user's request, and the reason is a better one than "fewer
+     props": the tank fills itself now, very slowly, and nothing else
+     refills it (see TANK in js/player.js). A can on the floor and a tank
+     that regenerates are two answers to the same question, and having
+     both means the regeneration never matters — you top up from the
+     nearest can and the budget the slow refill exists to impose does not
+     exist.
+
+     What the cans were FOR, though, is worth keeping in mind: they were
+     laid on a coarse grid through the shop floor, thickened in the back
+     of house and dropped in the cross-aisles, so that running dry
+     anywhere was a walk rather than a soft lock. The soft lock is
+     answered differently now — the boxcutter is issued, and the tank
+     comes back on its own wherever you are standing.
+
+     The FUELCAN actor itself still exists in js/states.js: 400 of fuel,
+     one point of health, and it explodes. Nothing places one. It is the
+     obvious thing to hand a responder who wants to make a point.
+     ------------------------------------------------------------------ */
 
   /* --- stock, which is fuel that gets in the way --------------------- */
   {
