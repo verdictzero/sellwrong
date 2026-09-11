@@ -24,7 +24,7 @@ import { TICRATE, PLAYER_EYE, angleNorm, angleDiff, dist, dist2, pRandom, clamp 
 import { Level } from './level.js';
 import { buildLevelGeometry } from './mapgeo.js';
 import { Actor, ACTIONS, ActorGrid } from './actor.js';
-import { ACTORS } from './states.js';
+import { ACTORS, LAMP_FLICKER } from './states.js';
 import { Player } from './player.js';
 import { FireSystem } from './fire.js';
 import { world } from './material.js';
@@ -177,7 +177,18 @@ export class Game {
       const a = new Actor(this, type, t.x, t.y, t.angle, { variant: t.variant });
       this.actors.push(a);
       if (a.monster) this.totalMonsters++;
-      if (type === 'LAMP') this.lamps.push(a);
+      if (type === 'LAMP') {
+        this.lamps.push(a);
+        /* WHAT CONDITION THIS ONE IS IN. The map decides — it is the
+           thing that knows what kind of shop this is — and carries it on
+           the thing's `variant`: 1 is a fitting with a tube gone, 2 is
+           one whose ballast is going. A flickering fitting starts at a
+           different point in the ring for every lamp, because a shop
+           that blinks in unison reads as a bug rather than as a shop. */
+        if (t.variant === 1) a.setState('LAMP_FAIL');
+        else if (t.variant === 2)
+          a.setState(LAMP_FLICKER[(Math.abs(t.x / 256 + t.y / 128) | 0) % LAMP_FLICKER.length]);
+      }
     }
     if (!this.player) throw new Error('map has no START');
   }

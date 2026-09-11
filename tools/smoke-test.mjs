@@ -1297,6 +1297,99 @@ section('the crowd');
   }
 }
 
+/* ---------- the lights ---------- */
+/* A FOUR-TUBE TROFFER BEHIND A PRISMATIC DIFFUSER, at the user's
+   request, and the division of labour is the thing worth testing: the
+   ceiling texture paints the FITTING and the sprite says whether
+   anything is coming out of it. Paint a lit fixture into the ceiling and
+   every light in the shop stays lit after you have shot it out. */
+section('the lights');
+{
+  const st = await import('../js/states.js');
+  const bank = spr.bakeSprites();
+  const lamp = L => bank.get('LAMP', L);
+  check('the fitting is drawn four ways', 'ABCD'.split('').every(L => lamp(L).key === 'LAMP' + L),
+    'lit, burst, a tube gone, and striking');
+  check('and all four are the same fitting at the same size',
+    new Set('ABCD'.split('').map(L => `${lamp(L).w}x${lamp(L).h}`)).size === 1,
+    `${lamp('A').w}x${lamp('A').h}`);
+  /* THE LIT ONE IS THE BRIGHT ONE, the burst one is not, and the two in
+     between are in between. Measured, because "it looks lit" is what a
+     fullbright flag says and not what the pixels say. */
+  const lum = L => {
+    const p = lamp(L).views[0];
+    let n = 0, t = 0;
+    for (let i = 0; i < p.w * p.h; i++) {
+      if (p.data[i * 4 + 3] < 128) continue;
+      n++; t += p.data[i * 4] * 0.3 + p.data[i * 4 + 1] * 0.6 + p.data[i * 4 + 2] * 0.1;
+    }
+    return t / Math.max(1, n) / 255;
+  };
+  const [lit, burst, fail, strike] = ['A', 'B', 'C', 'D'].map(lum);
+  note('how bright each one is', `lit ${lit.toFixed(2)}, a tube gone ${fail.toFixed(2)}, ` +
+    `striking ${strike.toFixed(2)}, burst ${burst.toFixed(2)}`);
+  check('a lit fitting is the brightest of them', lit > fail && fail > strike && strike > burst,
+    `${lit.toFixed(2)} > ${fail.toFixed(2)} > ${strike.toFixed(2)} > ${burst.toFixed(2)}`);
+  check('and a burst one is nearly dark', burst < 0.22, burst.toFixed(2));
+  check('only the working ones are their own light',
+    lamp('A').fullbright && lamp('C').fullbright && lamp('D').fullbright && !lamp('B').fullbright);
+  /* the ceiling still paints the HARDWARE and not the light: it is in
+     CHARRABLE, so the fire blackens it, and it must not be so bright
+     that a shot-out fitting still glows */
+  check('the ceiling fitting chars with the room', tex.CHARRABLE.includes('CEILFIT'));
+
+  /* --- THE FLICKER --- */
+  check('a fitting on its way out has a ring of states to run round',
+    st.LAMP_FLICKER.length >= 4 && st.LAMP_FLICKER.every(n => st.stateOf(n)));
+  {
+    /* round the ring once: every state has to lead back into it, the
+       frames have to actually change, and the dark half has to be a
+       minority of the cycle or it reads as a broken light rather than a
+       failing one */
+    let name = st.LAMP_FLICKER[0], tics = 0, dark = 0, seen = new Set(), frames = new Set();
+    for (let i = 0; i < 40; i++) {
+      const s2 = st.stateOf(name);
+      seen.add(name); frames.add(s2.frame);
+      tics += s2.tics; if (s2.frame === 'D') dark += s2.tics;
+      name = s2.next;
+      if (name === st.LAMP_FLICKER[0]) break;
+    }
+    note('the flicker', `${tics} tics round, ${frames.size} frames, dark for ${Math.round(100 * dark / tics)}% of it`);
+    check('the ring closes', name === st.LAMP_FLICKER[0] && seen.size === st.LAMP_FLICKER.length);
+    check('and it is mostly alight', dark / tics < 0.2, `${Math.round(100 * dark / tics)}% dark`);
+    check('and it takes a second or two to come round', tics > 35 && tics < 200, `${tics} tics`);
+  }
+
+  /* --- AND THE SHOP IS NOT UNIFORM --- */
+  {
+    const THREE4 = await import('three');
+    const { Game } = await import('../js/game.js');
+    const lv4 = MAP.buildSellWrong();
+    const lamps = lv4.things.filter(t => t.type === 'LAMP');
+    const by = n => lamps.filter(t => (t.variant || 0) === n).length;
+    note('the fittings', `${lamps.length}: ${by(0)} lit, ${by(1)} with a tube gone, ${by(2)} stuttering`);
+    check('most of the shop is lit', by(0) > lamps.length * 0.7);
+    check('and some of it is not', by(1) > 5 && by(2) > 5, `${by(1)} and ${by(2)}`);
+    const g4 = new Game({
+      level: lv4, scene: new THREE4.Scene(), camera: {},
+      textures: tex.bakeTextures(), sprites: bank,
+      hud: { message() {}, ticMessages() {} }, audio: null,
+      input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
+               attack: false, use: false, run: false, sample() {}, sensitivity: 0 },
+    });
+    const states = new Set(g4.lamps.map(a => a.state.name));
+    note('and what they are doing', [...states].sort().join(', '));
+    check('a fitting with a tube gone rests on the frame that shows it',
+      g4.lamps.some(a => a.state.name === 'LAMP_FAIL'));
+    /* EVERY FLICKERING FITTING STARTS SOMEWHERE DIFFERENT IN THE RING,
+       or the whole shop blinks in unison, which is the one way to make a
+       flicker look like a fault in the engine. */
+    const started = new Set(g4.lamps.map(a => a.state.name).filter(n => st.LAMP_FLICKER.includes(n)));
+    check('and the stuttering ones are not in step with each other',
+      started.size >= 4, `${started.size} different points in the ring`);
+  }
+}
+
 /* ---------- the wiring ---------- */
 /* EVERY NAME ONE MODULE TAKES FROM ANOTHER HAS TO BE THERE.
 

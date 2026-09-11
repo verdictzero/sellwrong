@@ -71,7 +71,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         635 checks, no install and no browser
+  the smoke test         649 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -1135,13 +1135,63 @@ is a 4x4 block of tiles with a single housing in it — and the fittings land
 every 256 units. A texel is four units instead of one, which is nothing on
 a surface three metres over your head.
 
-The texture only draws the HOUSING. The light itself hangs in it as a
+THE FITTING IS THE USER'S, from a reference photograph: a four-tube
+recessed troffer behind a prismatic diffuser, dark lampholders at both
+ends of every tube, a pale works-painted tray with a flange round it.
+Thirty-two texels by fourteen is what a 256-unit ceiling texture has to
+spend on one, and the ribs are the whole look of a prismatic diffuser
+and are two texels wide — one for the facet that faces the light and one
+for the one that does not. At one texel they alias into a flat grey the
+moment the ceiling is at an angle, which is always, because it is a
+ceiling.
+
+THE PLAID IS THE PICTURE, and that is worth saying because it looks like
+a mistake. Ribs run across the fitting the short way and four tubes glow
+along it the long way, so the face of a fitting is crossed both ways.
+The first cut washed the tube rows and the gaps between them by
+different amounts and the crossing came out as a chequerboard, which is
+what a diffuser does not look like; one alpha the whole height of the
+tray fixes it and the tubes then read as tubes because they are
+brighter, not because they are the only thing there.
+
+AND A FITTING THAT IS OFF IS STILL THE BRIGHTEST THING ON THE CEILING. A
+tube behind prismatic glass is white; a ceiling tile in this shop is
+thirty years old. So the painted fixture is brighter than the tiles
+around it, which is correct and is also why it cannot be any brighter
+than that — see the next paragraph.
+
+The texture only draws the HARDWARE. The light itself hangs in it as a
 separate object, because a light you can shoot out is worth ten you cannot,
 and a lamp painted into the ceiling can never be anything but painted. Each
 one has ten health. Shoot it, or let a fire get under it — the burn check
 is two-dimensional, so anything alight on the floor below will eventually
 take out the light above it — and it bursts, showers sparks that fall, and
 goes dark for the rest of the level.
+
+FOUR FRAMES, BECAUSE THE MECHANICS NEED FOUR. Lit; one tube gone, with
+the glass stained where it went; striking, which is all four barely
+alight and glowing only at their cathodes; and burst, which is the tray
+with the glass out of it, four broken tube stubs, shards on their way
+down and a scorch where the ballast let go. A tube that cannot strike
+still has two hot ends, and that one detail is what makes a failing
+fluorescent read as failing rather than as switched off.
+
+A shop where every fitting is perfect is a shop somebody has been
+maintaining. About one in fourteen has a tube gone and about one in
+eleven stutters, picked off the fitting's own position on the grid, so
+they are scattered rather than falling in a line down one aisle and a
+fitting is in the same state every time the map is built.
+
+THE FLICKER IS A LOOK AND NOT A LIGHT. Six states in a ring, 76 tics
+round, dark for nine per cent of it, with the two stutters a dying
+ballast actually does. The room's brightness is baked into the vertices
+by a pass that walks every lamp against every sector — a few
+milliseconds, done when a light is DESTROYED, not eleven times a second
+— so a flickering fitting flickers and the aisle under it does not.
+Doom's flickering sectors did change the light; this engine bakes it,
+and a stuttering sprite over a steady floor is the honest trade. Every
+flickering fitting starts at a different point in the ring, because a
+shop that blinks in unison reads as a fault in the engine.
 
 A sector's brightness is its own AMBIENT — emergency lighting, whatever
 comes through the front — plus every working fitting that can see it. So
@@ -1711,7 +1761,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-635 checks. Every one of them earns its place by having caught something
+649 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

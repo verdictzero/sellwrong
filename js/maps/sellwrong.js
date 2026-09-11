@@ -1010,9 +1010,24 @@ export function buildSellWrong() {
      describing the shape of the shop twice. */
   {
     const PITCH = 256, OFF = 126;
+    /* AND WHAT CONDITION EACH ONE IS IN. Nine in ten are lit, and the
+       rest are the reason the place looks like this: one in about
+       fourteen has a tube gone, one in about eleven has a ballast on its
+       way out and stutters. Picked off the fitting's own grid position
+       rather than off a counter, so a fitting is in the same state every
+       time the map is built and a screenshot is a screenshot of
+       something — and so that the dead ones are scattered rather than
+       falling in a line down one aisle, which is what a counter does.
+
+       The three states are drawn in js/sprites.js and the ring a
+       stuttering one runs round is in js/states.js. */
+    const hash = (gx, gy) => (Math.imul((gx + 71) ^ (gy * 2654435761), 374761393) >>> 9) % 1000;
     for (let gx = Math.floor(PARADE_X0 / PITCH); gx * PITCH + OFF < PARADE_X1; gx++)
-      for (let gy = 0; gy * PITCH + OFF < ANCHOR_Y1; gy++)
-        mb.thing('LAMP', gx * PITCH + OFF, gy * PITCH + OFF, 0);
+      for (let gy = 0; gy * PITCH + OFF < ANCHOR_Y1; gy++) {
+        const h = hash(gx, gy);
+        const variant = h < 70 ? 1 : h < 160 ? 2 : 0;
+        mb.thing('LAMP', gx * PITCH + OFF, gy * PITCH + OFF, 0, { variant });
+      }
   }
 
   /* --- the crowd -----------------------------------------------------

@@ -440,6 +440,29 @@ T.CEILTILE = () => {
    should, and the lamps hung in world space would miss their holes.
    ------------------------------------------------------------------ */
 T.CEILFIT = () => {
+  /* THE CEILING, AND THE FITTING IN IT.
+
+     Declared 256 units square on a 64-pixel picture, so one texel is
+     four units and the tee grid falls every sixteen texels, which is one
+     ceiling tile of sixty-four units. One fitting per texture, dead
+     centre, because js/maps/sellwrong.js lays the lamp objects on the
+     same 256 pitch at the same offset — a fitting drawn anywhere else is
+     a lamp hanging beside a hole.
+
+     WHAT IS DRAWN HERE IS THE HARDWARE AND NOT THE LIGHT. That division
+     is the whole reason a light in this game is an object: the tray, the
+     lampholders and the ribbed diffuser are painted into the ceiling and
+     stay there for ever, and whether anything is coming out of them is
+     the LAMP sprite's business, which is per fitting and can be shot
+     out. Paint a lit fixture into the ceiling and every fitting in the
+     shop stays lit after you have broken it.
+
+     So the diffuser is drawn at about the brightness of the tiles around
+     it: pale ribbed glass with the tubes showing through as slightly
+     lighter bands. Neither a hole nor a lamp. From the user's reference:
+     four tubes, a prismatic diffuser ribbed across the short way, dark
+     lampholders at both ends of every tube, and a pale works-painted
+     tray with a flange round it. */
   const p = new Pix(64, 64, 44);
 
   const n = fbm(64, 64, 16, 2, 44);
@@ -463,22 +486,88 @@ T.CEILFIT = () => {
       if (v > 0.62) p.wash(x, y, 'olive', 0.32, (v - 0.62) * 2.0);
     }
 
-  /* the housing: a dark recess with the reflector visible in it, dead
-     centre of the texture so the hung lamps line up with it */
-  const x0 = 18, y0 = 26, w = 28, h = 12;
-  for (let y = y0; y < y0 + h; y++)
-    for (let x = x0; x < x0 + w; x++) {
-      const edge = (y === y0 || y === y0 + h - 1) ? 0.10 : 0;
-      p.ink(x, y, 'grey', 0.13 + edge);
-    }
-  /* the specular strip off the reflector, so the recess reads as metal
-     rather than as a hole */
-  p.hline(x0 + 2, x0 + w - 3, y0 + 2, 'grey', 0.30);
-  p.hline(x0 + 2, x0 + w - 3, y0 + h - 3, 'grey', 0.24);
-  p.frame(x0 - 1, y0 - 1, w + 2, h + 2, 'grey', 0.46);
-  p.frame(x0 - 2, y0 - 2, w + 4, h + 4, 'grey', 0.22);
+  fitTray(p, 16, 25, 32, 14, 47);
   return p.snap(0.5);
 };
+
+/* --------------------------------------------------------------------
+   ONE FITTING, SEEN FROM UNDERNEATH
+
+   Shared between the ceiling texture and its charred twin, and written
+   out here rather than inline because getting four tubes, their holders
+   and a ribbed diffuser into thirty-two texels by fourteen is fiddly
+   enough to want doing once.
+
+   THE RIBS ARE THE WHOLE LOOK of a prismatic diffuser and they are two
+   texels wide: one for the facet that faces the light and one for the
+   one that does not. At one texel they alias into a flat grey the moment
+   the ceiling is at any angle, which is always, because it is a ceiling.
+   ------------------------------------------------------------------ */
+function fitTray(p, x0, y0, w, h, seed) {
+  const rng = makeRng(seed);
+  const x1 = x0 + w - 1, y1 = y0 + h - 1;
+
+  /* the shadow the flange casts on the tiles, then the flange itself */
+  p.frame(x0 - 2, y0 - 2, w + 4, h + 4, 'grey', 0.22);
+  for (let y = y0 - 1; y <= y1 + 1; y++)
+    for (let x = x0 - 1; x <= x1 + 1; x++)
+      p.ink(x, y, 'bone', 0.50 + (y < y0 ? 0.10 : 0));
+  /* and the corner joints, which is where a works-painted tray shows */
+  for (const cx of [x0 - 1, x1 + 1]) for (const cy of [y0 - 1, y1 + 1]) p.ink(cx, cy, 'grey', 0.34);
+
+  /* the tray, white inside, with the reflector turning down at the ends */
+  for (let y = y0; y <= y1; y++)
+    for (let x = x0; x <= x1; x++)
+      p.ink(x, y, 'bone', 0.38);
+  p.vline(x0, y0, y1, 'grey', 0.30); p.vline(x1, y0, y1, 'grey', 0.26);
+
+  /* FOUR TUBES. Even spacing across the tray's depth, one texel each,
+     which at four units to the texel is a fat tube — and a fat tube is
+     the right answer at this size, because the alternative is a tube
+     that is there in some ceiling tiles and not in others. */
+  const rows = [y0 + 2, y0 + 5, y0 + 8, y0 + 11];
+  for (const ty of rows)
+    for (let x = x0 + 2; x <= x1 - 2; x++) {
+      /* Brighter than the ceiling tiles around it, and that is correct
+         for a fitting that is OFF: a tube behind prismatic glass is
+         white, and a ceiling tile is thirty years old. */
+      p.ink(x, ty, 'bone', 0.84);            // the tube through the glass
+      p.ink(x, ty + 1, 'bone', 0.62);        // and the light it throws on the tray
+    }
+
+  /* THE PRISMATIC DIFFUSER over the lot of it: ribs across the short
+     way, two texels to a rib, so the facet that faces the light and the
+     one that does not each get one.
+
+     ONE ALPHA THE WHOLE HEIGHT OF THE TRAY, which is the difference
+     between ribs and a dot grid. The first cut washed the tube rows and
+     the gaps between them by different amounts, and the ribbing crossed
+     with the banding came out as a chequer — which is what a diffuser
+     does NOT look like, and which at ceiling distance is just noise. */
+  for (let x = x0 + 1; x <= x1 - 1; x++) {
+    const lit = ((x - x0) & 2) === 0;
+    for (let y = y0 + 1; y <= y1 - 1; y++)
+      p.wash(x, y, 'bone', lit ? 0.90 : 0.24, 0.15);
+  }
+
+  /* THE LAMPHOLDERS, last, because they are the one thing on a fitting
+     that is genuinely dark and the diffuser does not go over them: the
+     glass stops short of the holders at both ends. Two texels square, one
+     per tube per end, so four of them read as four. */
+  for (const ty of rows)
+    for (const ex of [x0 + 1, x1 - 2])
+      for (let j = 0; j < 2; j++) for (let i = 0; i < 2; i++)
+        p.ink(ex + i, ty + j, 'grey', j ? 0.12 : 0.18);
+
+  /* and thirty years of dust on the inside of the glass, which is why
+     the ends of a fitting are always greyer than its middle */
+  for (let y = y0; y <= y1; y++)
+    for (let x = x0; x <= x1; x++) {
+      const e = Math.min(x - x0, x1 - x) / (w / 2);
+      if (e < 0.34) p.wash(x, y, 'grey', 0.24, (0.34 - e) * 0.5);
+      if (rng() < 0.06) p.wash(x, y, 'olive', 0.30, 0.20);
+    }
+}
 
 T.CEILDECK = () => {
   /* Back of house has no ceiling tiles. You look straight up at profiled
