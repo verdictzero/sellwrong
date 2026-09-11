@@ -32,15 +32,14 @@ somewhere else: the people, the trees, the sky, and the gun.
                           shoppers, eleven pieces, three splats, a fireball
   assets/forest/        the wood: ten plants with their burn maps, two grounds
   assets/sky/night.png  the night, baked from a Polyhaven panorama
-  assets/models/        the flamethrower and the van, prepared from the
-                          user's .glb files
+  assets/models/        the flamethrower, prepared from the user's .glb,
+                          and the van, which is the user's .glb
   assets/fonts/         Michroma (SIL OFL), the title face
   tools/bake-art.mjs    node tools/bake-art.mjs — turns art/ into source
   tools/prep-people.mjs the crowd's art, crunched down from galvarius
   tools/prep-forest.sh  copies the wood's art over from the golf project
   tools/bake-sky.mjs    the sky: 8k panorama to 1024 palette pixels
   tools/prep-model.mjs  strips the marker spheres out of a .glb, keeps their positions
-  tools/prep-van.mjs    halves the van's texture and writes down its axes
   tools/build-site.sh   assembles public/ — what actually gets published
   tools/bake-icons.mjs  the home-screen icon, out of the game's own fire
   tools/smoke-test.mjs  node tools/smoke-test.mjs — no install, no browser
@@ -70,7 +69,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         516 checks, no install and no browser
+  the smoke test         522 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -1410,15 +1409,26 @@ texture, drawn both sides. A second GLB would drop in beside this one
 with no new code at all, which is the thing the old system could never
 say.
 
-WHAT A MODELLED VEHICLE NEEDS, AND IT IS NOT MUCH. tools/prep-van.mjs
-writes four things into the file's own asset.extras: which axis is the
-length and which end of it is the nose, how long the thing is in metres,
-where the ground under its wheels is, and where in the sheet a small dark
-block has been painted. js/car.js reads that back, puts the triangles
+WHAT A MODELLED VEHICLE NEEDS, AND IT IS NOTHING. There is no
+preparation step and no tool: assets/models/van.glb is the author's own
+export, byte for byte, and js/car.js reads it as it stands. It walks the
+scene graph, multiplies the node matrices through, puts the triangles
 into the space the game speaks — x +0.5 at the nose, y to the vehicle's
 left, z 0 on the ground, all as fractions of the length — and measures
 the width and height off the triangles themselves, which is what the
-collision and the tumble want. Nothing else is measured at all.
+collision and the tumble want. The ONE number that is not in the file is
+how long a van is in game units, and that is a fact about the game rather
+than about the model: a bay is 186 across and a shopper is 62 tall, so
+VAN_LENGTH is 174 and everything else follows from the model's own
+proportions.
+
+THERE USED TO BE A TOOL. tools/prep-van.mjs halved the texture, snapped
+it to the game's 256 colours, painted a dark block into a corner of the
+sheet for the untextured triangles to point at, and wrote the axes it had
+measured into asset.extras. All of it is deleted, at the user's request:
+the model's textures and UVs are deliberately configured as they are, and
+a game that rewrites an asset on the way in is a game arguing with its
+own author.
 
 THE MODEL'S OWN UVs ARE USED, and getting there took four attempts, three
 of which shipped. The mesh is unwrapped onto the very sheet embedded in
@@ -1466,35 +1476,39 @@ shading out on one face. It can no longer cull anything or choose
 anybody's paint, which is exactly what made the same guess fatal when the
 projection depended on it.
 
-IT ALSO MEANS THE UNTEXTURED PRIMITIVE STOPPED BEING A PROBLEM. The model
-has two primitives: the body, textured, and a second one — glass, tyres,
-bumpers, chassis, 490 of the 624 triangles — with no texture at all, just
-a flat near-black base colour. A car park is ONE material and one draw
-call, so a second material is not available. The answer is to PAINT
-somewhere black: a six-texel block in the corner of the sheet, which is
-background grey in every one of these turnarounds, and every vertex of
-the flat primitive points at the middle of it. One texture, one draw
-call, and the tyres come out the colour tyres are. Its colour is the
-model's own baseColorFactor lifted a little, because a tyre that is
-literally black in a night car park is a hole.
+THE UNTEXTURED MATERIAL RIDES IN THE VERTICES, which is how the car park
+stays one draw call. The model is two materials: the body, unwrapped onto
+the sheet, and van_black — glass, tyres, bumpers, chassis, 490 of the 624
+triangles — with no texture at all, just a flat baseColorFactor of
+0.0059367 linear, which is about 18 of 255 on a screen. A second material
+would be a second draw call for every slab of cars, so instead every
+vertex carries the colour ITS OWN material declared plus a one-or-nothing
+saying whether to use it, in an `ink` attribute, and js/material.js mixes
+between the sheet and that colour in the fragment shader.
 
+That number goes through UNTOUCHED. glTF's baseColorFactor is linear, and
+an sRGB texture is decoded to linear when the GPU samples it, so both
+sides of the mix are already in the same space. The tool used to paint a
+lifted version of this colour into a corner of the sheet and point 490
+triangles at it; now the file's own number is the one that is drawn.
 
-AND WHICH END IS THE NOSE IS NOT IN THE FILE. A GLB says which way is up
-by convention and says nothing at all about which way a van faces. This
-one lies along its Z with the nose at +Z, established by rendering four
-orthographic views of it in a scratch script and looking at which end has
-the grille in it. Guessing would have parked a car park of vans
-backwards, which is the kind of mistake that looks like a rendering bug.
-The axis swap from (z, x, y) to (nose, left, up) is a cyclic permutation,
-so it preserves handedness.
+AND WHICH END IS THE NOSE IS IN THE FILE AFTER ALL — in the format, not
+in the asset. glTF says +Y is up and that the front of an asset faces +Z,
+so the nose is +Z and the left flank is +X, and the swap from (z, x, y)
+to (nose, left, up) is a cyclic permutation that preserves handedness.
+This used to be established by rendering four orthographic views in a
+scratch script and looking at which end had the grille in it, which is a
+fine way to check a convention and a poor way to have one. The only thing
+asserted at load is that the model IS longest along +Z, because a van
+that is not is a van exported facing some other way, and the honest time
+to find that out is the moment it is read.
 
-AND THE TEXTURE IS HALVED. The gun's diffuse is copied byte for byte
-because resampling pixel art is vandalism; the van's is a 700x382
-photograph of a van, and the van is sixty pixels tall on screen. So it is
-box-filtered to half and snapped to the game's own 256 colours — which
-the GPU does to it at draw time anyway, so nothing is lost on screen, and
-a photograph reduced to 256 colours compresses to a seventieth of what it
-was: 785K to 11K, and the whole model 812K to 39K.
+AND THE TEXTURE IS THE FILE'S OWN, at its own size, sampled with its own
+sampler. It is a 512x256 four-view turnaround — front, rear, side and
+plan on a flat grey field — and it is used as it is: NEAREST both ways
+and no mipmaps, which is what the file asks for and also what every other
+texture in this game does. The model is 194K, of which 158K is that PNG,
+and it is downloaded once.
 
 
 
@@ -1539,13 +1553,11 @@ and fifty checks that held them together. The seven sheets stay in art/,
 unshipped, in case anybody wants them back. js/car.js is a fifth of the
 size and does what the file says.
 
-WHAT REPLACED IT IS NOTHING, WHICH IS THE POINT. The GLB's own triangles,
-its own UVs, its own texture, drawn both sides. tools/prep-van.mjs still
-halves the texture and writes down the short list of things a GLB
-genuinely cannot say — which end is the nose, where the ground is, how
-long the thing is in metres, and where in the sheet the untextured
-primitive should point — and nothing else is measured at all. The width
-and height the collision wants come off the triangles at load time.
+WHAT REPLACED IT IS NOTHING, WHICH IS THE POINT. The GLB's own nodes,
+its own triangles, its own UVs, its own texture, its own material
+colours, drawn both sides. There is no tool between the file and the
+game: the length in game units is a constant in js/car.js, and the width,
+the height and the ground line come off the triangles at load time.
 
 THE PIECES COST SOMETHING, and it is the only thing that got harder. A
 chunk used to be a fresh box with the views projected onto its six faces,
@@ -1637,7 +1649,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-516 checks. Every one of them earns its place by having caught something
+522 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -1923,7 +1935,7 @@ WHAT IS NOT DONE
     store's do not cross the car park to each other; the flamethrower is
     the bridge
   the trees are 128 and 256 pixels, the sky 1024, the gun's paint 1024,
-    the van's four views 85 to 231: art that came from outside
+    the van's sheet 512x256: art that came from outside
     was left as it came, and the 64-pixel rule stands for everything the
     game draws itself
   no save

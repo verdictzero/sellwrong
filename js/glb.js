@@ -28,12 +28,14 @@ const COMPONENT = {
   5120: Int8Array, 5121: Uint8Array, 5122: Int16Array, 5123: Uint16Array, 5125: Uint32Array, 5126: Float32Array,
 };
 const ITEMS = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16 };
-const FILTER = {
+/* The sampler tables, exported because js/car.js loads a model's texture
+   its own way and still wants the file's own filters. */
+export const GL_FILTER = {
   9728: THREE.NearestFilter, 9729: THREE.LinearFilter,
   9984: THREE.NearestMipmapNearestFilter, 9985: THREE.LinearMipmapNearestFilter,
   9986: THREE.NearestMipmapLinearFilter, 9987: THREE.LinearMipmapLinearFilter,
 };
-const WRAP = { 33071: THREE.ClampToEdgeWrapping, 33648: THREE.MirroredRepeatWrapping, 10497: THREE.RepeatWrapping };
+export const GL_WRAP = { 33071: THREE.ClampToEdgeWrapping, 33648: THREE.MirroredRepeatWrapping, 10497: THREE.RepeatWrapping };
 
 /** Split a .glb into its JSON and its binary payload. Pure, so the
  *  smoke test can check a prepared model without a browser. */
@@ -104,10 +106,10 @@ export async function loadGLB(url, opts = {}) {
     const bitmap = await createImageBitmap(new Blob([bytes], { type: im.mimeType }), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
     const tex = new THREE.Texture(bitmap);
     const s = json.samplers?.[t.sampler] || {};
-    tex.magFilter = FILTER[s.magFilter] ?? THREE.LinearFilter;
-    tex.minFilter = FILTER[s.minFilter] ?? THREE.LinearMipmapLinearFilter;
-    tex.wrapS = WRAP[s.wrapS] ?? THREE.RepeatWrapping;
-    tex.wrapT = WRAP[s.wrapT] ?? THREE.RepeatWrapping;
+    tex.magFilter = GL_FILTER[s.magFilter] ?? THREE.LinearFilter;
+    tex.minFilter = GL_FILTER[s.minFilter] ?? THREE.LinearMipmapLinearFilter;
+    tex.wrapS = GL_WRAP[s.wrapS] ?? THREE.RepeatWrapping;
+    tex.wrapT = GL_WRAP[s.wrapT] ?? THREE.RepeatWrapping;
     tex.generateMipmaps = tex.minFilter !== THREE.NearestFilter && tex.minFilter !== THREE.LinearFilter;
     tex.flipY = false;                    // glTF's uv origin is the top-left
     tex.colorSpace = THREE.SRGBColorSpace;

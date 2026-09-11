@@ -175,10 +175,10 @@ async function boot() {
   const peopleP = Promise.all(['shoppers', 'giblets', 'splat', 'blast'].map(k => loadImage(`assets/people/${k}.png`)))
     .catch(e => { console.warn('no people art, using the stand-ins:', e.message); return null; });
   /* and the van in the car park: one model, in every bay, at the user's
-     request — see tools/prep-van.mjs for what was measured off it and
-     js/car.js for how it is put into the space the drawn fleet speaks.
-     The texture comes out of the same file, so there is nothing here to
-     keep in step. */
+     request. There is no preparation step and no tool — the GLB is
+     loaded as it was exported and drawn as it is authored; js/car.js is
+     the whole of it. The texture comes out of the same file, so there is
+     nothing here to keep in step. */
   const fleetP = loadVehicleModel('assets/models/van.glb')
     .catch(e => { console.warn('no van, the car park stays empty:', e.message); return null; });
 

@@ -27,7 +27,7 @@ stages:
   - test
   - deploy
 
-# 199 checks: the palette, the texture and sprite bakeries, the map, the
+# 522 checks: the palette, the texture and sprite bakeries, the map, the
 # collision, the state tables and the fire grid. No browser needed —
 # everything that is not WebGL is exercised here.
 smoke test:

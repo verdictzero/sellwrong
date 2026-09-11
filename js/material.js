@@ -374,6 +374,22 @@ varying float vChar;
   uniform float charred;
 #endif
 
+#ifdef INK
+  /* WHAT A SURFACE WITH NO PICTURE IS PAINTED, per vertex: rgb is the
+     colour its own glTF material declared as baseColorFactor and a is 1
+     where it applies, 0 where the texture does. A model is usually a
+     handful of materials and only one of them is a sheet — the van's
+     glass, tyres, bumpers and chassis are a flat near-black — and a
+     second material would be a second draw call for every slab of cars.
+     This is that second material, carried in the vertices instead.
+
+     baseColorFactor is LINEAR, and an sRGB texture is decoded to linear
+     when it is sampled, so the two sides of the mix are already in the
+     same space and neither needs converting. */
+  attribute vec4 ink;
+  varying vec4 vInk;
+#endif
+
 #ifdef BILLBOARD
   uniform float billboardRot;    // yaw the quad is turned to, in world space
   uniform vec2  spriteScale;     // width, height in world units
@@ -385,6 +401,9 @@ void main() {
   vLight = light;
   vSky = sky;
   vChar = charred;
+  #ifdef INK
+    vInk = ink;
+  #endif
 
   vec3 p = position;
 
@@ -423,10 +442,19 @@ varying vec3  vWorld;
 varying float vSky;
 varying float vChar;
 
+#ifdef INK
+  varying vec4 vInk;
+#endif
+
 ${WORLD_SHADE_GLSL}
 
 void main() {
   vec4 t = texture2D(map, vUv);
+  /* and a surface that has no picture takes its own material's colour
+     instead — see the note on the attribute in the vertex shader */
+  #ifdef INK
+    t = mix(t, vec4(vInk.rgb, 1.0), vInk.a);
+  #endif
   if (t.a < alphaTest) discard;
   /* HOW BURNT THE FLOOR UNDER THIS PIXEL IS, continuously. The soot goes
      on the ALBEDO, before the light and before the smoke, because that
@@ -485,11 +513,13 @@ function baseUniforms(texture, opts) {
 }
 
 /* Level geometry: light is baked per vertex by the map builder, so an
-   entire store's worth of walls sharing one texture is one draw call. */
+   entire store's worth of walls sharing one texture is one draw call.
+   `ink` adds the vehicles' second material to the same draw call, in the
+   vertices — the walls never ask for it. */
 export function createWallMaterial(texture, opts = {}) {
   return new THREE.ShaderMaterial({
     uniforms: baseUniforms(texture, opts),
-    defines: { PER_VERTEX_LIGHT: '' },
+    defines: { PER_VERTEX_LIGHT: '', ...(opts.ink ? { INK: '' } : {}) },
     vertexShader: COMMON_VERT,
     fragmentShader: COMMON_FRAG,
     transparent: !!opts.transparent,

@@ -2,10 +2,10 @@
    GROCERY STORE SIMULATOR — the car park, and what happens to it
    =====================================================================
 
-   js/car.js turns four drawings into a solid. This is what that solid
-   DOES: stands in a bay, catches, goes up, leaves the ground, comes down
-   on its roof, goes up again, and lies there burning while the pieces of
-   it smoulder on the tarmac around it.
+   js/car.js reads a GLB off the disk and hands back its triangles. This
+   is what those triangles DO: stand in a bay, catch, go up, leave the
+   ground, come down on the roof, go up again, and lie there burning
+   while the pieces of it smoulder on the tarmac around it.
 
    ONE MESH UNTIL SOMETHING MOVES. There are seventy-seven bays and
    every one of them is filled, and seventy-seven meshes is seventy-seven
@@ -150,7 +150,7 @@ function bake(a, yaw, rx, rz, x, y, z) {
  *  Typed arrays sized up front and filled with set(), because seventy
  *  cars is a third of a million floats and pushing those one at a time
  *  is the difference between a rebuild you cannot see and a hitch. */
-const SLAB_KEYS = ['position', 'uv', 'light', 'sky', 'charred'];
+const SLAB_KEYS = ['position', 'uv', 'light', 'sky', 'charred', 'ink'];
 function mergeInto(mesh, texture, scene, list) {
   if (mesh) { scene.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose(); }
   if (!list.length) return null;
@@ -435,10 +435,10 @@ class Vehicle {
   /* ------------------------------------------------------------------
      Pieces
 
-     A chunk is a small box cut out of this vehicle's own model space,
-     put through the same projection as the vehicle — so a piece off the
-     tail is painted with the tail, on every face, and nobody had to
-     decide what a torn piece of van looks like.
+     A chunk is the model's own surface inside a small box of this
+     vehicle's own model space — so a piece off the tail is painted with
+     the tail because it IS the tail, and nobody had to decide what a
+     torn piece of van looks like.
      ------------------------------------------------------------------ */
   shed(n) {
     const d = this.def, L = d.length;
@@ -619,9 +619,9 @@ export class Vehicles {
    * ONE VAN, SEVENTY-SEVEN TIMES, at the user's request. It used to be
    * five civilian bodies picked off the slot's own `variant`, built out
    * of boxes and painted by projecting four drawings onto them; it is
-   * now the modelled van from assets/models/van.glb in every bay. What
-   * that costs is variety, and what it buys is a car park full of the
-   * thing the user drew — and, read a certain way, a delivery fleet
+   * now assets/models/van.glb in every bay, drawn as its author exported
+   * it. What that costs is variety, and what it buys is a car park full
+   * of the user's own model — and, read a certain way, a delivery fleet
    * parked outside a store called SellWrong is not the wrong joke.
    *
    * `variant` is still on every slot and is still what would pick

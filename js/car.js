@@ -1,52 +1,57 @@
 /* =====================================================================
-   GROCERY STORE SIMULATOR — the vehicles, which are a model in a file
+   GROCERY STORE SIMULATOR — the vehicles, which are a file
    =====================================================================
 
    The car park has been waiting for cars since the day it was laid out:
    `level.carSlots` has held a position and a heading for every bay since
-   then. This is what fills them, and what it puts in one is a GLB — the
-   user's van, as authored, triangles and UVs and texture and all.
+   then. This is what fills them, and what it puts in one is a GLB —
+   assets/models/van.glb, exactly as its author exported it.
 
-   THERE WAS A WHOLE SYSTEM HERE and it is gone, at the user's request.
-   It took a four-view turnaround on a green field — front, rear, side,
-   plan — measured three silhouettes off it, built a body as the visual
-   hull of those silhouettes, and then painted every triangle by
-   PROJECTION: look at a face's normal, take the axis it points most
-   nearly along, read the view that was drawn down that axis. It was a
-   good answer to the question "how do you get a car out of four
-   drawings", and it was the wrong answer to "how do you get a car out of
-   a model", which is the question that was actually in front of it.
+   THERE IS NO PREPARATION STEP AND THERE IS NO LONGER A TOOL. Two whole
+   systems have stood here and both are gone:
 
-   Three rounds of trouble came out of that mismatch, and every one of
-   them was the projection arguing with a file that already knew better:
+     a fleet of seven vehicles built as boxes out of a four-view
+     turnaround and PAINTED BY PROJECTION — look at a face's normal, take
+     the axis it points most nearly along, read the view drawn down that
+     axis. A good answer to "how do you get a car out of four drawings"
+     and the wrong answer to "how do you get a car out of a model"
 
-     the flanks came out smeared, because the measurement that condemned
-     the model's own UVs had pooled them with a second primitive's
-     unused junk
+     and then tools/prep-van.mjs, which took a model and rewrote it on
+     the way in: halved its texture, snapped it to the game's 256
+     colours, painted a black block into a corner of the sheet for the
+     untextured triangles to point at, and wrote the axes it had measured
+     into asset.extras so the game could read them back
 
-     the vans came out inside out, because the projection reads a face's
-     normal to choose its picture, so an inverted normal paints a panel
-     with the picture of the opposite panel
+   Neither is here. The file is loaded as it stands and drawn as it is
+   authored: its own nodes, its own triangles, its own UVs, its own
+   texture at its own size, its own sampler, its own material colours.
+   Anything this cannot honour throws at load rather than quietly
+   rendering something else, which is the same promise js/glb.js makes
+   about the gun.
 
-     and then the vans came out with no bodywork, because the fix for
-     that was a global winding reversal, and the mesh is two shells
-     wound opposite ways
+   WHAT THE FILE DOES NOT SAY, and what is decided here instead:
 
-   None of it was the model's fault. It renders correctly in Blender and
-   on Sketchfab. So now it is simply DRAWN: its own triangles, its own
-   UVs, its own texture, both sides, nothing measured and nothing
-   guessed. tools/prep-van.mjs still halves the texture and writes down
-   the few things a GLB genuinely cannot say — which end is the nose,
-   where the ground is, how long the thing is in metres, and where in the
-   sheet the untextured primitive should point — and that is the whole of
-   the preparation.
+     HOW LONG A VAN IS IN GAME UNITS. A GLB has no scale the game can
+     use, and everything else in this world is measured against Doom's
+     ruler — a shopper is 62 tall, a bay is 186 across, the store's doors
+     are 128 high. So VAN_LENGTH is a fact about the GAME, the model is
+     scaled to it, and the car park's arithmetic does not move.
+
+     WHICH WAY IT POINTS is not guesswork either, and used to be: glTF
+     says +Y is up and that the front of an asset faces +Z, so the nose
+     is +Z and the left flank is +X. The one thing checked rather than
+     assumed is that the model is longest along +Z, because a van that is
+     not is a van that was exported facing some other way, and the honest
+     time to find that out is at load.
 
    WHAT IS LEFT IN HERE is the part that is about this GAME rather than
    about the model.
 
    BOTH SIDES. This renderer culls back faces; Blender and Sketchfab do
    not, so a model authored in them has never had to be consistent about
-   winding. Ours are drawn double-sided, which costs the far face of a
+   winding, and this one's body shell and chassis are wound opposite
+   ways — no single flip fixes both. Its material says `doubleSided`
+   anyway. Ours are drawn double-sided, which costs the far face of a
    solid that already covers it and removes an entire class of argument.
    See carMesh.
 
@@ -61,6 +66,17 @@
    a fifth of a radian is never on the grid, so here it is the same
    number, interpolated. The roof gets a lift on top of that — it is the
    face pointing at the floodlights — and the underside goes dark.
+
+   INK, which is how a car park stays ONE draw call. The van is two
+   materials: the body, which is unwrapped onto the sheet in the file,
+   and `van_black` — glass, tyres, bumpers, chassis, 490 of the 624
+   triangles — which has no texture at all, just a flat baseColorFactor.
+   A second material would be a second draw call per slab, so instead
+   every vertex carries the colour ITS OWN material declared and a flag
+   saying whether to use it, and js/material.js mixes between the sheet
+   and that colour in the fragment shader. glTF's baseColorFactor is
+   linear and an sRGB texture is decoded to linear on sample, so the two
+   arrive in the same space and the number goes through untouched.
 
    THE PIECES. When one of these goes up it comes apart into chunks, and
    a chunk is the model's own SURFACE inside a small box of its own model
@@ -81,11 +97,25 @@
 
 import * as THREE from 'three';
 import { createWallMaterial } from './material.js';
-import { parseGLB, readAccessor } from './glb.js';
+import { parseGLB, readAccessor, GL_FILTER, GL_WRAP } from './glb.js';
 
 const ROOF_LIT = 1.12;      // the roof faces the floodlights
 const UNDER_LIT = 0.40;     // and the underside faces the tarmac
 const CONTRAST = 0.055;     // Doom's fake contrast, the same number js/level.js uses
+
+/* HOW LONG A VAN IS, in the game's units, and the one number in here
+   that is about the game rather than about the file. The drawn fleet
+   this replaced had its van at 174 nose to tail and every other length
+   in the world is beside it, so the model is scaled to that number
+   rather than to anything of its own. */
+export const VAN_LENGTH = 174;
+
+/* glTF's own axes: +Y is up and the front of an asset faces +Z, so the
+   left flank is +X. (Spec, "Coordinate System and Units".) The game's
+   own model space is x forward, y left, z up, which makes the swap a
+   cyclic permutation — so it preserves handedness and nothing comes out
+   mirrored. */
+const NOSE = 2, LEFT = 0, UP = 1;
 
 /** How big it is, in game units. `box` is fractions of the length, so a
  *  vehicle has one scale and `length` sets it. */
@@ -93,15 +123,22 @@ export const carLength = v => v.length;
 export const carWidth = v => v.length * v.box.half * 2;
 export const carHeight = v => v.length * v.box.height;
 
-/** The sheet out of the model. Nearest, and NO MIPMAPS: Doom
- *  point-sampled every texture at every distance, and the shimmer that
- *  gives a distant surface is not an artefact here, it is the look. */
-export function carTexture(img) {
+/**
+ * The sheet out of the model, sampled the way the model asks to be
+ * sampled — its own sampler, straight out of the file. Which for this
+ * van is NEAREST both ways and therefore no mipmaps, and that is also
+ * what the rest of the game does: Doom point-sampled every texture at
+ * every distance, and the shimmer that gives a distant surface is not an
+ * artefact here, it is the look. A file that asked for something else
+ * would get it.
+ */
+export function carTexture(img, sampler = {}) {
   const t = new THREE.Texture(img);
-  t.magFilter = THREE.NearestFilter;
-  t.minFilter = THREE.NearestFilter;
-  t.generateMipmaps = false;
-  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  t.magFilter = GL_FILTER[sampler.magFilter] ?? THREE.NearestFilter;
+  t.minFilter = GL_FILTER[sampler.minFilter] ?? THREE.NearestFilter;
+  t.wrapS = GL_WRAP[sampler.wrapS] ?? THREE.ClampToEdgeWrapping;
+  t.wrapT = GL_WRAP[sampler.wrapT] ?? THREE.ClampToEdgeWrapping;
+  t.generateMipmaps = t.minFilter !== THREE.NearestFilter && t.minFilter !== THREE.LinearFilter;
   t.colorSpace = THREE.SRGBColorSpace;
   t.needsUpdate = true;
   return t;
@@ -121,7 +158,7 @@ function pen(v, opts = {}) {
     angle = 0, length = v.length, light = 0.74, sky = 1, charred = 0,
     origin = [0, 0, 0],           // which point of the model the mesh is about
   } = opts;
-  const pos = [], uv = [], lit = [], skies = [], chars = [], norms = [];
+  const pos = [], uv = [], lit = [], skies = [], chars = [], norms = [], inks = [];
   const ca = Math.cos(angle), sa = Math.sin(angle);
 
   /* A face's light is decided by where it points once the car is parked,
@@ -138,10 +175,14 @@ function pen(v, opts = {}) {
   };
 
   /* model space -> the renderer's, which is y-up with z running back */
-  const vert = (p, n, l, t) => {
+  const vert = (p, n, l, t, ink) => {
     pos.push((p[0] - origin[0]) * length, (p[2] - origin[2]) * length, -(p[1] - origin[1]) * length);
     uv.push(t[0], t[1]);
     lit.push(l); skies.push(sky); chars.push(charred);
+    /* WHAT THIS SURFACE IS PAINTED IF IT HAS NO PICTURE: its own
+       material's baseColorFactor, and a 1 to say so. Zeroes mean the
+       sheet, which is what the UVs are for. */
+    inks.push(ink ? ink[0] : 0, ink ? ink[1] : 0, ink ? ink[2] : 0, ink ? 1 : 0);
     /* WHICH WAY THIS FACE POINTS. The shader lights nothing from a
        normal, so this never reaches the GPU; it is kept so the smoke
        test can hold a triangle against what the model said about it. */
@@ -150,14 +191,14 @@ function pen(v, opts = {}) {
 
   /* A triangle, in the order the model has it. The winding is NOT
      touched — see carMesh for why it no longer has to be. */
-  const tri = (a, b, c, n, ta, tb, tc) => {
+  const tri = (a, b, c, n, ta, tb, tc, ink) => {
     const l = faceLight(n);
-    vert(a, n, l, ta); vert(b, n, l, tb); vert(c, n, l, tc);
+    vert(a, n, l, ta, ink); vert(b, n, l, tb, ink); vert(c, n, l, tc, ink);
   };
 
   return {
     tri, vert, faceLight,
-    arrays: { position: pos, uv, light: lit, sky: skies, charred: chars, normal: norms },
+    arrays: { position: pos, uv, light: lit, sky: skies, charred: chars, ink: inks, normal: norms },
   };
 }
 
@@ -171,7 +212,7 @@ function pen(v, opts = {}) {
  */
 export function carGeometry(v, opts = {}) {
   const P = pen(v, opts);
-  for (const t of v.model.tris) P.tri(t.a, t.b, t.c, t.n, t.ta, t.tb, t.tc);
+  for (const t of v.model.tris) P.tri(t.a, t.b, t.c, t.n, t.ta, t.tb, t.tc, t.ink);
   return P.arrays;
 }
 
@@ -245,7 +286,7 @@ export function chunkGeometry(v, cut, opts = {}) {
     if (skip) continue;
     const poly = clipToBox([{ p: t.a, t: t.ta }, { p: t.b, t: t.tb }, { p: t.c, t: t.tc }], lo, hi);
     for (let i = 1; i + 1 < poly.length; i++) {
-      P.tri(poly[0].p, poly[i].p, poly[i + 1].p, t.n, poly[0].t, poly[i].t, poly[i + 1].t);
+      P.tri(poly[0].p, poly[i].p, poly[i + 1].p, t.n, poly[0].t, poly[i].t, poly[i + 1].t, t.ink);
       n++;
     }
   }
@@ -258,35 +299,62 @@ export function chunkGeometry(v, cut, opts = {}) {
       const d = dx * dx + dy * dy + dz * dz;
       if (d < bd) { bd = d; best = t; }
     }
-    if (best) P.tri(best.a, best.b, best.c, best.n, best.ta, best.tb, best.tc);
+    if (best) P.tri(best.a, best.b, best.c, best.n, best.ta, best.tb, best.tc, best.ink);
   }
   return P.arrays;
 }
 
 /* ---------------------------------------------------------------------
-   THE MODEL
+   THE MODEL, AS IT ARRIVES
 
-   What arrives is a GLB with one mesh, two primitives and one image. The
-   body primitive is textured and unwrapped onto that image; the other —
-   glass, tyres, bumpers, chassis, 490 of the 624 triangles — has no
-   texture at all, just a flat near-black base colour.
+   A GLB is a scene graph, not a bag of triangles: this one hangs its two
+   meshes off four nested nodes, two of which carry a quarter turn about
+   X and undo each other. Ignoring that worked for a file whose net
+   transform happened to be identity and would have parked a car park of
+   vans on their sides the first time it was not, so the nodes are walked
+   and their matrices multiplied through, the eight lines that costs.
 
-   A car park is ONE material and one draw call, so a second material is
-   not available. Instead every vertex of the untextured primitive is
-   pointed at one dark texel that tools/prep-van.mjs paints into a corner
-   of the sheet. One texture, one draw call, and the tyres come out the
-   colour tyres are.
-
-   THE AXES ARE THE ONLY REAL WORK. A GLB says nothing about which end of
-   a van is the front: this one lies along its Z with the nose at +Z and
-   up at +Y, which was established by rendering four orthographic views
-   of it and looking, and is recorded in the file by tools/prep-van.mjs.
-   The swap (nose, left, up) <- (z, x, y) is a cyclic permutation, so it
-   preserves handedness.
-
-   glTF's v runs DOWN from the top of the image and a three.js texture is
-   uploaded flipped, so v comes through as 1 - v.
+   Nothing else is interpreted. Positions, UVs and indices come off the
+   accessors as they are; the texture is decoded from the buffer by the
+   browser; the material's flat colour rides along as `ink`. glTF's v
+   runs DOWN from the top of the image and a three.js texture is uploaded
+   flipped, so v comes through as 1 - v and the two cancel.
    --------------------------------------------------------------------- */
+
+/* 4x4 in glTF's column-major order, and only what a node tree wants. */
+const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+
+function mul(a, b) {
+  const o = new Array(16);
+  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) {
+    let s = 0;
+    for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k];
+    o[c * 4 + r] = s;
+  }
+  return o;
+}
+
+/** A node's translation, rotation and scale as one matrix, for the nodes
+ *  that give those instead of a matrix. */
+function trs(t, q, s) {
+  const [x, y, z, w] = q;
+  const x2 = x + x, y2 = y + y, z2 = z + z;
+  const xx = x * x2, xy = x * y2, xz = x * z2;
+  const yy = y * y2, yz = y * z2, zz = z * z2;
+  const wx = w * x2, wy = w * y2, wz = w * z2;
+  return [
+    (1 - (yy + zz)) * s[0], (xy + wz) * s[0], (xz - wy) * s[0], 0,
+    (xy - wz) * s[1], (1 - (xx + zz)) * s[1], (yz + wx) * s[1], 0,
+    (xz + wy) * s[2], (yz - wx) * s[2], (1 - (xx + yy)) * s[2], 0,
+    t[0], t[1], t[2], 1,
+  ];
+}
+
+const place = (m, x, y, z) => [
+  m[0] * x + m[4] * y + m[8] * z + m[12],
+  m[1] * x + m[5] * y + m[9] * z + m[13],
+  m[2] * x + m[6] * y + m[10] * z + m[14],
+];
 
 /**
  * The van, from the file, ready to fill a car park with.
@@ -300,64 +368,117 @@ export async function loadVehicleModel(url, opts = {}) {
   if (!res.ok) throw new Error(`${url}: ${res.status}`);
   const { json, bin } = parseGLB(await res.arrayBuffer());
   const def = modelVehicle(json, bin, opts);
-  const im = json.images?.[0];
+  const tx = json.textures?.[0];
+  const im = json.images?.[tx?.source ?? 0];
   if (im?.bufferView === undefined) throw new Error(`${url}: the texture is not in the buffer`);
   const bv = json.bufferViews[im.bufferView];
   const bytes = bin.subarray(bv.byteOffset || 0, (bv.byteOffset || 0) + bv.byteLength);
   const bitmap = await createImageBitmap(new Blob([bytes], { type: im.mimeType }),
     { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
-  return { def, texture: carTexture(bitmap) };
+  return { def, texture: carTexture(bitmap, json.samplers?.[tx?.sampler]) };
 }
 
+/**
+ * One vehicle definition out of a parsed GLB: its triangles in the
+ * game's own model space, its box, and how long it is.
+ *
+ * Nothing is measured off a sheet and nothing is read out of
+ * asset.extras, because nothing writes there any more.
+ */
 export function modelVehicle(json, bin, opts = {}) {
-  const ex = json.asset?.extras?.vehicle;
-  if (!ex) throw new Error('the model has no asset.extras.vehicle — run tools/prep-van.mjs on it');
-  if (!ex.black || !ex.sheet) throw new Error('the model has no dark texel — run tools/prep-van.mjs again');
-  const prims = json.meshes[0].primitives;
-  const s = 1 / (ex.length / ex.unit);        // model units -> fractions of the length
+  const length = opts.length || VAN_LENGTH;
+
+  /* ---- every primitive in the scene, with the transform its node
+     carries. A mesh reached down two branches is drawn twice, which is
+     what the file means by it. ------------------------------------- */
+  const parts = [];
+  const walk = (ni, parent) => {
+    const n = json.nodes[ni];
+    const local = n.matrix
+      ? n.matrix
+      : trs(n.translation || [0, 0, 0], n.rotation || [0, 0, 0, 1], n.scale || [1, 1, 1]);
+    const m = mul(parent, local);
+    for (const p of (n.mesh !== undefined ? json.meshes[n.mesh].primitives : [])) parts.push({ p, m });
+    for (const c of n.children || []) walk(c, m);
+  };
+  for (const ni of json.scenes[json.scene ?? 0].nodes) walk(ni, IDENTITY);
+
+  const prims = parts.map(({ p, m }) => {
+    if (p.mode !== undefined && p.mode !== 4) throw new Error('only triangle lists are supported');
+    if (p.targets) throw new Error('morph targets are not supported');
+    const src = readAccessor(json, bin, p.attributes.POSITION).array;
+    const pos = new Float32Array(src.length);
+    for (let i = 0; i < src.length; i += 3) {
+      const q = place(m, src[i], src[i + 1], src[i + 2]);
+      pos[i] = q[0]; pos[i + 1] = q[1]; pos[i + 2] = q[2];
+    }
+    const idx = p.indices !== undefined
+      ? readAccessor(json, bin, p.indices).array
+      : Uint32Array.from({ length: src.length / 3 }, (_, i) => i);
+    const mat = json.materials?.[p.material];
+    const painted = !!mat?.pbrMetallicRoughness?.baseColorTexture && p.attributes.TEXCOORD_0 !== undefined;
+    const uv = painted ? readAccessor(json, bin, p.attributes.TEXCOORD_0).array : null;
+    /* A PRIMITIVE WITH NO PICTURE carries its material's own colour
+       instead. baseColorFactor is linear, and so is what the GPU hands
+       back from an sRGB texture, so it needs nothing doing to it. */
+    const ink = painted ? null : (mat?.pbrMetallicRoughness?.baseColorFactor || [1, 1, 1, 1]).slice(0, 3);
+    return { pos, idx, uv, ink };
+  });
+  if (!prims.length) throw new Error('the model has no meshes in its scene');
+
+  /* ---- how big it is, and therefore the scale ---------------------- */
+  const bb = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+  for (const q of prims) for (let i = 0; i < q.pos.length; i += 3) for (let k = 0; k < 3; k++) {
+    if (q.pos[i + k] < bb[k]) bb[k] = q.pos[i + k];
+    if (q.pos[i + k] > bb[3 + k]) bb[3 + k] = q.pos[i + k];
+  }
+  const span = k => bb[3 + k] - bb[k];
+  if (!(span(NOSE) > span(LEFT) && span(NOSE) > span(UP)))
+    throw new Error('the model is not longest along +Z, so it is not facing the way glTF says it should');
+
+  /* FRACTIONS OF THE LENGTH, not game units: a vehicle's triangles are
+     all between -0.5 and +0.5 nose to tail, and `pen` multiplies by
+     whatever length it is being drawn at. That is what lets a chunk be
+     cut with a box written in sixteenths of a van. */
+  const s = 1 / span(NOSE);
+  /* the middle of the length, the middle of the width, and the bottom of
+     the wheels: the point the game turns the van about and stands it on */
+  const mid = [(bb[0] + bb[3]) / 2, (bb[1] + bb[4]) / 2, (bb[2] + bb[5]) / 2];
+  const at = (q, i) => [
+    (q.pos[i * 3 + NOSE] - mid[NOSE]) * s,        // along the length
+    (q.pos[i * 3 + LEFT] - mid[LEFT]) * s,        // to the left
+    (q.pos[i * 3 + UP] - bb[UP]) * s,             // up off the tarmac
+  ];
+
+  /* ---- and every triangle in it ------------------------------------ */
   const tris = [];
-  /* where to point a triangle that has no texture of its own */
-  const black = [ex.black.x / ex.sheet.w, 1 - ex.black.y / ex.sheet.h];
-
-  for (const p of prims) {
-    const pos = readAccessor(json, bin, p.attributes.POSITION).array;
-    const idx = readAccessor(json, bin, p.indices).array;
-    const at = i => [
-      (pos[i * 3 + 2] - ex.centre) * s * ex.noseSign,     // along the length
-      pos[i * 3] * s,                                     // to the left
-      (pos[i * 3 + 1] - ex.ground) * s,                   // up off the tarmac
-    ];
-    const textured = !!json.materials?.[p.material]?.pbrMetallicRoughness?.baseColorTexture;
-    const uvSrc = textured && p.attributes.TEXCOORD_0 !== undefined
-      ? readAccessor(json, bin, p.attributes.TEXCOORD_0).array : null;
-    const uvAt = i => (uvSrc ? [uvSrc[i * 2], 1 - uvSrc[i * 2 + 1]] : black);
-
-    for (let t = 0; t < idx.length; t += 3) {
-      const a = at(idx[t]), b = at(idx[t + 1]), c = at(idx[t + 2]);
-      const ta = uvAt(idx[t]), tb = uvAt(idx[t + 1]), tc = uvAt(idx[t + 2]);
+  for (const q of prims) {
+    const uvAt = i => (q.uv ? [q.uv[i * 2], 1 - q.uv[i * 2 + 1]] : [0, 0]);
+    for (let t = 0; t + 2 < q.idx.length; t += 3) {
+      const ia = q.idx[t], ib = q.idx[t + 1], ic = q.idx[t + 2];
+      const a = at(q, ia), b = at(q, ib), c = at(q, ic);
       const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
       const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
       let n = [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx];
-      const m = Math.hypot(n[0], n[1], n[2]);
-      if (m < 1e-12) continue;                            // a degenerate triangle is nothing
-      n = [n[0] / m, n[1] / m, n[2] / m];
-      tris.push({ a, b, c, n, ta, tb, tc });
+      const mg = Math.hypot(n[0], n[1], n[2]);
+      if (mg < 1e-12) continue;                           // a degenerate triangle is nothing
+      n = [n[0] / mg, n[1] / mg, n[2] / mg];
+      tris.push({ a, b, c, n, ta: uvAt(ia), tb: uvAt(ib), tc: uvAt(ic), ink: q.ink });
     }
   }
   if (!tris.length) throw new Error('the model has no triangles in it');
 
   /* ------------------------------------------------------------------
-     ITS OWN BOX, measured rather than declared, because the collision
-     and the tumble want a width and a height and the file has both of
-     them in it. All in fractions of the length, which is 1 by
-     construction: x runs from -0.5 at the tail to +0.5 at the nose.
+     ITS OWN BOX, in fractions of the length — which is 1 by
+     construction, since x runs from -0.5 at the tail to +0.5 at the
+     nose. The collision and the tumble want a width and a height and the
+     file has both of them in it.
      ------------------------------------------------------------------ */
-  const bb = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
-  for (const t of tris) for (const p of [t.a, t.b, t.c]) for (let k = 0; k < 3; k++) {
-    if (p[k] < bb[k]) bb[k] = p[k];
-    if (p[k] > bb[3 + k]) bb[3 + k] = p[k];
-  }
-  const box = { half: Math.max(Math.abs(bb[1]), Math.abs(bb[4])), height: bb[5], sill: bb[2] };
+  const box = {
+    half: span(LEFT) * s / 2,
+    height: span(UP) * s,
+    sill: 0,
+  };
 
   /* ------------------------------------------------------------------
      AND THE NORMALS TURNED OUTWARD, for the face light and for nothing
@@ -377,7 +498,7 @@ export function modelVehicle(json, bin, opts = {}) {
      cull anything or choose anybody's paint, which is what made the same
      guess fatal when the projection depended on it.
      ------------------------------------------------------------------ */
-  const c3 = [(bb[0] + bb[3]) / 2, (bb[1] + bb[4]) / 2, (bb[2] + bb[5]) / 2];
+  const c3 = [0, 0, box.height / 2];
   let normalsTurned = 0;
   for (const t of tris) {
     const mx = (t.a[0] + t.b[0] + t.c[0]) / 3 - c3[0];
@@ -391,7 +512,7 @@ export function modelVehicle(json, bin, opts = {}) {
 
   return {
     id: opts.id || 'van', name: opts.name || 'Van', use: 'civil',
-    length: ex.length,
+    length,
     box,
     model: { tris, normalsTurned },
   };
@@ -405,6 +526,8 @@ export function carGeom(a) {
   g.setAttribute('light', new THREE.Float32BufferAttribute(a.light, 1));
   g.setAttribute('sky', new THREE.Float32BufferAttribute(a.sky, 1));
   g.setAttribute('charred', new THREE.Float32BufferAttribute(a.charred, 1));
+  /* what an untextured surface is painted, and whether it is one */
+  g.setAttribute('ink', new THREE.Float32BufferAttribute(a.ink, 4));
   g.computeBoundingSphere();
   return g;
 }
@@ -414,10 +537,14 @@ export function carMesh(texture, a) {
   /* BOTH SIDES, and this is the whole reason the van works. A model
      authored in Blender or shown on Sketchfab has never had to be
      consistent about winding, because neither of them culls: this one's
-     body shell is wound inward and the chassis under it outward, and no
-     single flip fixes both. Drawing both sides costs the far face of a
-     solid that already covers it, and removes the question. */
-  const mesh = new THREE.Mesh(carGeom(a), createWallMaterial(texture, { side: THREE.DoubleSide }));
+     body shell is wound inward and the chassis under it outward, no
+     single flip fixes both, and its own material says `doubleSided`.
+     Drawing both sides costs the far face of a solid that already covers
+     it, and removes the question. */
+  const mesh = new THREE.Mesh(carGeom(a), createWallMaterial(texture, {
+    side: THREE.DoubleSide,
+    ink: true,                     // the flat material rides in the vertices
+  }));
   /* Y then X then Z, applied in that order in the object's own frame:
      yaw it to its heading, roll it about its own length, then tip it
      nose over tail. Which is exactly the order a car leaves the ground

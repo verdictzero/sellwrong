@@ -1825,22 +1825,24 @@ section('the way out');
 }
 
 /* ---------- the gun ---------- */
-/* ---------- the van ---------- */
-/* ONE VEHICLE, AND IT IS A FILE. There was a whole section here for the
-   drawn fleet — seven bodies measured off four-view sheets, built as the
-   visual hull of three silhouettes and painted by projecting those views
-   back onto them, with about thirty checks holding the atlas, the
-   windows, the wheels, the winding and the projected UVs against each
-   other. It is deleted, at the user's request, along with js/car-data.js
-   and tools/prep-car.mjs: the car park is the user's GLB, drawn as
-   authored, and the projection was what three rounds of van trouble came
-   out of.
+/* ONE VEHICLE, AND IT IS A FILE — nothing but the file. Two whole
+   systems have been deleted from under this section. First the drawn
+   fleet: seven bodies measured off four-view sheets, built as the visual
+   hull of three silhouettes and painted by projecting those views back
+   onto them, with about thirty checks holding the atlas, the windows,
+   the wheels, the winding and the projected UVs against each other.
+   Then tools/prep-van.mjs, which rewrote a model on the way in — halved
+   its texture, snapped it to the game's palette, painted a black block
+   into a corner of the sheet for the untextured triangles to point at,
+   and wrote the axes it had measured into asset.extras.
 
-   What is left to check is the conversion — the axes, the scale, the
-   ground line — the model's own UVs, the dark texel the untextured
-   primitive points at, and the pieces that come off one when it goes up.
-   A wrong axis or an unflipped v still puts a car park full of vans on
-   their sides. */
+   assets/models/van.glb is now the author's own export, byte for byte,
+   and js/car.js reads it as it stands. So what is checked here is the
+   CONVERSION and nothing else — the nodes walked, the axes swapped, the
+   scale set, the ground line found, the model's own UVs taken as they
+   are and the untextured material carried in the vertices. A missed node
+   matrix or an unflipped v still puts a car park full of vans on their
+   sides. */
 section('the van');
 {
   const car = await import('../js/car.js');
@@ -1859,23 +1861,52 @@ section('the van');
   }
 
   /* --- THE MODEL, INTO THE GAME'S OWN SPACE ------------------------
-     car.modelVehicle is the whole of the preparation that happens at
-     load time: the axes swapped, the scale set from the length in
-     metres, the ground line subtracted, the UVs taken as they are and
-     the untextured primitive pointed at the dark texel. */
+     car.modelVehicle is the whole of the preparation there is: the scene
+     graph walked, the axes swapped, the scale set from the length the
+     GAME uses, the ground line subtracted, the UVs taken as they are and
+     the flat material carried as `ink`. */
   const van = await (async () => {
     const glb = await import('../js/glb.js');
     const bytes = fs.readFileSync('assets/models/van.glb');
     const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
     const { json, bin } = glb.parseGLB(ab);
-    const ex = json.asset?.extras?.vehicle;
-    check('the van model has been through tools/prep-van.mjs',
-      !!ex && !!ex.black && !!ex.sheet && typeof ex.noseSign === 'number');
-    note('the van', `${ex.length} long, ${ex.width} wide, ${ex.height} tall, ` +
-      `nose at ${ex.noseSign > 0 ? '+' : '-'}${'XYZ'[ex.lengthAxis]}`);
+
+    /* THE FILE IS THE AUTHOR'S, UNTOUCHED. There is no tool any more, so
+       the one thing worth asserting about what is on disk is that
+       nothing has been written into it: no measured axes, no scale, no
+       painted-in texel. If this ever comes back it means something has
+       started preparing the model again. */
+    check('the model carries nothing the game put there',
+      !json.asset?.extras?.vehicle,
+      Object.keys(json.asset?.extras || {}).join(', ') || 'no extras at all');
+    note('whose van it is', [json.asset?.extras?.title, json.asset?.extras?.author]
+      .filter(Boolean).join(' — ') || 'unattributed');
+    note('what is in the file', `${json.meshes.length} meshes, ${json.nodes.length} nodes, ` +
+      `${json.materials.length} materials, ${json.images.length} image`);
+
     const v = car.modelVehicle(json, bin);
     note('its triangles', `${v.model.tris.length}, drawn as they are`);
     check('it has triangles', v.model.tris.length > 200, `${v.model.tris.length}`);
+
+    /* --- THE NODES ARE WALKED --------------------------------------
+       A GLB is a scene graph, not a bag of triangles. This one hangs its
+       two meshes off four nested nodes, two of which carry a quarter
+       turn about X and undo each other — so ignoring the graph happens
+       to work HERE and would stand the van on its nose the first time a
+       file did not cancel out.
+
+       What proves the walk rather than the luck is the shape that comes
+       out: a van is longer than it is wide and wider than it is tall,
+       and a quarter turn dropped anywhere in that chain swaps two of
+       those three. */
+    {
+      const matrices = json.nodes.filter(n => n.matrix || n.rotation).length;
+      note('the scene graph', `${json.nodes.length} nodes, ${matrices} of them turned`);
+      check('the model comes out longer than it is wide, and wider than tall',
+        car.carLength(v) > car.carWidth(v) && car.carWidth(v) < car.carHeight(v) &&
+        car.carHeight(v) < car.carLength(v),
+        `${car.carLength(v)} long, ${car.carWidth(v).toFixed(0)} wide, ${car.carHeight(v).toFixed(0)} tall`);
+    }
 
     /* --- AND IT IS DRAWN THE WAY IT WAS AUTHORED ----------------------
        THIS IS THE ONE THAT MATTERED, and it took three goes to get
@@ -1892,37 +1923,37 @@ section('the van');
        vans with no bodywork, a black sill and four wheels.
 
        The model is not wrong. It renders correctly in Blender and on
-       Sketchfab because both of them draw BOTH SIDES, and that was the
-       whole of the oversight — this renderer culls back faces and the
-       model was authored where that never mattered. So: the winding is
-       left exactly as the file has it, and the material draws both
-       sides. The normals are turned outward for the FACE LIGHT and
-       nothing else, so a wrong guess costs one step of shading and can
-       no longer cull anything or choose anybody's paint.
+       Sketchfab because both of them draw BOTH SIDES — its own material
+       says `doubleSided` — and that was the whole of the oversight: this
+       renderer culls back faces and the model was authored where that
+       never mattered. So: the winding is left exactly as the file has
+       it, and the material draws both sides. The normals are turned
+       outward for the FACE LIGHT and nothing else, so a wrong guess
+       costs one step of shading and can no longer cull anything or
+       choose anybody's paint.
        ------------------------------------------------------------------ */
-    const glb2 = await import('../js/glb.js');
-    note('the two shells', (() => {
-      return json.meshes[0].primitives.map(pr => {
-        const P = glb2.readAccessor(json, bin, pr.attributes.POSITION).array;
-        const I = glb2.readAccessor(json, bin, pr.indices).array;
-        const b = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
-        for (let i = 0; i < P.length; i += 3) for (let k = 0; k < 3; k++) {
-          if (P[i + k] < b[k]) b[k] = P[i + k];
-          if (P[i + k] > b[3 + k]) b[3 + k] = P[i + k];
-        }
-        const c = [(b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2];
-        let vol = 0;
-        for (let t = 0; t < I.length; t += 3) {
-          const Q = [I[t], I[t + 1], I[t + 2]].map(i => [P[i * 3] - c[0], P[i * 3 + 1] - c[1], P[i * 3 + 2] - c[2]]);
-          vol += (Q[0][0] * (Q[1][1] * Q[2][2] - Q[1][2] * Q[2][1]) +
-                  Q[0][1] * (Q[1][2] * Q[2][0] - Q[1][0] * Q[2][2]) +
-                  Q[0][2] * (Q[1][0] * Q[2][1] - Q[1][1] * Q[2][0])) / 6;
-        }
-        const boxv = (b[3] - b[0]) * (b[4] - b[1]) * (b[5] - b[2]);
-        const nm = json.materials[pr.material].name;
-        return `${nm} ${(100 * vol / boxv).toFixed(0)}%`;
-      }).join(', ');
-    })());
+    check('the file says it is drawn both sides, and it is',
+      json.materials.every(m => m.doubleSided));
+    note('the two shells', json.meshes.map(me => {
+      const pr = me.primitives[0];
+      const P = glb.readAccessor(json, bin, pr.attributes.POSITION).array;
+      const I = glb.readAccessor(json, bin, pr.indices).array;
+      const b = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+      for (let i = 0; i < P.length; i += 3) for (let k = 0; k < 3; k++) {
+        if (P[i + k] < b[k]) b[k] = P[i + k];
+        if (P[i + k] > b[3 + k]) b[3 + k] = P[i + k];
+      }
+      const c = [(b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2];
+      let vol = 0;
+      for (let t = 0; t < I.length; t += 3) {
+        const Q = [I[t], I[t + 1], I[t + 2]].map(i => [P[i * 3] - c[0], P[i * 3 + 1] - c[1], P[i * 3 + 2] - c[2]]);
+        vol += (Q[0][0] * (Q[1][1] * Q[2][2] - Q[1][2] * Q[2][1]) +
+                Q[0][1] * (Q[1][2] * Q[2][0] - Q[1][0] * Q[2][2]) +
+                Q[0][2] * (Q[1][0] * Q[2][1] - Q[1][1] * Q[2][0])) / 6;
+      }
+      const boxv = (b[3] - b[0]) * (b[4] - b[1]) * (b[5] - b[2]);
+      return `${json.materials[pr.material].name} ${(100 * vol / boxv).toFixed(0)}%`;
+    }).join(', '));
     /* A VEHICLE IS DRAWN DOUBLE-SIDED, which is the fix and the only
        thing that makes "it renders perfectly in Blender" true here. */
     {
@@ -1930,6 +1961,9 @@ section('the van');
       const mesh = car.carMesh({}, car.carGeometry(v, { length: v.length }));
       check('a vehicle is drawn both sides, as its author saw it',
         mesh.material.side === THREEc.DoubleSide);
+      check('and its flat material rides in the vertices, not in a second draw call',
+        'INK' in mesh.material.defines && !!mesh.geometry.getAttribute('ink') &&
+        mesh.geometry.getAttribute('ink').itemSize === 4);
       mesh.geometry.dispose(); mesh.material.dispose();
     }
     check('and the file\'s own winding is left alone',
@@ -1954,22 +1988,23 @@ section('the van');
       check('the roof faces the sky', up >= 2 && down === 0, `${up} up, ${down} down`);
     }
 
-    /* --- AND THE PAINT IS THE MODEL'S OWN, WHICH TOOK THREE GOES ---
+    /* --- AND THE PAINT IS THE MODEL'S OWN --------------------------
        The mesh is UNWRAPPED, onto the very sheet embedded in it, and
        that is why it renders correctly in Blender and on Sketchfab. It
-       was condemned here on a measurement that said the flanks were a
-       fan of long thin triangles sharing one corner — and that
+       was once condemned here on a measurement that said the flanks were
+       a fan of long thin triangles sharing one corner — and that
        measurement pooled BOTH primitives. The second one is 490
        triangles of glass, tyres, bumpers and chassis with no texture at
-       all, just a flat near-black colour, so its UVs are unused junk,
-       and the junk was the fan. The body's own unwrap is ordinary.
+       all, just a flat baseColorFactor, so its UVs are unused junk, and
+       the junk was the fan.
 
-       So the paint is per-vertex now: the textured primitive's own UVs,
-       and one dark texel for the untextured one. The four measured views
-       stay, because the DEBRIS still needs them — a chunk torn off the
-       van is a box built on the fly, with no unwrap of its own. */
+       So the paint is per-vertex: the textured primitive's own UVs, and
+       for the other one its own material's colour, carried as `ink`. */
+    const painted = v.model.tris.filter(t => !t.ink);
+    const inked = v.model.tris.filter(t => t.ink);
+    note('the paint', `${painted.length} triangles off the sheet, ${inked.length} flat`);
     check('the van carries its own UVs',
-      v.model.tris.every(t => t.ta && t.tb && t.tc &&
+      painted.length > 100 && painted.every(t => t.ta && t.tb && t.tc &&
         t.ta.length === 2 && t.ta.every(q => q >= -1e-6 && q <= 1 + 1e-6)));
     check('and nothing else — no measured views, no silhouette',
       !('views' in v) && !('shape' in v), Object.keys(v).join(', '));
@@ -1978,9 +2013,8 @@ section('the van');
        covers a good fraction of the sheet with no single triangle
        stretched across it, and a fan collapses the spread to nothing. */
     {
-      const glb = await import('../js/glb.js');
-      const prims = json.meshes[0].primitives;
-      const stats = prims.map(pr => {
+      const stats = json.meshes.map(me => {
+        const pr = me.primitives[0];
         const uv2 = glb.readAccessor(json, bin, pr.attributes.TEXCOORD_0).array;
         const ix = glb.readAccessor(json, bin, pr.indices).array;
         let sum = 0, big = 0;
@@ -2003,54 +2037,47 @@ section('the van');
       check('and the untextured one is the junk that was mistaken for it',
         flat.sum > 1.5, `${(flat.sum * 100).toFixed(0)}%, which cannot be a layout`);
     }
-    /* AND THE FLAT MATERIAL COMES OUT DARK. Every one of its 490
-       triangles is pointed at one texel that tools/prep-van.mjs paints
-       into a corner of the sheet, so the glass and the tyres are black
-       without a second material and without a second draw call. */
-    check('the sheet has somewhere black to point the flat material at',
-      !!ex.black && ex.black.x > 0 && ex.black.y > 0 && ex.sheet.w > 0,
-      ex.black ? `${ex.black.x},${ex.black.y} of ${ex.sheet.w}x${ex.sheet.h}` : 'missing');
-    check('and every triangle of it points there',
-      (() => {
-        const u = ex.black.x / ex.sheet.w, w = 1 - ex.black.y / ex.sheet.h;
-        let flat = 0;
-        for (const t of v.model.tris)
-          if (Math.abs(t.ta[0] - u) < 1e-6 && Math.abs(t.ta[1] - w) < 1e-6) flat++;
-        return flat > 400;
-      })(), 'the 490 untextured triangles');
-    /* AND THAT TEXEL IS ACTUALLY DARK, in the sheet, which is the half of
-       the claim the geometry cannot make. A UV pointed at white paint is
-       a van with white tyres and nothing in here would say so. */
+    /* AND THE FLAT MATERIAL IS THE COLOUR THE FILE SAYS IT IS. There is
+       no black texel painted into a corner of the sheet any more and no
+       second draw call either: every one of those 490 triangles carries
+       its material's own baseColorFactor in its vertices, and
+       js/material.js mixes to it. baseColorFactor is linear and an sRGB
+       texture decodes to linear on sample, so the number goes through
+       untouched — and a tyre that came out WHITE would be a UV pointed
+       at the wrong thing, which is exactly what this replaces. */
     {
-      const { readPNG } = await import('./png-read.mjs');
-      const imj = json.images[0], bvj = json.bufferViews[imj.bufferView];
-      const bytes = new Uint8Array(bin.buffer, bin.byteOffset + (bvj.byteOffset || 0), bvj.byteLength);
-      fs.writeFileSync('/tmp/van-sheet-check.png', bytes);
-      const sheet = readPNG('/tmp/van-sheet-check.png');
-      const px = (x, y) => {
-        const o = ((y | 0) * sheet.w + (x | 0)) * 4;
-        return (sheet.data[o] * 0.3 + sheet.data[o + 1] * 0.6 + sheet.data[o + 2] * 0.1) / 255;
-      };
-      const dark = px(ex.black.x, ex.black.y);
-      note('the dark texel', `${dark.toFixed(3)} against ${px(sheet.w / 2, sheet.h / 2).toFixed(3)} mid-sheet`);
-      check('the texel the tyres point at is dark', dark < 0.15, `${dark.toFixed(3)}`);
-      check('and the sheet is the size the file says',
-        sheet.w === ex.sheet.w && sheet.h === ex.sheet.h,
-        `${sheet.w}x${sheet.h} against ${ex.sheet.w}x${ex.sheet.h}`);
+      const flatMat = json.materials.find(m => !m.pbrMetallicRoughness?.baseColorTexture);
+      const want = flatMat.pbrMetallicRoughness.baseColorFactor;
+      note('the flat material', `${flatMat.name}, baseColorFactor ${want[0]} linear ` +
+        `(about ${Math.round(255 * (1.055 * Math.pow(want[0], 1 / 2.4) - 0.055))} of 255 on a screen)`);
+      check('every untextured triangle carries its own material\'s colour',
+        inked.length > 400 && inked.every(t => t.ink.length === 3 &&
+          t.ink.every((q, i) => Math.abs(q - want[i]) < 1e-9)),
+        `${inked.length} triangles`);
+      check('and it is dark, so the glass and the tyres are not white',
+        want.slice(0, 3).every(q => q < 0.05), `${want.slice(0, 3).join(', ')}`);
+      check('and the textured triangles are left to the sheet',
+        painted.every(t => t.ink === null));
+      /* and the flag reaches the geometry: a vec4 a vertex, rgb and a
+         one-or-nothing, which is what the shader's mix reads */
+      const g = car.carGeometry(v, { angle: 0 });
+      const flags = new Set();
+      for (let i = 3; i < g.ink.length; i += 4) flags.add(g.ink[i]);
+      check('and the geometry says which is which, per vertex',
+        g.ink.length === g.position.length / 3 * 4 && [...flags].sort().join() === '0,1',
+        `flags seen: ${[...flags].join(', ')}`);
     }
     /* every UV inside the picture */
-    const uvs = car.carGeometry(v, { angle: 0 }).uv;
-    check('every UV is inside the sheet',
-      uvs.every(u => u >= -1e-6 && u <= 1 + 1e-6),
-      `${uvs.filter(u => u < 0 || u > 1).length} of ${uvs.length} outside`);
-    /* AND NOTHING IS STRETCHED ACROSS THE SHEET, measured on the
-       geometry the game actually builds rather than on the file: the
-       body's own unwrap for most of it and one collapsed texel for the
-       flat material, so the widest triangle is a body panel. */
     {
       const g = car.carGeometry(v, { angle: 0 });
+      check('every UV is inside the sheet',
+        g.uv.every(u => u >= -1e-6 && u <= 1 + 1e-6),
+        `${g.uv.filter(u => u < 0 || u > 1).length} of ${g.uv.length} outside`);
+      /* AND NOTHING IS STRETCHED ACROSS THE SHEET, measured on the
+         geometry the game actually builds rather than on the file. */
       let widest = 0;
       for (let i = 0; i < g.uv.length; i += 6) {
+        if (g.ink[(i / 2) * 4 + 3] > 0.5) continue;         // flat triangles have no unwrap
         const u = [g.uv[i], g.uv[i + 2], g.uv[i + 4]], w = [g.uv[i + 1], g.uv[i + 3], g.uv[i + 5]];
         const ar = Math.abs((u[1] - u[0]) * (w[2] - w[0]) - (u[2] - u[0]) * (w[1] - w[0])) / 2;
         widest = Math.max(widest, ar);
@@ -2066,12 +2093,33 @@ section('the van');
 
     /* --- ITS OWN BOX, which the collision and the tumble want --------
        Measured off the triangles rather than declared, now that there is
-       no sheet to declare it. */
-    note('its box', `${(v.box.half * 2 * v.length).toFixed(0)} wide, ` +
-      `${(v.box.height * v.length).toFixed(0)} tall, sill at ${(v.box.sill * v.length).toFixed(0)}`);
-    check('the box is the model\'s own size',
-      Math.abs(car.carWidth(v) - ex.width) < 1 && Math.abs(car.carHeight(v) - ex.height) < 1,
-      `${car.carWidth(v).toFixed(1)}x${car.carHeight(v).toFixed(1)} against ${ex.width}x${ex.height}`);
+       nothing left to declare it. The LENGTH is the game's own number —
+       a bay is 186 across and a shopper is 62 tall, so a van is 174 nose
+       to tail whatever the file thinks it is in metres — and the width
+       and the height then follow from the model's own proportions. */
+    note('its box', `${car.carLength(v)} long, ${car.carWidth(v).toFixed(0)} wide, ` +
+      `${car.carHeight(v).toFixed(0)} tall, sill at ${(v.box.sill * v.length).toFixed(0)}`);
+    check('it is as long as the game says a van is',
+      v.length === car.VAN_LENGTH, `${v.length}`);
+    check('and it stands on the tarmac rather than in it or over it',
+      (() => {
+        let lo = Infinity, hi = -Infinity;
+        for (const t of v.model.tris) for (const p of [t.a, t.b, t.c]) {
+          if (p[2] < lo) lo = p[2];
+          if (p[2] > hi) hi = p[2];
+        }
+        return Math.abs(lo) < 1e-6 && Math.abs(hi - v.box.height) < 1e-6;
+      })(), 'the lowest vertex is the ground line');
+    check('and it straddles its own middle, nose to tail and side to side',
+      (() => {
+        const b = [Infinity, Infinity, -Infinity, -Infinity];
+        for (const t of v.model.tris) for (const p of [t.a, t.b, t.c]) {
+          b[0] = Math.min(b[0], p[0]); b[2] = Math.max(b[2], p[0]);
+          b[1] = Math.min(b[1], p[1]); b[3] = Math.max(b[3], p[1]);
+        }
+        return Math.abs(b[0] + 0.5) < 1e-6 && Math.abs(b[2] - 0.5) < 1e-6 &&
+               Math.abs(b[1] + v.box.half) < 1e-6 && Math.abs(b[3] - v.box.half) < 1e-6;
+      })(), 'or it would turn about a point outside itself');
     check('and its eight corners are the corners of that box',
       car.carCorners(v).length === 8 &&
       car.carCorners(v).every(([x, y, z]) =>
@@ -2120,6 +2168,18 @@ section('the van');
       check('and it wears a small patch of the van\'s own paint',
         u0 >= -1e-6 && u1 <= 1 + 1e-6 && (u1 - u0) < 0.3 && (w1 - w0) < 0.3,
         `u ${u0.toFixed(2)}..${u1.toFixed(2)}, v ${w0.toFixed(2)}..${w1.toFixed(2)}`);
+      /* and the flat material survives the clip too: a piece with a tyre
+         in it is a piece with a black tyre in it */
+      const tyre = (() => {
+        let low = v.model.tris.find(t => t.ink);
+        for (const t of v.model.tris)
+          if (t.ink && (t.a[2] + t.b[2] + t.c[2]) / 3 < (low.a[2] + low.b[2] + low.c[2]) / 3) low = t;
+        const m2 = [0, 1, 2].map(k => (low.a[k] + low.b[k] + low.c[k]) / 3);
+        return car.chunkGeometry(v, { x0: m2[0] - 0.05, x1: m2[0] + 0.05, y0: m2[1] - 0.05,
+          y1: m2[1] + 0.05, z0: m2[2] - 0.03, z1: m2[2] + 0.03 }, { angle: 0 });
+      })();
+      check('and a piece with a tyre in it keeps the tyre black',
+        tyre.ink.some((q, i) => i % 4 === 3 && q === 1), 'the flat material survives the clip');
       /* and it is no bigger than the cut, which is what clipping buys */
       check('and it is no bigger than the box it was cut with',
         (() => {
