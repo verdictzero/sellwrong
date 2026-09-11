@@ -30,14 +30,33 @@
    nothing is lost on screen, and a photograph reduced to 256 colours
    compresses to a quarter of what it was.
 
-   THE FLAT MATERIAL IS THE INTERESTING PROBLEM. The model has two
-   primitives: the body, textured, and a second one — glass, tyres,
-   bumpers, grille surround — with no texture at all, just a base colour
-   of near-black. The game draws a whole car park in ONE material and one
-   draw call, so a second material is not available. The answer is to
-   find the darkest texel in the texture and point every vertex of the
-   flat primitive at it: one texture, one draw call, and the tyres come
-   out the colour tyres are. Recorded in extras as `flatUV`.
+   THE MODEL'S OWN UVs ARE NOT USED, and that is the whole of what this
+   tool is for. They were, for one afternoon, and the van went out with
+   its flanks smeared: the mesh's side panels are UV-mapped as a FAN of
+   long thin triangles all sharing one corner, which stretches a few
+   pixels of the picture across the whole side of the van. Drawing the
+   UV layout over the texture shows it immediately and nothing else does.
+
+   WHAT THE TEXTURE ACTUALLY IS: a four-view sheet. Front, rear, side and
+   plan of this very van, one per quadrant, on a flat grey field — which
+   is exactly, precisely the input js/car.js has wanted since the day it
+   was written, because the drawn fleet is seven of those sheets and the
+   whole file is about projecting them back onto a solid. So the shape
+   comes from the model and the PAINT comes from the projection, and the
+   model's UVs are ignored. That is better than fixing them would have
+   been: the torn pieces of a wrecked van get real projected paint too.
+
+   MEASURING THE FOUR VIEWS is then the only hard part, and the hard part
+   of that is that the picture has WING MIRRORS and the mesh does not. Key
+   the background out, take the bounding box in each quadrant, and the
+   front view comes out 27 per cent wider than the model, the plan view
+   23 per cent, the rear 14 — all of it mirror. The LENGTH axis is clean,
+   and it agrees between the side and the plan view to one per cent, so
+   that is the ruler: pixels per unit length from the two views that have
+   a length, and then every other window derived from the model's own
+   proportions, anchored on the two datums the picture and the mesh
+   genuinely share — the ground the tyres stand on, and the centre line a
+   van is symmetric about.
 
    Nothing fancier is understood: one buffer, one mesh, two primitives,
    no animation, no skins, no extensions. Anything else throws rather
@@ -233,36 +252,91 @@ for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
 }
 snapImageData({ data: small, width: W, height: H }, 0);
 
-/* WHERE THE FLAT PRIMITIVE POINTS: the darkest texel there is, at its
-   own centre so nearest-neighbour sampling can only land on it. */
-let dark = Infinity, di = 0;
-for (let i = 0; i < W * H; i++) {
-  const o = i * 4;
-  if (small[o + 3] < 250) continue;
-  const s = small[o] + small[o + 1] + small[o + 2];
-  if (s < dark) { dark = s; di = i; }
-}
-measured.flatUV = [+(((di % W) + 0.5) / W).toFixed(6), +((((di / W) | 0) + 0.5) / H).toFixed(6)];
-measured.flatRGB = [small[di * 4], small[di * 4 + 1], small[di * 4 + 2]];
+/* ---- the four views ------------------------------------------------
+   Keyed off the background, one bounding box per quadrant, and then
+   every window derived from the model rather than from the box — see the
+   note at the top about the wing mirrors. What is written out is what
+   uvOf in js/car.js wants: a rectangle in atlas pixels plus the WINDOW
+   on the model it covers.
+   ------------------------------------------------------------------ */
+{
+  /* The background is the commonest colour in the picture by a mile —
+     half of it — and the only thing between it and the van is the soft
+     shadow under each one, which sits about a fifth of the way from one
+     to the other. A threshold of 96 over the three channels together
+     clears the shadow and keeps every part of the van, including the
+     tyres, which are further from a mid grey than the white body is. */
+  const bg = [small[0], small[1], small[2]];
+  const KEY = 96;
+  const lit = (x, y) => {
+    const o = (y * W + x) * 4;
+    return Math.abs(small[o] - bg[0]) + Math.abs(small[o + 1] - bg[1]) + Math.abs(small[o + 2] - bg[2]) > KEY;
+  };
+  const quadrant = (qx, qy) => {
+    const ax = qx ? (W >> 1) : 0, bx = qx ? W : (W >> 1);
+    const ay = qy ? (H >> 1) : 0, by = qy ? H : (H >> 1);
+    let x0 = Infinity, y0 = Infinity, x1 = -1, y1 = -1;
+    for (let y = ay; y < by; y++) for (let x = ax; x < bx; x++) if (lit(x, y)) {
+      x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+    }
+    if (x1 < 0) throw new Error(`nothing in the ${qx},${qy} quadrant of the sheet`);
+    return { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+  };
+  /* The layout, which is the one the drawn fleet's sheets use as well:
+     front and rear along the top, side and plan along the bottom, every
+     one of them drawn nose to the LEFT or facing you. */
+  const box = {
+    front: quadrant(0, 0), rear: quadrant(1, 0),
+    side:  quadrant(0, 1), top:  quadrant(1, 1),
+  };
+  const half = measured.shape.width / 2;        // in fractions of the length
+  const tall = measured.shape.height;
 
-/* AND WHERE A TORN PIECE OF VAN IS PAINTED FROM. The drawn fleet paints
-   its debris by projecting the vehicle's own four views onto the box the
-   piece was cut out of, which is lovely and needs the four view
-   rectangles measured. This model's texture IS a four-view sheet, so
-   that could be done — and it is not worth it: a piece of van twenty
-   units across, in the air, on fire, for a second and a bit. Two texels
-   answer it. The brightest one there is, which on a white van is a
-   panel, for anything above the sill; the darkest, which is a tyre, for
-   anything below it. */
-let bright = -1, bi = 0;
-for (let i = 0; i < W * H; i++) {
-  const o = i * 4;
-  if (small[o + 3] < 250) continue;
-  const s2 = small[o] + small[o + 1] + small[o + 2];
-  if (s2 > bright) { bright = s2; bi = i; }
+  /* PIXELS PER UNIT LENGTH, from the two views that have a length in
+     them. They agree to about one per cent, which is the check: a sheet
+     whose four views are not the same vehicle at the same scale fails
+     here rather than on screen. */
+  const scale = (box.side.w + box.top.w) / 2;
+  const agree = Math.abs(box.side.w - box.top.w) / scale;
+  if (agree > 0.05) throw new Error(`the side and plan views disagree about the length by ${(agree * 100).toFixed(0)}%`);
+
+  /* And the two datums the picture and the mesh genuinely share: the
+     GROUND the tyres stand on, and the CENTRE LINE a van is symmetric
+     about. Everything else is the model's own proportions times `scale`.
+
+     Which datum applies to which axis of which view is the only fiddly
+     part, and it is fiddly because a plan view turns the vehicle on its
+     side: in the front, rear and side views the vertical axis is HEIGHT
+     and sits on the ground, and in the plan view it is WIDTH and is
+     centred. */
+  const hPx = tall * scale, wPx = 2 * half * scale;
+  const onGround = (b, hgt) => +(b.y + b.h - hgt).toFixed(2);
+  const centred = (at, len, want) => +(at + (len - want) / 2).toFixed(2);
+  const px = n => +n.toFixed(2);
+  const Z = { z0: 0, z1: +tall.toFixed(4) }, HALF = { half: +half.toFixed(4) };
+  measured.views = {
+    /* head-on: width across, centred; height up, off the ground */
+    front: { x: centred(box.front.x, box.front.w, wPx), y: onGround(box.front, hPx), w: px(wPx), h: px(hPx), ...Z, ...HALF },
+    rear:  { x: centred(box.rear.x,  box.rear.w,  wPx), y: onGround(box.rear,  hPx), w: px(wPx), h: px(hPx), ...Z, ...HALF },
+    /* the flank: the length is the ruler, so the box's own x and w stand */
+    side:  { x: box.side.x, y: onGround(box.side, hPx), w: box.side.w, h: px(hPx), ...Z },
+    /* and the plan: length across as drawn, width up the picture and
+       centred, because the mirrors stick out into it both ways */
+    top:   { x: box.top.x, y: centred(box.top.y, box.top.h, wPx), w: box.top.w, h: px(wPx), ...HALF },
+    atlas: { w: W, h: H },
+  };
+
+  measured.agree = {
+    length: +agree.toFixed(4),
+    /* how much of each keyed box is not in the mesh — mirrors, mostly.
+       Reported rather than corrected, because the correction is to
+       ignore it and take the model's word for the proportions. */
+    front: +((box.front.w - wPx) / wPx).toFixed(3),
+    rear:  +((box.rear.w - wPx) / wPx).toFixed(3),
+    side:  +((box.side.h - hPx) / hPx).toFixed(3),
+    top:   +((box.top.h - wPx) / wPx).toFixed(3),
+  };
 }
-measured.bodyUV = [+(((bi % W) + 0.5) / W).toFixed(6), +((((bi / W) | 0) + 0.5) / H).toFixed(6)];
-measured.bodyRGB = [small[bi * 4], small[bi * 4 + 1], small[bi * 4 + 2]];
 
 const png = writePNG(W, H, small);
 fs.unlinkSync(tmp);
@@ -318,8 +392,12 @@ console.log(`${inFile} -> ${outFile}`);
 console.log(`  ${prims.map(p => `${p.name}: ${p.tris} triangles${p.textured ? '' : ', flat'}`).join('; ')}`);
 console.log(`  texture ${src.w}x${src.h} -> ${W}x${H}, ${(raw.length / 1024).toFixed(0)}K -> ${(png.length / 1024).toFixed(0)}K`);
 console.log(`  in game units: ${measured.length} long, ${measured.width} wide, ${measured.height} tall`);
-console.log(`  flat parts point at ${measured.flatUV.join(', ')} = rgb(${measured.flatRGB.join(',')})`);
-console.log(`  debris: body rgb(${measured.bodyRGB.join(',')}), under the sill rgb(${measured.flatRGB.join(',')})`);
+const V = measured.views, A = measured.agree;
+for (const k of ['front', 'rear', 'side', 'top'])
+  console.log(`  ${k.padEnd(5)} ${JSON.stringify(V[k])}`);
+console.log(`  the two lengths agree to ${(A.length * 100).toFixed(1)}%; ` +
+  `mirror overhang front ${(A.front * 100).toFixed(0)}%, rear ${(A.rear * 100).toFixed(0)}%, ` +
+  `side ${(A.side * 100).toFixed(0)}%, plan ${(A.top * 100).toFixed(0)}%`);
 console.log(`  silhouette: ${measured.shape.columns.length} columns, ${measured.shape.levels.length} levels, ` +
   `sill at ${(measured.shape.sill * LENGTH).toFixed(0)}, widest ${(measured.shape.width * LENGTH).toFixed(0)}`);
 console.log(`  ${(buf.length / 1024).toFixed(0)}K -> ${(total / 1024).toFixed(0)}K`);

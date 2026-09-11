@@ -71,7 +71,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         627 checks, no install and no browser
+  the smoke test         635 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -1292,15 +1292,56 @@ downloads.
 WHAT A MODELLED VEHICLE NEEDS, AND IT IS NOT MUCH. tools/prep-van.mjs
 measures the .glb and writes what it found into the file's own
 asset.extras — the length, width and height in the game's units, which
-axis is the length and which end of it is the nose, and the two curves
-(columns and levels) that everything downstream of the body asks for:
-where the torn pieces come off, how tall the thing is once it is on its
-roof, how wide the part you cannot walk through is. js/car.js reads that
+axis is the length and which end of it is the nose, the two curves
+(columns and levels) that everything downstream of the body asks for,
+and the four view rectangles its paint comes from. js/car.js reads that
 back, puts the triangles into the space the drawn fleet already speaks —
 x +0.5 at the nose, y to the vehicle's left, z 0 on the ground, all as
 fractions of the length — and hands back something shaped exactly like
 an entry in js/car-data.js. Nothing in the tumble, the blockers, the
 debris, the wrecks or the smouldering had to change.
+
+THE MODEL'S OWN UVs ARE NOT USED, AND THAT IS THE POINT. They were, for
+one afternoon, and the van shipped with its flanks smeared — the user's
+words were "super fucked", which was fair. The mesh's side panels are
+UV-mapped as a FAN of long thin triangles all sharing one corner, so a
+few pixels of the picture are stretched across the whole side of the
+van. Nothing catches that except drawing the UV layout over the texture
+and looking at it, which took four minutes once the question was asked
+properly and which I had already half-seen and waved away as an artefact
+of my own scratch renderer.
+
+What the texture IS, though, is a four-view sheet: front, rear, side and
+plan of this very van, one per quadrant, on a flat grey field — exactly
+the input the rest of js/car.js has wanted since the day it was written,
+because the drawn fleet is seven of those sheets and the whole file is
+about projecting them back onto a solid. So the SHAPE comes from the
+model and the PAINT comes from the projection, and the two are
+independent. That is better than fixing the UVs would have been: the
+torn pieces of a wrecked van get real projected paint as well, which the
+drawn fleet's debris has always had and a flat texel per piece never
+would.
+
+IT ALSO MEANS THE UNTEXTURED PRIMITIVE STOPPED BEING A PROBLEM. The
+model's second primitive — glass, tyres, bumpers, chassis — arrives with
+no texture at all, just a base colour of near-black, and a car park is
+ONE material and one draw call. Projected, it does not need one: the
+four views are renders of this mesh, so the side view has the tyre in it
+where the tyre is and the front view has the windscreen where the
+windscreen is. Painting the whole van from its own photographs gets the
+black parts black for free.
+
+MEASURING THE FOUR VIEWS is the only hard part, and the hard part of
+that is that the picture has WING MIRRORS and the mesh does not. Key the
+background out, take the bounding box in each quadrant, and the front
+view comes out 55 per cent wider than the model, the rear 39, the plan
+30 — all of it mirror. The LENGTH axis is clean, and it agrees between
+the side and the plan view to under one per cent, so that is the ruler:
+pixels per unit length from the two views that have a length in them,
+and then every other window derived from the model's own proportions and
+anchored on the two datums the picture and the mesh genuinely share —
+the ground the tyres stand on, and the centre line a van is symmetric
+about.
 
 THREE THINGS ABOUT IT ARE WORTH WRITING DOWN.
 
@@ -1330,13 +1371,6 @@ the GPU does to it at draw time anyway, so nothing is lost on screen, and
 a photograph reduced to 256 colours compresses to a seventieth of what it
 was: 785K to 11K, and the whole model 812K to 39K.
 
-The debris is the one place the modelled van is poorer than a drawn one.
-A drawn vehicle's torn pieces are painted by projecting its own four
-views onto the box the piece was cut out of, which is the nicest thing in
-js/car.js; the van's pieces get one flat texel each, panel above the sill
-and tyre below. It is a piece of van twenty units across, in the air, on
-fire, for a second and a bit, and the pen's own face light still makes it
-read as a solid thing.
 
 
 A CAR IS A PICTURE OF A CAR, FOUR TIMES. What arrived is seven images: a
@@ -1677,7 +1711,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-627 checks. Every one of them earns its place by having caught something
+635 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -1822,6 +1856,20 @@ that had already reached a screenshot:
   a fire whose scatter was re-rolled every frame, which is not a fire, it
     is a fire boiling. The check renders the same frame twice and demands
     every sprite be in the same place
+  seventy-seven vans with their flanks smeared, because the model's own
+    UV layout maps every side panel as a fan of slivers sharing one
+    corner. The check holds the widest single triangle's share of the
+    sheet against a tenth of it: a fan collapses to nothing and a
+    stretched sliver covers everything
+  a fatal, silent break. A comment rewritten with a text splice whose end
+    offset was one line too far took the function between the two offsets
+    with it, and js/main.js was left importing a name js/car.js no longer
+    exported. The page died on the first line of module evaluation — no
+    textures, no map, no game, a title screen that says STARTING for ever
+    — and the test suite passed with 633 green checks, because it imports
+    the modules it wants one at a time and never asks whether THEY can
+    find each other. There is now a pass that reads every import and
+    every export out of the source and holds them against each other
   "the pieces of a person all come down", which stopped being true the
     moment the fire got six times faster: two hundred tics of it beside a
     queue takes the neighbours too, so the count in the air was somebody

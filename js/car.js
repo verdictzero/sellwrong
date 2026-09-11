@@ -164,7 +164,11 @@ function uvOf(views, n, p) {
     iu = 0.5 - p[0];
     iv = (p[1] + r.half) / (2 * r.half);
   }
-  return [(r.x + clamp01(iu) * r.w) / CAR_ATLAS.w, 1 - (r.y + clamp01(iv) * r.h) / CAR_ATLAS.h];
+  /* The sheet's own size, because there are two sheets now: the drawn
+     fleet's packed atlas and the modelled van's own four-view texture,
+     which arrives inside its .glb. */
+  const A = views.atlas || CAR_ATLAS;
+  return [(r.x + clamp01(iu) * r.w) / A.w, 1 - (r.y + clamp01(iv) * r.h) / A.h];
 }
 
 /* ---------------------------------------------------------------------
@@ -249,17 +253,10 @@ function pen(v, opts = {}) {
     return light + CONTRAST * (Math.abs(wy) - Math.abs(wx));
   };
 
-  /* model space -> the renderer's, which is y-up with z running back.
-
-     `t` is a UV the caller already has, which is the whole difference
-     between a vehicle that was DRAWN and one that was MODELLED: a drawn
-     one has no UVs of its own and gets them by projecting its views back
-     onto itself, and a modelled one arrives with them. Everything else
-     about the two — the light per face, the origin, the scale, the
-     winding — is the same, which is why they share a pen. */
-  const vert = (p, n, l, t0) => {
+  /* model space -> the renderer's, which is y-up with z running back */
+  const vert = (p, n, l) => {
     pos.push((p[0] - origin[0]) * length, (p[2] - origin[2]) * length, -(p[1] - origin[1]) * length);
-    const t = t0 || uvOf(views, n, p);  // the UV is of where the piece CAME FROM
+    const t = uvOf(views, n, p);        // the UV is of where the piece CAME FROM
     uv.push(t[0], t[1]);
     lit.push(l); skies.push(sky); chars.push(charred);
     /* WHICH WAY THIS FACE WAS MEANT TO POINT. The shader lights nothing
@@ -276,15 +273,15 @@ function pen(v, opts = {}) {
      product, is what ended the era of a tyre tread being inside out on
      one side and the caps on the other: the builder says which way a
      face points, and the winding follows. */
-  const tri = (a, b, c, n, ta, tb, tc) => {
+  const tri = (a, b, c, n) => {
     const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
     const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
     const gx = uy * vz - uz * vy, gy = uz * vx - ux * vz, gz = ux * vy - uy * vx;
     const l = faceLight(n);
-    if (gx * n[0] + gy * n[1] + gz * n[2] >= 0) { vert(a, n, l, ta); vert(b, n, l, tb); vert(c, n, l, tc); }
-    else { vert(a, n, l, ta); vert(c, n, l, tc); vert(b, n, l, tb); }
+    if (gx * n[0] + gy * n[1] + gz * n[2] >= 0) { vert(a, n, l); vert(b, n, l); vert(c, n, l); }
+    else { vert(a, n, l); vert(c, n, l); vert(b, n, l); }
   };
-  const face = (q, n, t) => { tri(q[0], q[1], q[2], n, t, t, t); tri(q[0], q[2], q[3], n, t, t, t); };
+  const face = (q, n) => { tri(q[0], q[1], q[2], n); tri(q[0], q[2], q[3], n); };
   /* A face of the hull: a quad whose corners may have fallen together.
      Consecutive duplicates go; three corners left is a triangle, four a
      quad, fewer nothing at all. Its normal is its own — Newell's method
@@ -314,15 +311,14 @@ function pen(v, opts = {}) {
     if (q.length === 4) tri(q[0], q[2], q[3], n);
   };
 
-  /* six faces, wound so the outside is the front. `t`, when given, is
-     one texel every face reads — see chunkGeometry. */
-  const box = (x0, x1, y0, y1, z0, z1, t) => {
-    face([[x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]], [1, 0, 0], t);
-    face([[x0, y1, z0], [x0, y0, z0], [x0, y0, z1], [x0, y1, z1]], [-1, 0, 0], t);
-    face([[x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0]], [0, 1, 0], t);
-    face([[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1]], [0, -1, 0], t);
-    face([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], [0, 0, 1], t);
-    face([[x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [x1, y0, z0]], [0, 0, -1], t);
+  /* six faces, wound so the outside is the front */
+  const box = (x0, x1, y0, y1, z0, z1) => {
+    face([[x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]], [1, 0, 0]);
+    face([[x0, y1, z0], [x0, y0, z0], [x0, y0, z1], [x0, y1, z1]], [-1, 0, 0]);
+    face([[x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0]], [0, 1, 0]);
+    face([[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1]], [0, -1, 0]);
+    face([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], [0, 0, 1]);
+    face([[x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [x1, y0, z0]], [0, 0, -1]);
   };
 
   return { box, face, poly, tri, vert, faceLight, arrays: { position: pos, uv, light: lit, sky: skies, charred: chars, normal: norms } };
@@ -344,14 +340,16 @@ export function carGeometry(v, opts = {}) {
 
   /* A MODELLED VEHICLE SHORT-CIRCUITS THE LOT. Everything below builds a
      body out of two silhouette curves because the drawn fleet has
-     nothing else to build one from; this van arrives as triangles with
-     UVs on them, so all that is left to do is put them through the same
-     pen — which is not a formality, because the pen is where the face
-     light, the parked heading, the origin the mesh turns about and the
-     charred flag all come from, and a modelled vehicle wants every one
-     of them exactly as much as a drawn one does. */
+     nothing else to build one from; this van arrives as triangles, so
+     all that is left is to put them through the same pen — which is not
+     a formality, because the pen is where the face light, the parked
+     heading, the origin the mesh turns about, the charred flag AND THE
+     PAINT all come from.
+
+     The paint especially. A modelled vehicle arrives with UVs of its own
+     and they are not used; see modelVehicle for why not. */
   if (v.model) {
-    for (const t of v.model.tris) P.tri(t.a, t.b, t.c, t.n, t.ta, t.tb, t.tc);
+    for (const t of v.model.tris) P.tri(t.a, t.b, t.c, t.n);
     return P.arrays;
   }
 
@@ -463,17 +461,7 @@ export function carGeometry(v, opts = {}) {
 export function chunkGeometry(v, cut, opts = {}) {
   const mid = [(cut.x0 + cut.x1) / 2, (cut.y0 + cut.y1) / 2, (cut.z0 + cut.z1) / 2];
   const P = pen(v, { ...opts, origin: mid });
-  /* A MODELLED VEHICLE'S DEBRIS IS PAINTED FLAT, one texel per piece.
-     The drawn fleet projects the vehicle's own four views onto the box a
-     piece was cut out of, which is the nicest thing in this file and
-     needs the four view rectangles measured; the van's texture IS a
-     four-view sheet so it could be done, and it is not worth it for a
-     piece of van twenty units across, in the air, on fire, for a second
-     and a bit. Two texels answer it — panel above the sill, tyre below —
-     and the pen's own face light still makes each piece read as a solid
-     thing rather than as a flat card. */
-  P.box(cut.x0, cut.x1, cut.y0, cut.y1, cut.z0, cut.z1,
-    v.model ? (mid[2] >= v.shape.sill ? v.model.bodyUV : v.model.flatUV) : undefined);
+  P.box(cut.x0, cut.x1, cut.y0, cut.y1, cut.z0, cut.z1);
   return P.arrays;
 }
 
@@ -497,11 +485,28 @@ export function chunkGeometry(v, cut, opts = {}) {
    preserves handedness, which is the one thing that would otherwise turn
    every triangle in the model inside out.
 
+   THE MODEL'S OWN UVs ARE NOT USED, AND THAT IS THE POINT. They were,
+   for one afternoon, and the van shipped with its flanks smeared: the
+   mesh's side panels are UV-mapped as a FAN of long thin triangles all
+   sharing one corner, so a few pixels of the picture are stretched
+   across the whole side of the van. Nothing catches that except drawing
+   the UV layout over the texture and looking at it.
+
+   What the texture IS, though, is a four-view sheet — front, rear, side
+   and plan of this very van, one per quadrant, on a flat grey field —
+   which is exactly the input the rest of this file has wanted since the
+   day it was written. So the SHAPE comes from the model and the PAINT
+   comes from the projection, and the two are independent. That is better
+   than fixing the UVs would have been: the torn pieces of a wrecked van
+   get real projected paint as well, which the drawn fleet's debris has
+   always had and a flat texel per piece never would.
+
    THE NORMAL IS THE TRIANGLE'S OWN, not the vertex normals the model
-   ships. The pen uses a normal for two things — which way round to wind
-   the triangle, and how bright the face is on this game's fake compass —
-   and both of those are properties of the FACE. A vertex normal averaged
-   over a smooth shoulder is neither.
+   ships. The pen uses a normal for three things — which way round to
+   wind the triangle, how bright the face is on this game's fake compass,
+   and WHICH VIEW the face reads its paint from — and all three are
+   properties of the FACE. A vertex normal averaged over a smooth
+   shoulder is none of them.
    --------------------------------------------------------------------- */
 /**
  * The van, from the file, ready to fill a car park with.
@@ -528,26 +533,26 @@ export async function loadVehicleModel(url, opts = {}) {
 export function modelVehicle(json, bin, opts = {}) {
   const ex = json.asset?.extras?.vehicle;
   if (!ex) throw new Error('the model has no asset.extras.vehicle — run tools/prep-van.mjs on it');
+  if (!ex.views) throw new Error('the model has no measured views — run tools/prep-van.mjs again');
   const prims = json.meshes[0].primitives;
   const s = 1 / (ex.length / ex.unit);        // model units -> fractions of the length
   const tris = [];
   for (const p of prims) {
     const pos = readAccessor(json, bin, p.attributes.POSITION).array;
-    const uvs = p.attributes.TEXCOORD_0 !== undefined
-      ? readAccessor(json, bin, p.attributes.TEXCOORD_0).array : null;
     const idx = readAccessor(json, bin, p.indices).array;
-    const textured = !!json.materials?.[p.material]?.pbrMetallicRoughness?.baseColorTexture;
     const at = i => [
       (pos[i * 3 + 2] - ex.centre) * s * ex.noseSign,     // along the length
       pos[i * 3] * s,                                     // to the left
       (pos[i * 3 + 1] - ex.ground) * s,                   // up off the tarmac
     ];
-    /* glTF's v runs down from the top of the image and every texture in
-       this game is uploaded the other way up, so it is flipped here
-       exactly as uvOf flips the atlas. An untextured primitive — the
-       glass, the tyres, the bumpers — is pointed at one dark texel,
-       because a car park is one material and one draw call. */
-    const tex = i => (textured && uvs) ? [uvs[i * 2], 1 - uvs[i * 2 + 1]] : ex.flatUV;
+    /* EVERY PRIMITIVE, textured or not. The model's second primitive is
+       glass, tyres, bumpers and chassis, and it arrives with no texture
+       at all — just a base colour of near-black. Projected, it does not
+       need one: the four views are renders of THIS MESH, so the side
+       view has the tyre in it where the tyre is and the front view has
+       the windscreen where the windscreen is. Painting the whole van
+       from its own photographs gets the black parts black for free and
+       keeps the car park to one material. */
     for (let t = 0; t < idx.length; t += 3) {
       const a = at(idx[t]), b = at(idx[t + 1]), c = at(idx[t + 2]);
       const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
@@ -556,14 +561,15 @@ export function modelVehicle(json, bin, opts = {}) {
       const m = Math.hypot(n[0], n[1], n[2]);
       if (m < 1e-12) continue;                            // a degenerate triangle is nothing
       n = [n[0] / m, n[1] / m, n[2] / m];
-      tris.push({ a, b, c, n, ta: tex(idx[t]), tb: tex(idx[t + 1]), tc: tex(idx[t + 2]) });
+      tris.push({ a, b, c, n });
     }
   }
   return {
     id: opts.id || 'van', name: opts.name || 'Van', use: 'civil',
     length: ex.length,
     shape: ex.shape,
-    model: { tris, flatUV: ex.flatUV, bodyUV: ex.bodyUV },
+    views: ex.views,
+    model: { tris },
   };
 }
 

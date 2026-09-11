@@ -1297,6 +1297,84 @@ section('the crowd');
   }
 }
 
+/* ---------- the wiring ---------- */
+/* EVERY NAME ONE MODULE TAKES FROM ANOTHER HAS TO BE THERE.
+
+   This exists because of one afternoon: a comment block was rewritten
+   with a text splice whose end offset was a line too far, the function
+   between the two offsets went with it, and js/main.js was left
+   importing a name js/car.js no longer exported. The page died on the
+   first line of module evaluation — no textures, no map, no game, a
+   title screen that says STARTING for ever — and the smoke test passed
+   with 633 green checks, because it imports the modules it wants one at
+   a time and never asks whether THEY can find each other.
+
+   Static, not dynamic: js/main.js builds a renderer at the top level and
+   importing it here would want a GPU. So the imports and the exports are
+   both read out of the source. That is a regex over a codebase whose
+   style is consistent, which is worth saying out loud — it earns its
+   place by catching a whole class of fatal, silent breakage, and if
+   somebody writes an export this cannot see, the count check below
+   fails and says so. */
+section('the wiring');
+{
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const files = [];
+  const walk = d => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const q = path.join(d, e.name);
+      if (e.isDirectory()) walk(q); else if (q.endsWith('.js')) files.push(q);
+    }
+  };
+  walk('js');
+  const exportsOf = src => {
+    const out = new Set();
+    for (const m of src.matchAll(/^export\s+(?:async\s+)?(?:function|class|const|let|var)\s+([A-Za-z_$][\w$]*)/gm)) out.add(m[1]);
+    /* `export { a, b as c }` and `export { a } from './x.js'` */
+    for (const m of src.matchAll(/^export\s*\{([^}]*)\}/gm))
+      for (const part of m[1].split(','))
+        { const n = part.trim().split(/\s+as\s+/).pop().trim(); if (n) out.add(n); }
+    if (/^export\s+default/m.test(src)) out.add('default');
+    return out;
+  };
+  const have = new Map(), src = new Map();
+  for (const f of files) { const t = fs.readFileSync(f, 'utf8'); src.set(f, t); have.set(f, exportsOf(t)); }
+  note('modules', `${files.length}, exporting ${[...have.values()].reduce((n, s2) => n + s2.size, 0)} names`);
+
+  const missing = [];
+  const imported = new Set();
+  let edges = 0;
+  for (const f of files) {
+    for (const m of src.get(f).matchAll(/import\s*(?:([A-Za-z_$][\w$]*)\s*,\s*)?\{([^}]*)\}\s*from\s*['"](\.[^'"]+)['"]/g)) {
+      const target = path.normalize(path.join(path.dirname(f), m[3]));
+      imported.add(target);
+      const names = have.get(target);
+      if (!names) { missing.push(`${f} -> ${m[3]} (no such module)`); continue; }
+      for (const part of m[2].split(',')) {
+        const n = part.trim().split(/\s+as\s+/)[0].trim();
+        if (!n) continue;
+        edges++;
+        if (!names.has(n)) missing.push(`${path.basename(f)} imports ${n} from ${path.basename(target)}`);
+      }
+    }
+    /* `import * as x` needs the module to exist and nothing more */
+    for (const m of src.get(f).matchAll(/import\s+\*\s+as\s+[\w$]+\s+from\s*['"](\.[^'"]+)['"]/g)) {
+      const target = path.normalize(path.join(path.dirname(f), m[1]));
+      imported.add(target);
+      edges++;
+      if (!have.has(target)) missing.push(`${f} -> ${m[1]} (no such module)`);
+    }
+  }
+  note('imports between them', `${edges} names`);
+  /* Only the modules somebody imports: js/main.js is the entry point and
+     exports nothing on purpose, which is not a fault. */
+  const empty = [...imported].filter(f => !(have.get(f) || new Set()).size);
+  check('every module somebody imports exports something', empty.length === 0, empty.join(', '));
+  check('and every name one module takes from another is exported by it',
+    missing.length === 0, missing.slice(0, 6).join('; '));
+}
+
 /* ---------- the way out ---------- */
 /* Six crash-bar doors down the flanks of the building, and a crowd that
    uses them. The claim being tested is one sentence — set fire to the
@@ -1748,7 +1826,7 @@ section('the fleet');
     const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
     const { json, bin } = glb.parseGLB(ab);
     const ex = json.asset?.extras?.vehicle;
-    check('the van model has been through tools/prep-van.mjs', !!ex);
+    check('the van model has been through tools/prep-van.mjs', !!ex && !!ex.views);
     note('the van', `${ex.length} long, ${ex.width} wide, ${ex.height} tall, ` +
       `nose at ${ex.noseSign > 0 ? '+' : '-'}${'XYZ'[ex.lengthAxis]}`);
     const v = car.modelVehicle(json, bin);
@@ -1770,17 +1848,69 @@ section('the fleet');
     check('it is taller than it is wide and longer than it is tall',
       z1 > y1 * 2 * 0.9 && z1 < 1,
       `${(v.length * 2 * y1).toFixed(0)} wide, ${(v.length * z1).toFixed(0)} tall, ${v.length} long`);
-    /* every UV inside the picture, which is what catches a v that was
-       not flipped out of glTF's top-left origin */
-    const uvs = v.model.tris.flatMap(t => [...t.ta, ...t.tb, ...t.tc]);
-    check('and every one of its UVs is inside its own texture',
+    /* --- AND THE PAINT IS PROJECTED, NOT THE MODEL'S OWN ---
+       The mesh's flanks are UV-mapped as a fan of long thin triangles
+       all sharing one corner, so using its UVs stretched a few pixels
+       across the whole side of the van. Its TEXTURE, though, is a
+       four-view sheet of this very van, which is exactly what this file
+       projects. So the shape comes from the model and the paint comes
+       from the four rectangles tools/prep-van.mjs measured. */
+    check('the van carries four measured views rather than its own UVs',
+      !!v.views && ['front', 'rear', 'side', 'top'].every(k => v.views[k]) &&
+      v.model.tris.every(t => t.ta === undefined));
+    check('and they say which picture they are rectangles in',
+      v.views.atlas.w > 0 && v.views.atlas.h > 0,
+      `${v.views.atlas.w}x${v.views.atlas.h}`);
+    /* Every rectangle inside the sheet, and every window the model's own
+       size — the two ways this can be wrong are a rectangle off the edge
+       of the picture and a window that does not match the mesh. */
+    const A = v.views.atlas;
+    check('every view is inside the sheet',
+      ['front', 'rear', 'side', 'top'].every(k => {
+        const r = v.views[k];
+        return r.x >= 0 && r.y >= 0 && r.x + r.w <= A.w + 0.01 && r.y + r.h <= A.h + 0.01;
+      }), ['front', 'rear', 'side', 'top'].map(k => JSON.stringify(v.views[k])).join(' '));
+    check('and every window is the model\'s own height and half width',
+      Math.abs(v.views.side.z1 - v.shape.height) < 1e-3 &&
+      Math.abs(v.views.front.half - v.shape.width / 2) < 1e-3 &&
+      Math.abs(v.views.top.half - v.shape.width / 2) < 1e-3);
+    /* THE SHEET IS OVER-DETERMINED and this is the residual: the side
+       and the plan view both contain the vehicle's LENGTH, so they can
+       be held against each other. They agree to under one per cent. */
+    note('the two lengths in the sheet', `${(ex.agree.length * 100).toFixed(1)}% apart`);
+    check('the side and plan views agree about how long the van is',
+      ex.agree.length < 0.02, `${(ex.agree.length * 100).toFixed(1)}%`);
+    /* and the paint lands where the model is, not where the picture is:
+       the wing mirrors are in the sheet and not in the mesh, which is
+       why the windows are the model's proportions and not the keyed
+       bounding box */
+    note('mirror overhang', ['front', 'rear', 'side', 'top']
+      .map(k => `${k} ${(ex.agree[k] * 100).toFixed(0)}%`).join(', '));
+    check('and the mirrors are in the picture rather than the mesh',
+      ex.agree.front > 0.1 && ex.agree.side < 0.2,
+      'the head-on views are much wider than the model and the flank is not');
+    /* every projected UV inside the picture, which is what a rectangle
+       running off the edge of the sheet would break */
+    const uvs = car.carGeometry(v, { angle: 0 }).uv;
+    check('every projected UV is inside the sheet',
       uvs.every(u => u >= -1e-6 && u <= 1 + 1e-6),
-      `${uvs.filter(u => u < 0 || u > 1).length} outside`);
-    /* the flat primitive — glass, tyres, bumpers — all points at one
-       dark texel, because a car park is one material */
-    const flat = v.model.tris.filter(t =>
-      t.ta[0] === v.model.flatUV[0] && t.ta[1] === v.model.flatUV[1]).length;
-    check('the untextured parts share one dark texel', flat > 100, `${flat} triangles`);
+      `${uvs.filter(u => u < 0 || u > 1).length} of ${uvs.length} outside`);
+    /* AND THE FLANK IS NOT A FAN. What broke was one corner shared by
+       every triangle down the side of the van; projected, a flank
+       triangle's UVs follow its own outline, so the SPREAD of them
+       across the sheet is the spread of the geometry. A fan collapses
+       that to nothing. */
+    {
+      const g = car.carGeometry(v, { angle: 0 });
+      let widest = 0;
+      for (let i = 0; i < g.uv.length; i += 6) {
+        const u = [g.uv[i], g.uv[i + 2], g.uv[i + 4]], w = [g.uv[i + 1], g.uv[i + 3], g.uv[i + 5]];
+        const ar = Math.abs((u[1] - u[0]) * (w[2] - w[0]) - (u[2] - u[0]) * (w[1] - w[0])) / 2;
+        widest = Math.max(widest, ar);
+      }
+      check('and no one triangle is stretched across the whole sheet',
+        widest < 0.10, `the widest covers ${(widest * 100).toFixed(1)}% of it`);
+    }
     /* AND THE NORMALS ARE THE TRIANGLES' OWN. Every one unit long, or
        the face light and the winding are both being asked a question
        about a vector that is not a direction. */
