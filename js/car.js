@@ -49,11 +49,11 @@
 
    BOTH SIDES. This renderer culls back faces; Blender and Sketchfab do
    not, so a model authored in them has never had to be consistent about
-   winding, and this one's body shell and chassis are wound opposite
-   ways — no single flip fixes both. Its material says `doubleSided`
-   anyway. Ours are drawn double-sided, which costs the far face of a
-   solid that already covers it and removes an entire class of argument.
-   See carMesh.
+   winding, and this one's shell is wound INWARD — the van before it was
+   two shells wound against each other, which no single flip fixes. Its
+   material says `doubleSided` anyway. Ours are drawn double-sided, which
+   costs the far face of a solid that already covers it and removes an
+   entire class of argument. See carMesh.
 
    LIGHT. This renderer does no shading: a surface is as bright as the
    map says, stepped down by distance, and that is all. A solid lit that
@@ -67,16 +67,19 @@
    number, interpolated. The roof gets a lift on top of that — it is the
    face pointing at the floodlights — and the underside goes dark.
 
-   INK, which is how a car park stays ONE draw call. The van is two
-   materials: the body, which is unwrapped onto the sheet in the file,
-   and `van_black` — glass, tyres, bumpers, chassis, 490 of the 624
-   triangles — which has no texture at all, just a flat baseColorFactor.
-   A second material would be a second draw call per slab, so instead
-   every vertex carries the colour ITS OWN material declared and a flag
-   saying whether to use it, and js/material.js mixes between the sheet
-   and that colour in the fragment shader. glTF's baseColorFactor is
-   linear and an sRGB texture is decoded to linear on sample, so the two
-   arrive in the same space and the number goes through untouched.
+   INK, which is how a car park stays ONE draw call whatever a file
+   brings. This van is one material and every triangle of it is on the
+   sheet; the one before it was two, the body unwrapped and `van_black` —
+   glass, tyres, bumpers, chassis, 490 of its 624 triangles — with no
+   texture at all, just a flat baseColorFactor. A second material would
+   be a second draw call per slab, so instead every vertex carries the
+   colour ITS OWN material declared and a flag saying whether to use it,
+   and js/material.js mixes between the sheet and that colour in the
+   fragment shader. glTF's baseColorFactor is linear and an sRGB texture
+   is decoded to linear on sample, so the two arrive in the same space
+   and the number goes through untouched. With nothing in the lot using
+   it the path is held up by a hand-built file in the smoke test, because
+   the next model to arrive may well need it.
 
    THE PIECES. When one of these goes up it comes apart into chunks, and
    a chunk is the model's own SURFACE inside a small box of its own model
@@ -86,7 +89,8 @@
    got small pieces for free; clipping is what that costs once the
    geometry is somebody else's, and the first attempt at avoiding it —
    whole triangles by centroid — sheds roof panels two thirds of the van
-   long, because a whole van's body shell is 134 triangles.
+   long, because the van it was written against had a body shell of 134
+   triangles.
 
    A BURNT ONE takes the same two knobs every burnt thing in the game
    takes: its light comes down and its `charred` goes up, which is the
@@ -126,19 +130,35 @@ export const carHeight = v => v.length * v.box.height;
 /**
  * The sheet out of the model, sampled the way the model asks to be
  * sampled — its own sampler, straight out of the file. Which for this
- * van is NEAREST both ways and therefore no mipmaps, and that is also
- * what the rest of the game does: Doom point-sampled every texture at
- * every distance, and the shimmer that gives a distant surface is not an
- * artefact here, it is the look. A file that asked for something else
- * would get it.
+ * van is NEAREST magnified and nearest-mipmap-nearest minified, so it is
+ * point-sampled at every distance and drops a level when it gets small,
+ * and that is close enough to what the rest of the game does: Doom
+ * point-sampled everything, and the shimmer that gives a distant surface
+ * is not an artefact here, it is the look. A file that asked for
+ * something else would get it. Where the file says nothing the glTF
+ * spec's own default is used — REPEAT, not this renderer's habit — with
+ * the one exception of the filters, which the spec leaves to the client
+ * and this client answers with Doom's.
+ *
+ * AND THE IMAGE GOES UP THE WAY IT IS STORED. glTF puts v's origin at
+ * the TOP-LEFT of the image and GL puts t's at the bottom, so somebody
+ * has to turn it over: either the pixels on the way in or the v on the
+ * way past. This is the same answer js/glb.js gives for the gun —
+ * `flipY = false`, and the model's own v used untouched — and it is the
+ * answer that works, because `flipY` is quietly IGNORED for an
+ * ImageBitmap. Asking for the flip and then subtracting v to cancel it
+ * looks symmetrical, costs nothing when both happen, and paints the
+ * whole van with the wrong half of its sheet when only one does. See the
+ * note on the v flip in modelVehicle.
  */
 export function carTexture(img, sampler = {}) {
   const t = new THREE.Texture(img);
   t.magFilter = GL_FILTER[sampler.magFilter] ?? THREE.NearestFilter;
   t.minFilter = GL_FILTER[sampler.minFilter] ?? THREE.NearestFilter;
-  t.wrapS = GL_WRAP[sampler.wrapS] ?? THREE.ClampToEdgeWrapping;
-  t.wrapT = GL_WRAP[sampler.wrapT] ?? THREE.ClampToEdgeWrapping;
+  t.wrapS = GL_WRAP[sampler.wrapS] ?? THREE.RepeatWrapping;      // glTF's own default
+  t.wrapT = GL_WRAP[sampler.wrapT] ?? THREE.RepeatWrapping;
   t.generateMipmaps = t.minFilter !== THREE.NearestFilter && t.minFilter !== THREE.LinearFilter;
+  t.flipY = false;                      // glTF's uv origin is the top-left
   t.colorSpace = THREE.SRGBColorSpace;
   t.needsUpdate = true;
   return t;
@@ -307,18 +327,18 @@ export function chunkGeometry(v, cut, opts = {}) {
 /* ---------------------------------------------------------------------
    THE MODEL, AS IT ARRIVES
 
-   A GLB is a scene graph, not a bag of triangles: this one hangs its two
-   meshes off four nested nodes, two of which carry a quarter turn about
-   X and undo each other. Ignoring that worked for a file whose net
+   A GLB is a scene graph, not a bag of triangles: this one hangs its one
+   mesh off five nested nodes, two of which carry a quarter turn about X
+   and undo each other. Ignoring that worked for a file whose net
    transform happened to be identity and would have parked a car park of
    vans on their sides the first time it was not, so the nodes are walked
    and their matrices multiplied through, the eight lines that costs.
 
    Nothing else is interpreted. Positions, UVs and indices come off the
    accessors as they are; the texture is decoded from the buffer by the
-   browser; the material's flat colour rides along as `ink`. glTF's v
-   runs DOWN from the top of the image and a three.js texture is uploaded
-   flipped, so v comes through as 1 - v and the two cancel.
+   browser; the material's flat colour, if it declares one, rides along
+   as `ink`. glTF's v runs DOWN from the top of the image and the sheet
+   is uploaded the way it is stored, so v comes through as it is.
    --------------------------------------------------------------------- */
 
 /* 4x4 in glTF's column-major order, and only what a node tree wants. */
@@ -453,7 +473,15 @@ export function modelVehicle(json, bin, opts = {}) {
   /* ---- and every triangle in it ------------------------------------ */
   const tris = [];
   for (const q of prims) {
-    const uvAt = i => (q.uv ? [q.uv[i * 2], 1 - q.uv[i * 2 + 1]] : [0, 0]);
+    /* THE MODEL'S OWN v, UNTOUCHED — see carTexture. The sheet is
+       uploaded the way it is stored and glTF's v already runs down from
+       the top of it, so there is nothing to cancel. This used to be
+       `1 - v` against a `flipY` that never happened, and the only reason
+       that stood was that the van it was written for had 134 textured
+       triangles on a sheet of white bodywork: the flanks were being
+       painted with the front view and it read as a slightly odd van. A
+       model unwrapped all over shows it at once. */
+    const uvAt = i => (q.uv ? [q.uv[i * 2], q.uv[i * 2 + 1]] : [0, 0]);
     for (let t = 0; t + 2 < q.idx.length; t += 3) {
       const ia = q.idx[t], ib = q.idx[t + 1], ic = q.idx[t + 2];
       const a = at(q, ia), b = at(q, ib), c = at(q, ic);
@@ -489,8 +517,8 @@ export function modelVehicle(json, bin, opts = {}) {
      normal: Doom's fake contrast wants to know whether a face is a roof,
      an underside or a flank, and a roof triangle whose normal points
      down is given the tarmac's light, which is a third of the
-     brightness. This model's two shells are wound opposite ways, so
-     about three in five need turning.
+     brightness. This model's shell is wound inward, so about three in
+     five need turning.
 
      It is a HEURISTIC — away from the model's own centre — and that is
      exactly why it is used for the light alone. A triangle it guesses
@@ -537,10 +565,10 @@ export function carMesh(texture, a) {
   /* BOTH SIDES, and this is the whole reason the van works. A model
      authored in Blender or shown on Sketchfab has never had to be
      consistent about winding, because neither of them culls: this one's
-     body shell is wound inward and the chassis under it outward, no
-     single flip fixes both, and its own material says `doubleSided`.
-     Drawing both sides costs the far face of a solid that already covers
-     it, and removes the question. */
+     shell is wound inward, the van before it was two shells wound
+     against each other with no single flip that fixed both, and both of
+     their materials say `doubleSided`. Drawing both sides costs the far
+     face of a solid that already covers it, and removes the question. */
   const mesh = new THREE.Mesh(carGeom(a), createWallMaterial(texture, {
     side: THREE.DoubleSide,
     ink: true,                     // the flat material rides in the vertices

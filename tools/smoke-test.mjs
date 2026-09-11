@@ -1998,7 +1998,7 @@ section('the way out');
   }
 }
 
-/* ---------- the gun ---------- */
+/* ---------- the van ---------- */
 /* ONE VEHICLE, AND IT IS A FILE — nothing but the file. Two whole
    systems have been deleted from under this section. First the drawn
    fleet: seven bodies measured off four-view sheets, built as the visual
@@ -2013,10 +2013,21 @@ section('the way out');
    assets/models/van.glb is now the author's own export, byte for byte,
    and js/car.js reads it as it stands. So what is checked here is the
    CONVERSION and nothing else — the nodes walked, the axes swapped, the
-   scale set, the ground line found, the model's own UVs taken as they
-   are and the untextured material carried in the vertices. A missed node
-   matrix or an unflipped v still puts a car park full of vans on their
-   sides. */
+   scale set, the ground line found, and the model's own UVs taken as
+   they are. A missed node matrix still puts a car park full of vans on
+   their sides.
+
+   AND THE v, which is the one this section watched go past. It used to
+   read "an unflipped v still puts a car park full of vans on their
+   sides", which is true and was not what was happening: the v WAS being
+   flipped, against a `flipY` on the texture that never happened, because
+   `flipY` is ignored for an ImageBitmap. Two flips cancel and one does
+   not, so every panel was wearing the wrong half of the sheet — flanks
+   painted with the front view — and the van it was written for survived
+   that because only 134 of its 624 triangles were textured at all, onto
+   a sheet of white bodywork. The model that replaced it is unwrapped all
+   over and showed it in the first screenshot. Both halves of the
+   convention are pinned below, because either one alone is a trap. */
 section('the van');
 {
   const car = await import('../js/car.js');
@@ -2085,30 +2096,29 @@ section('the van');
     /* --- AND IT IS DRAWN THE WAY IT WAS AUTHORED ----------------------
        THIS IS THE ONE THAT MATTERED, and it took three goes to get
        right. The file declares which way each face points twice — the
-       winding of its corners and the NORMAL on them — and its two
-       declarations agree with each other and disagree with the SOLID:
-       the body shell's 134 triangles come to minus a third of the
-       bounding box, and the chassis and glass under it to plus a
-       twentieth. One shell wound in, one wound out.
-
-       The first attempt reversed the lot when the total came out
-       negative, which turned the body the right way and the chassis the
-       wrong way: the car park went from vans seen from the inside to
-       vans with no bodywork, a black sill and four wheels.
+       winding of its corners and the NORMAL on them — and both of its
+       declarations disagree with the SOLID: the shell comes to about
+       minus a quarter of its own bounding box, which is a surface wound
+       INWARD. The van this replaced was two shells wound against each
+       other, and an attempt to fix that by reversing everything when the
+       total came out negative turned the body the right way and the
+       chassis the wrong way: the car park went from vans seen from the
+       inside to vans with no bodywork, a black sill and four wheels.
 
        The model is not wrong. It renders correctly in Blender and on
        Sketchfab because both of them draw BOTH SIDES — its own material
        says `doubleSided` — and that was the whole of the oversight: this
        renderer culls back faces and the model was authored where that
        never mattered. So: the winding is left exactly as the file has
-       it, and the material draws both sides. The normals are turned
-       outward for the FACE LIGHT and nothing else, so a wrong guess
-       costs one step of shading and can no longer cull anything or
-       choose anybody's paint.
+       it, and the material draws both sides, which is the answer whether
+       a file brings one shell or five. The normals are turned outward
+       for the FACE LIGHT and nothing else, so a wrong guess costs one
+       step of shading and can no longer cull anything or choose
+       anybody's paint.
        ------------------------------------------------------------------ */
     check('the file says it is drawn both sides, and it is',
       json.materials.every(m => m.doubleSided));
-    note('the two shells', json.meshes.map(me => {
+    note('the shells it brought', json.meshes.map(me => {
       const pr = me.primitives[0];
       const P = glb.readAccessor(json, bin, pr.attributes.POSITION).array;
       const I = glb.readAccessor(json, bin, pr.indices).array;
@@ -2135,7 +2145,7 @@ section('the van');
       const mesh = car.carMesh({}, car.carGeometry(v, { length: v.length }));
       check('a vehicle is drawn both sides, as its author saw it',
         mesh.material.side === THREEc.DoubleSide);
-      check('and its flat material rides in the vertices, not in a second draw call',
+      check('and a flat material would ride in the vertices, not in a second draw call',
         'INK' in mesh.material.defines && !!mesh.geometry.getAttribute('ink') &&
         mesh.geometry.getAttribute('ink').itemSize === 4);
       mesh.geometry.dispose(); mesh.material.dispose();
@@ -2167,13 +2177,16 @@ section('the van');
        that is why it renders correctly in Blender and on Sketchfab. It
        was once condemned here on a measurement that said the flanks were
        a fan of long thin triangles sharing one corner — and that
-       measurement pooled BOTH primitives. The second one is 490
-       triangles of glass, tyres, bumpers and chassis with no texture at
-       all, just a flat baseColorFactor, so its UVs are unused junk, and
-       the junk was the fan.
+       measurement pooled two primitives, one of which had no texture on
+       it at all, so its UVs were unused junk and the junk was the fan.
 
-       So the paint is per-vertex: the textured primitive's own UVs, and
-       for the other one its own material's colour, carried as `ink`. */
+       The van standing in the lot now is ONE material and one unwrap:
+       every triangle of it is on the sheet, laid out as a four-view
+       projection — the flanks onto the side elevation, the roof onto the
+       plan, the nose and the tail onto theirs. Which is the layout the
+       deleted fleet used to PAINT by projecting, drawn by hand into the
+       file instead, and it is the reason this model shows a mistake in
+       the v that the last one could hide. */
     const painted = v.model.tris.filter(t => !t.ink);
     const inked = v.model.tris.filter(t => t.ink);
     note('the paint', `${painted.length} triangles off the sheet, ${inked.length} flat`);
@@ -2182,64 +2195,167 @@ section('the van');
         t.ta.length === 2 && t.ta.every(q => q >= -1e-6 && q <= 1 + 1e-6)));
     check('and nothing else — no measured views, no silhouette',
       !('views' in v) && !('shape' in v), Object.keys(v).join(', '));
-    /* THE UNWRAP IS ORDINARY, which is the claim that was got wrong.
-       Measured over the TEXTURED primitive only: a sane four-view unwrap
-       covers a good fraction of the sheet with no single triangle
-       stretched across it, and a fan collapses the spread to nothing. */
+
+    /* --- WHICH WAY UP THE SHEET GOES -------------------------------
+       THE ONE THAT GOT PAST. glTF puts v's origin at the top-left of
+       the image and GL puts t's at the bottom, so exactly one turn has
+       to happen somewhere. There were two: `1 - v` on the way out of the
+       model AND `flipY` on the texture — and `flipY` is IGNORED for an
+       ImageBitmap, which is what the sheet is decoded into. So one turn
+       happened, the wrong one, and every panel wore the wrong half of
+       its sheet: the flanks of every van in the car park were painted
+       with the FRONT elevation, grille and headlights down the side.
+
+       It stood for a whole model because the van before this one had
+       134 textured triangles on a sheet of white bodywork and the other
+       490 were flat black — a white van painted with the wrong view of a
+       white van is still a white van. The replacement is unwrapped all
+       over and it was visible in the first screenshot.
+
+       Both halves are pinned here, because each alone is a trap: the
+       sheet goes up the way it is stored, and the model's own v is used
+       untouched. Put either one back and these disagree. */
     {
-      const stats = json.meshes.map(me => {
-        const pr = me.primitives[0];
-        const uv2 = glb.readAccessor(json, bin, pr.attributes.TEXCOORD_0).array;
+      const THREEc2 = await import('three');
+      const t = car.carTexture({}, {});
+      check('the sheet goes up the way it is stored, not turned over on the way in',
+        t.flipY === false, `flipY ${t.flipY}`);
+      const pr = json.meshes[0].primitives[0];
+      const uv0 = glb.readAccessor(json, bin, pr.attributes.TEXCOORD_0).array;
+      const ix0 = glb.readAccessor(json, bin, pr.indices).array;
+      let off = 0;
+      for (let q = 0; q + 2 < ix0.length; q += 3) {
+        const tri = v.model.tris[q / 3];
+        for (const [k, key] of [[0, 'ta'], [1, 'tb'], [2, 'tc']]) {
+          const i = ix0[q + k];
+          if (Math.abs(tri[key][0] - uv0[i * 2]) > 1e-6 ||
+              Math.abs(tri[key][1] - uv0[i * 2 + 1]) > 1e-6) off++;
+        }
+      }
+      check('and the model\'s own v reaches the triangles untouched',
+        off === 0, `${off} of ${v.model.tris.length * 3} corners moved`);
+      /* AND THE SAMPLER IS THE FILE'S, down to what it does not say:
+         where a glTF leaves wrapping out the spec's answer is REPEAT,
+         which is not this renderer's habit and is not ours to pick. */
+      const s2 = car.carTexture({}, json.samplers[0]);
+      check('the sampler is the file\'s own, and its silences are glTF\'s',
+        s2.magFilter === THREEc2.NearestFilter &&
+        s2.minFilter === THREEc2.NearestMipmapNearestFilter &&
+        s2.wrapS === THREEc2.RepeatWrapping && s2.wrapT === THREEc2.RepeatWrapping,
+        'nearest, nearest-mipmap-nearest, repeat');
+    }
+
+    /* THE UNWRAP IS ORDINARY, which is the claim that was got wrong.
+       A sane four-view unwrap covers a good fraction of the sheet with
+       no single triangle stretched across it, and a fan collapses the
+       spread to nothing. Measured PER PRIMITIVE, because pooling them is
+       what hid it the first time. */
+    {
+      const stats = [];
+      for (const me of json.meshes) for (const pr of me.primitives) {
+        const uv2 = pr.attributes.TEXCOORD_0 !== undefined
+          ? glb.readAccessor(json, bin, pr.attributes.TEXCOORD_0).array : null;
         const ix = glb.readAccessor(json, bin, pr.indices).array;
         let sum = 0, big = 0;
-        for (let t = 0; t < ix.length; t += 3) {
+        for (let t = 0; uv2 && t < ix.length; t += 3) {
           const P = [ix[t], ix[t + 1], ix[t + 2]].map(i => [uv2[i * 2], uv2[i * 2 + 1]]);
           const ar = Math.abs((P[1][0] - P[0][0]) * (P[2][1] - P[0][1]) -
                               (P[2][0] - P[0][0]) * (P[1][1] - P[0][1])) / 2;
           sum += ar; big = Math.max(big, ar);
         }
-        return { textured: !!json.materials[pr.material].pbrMetallicRoughness?.baseColorTexture,
-                 tris: ix.length / 3, sum, big };
-      });
-      const body = stats.find(st => st.textured), flat = stats.find(st => !st.textured);
-      note('the unwrap', `body ${body.tris} tris covering ${(body.sum * 100).toFixed(0)}% of the sheet, ` +
-        `biggest ${(body.big * 100).toFixed(1)}%; the flat material ${flat.tris} tris ` +
-        `"covering" ${(flat.sum * 100).toFixed(0)}%`);
-      check('the textured primitive has an ordinary unwrap',
-        body.sum > 0.2 && body.sum < 0.8 && body.big < 0.05,
-        `${(body.sum * 100).toFixed(0)}% of the sheet, biggest ${(body.big * 100).toFixed(1)}%`);
-      check('and the untextured one is the junk that was mistaken for it',
-        flat.sum > 1.5, `${(flat.sum * 100).toFixed(0)}%, which cannot be a layout`);
+        stats.push({ name: json.materials[pr.material]?.name,
+          textured: !!json.materials[pr.material]?.pbrMetallicRoughness?.baseColorTexture,
+          tris: ix.length / 3, sum, big });
+      }
+      note('the unwrap', stats.map(st => `${st.name} ${st.tris} tris ` +
+        `${st.textured ? 'covering' : '"covering"'} ${(st.sum * 100).toFixed(0)}% of the sheet, ` +
+        `biggest ${(st.big * 100).toFixed(1)}%`).join('; '));
+      const body = stats.filter(st => st.textured);
+      check('every textured primitive has an ordinary unwrap',
+        body.length >= 1 && body.every(st => st.sum > 0.2 && st.sum < 0.8 && st.big < 0.05),
+        body.map(st => `${(st.sum * 100).toFixed(0)}% of the sheet, biggest ${(st.big * 100).toFixed(1)}%`).join('; '));
+      check('and the whole model is on the sheet, so no panel is guessed at',
+        stats.every(st => st.textured), `${stats.filter(st => !st.textured).length} untextured primitives`);
     }
-    /* AND THE FLAT MATERIAL IS THE COLOUR THE FILE SAYS IT IS. There is
-       no black texel painted into a corner of the sheet any more and no
-       second draw call either: every one of those 490 triangles carries
-       its material's own baseColorFactor in its vertices, and
-       js/material.js mixes to it. baseColorFactor is linear and an sRGB
-       texture decodes to linear on sample, so the number goes through
-       untouched — and a tyre that came out WHITE would be a UV pointed
-       at the wrong thing, which is exactly what this replaces. */
+
+    /* AND A FLAT MATERIAL STILL RIDES IN THE VERTICES. This model has
+       none — there is nothing in it that is not unwrapped — but the
+       reader honours one, because glTF allows one and a second material
+       is a second draw call for every slab of parked cars. So it is held
+       against a hand-built file rather than deleted for want of a user:
+       two primitives, one on the sheet and one with nothing but a
+       baseColorFactor, and the flat one has to come out carrying its own
+       colour and a flag saying to use it.
+
+       baseColorFactor is linear and an sRGB texture decodes to linear on
+       sample, so the number goes through untouched — and a tyre that
+       came out WHITE would be a UV pointed at the wrong thing, which is
+       exactly what the `ink` attribute replaced. */
     {
-      const flatMat = json.materials.find(m => !m.pbrMetallicRoughness?.baseColorTexture);
-      const want = flatMat.pbrMetallicRoughness.baseColorFactor;
-      note('the flat material', `${flatMat.name}, baseColorFactor ${want[0]} linear ` +
-        `(about ${Math.round(255 * (1.055 * Math.pow(want[0], 1 / 2.4) - 0.055))} of 255 on a screen)`);
-      check('every untextured triangle carries its own material\'s colour',
-        inked.length > 400 && inked.every(t => t.ink.length === 3 &&
-          t.ink.every((q, i) => Math.abs(q - want[i]) < 1e-9)),
-        `${inked.length} triangles`);
-      check('and it is dark, so the glass and the tyres are not white',
-        want.slice(0, 3).every(q => q < 0.05), `${want.slice(0, 3).join(', ')}`);
-      check('and the textured triangles are left to the sheet',
-        painted.every(t => t.ink === null));
+      const INK = [0.0059367, 0.0059367, 0.0059367, 1];
+      /* a flat quad on the sheet and a flat quad under it, longest along
+         +Z so the reader will take it for a vehicle at all */
+      const pos = new Float32Array([
+        -1, 1, -3, 1, 1, -3, 1, 1, 3, -1, 1, 3,        // the painted one
+        -1, 0, -3, 1, 0, -3, 1, 0, 3, -1, 0, 3,        // the flat one
+      ]);
+      const uvs = new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]);
+      const idx = new Uint16Array([0, 1, 2, 0, 2, 3]);
+      const bin2 = new Uint8Array(pos.byteLength + uvs.byteLength + idx.byteLength + 2);
+      bin2.set(new Uint8Array(pos.buffer), 0);
+      bin2.set(new Uint8Array(uvs.buffer), pos.byteLength);
+      bin2.set(new Uint8Array(idx.buffer), pos.byteLength + uvs.byteLength);
+      const B = (o, l) => ({ buffer: 0, byteOffset: o, byteLength: l });
+      const json2 = {
+        scene: 0, scenes: [{ nodes: [0] }], nodes: [{ mesh: 0 }],
+        meshes: [{ primitives: [
+          { attributes: { POSITION: 0, TEXCOORD_0: 2 }, indices: 4, material: 0 },
+          { attributes: { POSITION: 1 }, indices: 4, material: 1 },
+        ] }],
+        materials: [
+          { pbrMetallicRoughness: { baseColorTexture: { index: 0 } } },
+          { pbrMetallicRoughness: { baseColorFactor: INK } },
+        ],
+        bufferViews: [B(0, 48), B(48, 48), B(96, 32), B(128, 12)],
+        accessors: [
+          { bufferView: 0, componentType: 5126, type: 'VEC3', count: 4 },
+          { bufferView: 1, componentType: 5126, type: 'VEC3', count: 4 },
+          { bufferView: 2, componentType: 5126, type: 'VEC2', count: 4 },
+          {}, { bufferView: 3, componentType: 5123, type: 'SCALAR', count: 6 },
+        ],
+      };
+      const two = car.modelVehicle(json2, bin2);
+      const flat = two.model.tris.filter(t => t.ink);
+      const sheet = two.model.tris.filter(t => !t.ink);
+      note('a file with a flat material in it', `${sheet.length} triangles on the sheet, ` +
+        `${flat.length} flat at ${INK[0]} linear ` +
+        `(about ${Math.round(255 * (1.055 * Math.pow(INK[0], 1 / 2.4) - 0.055))} of 255 on a screen)`);
+      check('an untextured primitive comes out carrying its own material\'s colour',
+        flat.length === 2 && flat.every(t => t.ink.length === 3 &&
+          t.ink.every((q, i) => Math.abs(q - INK[i]) < 1e-9)), `${flat.length} triangles`);
+      check('and the textured one is left to the sheet',
+        sheet.length === 2 && sheet.every(t => t.ink === null));
       /* and the flag reaches the geometry: a vec4 a vertex, rgb and a
          one-or-nothing, which is what the shader's mix reads */
+      const g2 = car.carGeometry(two, { angle: 0 });
+      const flags2 = new Set();
+      for (let i = 3; i < g2.ink.length; i += 4) flags2.add(g2.ink[i]);
+      check('and the geometry says which is which, per vertex',
+        g2.ink.length === g2.position.length / 3 * 4 && [...flags2].sort().join() === '0,1',
+        `flags seen: ${[...flags2].join(', ')}`);
+      /* and it survives a clip, so a piece with a tyre in it is black */
+      const bit = car.chunkGeometry(two, { x0: -0.1, x1: 0.1, y0: -0.1, y1: 0.1, z0: -0.01, z1: 0.01 },
+        { angle: 0 });
+      check('and it survives the clip, so a piece with a tyre in it keeps the tyre black',
+        bit.ink.some((q, i) => i % 4 === 3 && q === 1));
+    }
+    /* and the van in the lot uses none of it */
+    {
       const g = car.carGeometry(v, { angle: 0 });
       const flags = new Set();
       for (let i = 3; i < g.ink.length; i += 4) flags.add(g.ink[i]);
-      check('and the geometry says which is which, per vertex',
-        g.ink.length === g.position.length / 3 * 4 && [...flags].sort().join() === '0,1',
-        `flags seen: ${[...flags].join(', ')}`);
+      check('and this van asks for none of it, because all of it is on the sheet',
+        inked.length === 0 && [...flags].join() === '0', `flags seen: ${[...flags].join(', ')}`);
     }
     /* every UV inside the picture */
     {
@@ -2326,34 +2442,60 @@ section('the van');
       note('a piece off the roof', `${n} of the van's own triangles`);
       check('a chunk is the model\'s own triangles', n >= 1 && n < v.model.tris.length);
       check('and it is charred', c.charred.every(t => t === 0.85));
-      /* IT WEARS A PIECE OF THE VAN'S PAINT. Not the same UVs — the clip
-         puts new vertices on the cut planes and interpolates their u and
-         v with their position, which is the point of clipping — so the
-         claim is that the piece's paint is a SMALL PATCH of the sheet
-         and is inside it. A chunk whose UVs spanned the sheet would be a
-         piece with the whole van smeared over it. */
+      /* IT WEARS THE PAINT OF THE TRIANGLES IT WAS CUT FROM. Not the
+         same UVs — the clip puts new vertices on the cut planes and
+         interpolates their u and v along with their position, which is
+         the point of clipping — so the claim is that every corner of the
+         piece's paint falls inside the paint of the model triangles the
+         cut actually caught. Outside that is a piece wearing somebody
+         else's panel.
+
+         AND IT IS NOT THAT THE PATCH IS SMALL, which is what this asked
+         for until the van was replaced by one unwrapped all over. The
+         sheet is a four-view projection: a piece an eighth of a van
+         across straddles half of it the moment it has a roof face and a
+         flank in it, because those two views are drawn in different
+         corners. That is the model being read correctly, not a piece
+         going wrong. What a piece must not do is wear MORE of the sheet
+         than the whole van does. */
       let u0 = 9, u1 = -9, w0 = 9, w1 = -9;
       for (let i = 0; i < c.uv.length; i += 2) {
         u0 = Math.min(u0, c.uv[i]); u1 = Math.max(u1, c.uv[i]);
         w0 = Math.min(w0, c.uv[i + 1]); w1 = Math.max(w1, c.uv[i + 1]);
       }
+      /* the paint on every triangle whose own box reaches into the cut:
+         the clip cannot invent a UV outside this */
+      const caught = [9, 9, -9, -9];
+      for (const t of v.model.tris) {
+        let miss = false;
+        for (let k = 0; k < 3 && !miss; k++) {
+          const lo3 = [cut.x0, cut.y0, cut.z0][k], hi3 = [cut.x1, cut.y1, cut.z1][k];
+          if (Math.min(t.a[k], t.b[k], t.c[k]) > hi3 ||
+              Math.max(t.a[k], t.b[k], t.c[k]) < lo3) miss = true;
+        }
+        if (miss) continue;
+        for (const q of [t.ta, t.tb, t.tc]) {
+          caught[0] = Math.min(caught[0], q[0]); caught[2] = Math.max(caught[2], q[0]);
+          caught[1] = Math.min(caught[1], q[1]); caught[3] = Math.max(caught[3], q[1]);
+        }
+      }
       note('and the paint on it', `${((u1 - u0) * 100).toFixed(0)}% by ` +
-        `${((w1 - w0) * 100).toFixed(0)}% of the sheet`);
-      check('and it wears a small patch of the van\'s own paint',
-        u0 >= -1e-6 && u1 <= 1 + 1e-6 && (u1 - u0) < 0.3 && (w1 - w0) < 0.3,
+        `${((w1 - w0) * 100).toFixed(0)}% of the sheet, out of the ` +
+        `${((caught[2] - caught[0]) * 100).toFixed(0)}% by ` +
+        `${((caught[3] - caught[1]) * 100).toFixed(0)}% the cut reached`);
+      check('and its paint is the paint of the triangles it was cut from',
+        u0 >= caught[0] - 1e-6 && u1 <= caught[2] + 1e-6 &&
+        w0 >= caught[1] - 1e-6 && w1 <= caught[3] + 1e-6,
         `u ${u0.toFixed(2)}..${u1.toFixed(2)}, v ${w0.toFixed(2)}..${w1.toFixed(2)}`);
-      /* and the flat material survives the clip too: a piece with a tyre
-         in it is a piece with a black tyre in it */
-      const tyre = (() => {
-        let low = v.model.tris.find(t => t.ink);
-        for (const t of v.model.tris)
-          if (t.ink && (t.a[2] + t.b[2] + t.c[2]) / 3 < (low.a[2] + low.b[2] + low.c[2]) / 3) low = t;
-        const m2 = [0, 1, 2].map(k => (low.a[k] + low.b[k] + low.c[k]) / 3);
-        return car.chunkGeometry(v, { x0: m2[0] - 0.05, x1: m2[0] + 0.05, y0: m2[1] - 0.05,
-          y1: m2[1] + 0.05, z0: m2[2] - 0.03, z1: m2[2] + 0.03 }, { angle: 0 });
-      })();
-      check('and a piece with a tyre in it keeps the tyre black',
-        tyre.ink.some((q, i) => i % 4 === 3 && q === 1), 'the flat material survives the clip');
+      check('and it wears less of the sheet than the whole van does',
+        (() => {
+          let a0 = 9, a1 = -9, b0 = 9, b1 = -9;
+          for (const t of v.model.tris) for (const q of [t.ta, t.tb, t.tc]) {
+            a0 = Math.min(a0, q[0]); a1 = Math.max(a1, q[0]);
+            b0 = Math.min(b0, q[1]); b1 = Math.max(b1, q[1]);
+          }
+          return (u1 - u0) * (w1 - w0) < (a1 - a0) * (b1 - b0) * 0.75;
+        })(), 'or the piece has the whole van smeared over it');
       /* and it is no bigger than the cut, which is what clipping buys */
       check('and it is no bigger than the box it was cut with',
         (() => {

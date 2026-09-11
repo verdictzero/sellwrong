@@ -71,7 +71,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         564 checks, no install and no browser
+  the smoke test         573 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -1597,7 +1597,7 @@ into a flickering still. It is resampled to twenty-six because a frame is a
 letter and the letters stop at Z.
 
 
-THE CAR PARK IS ONE VAN, ABOUT TWENTY TIMES, at the user's request, and
+THE CAR PARK IS ONE VAN, THREE DOZEN TIMES, at the user's request, and
 it arrived MODELLED — a GLB, dropped in as it is. There is no other kind
 of vehicle in the project now: the system that built seven of them out of
 four drawings each is deleted, and there is an obituary for it further
@@ -1636,24 +1636,49 @@ for three rounds this game painted it by projection instead — on the
 strength of a measurement that said the flanks were a fan of long thin
 triangles all sharing one corner.
 
-That measurement pooled BOTH primitives. The flat-black one has no
-texture, so its UVs are unused junk: 490 triangles "covering" 321 per
-cent of the sheet, which cannot be a layout at all, and the junk was the
-fan. The body's own unwrap is entirely ordinary — 134 triangles over 39
-per cent of the sheet, biggest 3.7 per cent, laid out over the four
-views. Drawing the UV layout over the texture PER PRIMITIVE is what
-finally showed it; drawing it over both at once is what hid it.
+That measurement pooled BOTH primitives of the van of the day. The
+flat-black one had no texture, so its UVs were unused junk — 490
+triangles "covering" 321 per cent of the sheet, which cannot be a layout
+at all — and the junk was the fan. Drawing the UV layout over the texture
+PER PRIMITIVE is what finally showed it; drawing it over both at once is
+what hid it.
 
-glTF's v runs down from the top of the image and a three.js texture is
-uploaded flipped, so v comes through as one minus v.
+THE VAN IN THE LOT NOW IS ONE MATERIAL AND ONE UNWRAP, and every triangle
+of it is on the sheet: 1,050 of them over 38 per cent of it, the biggest
+covering one per cent. The layout is a four-view PROJECTION drawn into
+the file — the flanks onto the side elevation, the roof onto the plan,
+the nose and the tail onto theirs — which is the same mapping the deleted
+fleet used to compute, made by hand by somebody who could see it. It is
+also what made the next bug visible in one screenshot.
+
+WHICH WAY UP THE SHEET GOES, and this one stood for a whole model.
+glTF puts v's origin at the TOP-LEFT of the image and GL puts t's at the
+bottom, so exactly one turn has to happen somewhere. There were two:
+`1 - v` on the way out of the model AND `flipY` on the texture, which
+looks symmetrical, reads as careful, and is wrong — `flipY` is quietly
+IGNORED for an ImageBitmap, which is what a texture packed inside a GLB
+is decoded into. So one turn happened instead of two, and every panel of
+every van in the car park wore the wrong half of its own sheet: flanks
+painted with the front elevation, grille and headlights down the side.
+
+Nothing caught it because nothing could. The van it was written for had
+134 textured triangles on a sheet of white bodywork and 490 flat black
+ones over them, and a white van painted with the wrong view of a white
+van is still a white van. Replacing it with a model unwrapped all over
+put a radiator grille down the side of thirty-six vehicles at once.
+
+The sheet goes up the way it is stored now — `flipY = false` and the
+model's own v untouched, which is what js/glb.js had always done for the
+gun — and the smoke test pins BOTH halves, because either one alone is
+the same trap set again.
 
 AND IT IS DRAWN BOTH SIDES, which was the other half of the same lesson.
 The file declares which way a face points twice — the winding of its
-corners and the NORMAL on them — and its two declarations agree with each
-other and disagree with the SOLID: the body shell comes to minus a third
-of its bounding box, wound inward, and the 490 triangles of chassis,
-wheels and glass under it to plus a tenth, wound the other way. There is
-no single flip that fixes both, and the first attempt was one: reverse
+corners and the NORMAL on them — and both declarations disagree with the
+SOLID: this shell comes to minus a quarter of its own bounding box, which
+is a surface wound inward. The van before it was two shells wound against
+each other, the body at minus a third of its box and the chassis at plus
+a tenth, and the first attempt at a fix was a single flip: reverse
 everything when the total volume comes out negative. That turned the body
 the right way out and the chassis inside out with it, and the car park
 went from vans seen from the inside to vans with no bodywork.
@@ -1665,8 +1690,8 @@ mattered. Vehicles are double-sided now, the winding is left exactly as
 the file has it, and a vehicle is a thin shell you are never inside, so
 the cost is drawing the far face of a solid that already covers it.
 
-The NORMALS are still turned outward from the model's own centre, 376 of
-the 624, because the face light reads them: Doom's fake contrast wants to
+The NORMALS are still turned outward from the model's own centre, 582 of
+the 1,050, because the face light reads them: Doom's fake contrast wants to
 know whether a face is a roof, an underside or a flank, and a roof
 triangle whose normal points down is given the tarmac's light, which is a
 third of the brightness. That IS a heuristic, and it is used for the
@@ -1675,21 +1700,27 @@ shading out on one face. It can no longer cull anything or choose
 anybody's paint, which is exactly what made the same guess fatal when the
 projection depended on it.
 
-THE UNTEXTURED MATERIAL RIDES IN THE VERTICES, which is how the car park
-stays one draw call. The model is two materials: the body, unwrapped onto
-the sheet, and van_black — glass, tyres, bumpers, chassis, 490 of the 624
-triangles — with no texture at all, just a flat baseColorFactor of
-0.0059367 linear, which is about 18 of 255 on a screen. A second material
-would be a second draw call for every slab of cars, so instead every
-vertex carries the colour ITS OWN material declared plus a one-or-nothing
-saying whether to use it, in an `ink` attribute, and js/material.js mixes
-between the sheet and that colour in the fragment shader.
+AN UNTEXTURED MATERIAL RIDES IN THE VERTICES, which is how the car park
+stays one draw call. The van in the lot has no such material — all 1,050
+of its triangles are on the sheet — but the one before it was two: the
+body, unwrapped, and van_black, which was glass, tyres, bumpers and
+chassis, 490 of its 624 triangles, with no texture at all and just a flat
+baseColorFactor of 0.0059367 linear, about 18 of 255 on a screen.
 
-That number goes through UNTOUCHED. glTF's baseColorFactor is linear, and
-an sRGB texture is decoded to linear when the GPU samples it, so both
-sides of the mix are already in the same space. The tool used to paint a
-lifted version of this colour into a corner of the sheet and point 490
-triangles at it; now the file's own number is the one that is drawn.
+glTF allows that and so does the reader, because a second material is a
+second draw call for every slab of parked cars. Every vertex carries the
+colour ITS OWN material declared plus a one-or-nothing saying whether to
+use it, in an `ink` attribute, and js/material.js mixes between the sheet
+and that colour in the fragment shader. The number goes through
+UNTOUCHED: baseColorFactor is linear and an sRGB texture is decoded to
+linear when the GPU samples it, so both sides of the mix are already in
+the same space. The deleted tool used to paint a lifted version of that
+colour into a corner of the sheet and point 490 triangles at it.
+
+With nobody using it the path would rot, so it is held against a
+hand-built two-primitive file in the smoke test rather than deleted for
+want of a user: drop in a model that declares a flat colour and it still
+comes out wearing it, through the clip and into the debris.
 
 AND WHICH END IS THE NOSE IS IN THE FILE AFTER ALL — in the format, not
 in the asset. glTF says +Y is up and that the front of an asset faces +Z,
@@ -1704,10 +1735,12 @@ to find that out is the moment it is read.
 
 AND THE TEXTURE IS THE FILE'S OWN, at its own size, sampled with its own
 sampler. It is a 512x256 four-view turnaround — front, rear, side and
-plan on a flat grey field — and it is used as it is: NEAREST both ways
-and no mipmaps, which is what the file asks for and also what every other
-texture in this game does. The model is 194K, of which 158K is that PNG,
-and it is downloaded once.
+plan on a flat grey field — and it is used as it is: point-sampled when
+magnified and nearest-mipmap-nearest when it shrinks, which is what this
+file asks for and close enough to what every other texture in this game
+does. Where the file says nothing the glTF spec's own default is taken
+and not this renderer's habit, which is how wrapping ends up REPEAT. The
+model is 198K, of which 158K is that PNG, and it is downloaded once.
 
 
 
@@ -1744,7 +1777,7 @@ condemned the model's own UVs had pooled them with a second primitive's
 junk), the vans inside out (the projection reads a normal to choose a
 picture, so an inverted normal paints a panel with the opposite panel),
 and then the vans with no bodywork (the fix for that was a global winding
-reversal, and the mesh is two shells wound opposite ways).
+reversal, and that mesh was two shells wound opposite ways).
 
 So js/car-data.js, tools/prep-car.mjs and art/vehicles-atlas.png are
 deleted, along with the hull builder, the projection and about a hundred
@@ -1848,7 +1881,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-564 checks. Every one of them earns its place by having caught something
+573 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -2038,6 +2071,19 @@ that had already reached a screenshot:
     the fan of slivers the flanks were condemned for. The body's own
     unwrap is 134 triangles over 39 per cent of it. The test measures
     the textured primitive alone, and asserts the other one IS the junk
+  and then THE SHEET UPSIDE DOWN on every van in the lot, for a whole
+    model, because two flips cancelled and only one of them happened.
+    glTF's v starts at the top of the image and GL's t at the bottom,
+    so one turn is needed; the code asked for two — `1 - v` on the
+    model and `flipY` on the texture — and `flipY` is ignored for an
+    ImageBitmap, which is what a texture inside a GLB decodes to. The
+    old van hid it, having only 134 textured triangles on a sheet of
+    white bodywork; its replacement is unwrapped all over and put a
+    radiator grille down the flank of thirty-six vehicles. Nothing in
+    564 checks could see it, because every one of them measured the
+    UVs and none of them measured which way the picture went on. The
+    test pins both halves of the convention now: `flipY` false, and
+    the file's own v arriving at the triangles unchanged
   ONE SHOP DOORWAY OUT OF TWENTY that the fire never got through, and
     five rooms behind it that never burned on a map where every other
     room did. A doorway is 120 by 16 — two or three cells of a
