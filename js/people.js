@@ -107,8 +107,6 @@ export const GIB = {
   lifeMin: 55, lifeMax: 110,
   sizeMin: 9, sizeMax: 15,
   trailEvery: 2,      // tics between flames off a piece in the air
-  heat: 22,           // what a piece puts into the floor where it lands
-  heatRadius: 14,
   splatChance: 90,    // out of 255, per piece that lands
   maxSplats: 140,     // sprites left lying about before the oldest goes
 };
@@ -141,15 +139,16 @@ export class Giblets {
       blend: 'add', fullbright: true, name: 'gibtrail', renderOrder: 11, nearShrink: 30,
     });
     /* AND A SECOND POOL FOR THE COLD ONES, which is not tidiness — it
-       is the bug that shipped for about ten minutes. A burning piece of
-       somebody trails fire behind it and lights the floor where it
-       lands, because that is how a crowd spreads a fire and it is one of
-       the best things in the game. Shattering a frozen shopper down the
-       middle of the beans aisle therefore set the beans aisle on fire,
-       which is the exact opposite of what the extinguisher is for. The
-       pieces are the same art and the same ballistics; what they do when
-       they arrive is the whole difference, so they are a different pool
-       with a different tic. */
+       is the bug that shipped for about ten minutes. A hot piece of
+       somebody trails fire behind it in the air, and back when landing
+       also lit the floor, shattering a frozen shopper down the middle of
+       the beans aisle set the beans aisle on fire — the exact opposite
+       of what the extinguisher is for. Neither pool lights anything now
+       (see _land), but they are still not the same object: one comes off
+       a body that went up and burns all the way down, the other is ice
+       and arrives with a wet noise and a breath of vapour. Same art,
+       same ballistics; what they ARE is the difference, so they are a
+       different pool with a different tic. */
     this.shards = new Particles({
       max: 200, texture: art?.giblets?.texture || null, frames: art?.giblets?.frames || GIBLETS,
       blend: 'cutout', fullbright: false, light: 1.0, name: 'shards', renderOrder: 13, nearShrink: 80,
@@ -315,14 +314,23 @@ export class Giblets {
     });
   }
 
-  /** A piece has come down. A splat sometimes, a spit of sparks always,
-   *  and a little heat — which is how a crowd spreads a fire. */
+  /** A piece has come down: a splat sometimes, a spit of sparks always,
+   *  and NOTHING THAT CATCHES.
+   *
+   *  IT USED TO LIGHT THE FLOOR WHERE IT LANDED, and that was the single
+   *  biggest reason the store burnt down without the player. Thirteen
+   *  pieces thrown seventy units in every direction is thirteen new
+   *  fires in a ring round the body, most of them across the aisle the
+   *  person was running down — so one shopper going off in a crowd
+   *  started a chain that crossed the shop through cross-aisles nobody
+   *  had carried fire over. It was the best-looking mechanic in the game
+   *  and it was also an automatic win. The pieces still come off alight,
+   *  because a body going up is a body going up; they simply do not hand
+   *  the fire on any more. Carrying it is the player's job. */
   _land(x, y, z) {
     const g = this.game;
     g.fx?.splash(x, y, z);
     if (pRandom() < GIB.splatChance) this.splat(x, y, z);
-    g.fire?.ignite(x, y, GIB.heat, GIB.heatRadius);
-    g.forest?.ignite(x, y, 12);
   }
 
   /** And a cold one, which is the same minus every single thing that

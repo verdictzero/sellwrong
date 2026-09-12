@@ -1719,6 +1719,53 @@ T.TROLLRAI = () => {
   return p.snap(0.4);
 };
 
+/* --- THE FENCE ROUND THE SERVICE YARD ------------------------------
+   Chain link, and it is the one texture in the file that is mostly
+   nothing: transparent everywhere the wire is not, so it hangs in a
+   two-sided line as something you see the wood THROUGH. See `midHeight`
+   in js/mapgeo.js for the other half of that — a fence is eight feet of
+   wire standing in an opening that is open to the sky, so the quad has
+   to stop at the top rail rather than at the cloud base.
+
+   128 BY 96 IS A DECISION ABOUT TILING AND NOT ABOUT DETAIL. The mesh
+   is two families of 45-degree diagonals sixteen apart, and sixteen
+   divides both 128 and 96, so the diamonds run on across a repeat in
+   both directions with no seam and no half-diamond at the joint. One
+   post per repeat puts an upright every 128 units, which is about ten
+   feet, which is where a real one goes. */
+T.CHAINLNK = () => {
+  const p = new Pix(64, 48, 411);
+  p.clear();
+  const TOP = 2, BOT = 45;
+  /* THE MESH. Two families of 45-degree diagonals eight texels apart,
+     and the near family is drawn over the far one with a dark texel
+     beside each bright one — which is the whole of why it reads as round
+     wire rather than as a drawn grid. Eight divides both 64 and 48, so
+     the diamonds run on across a repeat in either direction with no
+     seam and no half-diamond at the joint. */
+  for (let y = TOP; y < BOT; y++) {
+    for (let x = 0; x < 64; x++) {
+      const u = (x + y) % 8, v = (x - y + 640) % 8;
+      if (u === 0)      p.ink(x, y, 'grey', 0.54);
+      else if (u === 1) p.ink(x, y, 'grey', 0.20, 210);
+      else if (v === 0) p.ink(x, y, 'grey', 0.46);
+      else if (v === 1) p.ink(x, y, 'grey', 0.16, 210);
+    }
+  }
+  /* the top rail, and the tension wire the mesh is wrapped round at the
+     bottom — without those two it is a net rather than a fence */
+  for (let x = 0; x < 64; x++) {
+    p.ink(x, 0, 'grey', 0.62); p.ink(x, 1, 'grey', 0.34, 220);
+    p.ink(x, BOT, 'grey', 0.50); p.ink(x, BOT + 1, 'grey', 0.20, 200);
+    if ((x & 3) === 0) { p.ink(x, TOP, 'grey', 0.40); p.ink(x, BOT - 1, 'grey', 0.34); }
+  }
+  /* and the post, which is what the repeat is measured in: one upright
+     every 128 world units, which is about where a real one goes */
+  for (let y = 0; y < 48; y++) { p.ink(0, y, 'grey', 0.58); p.ink(1, y, 'grey', 0.22); }
+  p.ink(0, 0, 'grey', 0.70); p.ink(1, 0, 'grey', 0.52);   // the cap on it
+  return p.snap(0.35);
+};
+
 /* --- the doors themselves -----------------------------------------
    Two leaves, and they are drawn as WHOLE leaves rather than as a
    tiling pattern: the quad maps 0..1 in both directions, so the stiles
@@ -2535,6 +2582,8 @@ const SIZES = {
   ...Object.fromEntries(Array.from({ length: 3 }, (_, i) =>
     ['RUINHOLE' + i, { w: 128, h: 128, masked: true }])),
   TROLLRAI: { w: 64, h: 48, masked: true },
+  /* world units, and the height is the fence's height — see midHeight */
+  CHAINLNK: { w: 128, h: 96, masked: true },
   /* Door leaves are mapped 0..1 by the slider, never by the wall
      builder, so these numbers only matter if one ends up on a line. */
   SLIDEL:   { w: 96, h: 248, masked: true },

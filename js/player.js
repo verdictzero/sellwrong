@@ -223,6 +223,10 @@ export class Player {
        tanks refuse and refill on different terms */
     this.co2Dry = false;
     this.co2Tick = 0;
+    /* DEBUG MODE: every tank refills to the top once a tic. Off, saved
+       with the rest of the settings, and turned on from the pause menu
+       — see fuelTic, which is the whole of it. */
+    this.debug = false;
     /* TWO WEAPONS NOW. The molotov is built and tested and stays
        switched off; the boxcutter is issued because the tank empties —
        see the note on TANK. */
@@ -476,6 +480,20 @@ export class Player {
    *  stream takes one a tic and this gives back a tenth of one, so
    *  holding the trigger still empties it in about twelve seconds. */
   fuelTic() {
+    /* INFINITE AMMO IS THIS BRANCH AND NOTHING ELSE, which is the reason
+       it goes here rather than in the firing path. Everything that asks
+       a question about ammunition — whether the trigger works, whether
+       the latch is on, where the pip sits, how full the gauge draws —
+       reads the tank, and this runs once a tic upstream of all of them.
+       So the spending still happens exactly as it always did and is
+       simply undone before anybody looks, and not one line anywhere else
+       in the game has to know the mode exists. */
+    if (this.debug) {
+      for (const kind of Object.keys(this.maxAmmo)) this.ammo[kind] = this.maxAmmo[kind];
+      this.dry = false; this.co2Dry = false;
+      this.regenTick = 0; this.co2Tick = 0;
+      return;
+    }
     this._refill('fuel', REGEN_EVERY, REFIRE_AT, 'regenTick', 'dry');
     this._refill('co2', CO2_REGEN_EVERY, CO2_REFIRE_AT, 'co2Tick', 'co2Dry');
   }

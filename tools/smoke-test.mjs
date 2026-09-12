@@ -670,12 +670,18 @@ section('fire');
   check('nothing is alight to begin with', fire.liveCells === 0);
   check('burn starts at zero', fire.burnFraction === 0);
 
-  /* light one gondola and let it run */
-  /* ONE MATCH, AND ENOUGH TIME. The requirement is that the whole shop
-     goes eventually, which is a statement about percolation: every cell
-     must light more than one neighbour on average, or the fire stalls
-     somewhere and that region can never burn because burnt fuel does not
-     come back. So this is the check that matters most in the file. */
+  /* ONE MATCH, AND ALL THE TIME IN THE WORLD.
+     ---------------------------------------------------------------
+     THIS CHECK NOW ASSERTS THE OPPOSITE OF WHAT IT USED TO, and the
+     flip is the whole of the change. The requirement was that the shop
+     goes eventually — every cell lighting more than one neighbour on
+     average, so the fire never stalls — and the requirement is now that
+     a fire LEFT ALONE GOES OUT, having taken a patch rather than a
+     wing. Burning the store down is the player's job.
+
+     What it did before, measured with nobody in the building: one match
+     dropped in a gondola took 91% of the shop, one in a bare aisle took
+     86%, and one in the stockroom took 94%. It did not matter where. */
   fire.ignite(540, 1000, 200, 40);
   /* liveCells, not burningCells: the latter is what the status bar shows
      and counts only cells that are actually alight, which is zero until
@@ -683,15 +689,60 @@ section('fire');
   check('ignition takes', fire.liveCells > 0);
 
   let stalled = -1;
-  for (let i = 0; i < 90000; i++) {
+  for (let i = 0; i < 200000; i++) {
     fire.tic();
     if (i > 20 && fire.liveCells === 0) { stalled = i; break; }
   }
-  const burnt = fire.burnFraction;
-  note('one match, left alone', `${(burnt * 100).toFixed(1)}% burned` +
-    (stalled >= 0 ? `, went out after ${stalled} tics` : ', still going at 90000 tics'));
-  check('one match takes essentially the whole shop', burnt > 0.97,
-        `${(burnt * 100).toFixed(1)}% — the fire stalled somewhere`);
+  const oneMatch = fire.burnFraction;
+  note('one match, left alone', `${(oneMatch * 100).toFixed(2)}% burned` +
+    (stalled >= 0 ? `, out after ${(stalled / 35).toFixed(0)}s` : ', STILL GOING'));
+  check('a fire left alone goes out', stalled >= 0, 'still alight at 200000 tics');
+  check('and it goes out having taken a patch, not the shop',
+    oneMatch < 0.02, `${(oneMatch * 100).toFixed(2)}% of the store`);
+  /* AND THE WALKWAY IS THE REASON. The match went into the first run of
+     gondolas; the second run is a hundred and sixty units away across
+     bare aisle, which is five cells of lino. Fire that cannot get over
+     that is fire the floor plan CONTAINS — and the cross-aisles being
+     real walls rather than slow ones is the difference between a shop
+     you have to walk to burn and a shop you light once. */
+  {
+    let over = 0, of = 0;
+    for (let x = 760; x < 880; x += 16)
+      for (let y = 800; y < 1070; y += 16) {
+        const i = fire.idx(fire.cellX(x), fire.cellY(y));
+        if (fire.fuel0[i] <= 0) continue;
+        of++;
+        if (fire.fuel[i] < fire.fuel0[i]) over++;
+      }
+    check('and it never crosses the aisle to the next run of shelving',
+      over === 0, `${over} of ${of} cells over the way burnt`);
+  }
+
+  /* AND NOW THE OTHER HALF, WHICH IS A DIFFERENT QUESTION. Whether the
+     shop burns on its own and whether it CAN burn are not the same
+     claim, and the map is written against the second one: a region the
+     fire can never get into is a hole in the floor plan however the
+     spread numbers are set. So the rest of this section runs on the
+     store burnt the way it is meant to be burnt — a flamethrower walked
+     over all of it, at the stream's own strength and footprint, which
+     is what the player spends the night doing.
+
+     AT THE STREAM'S OWN STRENGTH IS LOAD-BEARING. Anything over 40
+     leaves accelerant behind (see FireSystem.ignite), and accelerant
+     poured on tarmac makes tarmac burn — so a sweep done with a bigger
+     number would quietly torch the car park and take the firebreak
+     check with it. The flamethrower is 36 and lays none. */
+  {
+    const [minx, miny, maxx, maxy] = level.fireBounds || level.bounds;
+    for (let y = miny; y <= maxy; y += 30) {
+      for (let x = minx; x <= maxx; x += 30) fire.ignite(x, y, 36, 22);
+      for (let k = 0; k < 30; k++) fire.tic();
+    }
+    for (let i = 0; i < 200000 && fire.liveCells > 0; i++) fire.tic();
+  }
+  note('and then walked with a flamethrower', `${(fire.burnFraction * 100).toFixed(1)}% burned`);
+  check('a player who does the work can still burn all of it',
+    fire.burnFraction > 0.97, `${(fire.burnFraction * 100).toFixed(1)}%`);
 
   /* And it must still not touch anything the map declared as a
      firebreak. This used to be phrased as "no outdoor sector burns",
@@ -1139,8 +1190,66 @@ section('the wood');
      fire. */
   check('the fuel grid covers the whole building and its lot',
     level.fireBounds[0] < MAP.PARADE_X0 && level.fireBounds[2] > MAP.PARADE_X1 &&
-    level.fireBounds[3] === MAP.ANCHOR_Y1,
+    level.fireBounds[3] > MAP.ANCHOR_Y1 && level.fireBounds[3] < MAP.ANCHOR_Y1 + 600,
     level.fireBounds.join());
+  /* IT USED TO STOP AT THE BACK WALL OF THE ANCHOR, exactly, and now it
+     stops at the back of the SERVICE YARD — which is tarmac behind the
+     store, is not wood, and so is inside the store's grid for the same
+     reason the car park is. Nothing burns there either. What makes that
+     worth having rather than merely harmless is `clearing`, which is
+     this rectangle: the forest keeps a margin outside it, so extending
+     it past the fence is what guarantees nothing grows in the gateway. */
+  check('and the yard behind the store is in it, with nothing to burn',
+    level.sectors.some(s => s.name === 'the service yard' && s.fuel === 0));
+
+  /* --- THE FENCE ROUND THE YARD -------------------------------------
+     A fence in this engine is not a wall — a wall is the ABSENCE of a
+     sector — it is chain link hung in an opening as a middle texture on
+     a two-sided line. So there are three separate things to be sure of,
+     and the last one is the only one that is about the game: that it is
+     drawn, that it is shorter than the hole it hangs in, and that you
+     cannot get past it except at the gate. */
+  {
+    const Y = MAP.YARD;
+    const yard = level.sectors.find(s => s.name === 'the service yard');
+    check('there is a service yard behind the store',
+      !!yard && yard.outdoor && !yard.forest);
+    const wire = level.lines.filter(l => l.middle === 'CHAINLNK');
+    note('the fence', `${wire.length} lines of chain link, ${Y.fenceH} tall`);
+    check('the chain link hangs in openings rather than being built as wall',
+      wire.length >= 4 && wire.every(l => l.front !== null && l.back !== null));
+    check('and it stops at the top rail instead of filling the opening',
+      wire.every(l => l.midHeight === Y.fenceH &&
+        l.midHeight < Math.min(level.sectors[l.front].ceil, level.sectors[l.back].ceil)),
+      `${wire.filter(l => !(l.midHeight < Math.min(level.sectors[l.front].ceil, level.sectors[l.back].ceil))).length} reach the sky`);
+    check('and every bit of it is solid', wire.every(l => l.blocking));
+
+    /* AND NOW THE ONLY QUESTION A PLAYER ASKS OF A FENCE. Fired across
+       the fence line rather than tested against a list of lines, because
+       what is being claimed is about walking and not about bookkeeping:
+       one way through, and it is where the gate is. */
+    const z = 20, mid = (Y.gate[0] + Y.gate[1]) / 2;
+    const across = x => !!level.rayHitWall(x, Y.y1 - 48, z, x, Y.y1 + 48, z);
+    check('the gate is one small opening', Y.gate[1] - Y.gate[0] <= 200,
+      `${Y.gate[1] - Y.gate[0]} wide`);
+    check('and you can walk out through it', !across(mid));
+    check('but not through the back of the fence anywhere else',
+      [Y.x0 + 120, mid - 600, mid - 200, mid + 200, mid + 600, Y.x1 - 120].every(across),
+      `${[Y.x0 + 120, mid - 600, mid - 200, mid + 200, mid + 600, Y.x1 - 120].filter(x => !across(x)).join()} let you through`);
+    const yMid = (Y.y0 + Y.y1) / 2;
+    check('nor out of either end of it',
+      !!level.rayHitWall(Y.x0 + 48, yMid, z, Y.x0 - 48, yMid, z) &&
+      !!level.rayHitWall(Y.x1 - 48, yMid, z, Y.x1 + 48, yMid, z));
+    /* and the fourth side is the building, which was already true */
+    check('and the store itself is the fourth side',
+      !!level.rayHitWall(mid, Y.y0 + 48, z, mid, Y.y0 - 48, z));
+    /* NOTHING GROWS IN THE GATEWAY, which is not luck: `clearing` is the
+       fuel grid's rectangle and the forest keeps a margin outside it, so
+       the yard being inside the grid is what holds the gate open. */
+    const forest2 = new F.Forest(level, { seed: 4 });
+    check('and nothing has grown in the gateway',
+      !forest2.blocks(mid, Y.y1 + 40, 18) && !forest2.blocks(mid, Y.y1 + 90, 18));
+  }
   check('and stops well short of the wood',
     level.fireBounds[0] > level.forestBounds[0] + 4000 &&
     level.fireBounds[2] < level.forestBounds[2] - 4000,
@@ -1609,6 +1718,34 @@ section('the cold');
       p.refireMark === pl.CO2_REFIRE_AT, `${p.refireMark}`);
     p.weapon = 'FLAMER';
     check('and gets a different answer for the other one', p.refireMark === 0);
+
+    /* --- AND THE SWITCH IN THE MENU THAT TURNS ALL OF IT OFF -------
+       Infinite ammo lives in fuelTic and nowhere else, upstream of every
+       question anything asks about a tank. So the check is that it
+       refills BOTH tanks and the molotovs, takes both latches off with
+       them, and leaves the guns armed — without the firing path, the
+       gauge or `armed` knowing the mode is there. */
+    const dbg = mk().player;
+    dbg.ammo.fuel = 3; dbg.ammo.co2 = 2; dbg.ammo.bottles = 0;
+    dbg.dry = true; dbg.co2Dry = true;
+    check('and it is off unless it is asked for', dbg.debug === false);
+    dbg.fuelTic();
+    check('so an ordinary tank still comes back a unit at a time',
+      dbg.ammo.fuel === 3, `${dbg.ammo.fuel}`);
+    dbg.debug = true;
+    dbg.fuelTic();
+    check('debug fills every tank, not only the one in your hands',
+      dbg.ammo.fuel === dbg.maxAmmo.fuel && dbg.ammo.co2 === dbg.maxAmmo.co2 &&
+      dbg.ammo.bottles === dbg.maxAmmo.bottles,
+      `${dbg.ammo.fuel}/${dbg.ammo.co2}/${dbg.ammo.bottles}`);
+    check('and it takes both latches off with them', !dbg.dry && !dbg.co2Dry);
+    check('and both guns will fire again',
+      dbg.armed('FLAMER') && dbg.armed('EXTINGUISHER'));
+    /* and holding the trigger down cannot outrun it */
+    for (let k = 0; k < 400; k++) { dbg.flameTic(pl.WEAPONS.FLAMER); dbg.fuelTic(); }
+    check('and holding the trigger down never empties it',
+      dbg.ammo.fuel === dbg.maxAmmo.fuel && !dbg.dry && dbg.armed('FLAMER'),
+      `${dbg.ammo.fuel} left, latched ${dbg.dry}`);
   }
 
   /* --- AND IT IS A MODEL IN YOUR HANDS ----------------------------- */
@@ -1742,19 +1879,26 @@ section('the crowd');
   check('and they are on fire', (g.giblets.tic(), g.giblets.trail.count > 0),
     `${g.giblets.trail.count} flames`);
 
-  const heatBefore = g.fire.burningCells;
+  const litBefore = g.fire.liveCells, burntBefore = g.fire.burntFuel;
   /* The pieces alone for the two hundred tics, and the fire afterwards.
      They used to be run together, and that stopped working the moment
      the fire got six times faster: two hundred tics of it beside a queue
      takes the neighbours too, so the count in the air is somebody else's
-     pieces and the check was asking the wrong question. Landing needs no
-     fire tic — a piece coming down calls ignite itself. */
+     pieces and the check was asking the wrong question. */
   for (let k = 0; k < 200; k++) g.giblets.tic();
   check('every piece comes down', g.giblets.chunks.count === 0, `${g.giblets.chunks.count} still up`);
   check('they leave something on the floor', g.actors.filter(a => a.type === 'GORE').length > 1);
-  for (let k = 0; k < 12; k++) g.fire.tic();          // so the heat they laid is counted
-  check('and they start a fire where they land', g.fire.burningCells > heatBefore,
-    `${heatBefore} -> ${g.fire.burningCells} cells`);
+  for (let k = 0; k < 120; k++) g.fire.tic();
+  /* AND THEY START NOTHING, which is the reverse of what this line
+     checked for most of the project's life. A burning piece of somebody
+     used to light the floor where it landed — thirteen of them thrown
+     seventy units in every direction, so one person going off in a crowd
+     seeded a ring of new fires across the aisle they were running down,
+     and that was the single largest reason the store burnt itself down
+     without the player. See Giblets._land. */
+  check('and they start no fires where they land',
+    g.fire.liveCells === litBefore && g.fire.burntFuel === burntBefore,
+    `${litBefore} -> ${g.fire.liveCells} cells, ${burntBefore.toFixed(0)} -> ${g.fire.burntFuel.toFixed(0)} fuel`);
   note('one person', `${g.actors.length - before + 1} things left behind, ` +
     `${g.actors.filter(a => a.type === 'GORE').length} splats`);
 
@@ -2407,35 +2551,56 @@ section('the way out');
   }
 
   /* --- AND THE MEASUREMENT ---
-     One fire, in the middle of the shop, and then nothing: no player, no
-     second ignition, no help. Sixty seconds later, what?
+     The shop burning, eight hundred people in it, sixty seconds. What?
 
-     IT USED TO BE "MOST OF THE SHOP IS OUTSIDE", and that claim is gone
-     with the change above. When a burning shopper stood still and died
-     in a second, a fire in the middle of the sales floor took about a
-     quarter of the building in a minute and six hundred of the seven
-     hundred and thirty-six walked out of it. Now every person the fire
-     reaches carries it somewhere else for five seconds and then explodes
-     there, so the same single ignition takes four fifths of the store in
-     the same minute and about half the shop does not get out.
+     THE PREMISE OF THIS BLOCK HAS CHANGED TWICE AND IT IS WORTH KEEPING
+     BOTH. It began as "one fire, and then nothing: no player, no second
+     ignition, no help", because one fire was all it took — a single
+     ignition on the sales floor went on to take four fifths of the
+     building inside the minute, largely by travelling through the crowd
+     itself. That is no longer true and is not meant to be: a fire left
+     alone now takes a patch and goes out (see `fire`), and people
+     bursting no longer lay new ones (see Giblets._land). One match in
+     here reaches 5% of the store and two hundred people never find out
+     about it, which is the point of the change and useless as a test of
+     the exits.
 
-     That is not a regression, it is the mechanic: the fire moves through
-     the CROWD now, and a crowd is the fastest thing in the building.
-     What is still true, and what is worth checking, is that the fire
-     exits work — the building EMPTIES, by one route or the other, and
-     hundreds of people leave through doors rather than dying where they
-     were standing. That claim is also the stable one: this is a
-     percolation cascade sitting near its critical point, so the survivor
-     count swings by a hundred and fifty on a change of one in the trail
-     numbers, and a threshold pinned just under it is a coin flip. "Alive
-     and still inside" comes out at nought, one or two every single
-     time. */
+     SO THE PLAYER DOES IT, which is what the player is now for: the
+     flamethrower walked down all eleven aisles, shelf faces both sides,
+     about the pace somebody actually moves. Everything after that is
+     what it always was, and the claims are unchanged — the building
+     EMPTIES, by one route or another, and hundreds of people leave
+     through doors rather than dying where they stood. */
   {
     const crowd = () => g.actors.filter(a => a.type === 'SHOPPER' && !a.dead && !a.removed);
     const running = () => g.actors.reduce((n, a) => n + (a.type === 'SHOPPER' && !a.dead && a.panic > 0 ? 1 : 0), 0);
     const start = crowd().length;
     g.player.noclip = true;                     // out of the way, out of the fire
-    g.fire.ignite(1800, 1600, 400, 64);
+    /* Down each aisle in turn, painting the shelving either side of it at
+       the stream's own strength and footprint — 36 and 22, which lays no
+       accelerant, so nothing here can light anything the map called a
+       firebreak. */
+    let poured = 0, walked = 0;
+    for (let k = 0; k < 11; k++) {
+      const ax = 480 + k * 280 + 120 + 80;
+      for (let y = 420; y < 2600; y += 64) {
+        g.fire.ignite(ax - 76, y, 36, 22);
+        g.fire.ignite(ax + 76, y, 36, 22);
+        poured += 2;
+        /* AT A WALKING PACE, which is the half of this that took two
+           goes to get right. Painting all eleven aisles inside four
+           seconds is not a player, it is a carpet bomb: everybody in the
+           building is standing in fire before anybody has taken a step,
+           five hundred and seventy die where they stand, and the exits
+           get no chance to be load-bearing. Sixty-four units of aisle
+           per four tics is about how fast somebody actually moves down
+           one, and the fire then arrives the way it does in play — a row
+           at a time, with the aisle ahead of you emptying. */
+        for (let t = 0; t < 4; t++) { g.tic(); walked++; }
+      }
+    }
+    note('the player walks the shop', `${poured} pours down 11 aisles, ` +
+      `${(walked / 35).toFixed(0)}s of walking`);
     /* THE FRIGHT HAS TO BE ABLE TO RUN OUT WHILE THE SHOP IS STILL
        BURNING, which is a different claim from "everybody is calm at the
        end" and is the one worth testing. What is watched is the LOW WATER
@@ -2444,19 +2609,30 @@ section('the way out');
        shop that still has people in it, and it does, twice, in the run
        this was written against: down to nothing by forty seconds and back
        over a hundred by seventy as the second run of shelving goes. */
-    let quietest = Infinity;
-    for (let t = 0; t < 2100; t++) {
+    let quietest = Infinity, peakFire = 0;
+    for (let t = 0; t < 5250; t++) {
       g.tic();
-      if (t > 700) quietest = Math.min(quietest, running());
+      peakFire = Math.max(peakFire, g.fire.liveCells);
+      if (t > 1800) quietest = Math.min(quietest, running());
     }
     const alive = crowd();
     const out = alive.filter(a => a.sector && a.sector.outdoor);
     const inside = alive.length - out.length;
-    note('one fire, sixty seconds', `${out.length} of ${start} outside, ` +
+    note('the shop alight, two and a half minutes', `${out.length} of ${start} outside, ` +
       `${inside} still in, ${start - alive.length} lost, ` +
       `${(g.fire.burnFraction * 100).toFixed(0)}% of the store gone`);
-    check('the building empties: nobody alive is still standing in it',
-      inside <= start * 0.02, `${inside} still inside`);
+    /* FIVE PER CENT, and the bar moved when the fire stopped taking the
+       whole shop. It used to be two, and two was right when one match
+       burnt the building: everybody had a reason to leave, and "alive
+       and still inside" came out at nought or one every time. A fire
+       that only goes where the player put it leaves corners nobody ever
+       hears about, so a handful of shoppers legitimately calm down and
+       go back to the shelves — and the shared LCG means an unrelated
+       check added anywhere earlier in this file moves the count by a
+       few. The claim worth holding is that the survivors are OUTSIDE,
+       not that the building is empty to the last person. */
+    check('the building empties: almost nobody alive is still standing in it',
+      inside <= start * 0.05, `${inside} of ${start} still inside`);
     /* A QUARTER, and the bar is low on purpose. The claim is that the
        exits are LOAD-BEARING — that a large part of the shop leaves
        through a door rather than dying where it stood — and the exact
@@ -2467,8 +2643,24 @@ section('the way out');
        is a coin flip that any later edit can flip. */
     check('and a large part of the shop gets out through the doors',
       out.length > start * 0.25, `${out.length} of ${start}`);
-    check('and the fire took most of the store doing it',
-      g.fire.burnFraction > 0.5, `${(g.fire.burnFraction * 100).toFixed(0)}%`);
+    /* AND THE WORK LANDED. Not a claim about the fire spreading — it
+       barely does now — but about the pouring having gone into fuel
+       rather than into the air: what the player painted is what burns. */
+    check('and what the player painted is what burnt',
+      g.fire.burnFraction > 0.25, `${(g.fire.burnFraction * 100).toFixed(0)}%`);
+    /* AND IT IS DYING BACK, which is the self-extinguishing claim asked
+       in the one place it could still fail. A crowd is the fastest
+       thing in the building and people carry fire about while they are
+       alight, so "a fire left alone goes out" being true of an empty
+       grid does not make it true of a shop with seven hundred people
+       running around inside it. Measured separately: two and a half
+       seconds of trigger into a crowded aisle peaks at five per cent of
+       the store, settles at eight, and is out after four minutes. */
+    note('the fire, at its worst and at the end',
+      `${peakFire} -> ${g.fire.liveCells} cells alight`);
+    check('and the fire is dying back rather than still growing',
+      g.fire.liveCells < peakFire * 0.5,
+      `${g.fire.liveCells} against a peak of ${peakFire}`);
     check('and they scatter rather than pile up at one door',
       new Set(out.map(a => a.sector.name)).size >= 3,
       [...new Set(out.map(a => a.sector.name))].slice(0, 5).join(', '));

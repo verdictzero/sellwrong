@@ -296,10 +296,20 @@ function addLine(set, level, l, bank) {
 
   /* A middle texture on a two-sided line is the thing IN the hole: a
      grating, a shop window, a wire shelf you can see through. Drawn both
-     ways, masked, spanning the open gap. */
+     ways, masked, spanning the open gap.
+
+     UNLESS IT IS SHORTER THAN THE HOLE, which is what `midHeight` is
+     for. A grating fills its opening and a shop window fills its
+     opening, so the gap is the right answer for both. A FENCE is not:
+     it is eight feet of chain link standing on a line between two
+     patches of wood that are open to the sky, and spanning the gap
+     there means stretching the mesh from the ground to the cloud base
+     and tiling it five times on the way up. So a line may say how tall
+     the thing standing in it is, measured up from the floor it stands
+     on, and the opening stays the LIMIT rather than the answer. */
   if (l.middle && l.middle !== 'NONE') {
-    const top = Math.min(front.ceil, back.ceil);
     const bot = Math.max(front.floor, back.floor);
+    const top = Math.min(front.ceil, back.ceil, bot + (l.midHeight ?? Infinity));
     if (top > bot) {
       const th = bank.get(l.middle).h;
       const peg = l.pegMiddle === 'bottom' ? bot + th : top;

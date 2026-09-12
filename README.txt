@@ -71,7 +71,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         661 checks, no install and no browser
+  the smoke test         684 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -160,6 +160,22 @@ that a boxcutter is "what is left when the fuel runs out, which it
 will", and the fuel did not run out. Mouse wheel, or 1. The molotov is
 written, tested and still switched off. The player still cannot be hurt;
 that is one flag at the top of js/player.js.
+
+AND THERE IS A SWITCH IN THE PAUSE MENU THAT TURNS ALL OF THAT OFF.
+DEBUG: INFINITE AMMO fills every tank — the flamethrower's, the
+extinguisher's and the molotovs — back to the top once a tic, so nothing
+ever empties and neither latch ever catches. It is for looking at the
+place rather than for playing it: with the fire as slow as it now is,
+walking the whole shop to see what it looks like burnt should not also
+be a two-minute wait every twelve seconds.
+
+It is ONE BRANCH, in Player.fuelTic, and that is deliberate. Everything
+that asks a question about ammunition — whether the trigger works,
+whether the gauge is red, where the refire pip sits, whether the gun is
+latched — reads the tank, and the refill runs once a tic upstream of all
+of them. So the spending still happens exactly as it always did and is
+simply undone before anybody looks, and not one line anywhere else in
+the game knows the mode exists.
 
 
 AND THE OTHER END OF IT
@@ -346,71 +362,83 @@ its value from the sector it lands in.
   the aisle between      55      creeps
   the car park            0      will not burn at all, ever
 
-Everything indoors goes eventually, from one match, with nobody helping.
-That is a requirement, and it is a statement about percolation rather than
-about flammability: a fire crossing a region survives only if each burning
-cell lights, on average, MORE THAN ONE new one before it burns out.
-
-  expected spreads  =  tics alight  x  chance/256  x  neighbours
-
-Above one and it runs away and takes everything connected to it. Below one
-it peters out, and no amount of waiting brings it back, because a burnt cell
-has no fuel left to relight. There is no middle setting.
-
-So both terms are tuned per cell from how rich it is, and both point the
-same way. Rich stock burns HOT and FAST and throws sparks eagerly; thin
-fuel SMOULDERS, never getting hot, burning a unit at a time, staying alight
-long enough to pass the fire on. A bare walkway gets about 1.9 expected
-spreads and a gondola about 25 — both above one, so both go.
-
-What differs is PACE, and that is the whole feel of it. The two ends are
-now a factor of twenty apart rather than a factor of six, because the
-curve from fuel to spread chance is a power law rather than a shift:
-
-  a gondola of stock     a cell about every second — a full run is up in
-                           a minute, and it takes the run next to it
-  bare lino              a cell every half a minute — crossing one aisle
-                           is minutes of watching it creep
-
-AND IT ALL HAPPENS SIX TIMES FASTER THAN IT USED TO, at the user's
-request: a gondola cell rises, roars and is spent in about four seconds
-rather than twenty-three, and the ember tail behind the front is a dozen
-seconds rather than a minute and a quarter. What moved is the CLOCK — one
-constant saying how many game tics a fire tic is worth, 18 down to 3 —
-and nothing else, for the reason in the next paragraph: the burn rate and
-the spread chance are the same two terms multiplied, so burning the fuel
-six times faster to shorten a fire also cuts the rolls it gets to pass
-itself on, and bare lino was only ever at 1.9 expected spreads. Six times
-the burn rate would have taken it to 0.3 and left holes in the shop that
-could never catch. Six times the clock changes nothing about what
-eventually burns and everything about when.
-
-What that buys is a chase rather than a siege. A run of shelving flashes
-over and dies back while you are still standing in the aisle, and with
-seven hundred people in the building and six fire exits for them to get
-out of, the fire is now the thing that starts the level rather than the
-thing that is the level.
-
-Left completely alone, one match still takes the entire shop; it now
-takes about seven minutes rather than the better part of half an hour.
-Your flamethrower is very much faster than that, which is the point of
-carrying it — you are not starting the fire so much as deciding where it
-starts and how long the store has.
-
-THE TWO TERMS TRADE EXACTLY, which is the thing to know before touching
-either. A fire crossing a region survives only if each burning cell
-lights, on average, more than one new one:
+A FIRE LEFT ALONE GOES OUT. That is the requirement, and it is a
+statement about percolation rather than about flammability: a fire
+crossing a region carries on only if each burning cell lights, on
+average, MORE THAN ONE new one before it burns out.
 
   expected spreads  =  tics alight  x  chance  x  neighbours
 
-so slowing the crawl across bare floor by lowering the chance ALONE puts
-thin fuel under the line and leaves holes in the shop that can never
-burn. That mistake is in the history of this file twice. What happened
-instead is that the chance came down by about three and thin fuel's
-LIFETIME went up by about three: the same fire reaches the same places
-and takes three times as long to creep there. It is also why the fuel
-grid is floats — as integers the smallest burn rate expressible was one
-unit a tic, and for bare lino that floor WAS the burn rate.
+Above one and it runs away and takes everything connected to it, and no
+player is needed. Below one it peters out, and no amount of waiting
+brings it back, because a burnt cell has no fuel left to relight. There
+is no middle setting: it either eventually takes the store on its own or
+it never does.
+
+IT USED TO BE ABOVE ONE EVERYWHERE, and the requirement was the exact
+opposite of the one above: everything indoors went eventually, from one
+match, with nobody helping. Measured with the building empty, one match
+dropped in a gondola took 91% of the shop, one in a bare aisle took 86%,
+and one in the stockroom took 94%. It did not matter where you put it
+and it did not matter what you did afterwards.
+
+Asked for the other way round — much slower, self-extinguishing, and the
+player having to WORK to burn the place down — every number went under
+the line. What that buys:
+
+  A MATCH IS A PATCH        One ignition in the richest stock in the
+                            building takes twenty-odd cells, about five
+                            metres across, over a couple of minutes, and
+                            then it is out. Two tenths of one per cent
+                            of the store.
+  A WALKWAY IS A WALL       Bare floor is sixty times less willing to
+                            pass fire on than a gondola, which puts it so
+                            far under the line that fire does not cross
+                            an aisle at all. The cross-aisles are real
+                            firebreaks now rather than slow ones.
+  THE SHELVES ARE THE FUSE  Dense stock is still the most willing thing
+                            in the building, so pouring along a run takes
+                            the run. It will not jump to the next one.
+
+So you point the gun at the shelving and the shelving you pointed at is
+what burns. A full sweep of the shop still reaches a hundred per cent,
+everything charred and everything gutted — that is measured rather than
+hoped — but it takes walking every aisle of it, which is the point. The
+flamethrower stopped being the fast way to do what waiting would do
+anyway and became the only way it happens at all.
+
+AND IT ALL HAPPENS MUCH MORE SLOWLY, which is the other half of the same
+request and a SEPARATE number. A fire front creeps about one cell every
+twelve seconds through dense stock where it used to manage six cells a
+second. What moved for that is the CLOCK — one constant saying how many
+game tics a fire tic is worth, which has been 2, 6, 18, 3 and is now 10,
+each time because somebody watched it and said faster or slower.
+
+THE TWO ARE SEPARABLE AND THAT IS WHY THERE ARE TWO OF THEM. The
+expected-spreads figure is counted in FIRE tics, so it is identical at
+any interval: the clock decides HOW FAST and the spread chance decides
+HOW FAR. Turn the wrong one and you get a fire that is sluggish and
+still unstoppable, or brisk and already over.
+
+THE TWO TERMS TRADE EXACTLY, which is the thing to know before touching
+either — tics alight and chance multiply, so halving one is the same as
+halving the other. Thin fuel is still deliberately long-lived: a cell of
+bare lino smoulders for the better part of three minutes and gets
+nowhere, which is exactly the picture wanted — a fire lying on the floor,
+visibly alight, visibly not going anywhere, until it gives up. It is also
+why the fuel grid is floats: as integers the smallest burn rate
+expressible was one unit a tic, and for bare lino that floor WAS the burn
+rate.
+
+AND NOTHING ELSE LIGHTS ANYTHING EITHER. A person going off used to
+throw thirteen burning pieces seventy units in every direction, each of
+which lit the floor where it landed — so one shopper exploding in a crowd
+seeded a ring of new fires across the aisle they had been running down,
+and that was the single largest reason the shop burnt itself down without
+help. The pieces still come off alight, because a body going up is a body
+going up. They simply do not hand it on. What a burning person still does
+is drag a line of fire along behind them while they RUN, which is a
+trail you can see and follow and which now goes out behind them.
 
 AND THEY RUN, AND NOW THEY HAVE SOMEWHERE TO RUN TO. A shopper on
 eight-tic watch samples the fire grid at nine points around itself —
@@ -934,6 +962,60 @@ The ambient light also lifts as the store goes — partly embers, partly the
 roof no longer being entirely there. A gutted store lit only by embers is
 accurately almost pitch black, and you still have to find the way out of
 it, so accuracy loses that one on purpose.
+
+
+THE YARD OUT THE BACK
+---------------------
+
+Behind the anchor there is a service yard: a strip of hardstanding as
+wide as the store and about four hundred and eighty deep, with chain link
+along its three open sides and ONE way in and out of it. The gate lines
+up with the roller shutter the night crew left open, so the gate, the
+dock and the shutter are one straight line through the back of the
+building — which is where the lorries would go, and is also the only way
+into the yard that is not a walk around the whole store.
+
+A FENCE IS NOT A WALL, and in this engine that is a statement about
+geometry rather than a figure of speech. A wall here is the ABSENCE of a
+sector: leave sixteen units between two rectangles and the void between
+them is the wall. A wall you cannot see through would make the yard a
+corridor with no relationship to the wood on the other side of it, and
+what is wanted is the opposite — something you see the trees through and
+still cannot walk through. So the yard and the wood TOUCH, every edge
+between them is an opening, and the chain link hangs IN those openings as
+a MIDDLE TEXTURE on a two-sided line: masked, drawn from both sides,
+blocking.
+
+WHICH MAKES THE GAP FREE. A fence is a property of LINES, so the opening
+is not a hole cut in anything — it is the one line along the back that
+was never given any wire. The rectangle mapper splits a shared edge at
+the corners of whatever abuts it, so the wood behind the yard is three
+rectangles instead of one and the middle one's edge is the gate. Nothing
+else in the map has to know, and the map itself throws if that line ever
+comes back fenced or if a fifth one ever comes back bare.
+
+AND IT STOPS AT THE TOP RAIL. That needed a new idea in the geometry
+builder, because a middle texture had always spanned the whole opening —
+which is right for a grating and right for a shop window, both of which
+FILL the hole they are in. A fence does not: it is eight feet of wire
+standing on a line between two patches of ground that are open to the
+sky, so spanning the gap meant stretching the mesh from the tarmac to the
+cloud base and tiling it five times on the way up. A line may now say how
+tall the thing standing in it is, and the opening is the LIMIT rather
+than the answer.
+
+The mesh is two families of forty-five-degree diagonals eight texels
+apart, over sixty-four by forty-eight, spanning a hundred and twenty-eight
+by ninety-six world units. Eight divides both, so the diamonds run on
+across a repeat in either direction with no seam and no half-diamond at
+the joint, and one post per repeat puts an upright every hundred and
+twenty-eight units, which is about where a real one goes.
+
+NOTHING GROWS IN THE GATEWAY, and that is not luck either. The forest
+keeps a margin outside `clearing`, which is the store's own fuel-grid
+rectangle — and the yard, being tarmac rather than wood, is inside that
+grid for the same reason the car park is. Extending the grid past the
+fence is what holds the gate open.
 
 
 THE WOOD
@@ -2061,7 +2143,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-661 checks. Every one of them earns its place by having caught something
+684 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -2103,9 +2185,27 @@ that had already reached a screenshot:
   a move long enough to step clean through a wall with nothing noticing it
     had been there
   a hard fuel threshold that stopped fire crossing a walkway at all, which
-    meant most of the shop could never burn — the check now runs one match
-    for forty thousand tics and demands every region of the store, and
-    demands that every region says so afterwards
+    meant most of the shop could never burn — the check demands every
+    region of the store, and demands that every region says so
+    afterwards. It used to prove that with ONE MATCH left for forty
+    thousand tics, and cannot any more, because a match now goes out:
+    it walks a flamethrower over the whole shop instead, which is a
+    claim about whether the store CAN burn rather than whether it does,
+    and that was always the claim the floor plan was written against
+  the same sweep done at molotov strength, which quietly torched the car
+    park. Anything over 40 leaves accelerant behind, and accelerant
+    poured on tarmac makes tarmac burn — so a sweep with a generous
+    number would have taken the "a sector with no fuel never burns"
+    check down with it and called it a pass. It pours 36, which is what
+    the flamethrower actually lays
+  an evacuation measured against a carpet bomb. The fire no longer
+    empties a building on its own, so the check that the fire exits are
+    load-bearing had to start lighting the shop itself — and painting
+    all eleven aisles inside four seconds is not a player, it is an air
+    raid: everybody is standing in fire before anybody has taken a step,
+    five hundred and seventy die where they stand, and the doors get no
+    chance to be load-bearing. It pours at a walking pace now, and the
+    aisle ahead of you empties the way it does in play
   sector light measured to a bounding box, which pinned the whole shop at
     full brightness and made the lights unshootable in effect — the check
     now bursts every fitting over one aisle and demands it get darker
@@ -2246,9 +2346,10 @@ that had already reached a screenshot:
     number that would have said so in the first place
   A FROZEN SHOPPER SETTING THE BEANS AISLE ON FIRE, which shipped for
     about ten minutes and is the funniest way this could have gone
-    wrong. A burning piece of somebody trails fire behind it and lights
-    the floor where it lands — that is how a crowd MOVES a fire and it
-    is one of the best things in the game — and the shatter reused
+    wrong. A burning piece of somebody trailed fire behind it and lit
+    the floor where it landed — which was how a crowd MOVED a fire, and
+    was one of the best things in the game right up until the day the
+    fire was asked to stop spreading on its own — and the shatter reused
     that pool for its pieces. So the one weapon whose job is putting
     fires out, used properly on a person, started one. The pieces are
     the same art and the same ballistics; what they do when they arrive

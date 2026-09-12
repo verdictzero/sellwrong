@@ -72,6 +72,20 @@ const WALL = 16;                  // the void between two rooms IS the wall
 export const ANCHOR_X0 = 200, ANCHOR_X1 = 4080;
 export const ANCHOR_Y0 = 0,   ANCHOR_Y1 = 3400;
 
+/* THE SERVICE YARD behind it, and the fence round the yard. Up here and
+   exported because it is the only piece of the map with a hole in it
+   that matters to anything outside this file: a fence with one gate is
+   a claim about where you can and cannot walk, and a claim like that
+   wants checking against the numbers rather than against a memory of
+   them. See the block that builds it for how the gate is made. */
+export const YARD = {
+  x0: ANCHOR_X0, x1: ANCHOR_X1,
+  y0: ANCHOR_Y1 + WALL,              // hard up against the store's back wall
+  y1: ANCHOR_Y1 + WALL + 480,        // and the fence line along the back of it
+  gate: [2400, 2560],                // lined up with the roller shutter
+  fenceH: 96,                        // eight feet of chain link, near enough
+};
+
 /* the gondola field: twelve columns of 120 with 160 between them */
 const NCOL = 12, GOND_W = 120, AISLE_W = 160, GX0 = 480;
 /* The front end. NTILL lives up here rather than in the block that lays
@@ -991,8 +1005,9 @@ export function buildSellWrong() {
     fuel: FUEL.none, forest: true, name,
   });
   const woodRect = (x0, y0, x1, y1, name) => {
-    rm.add(x0, y0, x1, y1, wood(name));
+    const r = rm.add(x0, y0, x1, y1, wood(name));
     forestRects.push({ x0, y0, x1, y1 });
+    return r;
   };
   const MALL_Y1 = UNIT_Y1 + WALL;              // behind the in-line units
   const BACK_Y = ANCHOR_Y1 + WALL;             // behind the anchor
@@ -1014,7 +1029,50 @@ export function buildSellWrong() {
   woodRect(PARADE_X1 + 2 * WALL, CANOPY_Y, RING_X1, MALL_Y1, 'wood, east flank');
   woodRect(RING_X0, MALL_Y1, ANCHOR_X0 - WALL, BACK_Y, 'wood, behind the west wing');
   woodRect(ANCHOR_X1 + WALL, MALL_Y1, RING_X1, BACK_Y, 'wood, behind the east wing');
-  woodRect(RING_X0, BACK_Y, RING_X1, OY1, 'wood, behind the store');
+
+  /* =================================================================
+     THE SERVICE YARD, AND THE FENCE ROUND IT
+
+     Behind the anchor there is now a yard rather than wood right up to
+     the back wall: a strip of hardstanding as wide as the store, with
+     chain link along its three open sides and ONE way in and out of it.
+
+     WHY A FENCE IS A MIDTEXTURE AND NOT A WALL. A wall in this engine
+     is the absence of a sector (see THE ONE RULE), and a wall you
+     cannot see through would make the yard a corridor with no
+     relationship to the wood on the other side of it. What is wanted is
+     the opposite: something you can see the trees through, that you
+     nonetheless cannot walk through, with one gap you have to find. So
+     the yard and the wood TOUCH — every edge between them is an opening
+     — and the chain link hangs IN those openings as a middle texture on
+     a two-sided line, eight feet of it, blocking.
+
+     WHICH MAKES THE GAP FREE. A fence is a property of LINES, so the
+     opening is not a hole cut in anything: it is the one line along the
+     back that was never given any wire. RectMap splits a shared edge at
+     the corners of whatever abuts it, so the wood behind the yard is
+     three rectangles instead of one and the middle one's edge is the
+     gate. Nothing else in the map has to know.
+
+     AND THE GAP IS WHERE A GAP WOULD BE, lined up with the roller
+     shutter the night crew left open, so the gate, the dock and the
+     shutter are one straight line through the back of the building.
+     That is where the lorries go, and it is also the only way in or out
+     of the yard that is not a walk round the whole store. */
+  const { y1: YARD_Y1, fenceH: FENCE_H } = YARD;
+  const [GATE_X0, GATE_X1] = YARD.gate;
+  if (YARD.y0 !== BACK_Y) throw new Error('the yard has come away from the back wall');
+  const yard = rm.add(ANCHOR_X0, BACK_Y, ANCHOR_X1, YARD_Y1, {
+    floor: FLOOR_OUT, ceil: CEIL_SKY, light: 0.42, outdoor: true, sky: 1,
+    floorTex: 'ASPHALT', ceilTex: 'SKY', wallTex: 'STORWALL',
+    upperTex: 'STORWALL', lowerTex: 'KERB', fuel: FUEL.none, name: 'the service yard',
+  });
+  /* the wood either side of it, and the three strips behind it */
+  const woodW = woodRect(RING_X0, BACK_Y, ANCHOR_X0, OY1, 'wood, west of the yard');
+  const woodE = woodRect(ANCHOR_X1, BACK_Y, RING_X1, OY1, 'wood, east of the yard');
+  const backW = woodRect(ANCHOR_X0, YARD_Y1, GATE_X0, OY1, 'wood, behind the yard');
+  const gateW = woodRect(GATE_X0, YARD_Y1, GATE_X1, OY1, 'wood, through the gate');
+  const backE = woodRect(GATE_X1, YARD_Y1, ANCHOR_X1, OY1, 'wood, behind the yard, east');
 
   rm.build();
 
@@ -1023,6 +1081,33 @@ export function buildSellWrong() {
      ----------------------------------------------------------------- */
   const S = mb.sectors;
   const byName = n => S.filter(s => s.name === n);
+
+  /* --- HANGING THE CHAIN LINK ---------------------------------------
+     Four of the yard's five neighbours get wire; the fifth is the gate
+     and gets nothing, which is the whole of the opening. `texLocked`
+     because finishTextures runs at mb.build() and would otherwise take
+     the middle texture straight back off — a two-sided line is a hole,
+     and a hole with something in it has to say so. */
+  let fenceLines = 0;
+  for (const nb of [woodW, woodE, backW, backE]) {
+    for (const l of mb.linesBetween(yard.sector, nb.sector)) {
+      l.middle = 'CHAINLNK';
+      l.midHeight = FENCE_H;      // see js/mapgeo.js: it stops at the top rail
+      l.pegMiddle = 'bottom';     // and stands on the ground rather than hanging
+      l.blocking = true;          // taller than you are, so it stops everything
+      l.texLocked = true;
+      fenceLines++;
+    }
+  }
+  /* AND THE ONE THAT IS THE WAY IN. Asserted rather than assumed: the
+     gate exists because a line was left alone, and a line left alone by
+     accident somewhere else in this file would be a second gate nobody
+     meant. */
+  const gateLines = mb.linesBetween(yard.sector, gateW.sector);
+  if (!gateLines.length) throw new Error('the yard has no gate');
+  if (gateLines.some(l => l.blocking || l.middle))
+    throw new Error('the gate got fenced');
+  if (fenceLines < 4) throw new Error(`only ${fenceLines} sides of the yard are fenced`);
 
   /* Glazing carries on above both entrances, which is what a big-box
      front actually looks like and beats thirteen repeats of a door track

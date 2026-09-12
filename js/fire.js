@@ -53,32 +53,45 @@ const CELL = 32;
    into fresh stock, with a dimming trail of embers behind it — instead
    of being a uniformly glowing region that grows.
 
-   THE WHOLE STORE MUST GO, EVENTUALLY. That is the requirement, and it
-   is a statement about percolation, not about flammability. A fire
-   crossing a region survives only if each burning cell lights, on
+   NO FIRE SURVIVES ITSELF, and that is the requirement now. It is a
+   statement about percolation rather than about flammability. A fire
+   crossing a region carries on only if each burning cell lights, on
    average, MORE THAN ONE new one before it burns out:
 
-     expected spreads  =  tics alight  x  chance/256  x  neighbours
+     expected spreads  =  tics alight  x  chance  x  neighbours
 
-   Above one, the fire runs away and takes everything connected to it.
-   Below one, it peters out, and no amount of waiting brings it back
-   because a burnt cell has no fuel left to relight. There is no middle
-   setting — it either eventually takes the store or it never does.
+   Above one, the fire runs away and takes everything connected to it,
+   and no player is required. Below one it peters out, and no amount of
+   waiting brings it back, because a burnt cell has no fuel left to
+   relight. There is no middle setting — it either eventually takes the
+   store on its own or it never does.
 
-   So both terms are tuned per cell from how rich it is, and both point
-   the same way:
+   IT USED TO BE ABOVE ONE EVERYWHERE, which meant one match anywhere in
+   the building took between eighty-five and ninety-four per cent of the
+   shop with nobody in it. That was the design and it was asked for, and
+   then it was asked for the other way round: a fire the player has to
+   WORK at. So every number below is now under the line, and what a fire
+   does when you leave it alone is go out.
 
-     RICH stock  burns HOT and FAST, and throws sparks eagerly. A gondola
-                 is gone in about three seconds and lights everything
-                 touching it.
-     THIN fuel   SMOULDERS. It never gets hot, it burns a unit at a time,
-                 and it stays alight long enough to pass the fire on.
+   What that buys, and it is the whole game loop:
 
-   That gives an aisle of bare lino about 1.9 expected spreads and a
-   gondola about 17. Both are above one, so everything indoors goes
-   eventually — but the aisle takes the better part of a minute to creep
-   across, and the gondola takes three seconds. The player with a
-   flamethrower is simply much faster than waiting.
+     A MATCH IS A PATCH. One ignition in the richest stock in the
+       building takes twenty-odd cells — five metres across — over a
+       couple of minutes, and then it is out. Two tenths of one per cent
+       of the store.
+     A WALKWAY IS A WALL. Bare floor is sixty times less willing to pass
+       fire on than a gondola, which puts it so far under the line that
+       fire does not cross an aisle at all. The cross-aisles are real
+       firebreaks now rather than slow ones.
+     THE SHELVES ARE THE FUSE. Dense stock is still the most willing
+       thing in the building, so pouring along a run does take the run.
+       It simply will not jump to the next one.
+
+   So burning the place down is a job of work: you point the gun at the
+   shelving, and the shelving you pointed at is what burns. A full sweep
+   of the shop still reaches a hundred per cent, everything charred and
+   everything gutted — that was measured, not hoped — but it takes the
+   player walking every aisle of it, which is the point.
 
    The car park is the exception and stays the exception: fuel 0, no
    burning, ever. It is the safe room and the way out.
@@ -87,35 +100,35 @@ const CELL = 32;
    control, and it is deliberately separate from every other number here.
 
    Slowing the CLOCK slows the fire without touching the percolation
-   maths at all — the expected-spreads-per-cell figure below is counted
-   in FIRE tics, so it is identical at any interval. Slowing the fire by
-   lowering the spread chance instead would have pushed the thin fuel
-   back under one and left holes in the burn again.
+   maths at all — the expected-spreads-per-cell figure above is counted
+   in FIRE tics, so it is identical at any interval. That is what makes
+   the two halves of "slower, and it should go out" separable: this
+   number decides HOW FAST, and SPREAD_RICH decides HOW FAR. Turn the
+   wrong one and you get a fire that is sluggish and still unstoppable,
+   or brisk and already over.
 
-   At 2, one match took the whole store in 34 seconds and there was
-   nothing for the player to do. At 6 it is a few minutes, which is time
-   to walk in, work, and get out — and the flamethrower is roughly ten
-   times faster than waiting, which is the point of carrying it. Asked
-   for slower three times, it went to 18.
+   It has been 2, 6, 18 and 3, in that order, each time because somebody
+   watched it and said faster or slower. At 2 one match took the whole
+   store in 34 seconds and there was nothing for the player to do; at 3
+   a run of shelving flashed over while you were still standing in the
+   aisle.
 
-   AND THEN ASKED TO GO OUT MUCH FASTER, so it is 3, and everything the
-   fire does happens six times sooner than it did. The reason this is the
-   number that moved and not the burn rate is the paragraph above: the
-   fire's LIFETIME and its SPREAD are the same two terms multiplied, so
-   burning the fuel faster to shorten a fire also shortens the number of
-   rolls it gets to pass itself on, and bare lino was only ever at 1.9
-   expected spreads. Six times the burn rate would have taken it to 0.3
-   and left holes in the shop that could never catch. Six times the clock
-   changes nothing about what eventually burns and everything about when.
+   IT IS 10 BECAUSE MUCH SLOWER WAS ASKED FOR THREE TIMES IN ONE
+   SENTENCE, and the clock is the honest place to spend that, for the
+   reason directly above: the interval buys pace and nothing else. The
+   other half of the same request — that a fire should go OUT — is not
+   here and cannot be here, because a slower clock makes a runaway fire
+   take longer and still take everything. That half is SPREAD_RICH.
 
-   What it feels like: a gondola cell rises, roars and is spent in about
-   four seconds rather than twenty-three, and the ember tail behind the
-   front — also counted in fire tics, so it came down with the clock — is
-   a dozen seconds rather than a minute and a quarter. A run of shelving
-   flashes over and dies back while you are still in the aisle, which is
-   what makes a store with eight hundred people in it a chase rather than
-   a slow siege. */
-const FIRE_INTERVAL = 3;
+   What it feels like: a fire front creeps about one cell every twelve
+   seconds through dense stock, where it used to manage six cells a
+   second, and a gondola cell rises, roars and is spent in a quarter of a
+   minute. The ember tail behind the front is counted in fire tics too,
+   so it came UP with the clock and a burnt-out patch sits glowing for
+   the better part of a minute before it goes cold — which is what you
+   want when the fire is the slow thing: the ground you have taken should
+   stay visibly taken while you are off taking the next bit. */
+const FIRE_INTERVAL = 10;
 
 const IGNITE_AT   = 55;      // heat a cell starts at when it catches
 const PEAK        = 255;
@@ -128,19 +141,18 @@ const SPREAD_AT   = 80;      // heat below which a cell cannot light another
    a roughly similar LIFETIME however rich it is — which is what keeps
    thin fuel alight long enough to matter.
 
-   AND THIN FUEL IS SLOWER STILL, which is the whole of "spread very
-   slowly across the floor". A fire crossing a region survives only if
-   each burning cell lights, on average, more than one new one:
+   AND THIN FUEL IS SLOWER STILL, so a cell of bare floor smoulders for
+   the better part of three minutes while a gondola is spent in a
+   quarter of one. That long life used to be what carried fire across a
+   walkway — a cell that stays alight gets more rolls to pass itself on,
+   and the two terms multiply:
 
      expected spreads  =  tics alight  x  chance  x  neighbours
 
-   so the two terms trade against each other exactly. Halving the spread
-   chance on its own would have put bare lino under the line and left
-   holes in the store that could never burn — that mistake has been made
-   here twice already. Instead the chance comes down by about three and
-   the LIFETIME goes up by about three: the same fire eventually reaches
-   the same places, and takes three times as long to creep there. A cell
-   of bare floor now smoulders for the better part of three minutes.
+   It is deliberately still long, and the chance is what came down
+   instead. The floor smoulders for minutes and gets nowhere, which is
+   exactly the picture wanted: a fire lying on the lino, visibly alight,
+   visibly not going anywhere, until it gives up.
 
    This is why the fuel arrays are floats. At the old rate a lino cell
    ate `max(1, ...)` of its fifty-five units a tic, and that floor — one
@@ -209,16 +221,33 @@ const peakHeat = f0 => Math.max(112, Math.min(PEAK, 112 + f0 * 0.5));
    OUT OF 1024, NOT DOOM'S 256, because at the pace asked for the floor's
    chance is about seven in a thousand and three in 256 is four times
    that. The quantisation, not the arithmetic, was the limit. */
-const SPREAD_DEN = 1024;
+const SPREAD_DEN = 65536;
+/* The chance a cell of the RICHEST stock passes the fire on, per
+   direction, per fire tic — and therefore the one number that decides
+   whether this game has a fire in it or a fire problem. See the block
+   above: everything else here is pace, this is the verdict. */
+const SPREAD_RICH = 400;
+/* How fast the chance falls away as the fuel thins. Steeper than it was,
+   which is how the walkways became real firebreaks instead of slow ones:
+   at 2.4 a gondola is sixty times more willing to pass fire on than the
+   bare floor between two of them, where it used to be twenty. */
+const SPREAD_CURVE = 2.4;
 const SPREAD_TABLE = (() => {
-  const t = new Uint16Array(1024);
+  const t = new Uint32Array(1024);
   for (let f = 0; f < t.length; f++)
-    t[f] = f <= 0 ? 0 : Math.max(4, Math.min(220, Math.round(150 * Math.pow(f / 300, 1.72))));
+    t[f] = f <= 0 ? 0 : Math.min(SPREAD_RICH, Math.round(SPREAD_RICH * Math.pow(f / 300, SPREAD_CURVE)));
   return t;
 })();
 const spreadChance = f => SPREAD_TABLE[Math.min(1023, Math.max(0, f | 0))];
-/* One roll in 1024 out of two eight-bit rolls. */
-const spreadRoll = n => (((pRandom() << 2) | (pRandom() & 3)) < n);
+/* ONE ROLL IN 65536, out of two eight-bit rolls, and the denominator had
+   to grow with the answer. Bare lino now wants to pass the fire on about
+   nine times in sixty-five thousand; in the old thousand-and-twenty-four
+   that is nought or it is one, and one is four times too many. The old
+   table had a `max(4, ...)` floor under it for exactly this reason — it
+   could not express a number that small, so it rounded every thin cell
+   UP to four and that floor was what carried fire across the walkways.
+   The quantisation was the mechanic. */
+const spreadRoll = n => (((pRandom() << 8) | pRandom()) < n);
 
 export class FireSystem {
   constructor(game) {
@@ -535,11 +564,18 @@ export class FireSystem {
 
   /** Will the fire travel here, and how eagerly?
    *
-   *  Anything with fuel will take it eventually. Richer stock takes it
-   *  sooner — a fire runs down a full aisle in seconds and creeps across
-   *  a bare walkway over most of a minute — but there is no floor below
-   *  which the answer is simply no. That floor used to exist, and it
-   *  meant most of the shop could never burn at all. */
+   *  The answer is about the NEIGHBOUR and not about the cell doing the
+   *  lighting: fire moves toward whatever will take it. Rich stock takes
+   *  it readily enough that a run of shelving is a fuse; bare floor
+   *  takes it about nine times in sixty-five thousand, which is a "no"
+   *  with the door left open.
+   *
+   *  THE DOOR IS LEFT OPEN ON PURPOSE. A hard floor under this — "below
+   *  this much fuel, never" — is what the old table had, and it meant
+   *  whole parts of the shop could not burn even when the player stood
+   *  there pouring on them. Nothing here is impossible; most of it is
+   *  merely so unlikely that waiting is not a strategy. Which is the
+   *  difference between a shop you have to burn and a shop you cannot. */
   _trySpread(j, out) {
     if (j < 0 || j >= this.heat.length) return;
     const f = this.fuel[j];
