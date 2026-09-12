@@ -1492,6 +1492,68 @@ section('the cold');
     check('and the one after that lights them', (who.ignite(300), who.burning > 0));
   }
 
+  /* --- AND THE FLAMETHROWER ITSELF, WHICH IS NOT ignite() ----------
+     The block above tests half of a flame particle. The other half is
+     the damage, and testing the two apart is exactly how a frozen
+     shopper came to be killed INSIDE the ice by the second particle of
+     the stream — the thaw was right, the damage went round it, and the
+     damage won the race. So this drives the real FlameStream._burnActor
+     and asks the question the prose in js/actor.js answers: what comes
+     out the other side. */
+  {
+    const g = mk();
+    const who = g.actors.find(a => a.type === 'SHOPPER' && !a.dead);
+    const health = who.health, bursts = g.giblets.bursts;
+    who.chill(Actor.FREEZE_AT);
+    let n = 0, diedFrozen = false;
+    while (who.frozen && n < 60) {
+      g.flame._burnActor(who, who.x, who.y, who.z);
+      n++;
+      if (who.dead || who.removed) { diedFrozen = who.frozen; break; }
+    }
+    note('flame particles to free one', `${n}`);
+    check('the stream never kills anybody who is still frozen', !diedFrozen);
+    check('and none of it reaches their health through the ice',
+      who.health === health, `${health} -> ${who.health}`);
+    check('and what comes out the other side is alive and alight',
+      !who.frozen && !who.dead && who.burning > 0 && who.state.name.startsWith('SHOP_BURN'),
+      `${who.state.name}, burning ${who.burning}`);
+    check('so a frozen person never becomes burning giblets',
+      g.giblets.bursts === bursts, `${g.giblets.bursts - bursts} bursts`);
+  }
+
+  /* --- AND A BLAST TAKES THE WHOLE BAR OFF AT ONCE ------------------ */
+  {
+    const g = mk();
+    const who = g.actors.find(a => a.type === 'SHOPPER' && !a.dead && !a.frozen);
+    who.chill(Actor.FREEZE_AT);
+    const health = who.health;
+    g.explode({ x: who.x + 30, y: who.y, z: who.z });
+    check('a car going up beside a block of ice frees whoever is in it',
+      !who.frozen && !who.dead && who.health === health,
+      `${who.state.name}, health ${health} -> ${who.health}`);
+    check('and then lights them', who.burning > 0, `burning ${who.burning}`);
+  }
+
+  /* --- AND A CORPSE THAWS INTO A CORPSE -----------------------------
+     Nothing reaches this today: a shopper's death state removes them on
+     the tic it runs, and fire no longer kills anybody still frozen. It
+     is checked because thaw() ends in setState(freezeReturn), and the
+     day something freezable has a death animation that lingers, the
+     melt would stand the body back up and set it running. */
+  {
+    const g = mk();
+    const who = g.actors.find(a => a.type === 'SHOPPER' && !a.dead);
+    who.chill(Actor.FREEZE_AT);
+    const froze = who.state.name;
+    who.dead = true; who.solid = false; who.frost = 1;
+    who.thaw();
+    check('the dead do not get up when the ice comes off',
+      who.state.name === froze && !who.solid && who.panic === 0,
+      `${who.state.name}, solid ${who.solid}, panic ${who.panic}`);
+    check('they only stop being blue', who.frost === 0 && !who.frozen);
+  }
+
   /* --- OR THEY BREAK ----------------------------------------------- */
   {
     const g = mk();

@@ -71,7 +71,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         653 checks, no install and no browser
+  the smoke test         661 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -200,6 +200,14 @@ and the player picks:
                 comes out the other side is a person on fire
   break them    anything at all that hits a frozen person shatters
                 them, whole, into bloody frozen chunks
+
+AND THE ICE IS ARMOUR WHILE IT LASTS, which is the one thing about this
+that has to be said out loud. Fire spent on a frozen person goes entirely
+into melting them and none of it reaches their health, so a block of ice
+is briefly the safest thing in a burning shop — the flamethrower frees
+people it cannot hurt until it has freed them. Three particles of the
+stream does it, or one car going up beside them, and then they are an
+ordinary shopper who is on fire.
 
 THE COLOUR IS A MAP AND NOT A TINT, which is the difference between
 somebody frozen and somebody with a blue light on them. Multiplying a
@@ -2053,7 +2061,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-653 checks. Every one of them earns its place by having caught something
+661 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -2248,6 +2256,32 @@ that had already reached a screenshot:
     their own that lands a splat and a breath of vapour and nothing
     else. The test shatters somebody and then runs two hundred tics of
     giblets and counts the cells that caught: none
+  THE SAME BUG WEARING THE OTHER DOOR, found while checking that the one
+    above had really been fixed. Fire is meant to be the counter to the
+    extinguisher: it eats the frost, the person thaws, and what comes
+    out the other side is alive and alight. That is what the manual
+    above promises and what ignite() does — but a flame particle is TWO
+    calls, ignite and then damage, and damage knew nothing about frost.
+    So the melting and the hurting raced and the hurting won: a shopper
+    has twelve health and a particle does five to nine, so the SECOND
+    one killed them with forty-four of their hundred frost still on.
+    They never thawed, never got up, and — because dying runs the
+    ordinary death state — came apart into BURNING giblets that lit the
+    floor where they landed, exactly the way the shatter used to. The
+    extinguisher had been making people more flammable. Fire damage is
+    spent on the ice now, at twice its value, and none of it reaches the
+    person until the ice is gone; a blast carries enough to take the
+    whole bar off at once, so a car going up beside a block of ice frees
+    whoever is in it and then lights them. What let it hide is that the
+    test drove ignite() on its own — the half that was right. It drives
+    the real FlameStream._burnActor now, and asks what came out
+  A CORPSE STANDING BACK UP WHEN IT THAWED, which nothing in the shipped
+    game could reach and which is checked anyway. thaw() ends in
+    setState(freezeReturn) — get up and run — and it ran on whatever it
+    was called on. A shopper's death state removes them on the tic it
+    runs, so there was never a body left to melt; the day something
+    freezable has a death animation that lingers, there would be. The
+    dead stop being blue and stay where they are
   A BLOCK OF ICE FOR SIX TICS. Freezing put the frost bar at the top
     and thawing took it off at a unit every six tics — and the thaw
     triggered the moment the number dipped BELOW the threshold, which

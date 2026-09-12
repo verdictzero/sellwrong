@@ -425,9 +425,31 @@ export class Actor {
     /* FROZEN AND THEN HIT IS NOT A HIT. Whatever it was — a boxcutter, a
        car going up next to them, one unlucky particle — a person who is
        a block of ice comes apart entirely, and the amount does not enter
-       into it. Fire is the exception and is handled a line further on by
-       being a thaw rather than a blow. */
-    if (this.frozen && !opts.fire) { this.shatter(source); return; }
+       into it.
+
+       FIRE IS THE EXCEPTION, AND THE EXCEPTION IS THIS BLOCK. It is
+       spent MELTING, at twice its damage, and none of it reaches the
+       person until the ice is gone — which is the only reason the `burn
+       them` row above is true rather than merely written down. It used
+       to say fire was a thaw and then not do it: ignite() took frost
+       off, but the damage arriving in the same call went straight
+       through the ice into a shopper's twelve health, so the SECOND
+       flame particle killed them with 44 of their 100 frost still on.
+       They never thawed and never got up — and because dying runs the
+       ordinary death state they came apart into BURNING giblets, which
+       trail fire through the air and light the floor where they land.
+       The cold chunks got their own pool to stop precisely that; this
+       was the same bug wearing the other door.
+
+       A blast carries enough to take the whole bar off at once, so a car
+       going up beside a block of ice frees whoever is in it and then
+       lights them, which is the correct amount of mercy. */
+    if (this.frozen) {
+      if (!opts.fire) { this.shatter(source); return; }
+      this.frost = Math.max(0, this.frost - amount * 2);
+      if (this.frost <= 0) this.thaw();
+      return;
+    }
     /* ALREADY ON FIRE IS ALREADY DEAD, and more fire does not hurry it.
        Something with a `burn` state has a clock running the moment it
        catches (see ignite), and that clock is the only thing that ends
@@ -663,6 +685,14 @@ export class Actor {
   thaw() {
     if (!this.frozen) return;
     this.frozen = false;
+    /* A CORPSE THAWS INTO A CORPSE. Nothing reaches this with `dead` set
+       today — a shopper's death state removes them on the tic it runs,
+       and fire no longer kills anybody who is still frozen — but the
+       last line of this function is setState(freezeReturn), and the day
+       something freezable has a death animation that lingers, the melt
+       would stand the body back up and set it running. Being frozen is
+       a state the living come out of; the dead just stop being blue. */
+    if (this.dead || this.removed) { this.frost = 0; return; }
     this.solid = this.info.solid ?? !!this.info.monster;
     this.panic = this.info.panicTics ?? 280;
     const st = this._thawState;
