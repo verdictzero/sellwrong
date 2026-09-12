@@ -647,6 +647,9 @@ export class FireSystem {
     const acc = { sx: sx * step, sy: sy * step, sw: sw * step, n: near };
     this.game.forest?.glowInto(acc, p.x, p.y);
     this.game.flame?.glowInto(acc);
+    /* and everybody in the building who is on fire, which is the light
+       that moves — a torch running down an aisle lights it as it goes */
+    this.game.fx?.glowInto(acc);
     sx = acc.sx; sy = acc.sy; sw = acc.sw;
     if (sw > 0.01) {
       world.fireLightPos.value.set(sx / sw, this.game.level.sectorAt(sx / sw, sy / sw)?.floor + 48 || 48, sy / sw);

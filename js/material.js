@@ -546,15 +546,30 @@ varying float vChar;
      about the same kind of thing and a second define is a second shader
      permutation for one uniform. See the ASH block in main(). */
   uniform float ash;
+  /* AND HOW ALIGHT, 0 to 1. Not the same fact as the one above: ash is
+     a body being consumed and ends in a heap, this is a person running
+     with their coat on fire and ends in a bang. A thing is never both.
+     (No backticks in here, ever: this is a template literal, and one
+     of those inside it ends the shader in the middle of a sentence.) */
+  uniform float alight;
 #endif
 
 ${WORLD_SHADE_GLSL}
 
 void main() {
   vec4 t = texture2D(map, vUv);
-  /* what the burning front of a body being eaten adds, held out here so
-     the one line that adds it at the bottom does not need the define */
-  vec3 ashGlow = vec3(0.0);
+  /* WHAT A THING THAT IS ITSELF ON FIRE ADDS, held out here so the one
+     line at the bottom that adds it does not need the define.
+
+     ADDED AND NOT MIXED, which is the whole reason a person on fire
+     reads as one. Every colour in the ember ramp is at most white, so a
+     colour MAP alone can never make a burning shopper brighter than a
+     fully lit one — and what came out of that was a person the colour
+     of terracotta standing in a dark aisle. Fire is a SOURCE. The coals
+     on a burnt wall have been added rather than mixed since the day
+     they went in (see emberOf); this is the same argument about a
+     person. */
+  vec3 glowAdd = vec3(0.0);
   /* and a surface that has no picture takes its own material's colour
      instead — see the note on the attribute in the vertex shader */
   #ifdef INK
@@ -581,6 +596,63 @@ void main() {
     float lum = dot(t.rgb, vec3(0.30, 0.59, 0.11));
     vec3 ice = mix(vec3(0.09, 0.17, 0.31), vec3(0.74, 0.93, 1.05), pow(lum, 0.62));
     t.rgb = mix(t.rgb, ice, frost);
+  }
+
+  /* ------------------------------------------------------------------
+     A PERSON ON FIRE
+
+     THE FLAMES ARE NOT ENOUGH ON THEIR OWN. Licks of fire thrown off a
+     burning shopper (see Effects.bodyFire) put fire in front of them
+     and leave a trail behind them, and with the drawing untouched
+     underneath what the eye reads is a shopper standing BEHIND a fire.
+     What makes it that person burning is that their own colours go.
+
+     A MAP AND NOT A TINT, exactly as the ice is and for exactly the
+     same reason: multiplying a green coat by orange gives a muddy
+     brown coat, and what somebody on fire looks like is their SHAPE in
+     flame. So the texel's luminance is kept, everything else is thrown
+     away, and that one number picks a colour off the ember ramp — the
+     same eight the coals in a burnt aisle use, so a person burning and
+     the aisle they set light to are made of the same paint.
+
+     HOTTEST AT THE FEET, because fire climbs: a person alight is white
+     at the knees and their head is the last thing still recognisable.
+     That gradient is also what keeps them readable as a PERSON for the
+     four seconds they have left — a figure evenly washed to orange is
+     a silhouette, and the whole point of them running is that you can
+     see who it is running.
+
+     AND THEY DARKEN UNDERNEATH IT. The base colour is taken down as
+     the fire takes hold, so what is not actually alight at this
+     instant is scorched cloth rather than a clean coat — and the
+     flicker moves the line between the two about, which is the
+     difference between a burning person and a person painted orange.
+     ------------------------------------------------------------------ */
+  if (alight > 0.0) {
+    float lum = dot(t.rgb, vec3(0.30, 0.59, 0.11));
+    float n = emberHash(vec3(floor(vUv * vec2(11.0, 17.0)), 3.0));
+    /* two beats against each other, so the fire on one shopper is not
+       in step with the fire on the next one along */
+    float fl = 0.72 + 0.28 * sin(emberTime * 13.0 + n * 29.0)
+                          * sin(emberTime * 5.3 + vUv.y * 21.0);
+    /* 1 at the feet and 0 at the crown — see the note in the ash block
+       on which way vUv.y points */
+    float low = 1.0 - vUv.y;
+    float heat = alight * clamp(0.55 + low * 0.75, 0.0, 1.3) * fl;
+    /* BIASED DOWN THE RAMP, which is the same lesson the coals on a
+       burnt wall had to learn. The top of the ember ramp is a pale warm
+       cream — correct for the white heart of a fire and nothing like a
+       person on fire — and luminance alone put most of a shopper up
+       there, so what came out was a bronze statue. Luminance carries
+       the SHAPE and the heat carries the COLOUR: deep red at the head,
+       yellow at the knees, and the flicker walking the line about. */
+    float idx = clamp(lum * 0.50 + heat * 0.46 + n * 0.10, 0.0, 1.0);
+    vec3 flame = emberRamp[int(floor(idx * 7.0 + 0.5))];
+    float take = clamp(heat, 0.0, 1.0);
+    t.rgb = mix(t.rgb * (1.0 - 0.55 * alight), flame, take);
+    /* and the light they throw, on top of everything the room does to
+       them — most of it at the knees, where the fire is */
+    glowAdd += flame * take * (0.34 + 0.52 * low) * alight;
   }
 
   /* ------------------------------------------------------------------
@@ -616,11 +688,14 @@ void main() {
   if (ash > 0.0) {
     float n = emberHash(vec3(floor(vUv * vec2(13.0, 19.0)), 0.0)) * 0.62
             + emberHash(vec3(floor(vUv * vec2(29.0, 41.0)), 7.0)) * 0.38;
-    /* vUv.y IS MEASURED DOWN THE PICTURE, not up the person. The
-       sprite sheets are canvas-backed and arrive with the first row at
-       the top, so this ran the front the wrong way and ate people from
-       the head down — which reads as a person dissolving rather than as
-       a person on fire, and was obvious in the first screenshot. */
+    /* vUv.y RUNS UP THE PERSON: 0 at the foot of the quad, 1 at the top
+       of their head. The quad is authored as a unit square with its
+       foot at y = 0 (see the vertex shader) and its uv goes with it.
+       The first cut of this assumed the opposite, wrote 1.0 - vUv.y,
+       and ate people from the hat down — which reads as a person
+       dissolving rather than as a person on fire, and was obvious in
+       the first screenshot. Measured, not reasoned about: the flip was
+       tried and looked at. */
     float up = vUv.y;                       // the foot of the sprite first
     float th = up * 0.70 + n * 0.30;
     /* A LINE, NOT A BELT. The threshold is seven parts height to three
@@ -648,7 +723,7 @@ void main() {
       float idx = clamp(0.42 + hot * 0.40 + fl * 0.20, 0.0, 1.0);
       /* squared, so the hot core is thin and the edges of the band fall
          away into the scorch instead of the whole band being white */
-      ashGlow = emberRamp[int(floor(idx * 7.0 + 0.5))] * hot * hot * (0.9 + 0.6 * fl);
+      glowAdd = emberRamp[int(floor(idx * 7.0 + 0.5))] * hot * hot * (0.9 + 0.6 * fl);
     }
   }
   #endif
@@ -692,7 +767,7 @@ void main() {
     c += emberOf(max(vChar, smoothstep(0.06, 0.92, burn)), vWorld,
                  dot(albedo, vec3(0.2126, 0.7152, 0.0722)), vDepth);
   #endif
-  gl_FragColor = vec4(c + ashGlow, t.a);
+  gl_FragColor = vec4(c + glowAdd, t.a);
 }
 `;
 
@@ -774,6 +849,7 @@ export function createSpriteMaterial(texture, opts = {}) {
      carries the uniform and the define that reads it */
   u.frost         = { value: 0.0 };
   u.ash           = { value: 0.0 };
+  u.alight        = { value: 0.0 };
   const blend = opts.blend || 'cutout';
   /* Depth TESTING stays on for all three, always: a flame behind a
      gondola is behind the gondola. It is only depth WRITING that a

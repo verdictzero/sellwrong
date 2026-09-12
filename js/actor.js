@@ -212,6 +212,7 @@ export class Actor {
     this.thawTick = 0;
     /* being eaten by the fire — see burnAway(), and the `ash` uniform in
        js/material.js, which is the whole of what it looks like */
+    this.lit = 0;                // 0 to 1, how engulfed — the sprite's own fire
     this.ash = 0;                // 0 to 1, and gone at the top
     this.ashTics = 0;            // how long the whole of it takes, rolled
     this.ashBy = null;           // who gets the kill when it finishes
@@ -584,6 +585,7 @@ export class Actor {
       this.thaw();
     }
     const wasAlight = this.burning > 0;
+    if (!wasAlight) this.lit = 0;         // the palette ramps in, see burnTic
     this.burning = Math.max(this.burning, tics);
     /* AND SOME THINGS RUN WITH IT. A `burn` state is a thing that does
        not simply stand there and take the damage: it is set alight, it
@@ -620,7 +622,26 @@ export class Actor {
 
   burnTic() {
     this.burning--;
-    if (this.burning <= 0) { this.burning = 0; if (this.burnSprite) { this.burnSprite.remove(); this.burnSprite = null; } return; }
+    if (this.burning <= 0) {
+      this.burning = 0; this.lit = 0;
+      if (this.burnSprite) { this.burnSprite.remove(); this.burnSprite = null; }
+      return;
+    }
+    /* WHAT BEING ON FIRE LOOKS LIKE, and until this line it looked like
+       nothing: a shopper alight was the ordinary drawing turned
+       fullbright, with the fire they had dropped on the floor doing all
+       of the work. Two halves, and they are deliberately different
+       mechanisms — flame licks thrown off the body, which trail behind
+       a runner because they are particles and the runner is moving (see
+       Effects.bodyFire), and a fire colour map on the drawing itself
+       (see `alight` in js/material.js), which is what stops the licks
+       reading as a person standing behind a fire.
+
+       THE RAMP IS A THIRD OF A SECOND. Snapping the palette on the tic
+       they catch makes a shopper change colour; twelve tics of it reads
+       as the fire taking hold of their clothes. */
+    this.lit = Math.min(1, this.lit + 1 / 12);
+    this.game.fx?.bodyFire(this);
     /* A TORCH DROPS FIRE MORE OFTEN than a thing standing still burning,
        and for a reason that is arithmetic rather than drama: it is
        moving eight units a tic, so twelve tics between drops is a trail
@@ -712,7 +733,10 @@ export class Actor {
     if (this.burning > 0) {
       this.burning = Math.max(0, this.burning - amount * 4);
       this.torch = Math.max(0, this.torch - amount * 4);
-      if (this.burning <= 0 && this.burnSprite) { this.burnSprite.remove(); this.burnSprite = null; }
+      if (this.burning <= 0) {
+        this.lit = 0;
+        if (this.burnSprite) { this.burnSprite.remove(); this.burnSprite = null; }
+      }
     }
     if (this.frozen) { this.frost = Actor.FREEZE_AT; return false; }
     this.frost = Math.min(Actor.FREEZE_AT, this.frost + amount);
@@ -724,7 +748,7 @@ export class Actor {
     if (this.frozen || this.removed || this.dead) return;
     this.frozen = true;
     this.frost = Actor.FREEZE_AT;
-    this.burning = 0; this.torch = 0;
+    this.burning = 0; this.torch = 0; this.lit = 0;
     if (this.burnSprite) { this.burnSprite.remove(); this.burnSprite = null; }
     /* A BLOCK OF ICE IS SOLID whether or not the thing inside it was.
        It also stops thinking: the state is parked with tics -1, which is
@@ -852,7 +876,7 @@ export class Actor {
        kept for whatever gets frozen next */
     if (!this.info.burnAway) { if (this.frozen) this.thaw(); return; }
     this.frozen = false;             // it is a different hold now
-    this.burning = 0; this.torch = 0;
+    this.burning = 0; this.torch = 0; this.lit = 0;
     this.ashBy = source || this.game.player;
     const [lo, hi] = this.info.ashTics ?? [105, 158];
     this.ashTics = Math.round(lo + (pRandom() / 255) * (hi - lo));
@@ -996,6 +1020,10 @@ export class Actor {
        which is a tenth of a second before collapse() takes the actor
        away, so the drawing is empty rather than popping out. */
     if (u.ash) u.ash.value = this.ash;
+    /* AND HOW ALIGHT. Same idea as the frost and the same place in the
+       shader: a colour MAP rather than a tint, because a person on fire
+       is not their own colours with orange light on them. */
+    if (u.alight) u.alight.value = this.lit;
     /* A car in the back row of the car park has to diminish the way the
        tarmac under it does, or it turns into a silhouette while the bay
        around it stays lit. */
@@ -1165,8 +1193,11 @@ export const ACTIONS = {
        fighting over the same pixels — a pale blue statue with coals
        crawling up it reads as neither. */
     if (a.frost > 0) a.frost = Math.max(0, a.frost - Actor.FIRE_THAW * 2);
-    /* smoke off them the whole way, and a few sparks off the front */
-    a.game.fx?.puff(a.x, a.y, a.z + a.height * (0.2 + a.ash * 0.7), 14, 70);
+    /* AND FLAME ON THEM, at half strength. A body being eaten is on
+       fire and has to look it — but on this one the DRAWING is the
+       effect, so the licks are kept small enough to sit round the
+       burning front rather than hide it. */
+    a.game.fx?.bodyFire(a, 0.5);
     if ((pRandom() & 1) === 0)
       a.game.fx?.ember(a.x, a.y, a.z + a.height * a.ash, 1, 0.7);
     if (a.ash >= 1) a.collapse(a.ashBy);

@@ -31,8 +31,70 @@ import { EMBER_RAMP } from './palette.js';
 /* The wind. The forest fire leans with it too; see forest.js. */
 const WIND_X = 0.28;
 
+/* =====================================================================
+   A PERSON ON FIRE
+
+   The best thing in this game was, until now, invisible. A shopper the
+   flame touches catches, runs for several seconds dropping fire behind
+   them and then goes off — and what you SAW was an ordinary shopper,
+   drawn fullbright, with some fire on the floor near them. The whole
+   mechanic was carried by the floor.
+
+   THREE THINGS MAKE SOMEBODY LOOK ALIGHT and it needs all three:
+
+     THE FLAME ON THEM       licks spawned at the body every tic, short
+                             lived, rising. Because they are PARTICLES
+                             and the person is moving eight units a tic,
+                             the ones behind are the trail — the same
+                             pool does the fire and the tail of it, and
+                             a burning shopper who stops running piles
+                             them up on the spot instead, which is
+                             correct and costs nothing.
+     THE SPRITE ITSELF       a fire colour map on the drawing, the same
+                             trick as the ice: see `alight` in
+                             js/material.js. Flames in front of an
+                             unchanged shopper read as a shopper
+                             standing behind a fire.
+     THE LIGHT THEY THROW    a burning person running down a dark aisle
+                             lights it, and the store has exactly one
+                             fire light (js/fire.js), so they pull it
+                             toward themselves like everything else that
+                             burns.
+
+   AND IT IS BUDGETED, because a crowd fire is dozens of them at once
+   and the aisle is already full of the fire's own flames. Nobody more
+   than `near` away throws anything at all — at that range they are two
+   pixels and a glow — and no more than `most` of them in any one tic.
+   ===================================================================== */
+/* TONGUES, NOT A BONFIRE. The first cut threw two a tic at up to
+   thirty-four units, which on a fifty-six-unit person is thirty
+   overlapping blobs each a third of their height: what came out was a
+   column of fire with somebody lost inside it, and the point of a
+   burning shopper is that you can see WHO is burning. One a tic, smaller,
+   and gone sooner — about a dozen alive on one person — leaves the
+   drawing showing through, which is where the colour map does its work. */
+export const BODY_FIRE = {
+  near: 1400,          // past this a burning person is a glow, not a fire
+  most: 14,            // how many of them may throw flame in one tic
+  perTic: 1,           // licks each, a tic
+  lifeMin: 8, lifeMax: 17,
+  sizeMin: 10, sizeMax: 25,
+  rise: 0.75,          // how fast a lick climbs
+  lift: 6,             // and how far toward the eye it spawns, so it is
+                       // in front of the person rather than fighting
+                       // their quad for the same pixels
+  /* AND THE SPARKS ARE RATIONED TOO, against the same pools the store's
+     own fire throws from: fourteen people alight at one spark every two
+     tics is two hundred and forty a second into a pool of six hundred
+     and forty, which is a crowd fire that starves the AISLE of embers.
+     Every fourth tic, phased off the actor's id so they are not in
+     step, is a steady stream off one and a shared budget across many. */
+  emberEvery: 4,       // tics between sparks off one of them
+  smokeEvery: 10,      // and between puffs
+};
+
 export class Effects {
-  constructor(game, atlases = null) {
+  constructor(game, atlases = null, flameAtlas = null) {
     this.game = game;
     this.embers = new Particles({
       max: 640, texture: atlases?.spark || null, frames: 1,
@@ -48,10 +110,106 @@ export class Effects {
       max: 360, texture: atlases?.smoke || null, frames: SMOKE_PUFFS,
       blend: 'alpha', fullbright: false, light: 0.55, name: 'smoke', renderOrder: 14, nearShrink: 90,
     });
+    /* THE FIRE PEOPLE CARRY. Its own pool and not the store's, because
+       the store's flames are PARKED on hot cells and re-placed every
+       frame — which is right for a fire that sits still and wrong for
+       one that is running down an aisle. These are simulated: spawned
+       at the body, left where they were spawned, and the difference is
+       the trail. Additive, like every other flame in the game, so a
+       person well alight adds up toward white at the middle of them. */
+    this.bodyFlames = new Particles({
+      max: 460, texture: flameAtlas?.texture || null, frames: flameAtlas?.frames || 1,
+      blend: 'add', fullbright: true, name: 'body-fire', renderOrder: 13, nearShrink: 40,
+    });
     this._samples = [];
+    /* the per-tic budget and the light the burning bodies throw, both
+       reset by the first caller in a tic rather than by the frame, so
+       they do not depend on where in Game.tic this is reached */
+    this._fireTic = -1;
+    this._fireLeft = 0;
+    this._glow = { sx: 0, sy: 0, sw: 0, n: 0 };
   }
 
-  attach(scene) { this.embers.attach(scene); this.smoke.attach(scene); }
+  attach(scene) {
+    this.embers.attach(scene);
+    this.smoke.attach(scene);
+    this.bodyFlames.attach(scene);
+  }
+
+  /* ------------------------------------------------------------------
+     One burning body, one tic of fire off it.
+
+     Called from Actor.burnTic, which already runs once per tic per
+     thing that is alight — so there is no scan of seven hundred people
+     to find the four that are on fire, and the budget is spent by
+     whoever asks first. `scale` is for a body being EATEN rather than
+     running (see Actor.burnAway): it is on fire too, but the flame has
+     to stay off the drawing, because on that one the drawing is the
+     effect.
+     ------------------------------------------------------------------ */
+  bodyFire(a, scale = 1) {
+    const g = this.game, p = g.player;
+    if (!p || a.removed) return 0;
+    if (this._fireTic !== g.tics) {
+      this._fireTic = g.tics;
+      this._fireLeft = BODY_FIRE.most;
+      this._glow.sx = this._glow.sy = this._glow.sw = 0; this._glow.n = 0;
+    }
+    const d2 = dist2(a.x, a.y, p.x, p.y);
+    /* THE LIGHT IS NOT BUDGETED AND NOT RANGED THE SAME WAY. A torch
+       three aisles off is not worth a particle and is very much worth
+       the glow it puts on the shelving between you and it. */
+    this._glow.sx += a.x * scale; this._glow.sy += a.y * scale;
+    this._glow.sw += scale; this._glow.n++;
+    if (d2 > BODY_FIRE.near * BODY_FIRE.near) return 0;
+    if (this._fireLeft <= 0) return 0;
+    this._fireLeft--;
+
+    const B = BODY_FIRE;
+    const h = a.height || 56;
+    /* toward the eye, so the lick is in front of the person and not
+       fighting their billboard for the same depth — the forest's trick,
+       for the same reason, at a tenth of the arithmetic because a
+       particle that moves does not have to be exact */
+    const dx = p.x - a.x, dy = p.y - a.y;
+    const inv = 1 / Math.max(1, Math.sqrt(d2));
+    const lx = dx * inv * B.lift, ly = dy * inv * B.lift;
+    const n = Math.max(1, Math.round(B.perTic * scale));
+    for (let k = 0; k < n; k++) {
+      /* UP THE BODY AND BIGGEST AT THE MIDDLE. A column of even flames
+         is a pillar; a person on fire is bright at the chest with
+         tongues off the shoulders. */
+      const up = (pRandom() / 255);
+      const size = (B.sizeMin + (B.sizeMax - B.sizeMin) * (1 - Math.abs(up - 0.45) * 1.6)) * scale;
+      this.bodyFlames.spawn({
+        x: a.x + lx + (pRandom() / 255 - 0.5) * 11,
+        y: a.y + ly + (pRandom() / 255 - 0.5) * 11,
+        z: a.z + 4 + up * h * 0.9,
+        vx: (pRandom() / 255 - 0.5) * 0.5 + WIND_X * 0.5,
+        vy: (pRandom() / 255 - 0.5) * 0.5,
+        vz: B.rise + (pRandom() / 255) * 0.7,
+        life: B.lifeMin + (pRandom() % (B.lifeMax - B.lifeMin)),
+        size0: Math.max(6, size), size1: Math.max(3, size * 0.35),
+        c0: [1, 1, 1], c1: [1, 0.72, 0.34],
+        a0: 0.95, a1: 0,
+        frame: pRandom() % (this.bodyFlames.opts.frames || 1), frameRate: 0.55,
+        drag: 0.93, gravity: -0.02,
+      });
+    }
+    /* and the sparks and the smoke off them, which are the parts of the
+       trail that outlast the flame and go where the wind does */
+    if ((g.tics + a.id) % B.emberEvery === 0) this.ember(a.x, a.y, a.z + h * 0.5, 1, 0.9 * scale);
+    if ((g.tics + a.id) % B.smokeEvery === 0) this.puff(a.x, a.y, a.z + h * 1.05, 20 * scale, 120);
+    return n;
+  }
+
+  /** The one fire light, pulled toward everybody who is alight. Same
+   *  protocol the forest and the gun's flame use — see Fire.ticLight. */
+  glowInto(acc) {
+    const G = this._glow;
+    if (G.sw <= 0) return;
+    acc.sx += G.sx; acc.sy += G.sy; acc.sw += G.sw; acc.n += G.n;
+  }
 
   /* ------------------------------------------------------------------
      Spawning
@@ -174,11 +332,19 @@ export class Effects {
       return nz <= floor + 1;
     });
     this.smoke.tic();
+    /* the licks stop at a wall for the same reason the stream's do: fire
+       that reaches through the frozen aisle into the stockroom is not a
+       fire, it is a bug with a texture on it */
+    this.bodyFlames.tic((i, nx, ny, nz) => {
+      const s = lv.sectorAt(nx, ny);
+      return !s || nz <= s.floor - 2 || nz >= s.ceil;
+    });
   }
 
   render(billboardRot) {
     this.embers.render(billboardRot);
     this.smoke.render(billboardRot);
+    this.bodyFlames.render(billboardRot);
   }
 
   get liveCount() { return this.embers.count + this.smoke.count; }

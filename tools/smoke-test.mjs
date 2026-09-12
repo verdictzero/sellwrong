@@ -1429,16 +1429,34 @@ section('the flame');
         /* the three zones: gone, the line of coals, and the scorch ahead
            of it — a discard, an additive ramp lookup, and a mix */
         return /if \(ash > 0\.0\)/.test(frag) && /discard/.test(frag) &&
-               /ashGlow = emberRamp/.test(frag) && /c \+ ashGlow/.test(frag);
+               /glowAdd = emberRamp/.test(frag) && /c \+ glowAdd/.test(frag);
       })());
-    /* AND IT RUNS FEET FIRST. vUv.y is measured DOWN the picture — the
-       sprite sheets are canvas-backed and arrive top row first — so the
-       obvious spelling of "from the feet up" ate people from the head
-       down, which is a person dissolving rather than a person on fire. */
-    check('and it runs from the feet up',
+    /* AND IT RUNS FEET FIRST. vUv.y runs UP the person — the quad is
+       authored with its foot at y = 0 and its uv goes with it — and the
+       first cut of this assumed the opposite and ate people from the
+       hat down, which is a person dissolving rather than a person on
+       fire. One character, nothing else in the game would notice, so it
+       is pinned in the source. */
+    check('the burn-away runs from the feet up',
       (() => {
         const src = fs2.readFileSync('js/material.js', 'utf8');
-        return /float up = vUv\.y;/.test(src) && !/float up = 1\.0 - vUv\.y;/.test(src);
+        const blk = src.slice(src.indexOf('if (ash > 0.0)'), src.indexOf('SURFACE_BURN'));
+        return /float up = vUv\.y;/.test(blk) && !/float up = 1\.0 - vUv\.y;/.test(blk);
+      })());
+    /* AND THE FIRE ON A PERSON RUNS THE OTHER WAY ROUND, because fire
+       climbs: white at the knees, and their face is the last thing left
+       recognisable. Which is also what keeps a burning shopper legible
+       as a PERSON for the four seconds they have — evenly washed to
+       orange they are a silhouette, and the point of them running is
+       that you can see who it is running. */
+    check('and a sprite can be alight as well as frozen and eaten',
+      'alight' in sprite.uniforms && sprite.uniforms.alight.value === 0);
+    check('and the fire on one is hottest at the feet',
+      (() => {
+        const src = fs2.readFileSync('js/material.js', 'utf8');
+        const blk = src.slice(src.indexOf('if (alight > 0.0)'), src.indexOf('if (ash > 0.0)'));
+        return /float low = 1\.0 - vUv\.y;/.test(blk) && /emberRamp/.test(blk) &&
+               /mix\(t\.rgb/.test(blk);
       })());
     check('and the shader guards both blocks rather than multiplying by zero',
       (() => {
@@ -2961,6 +2979,98 @@ section('the way out');
       `${who.state?.name ?? 'removed'}`);
     check('and the giblets happened, so it was an explosion and not a nap',
       g.giblets ? g.giblets.bursts > 0 : true);
+  }
+
+  /* --- AND YOU CAN SEE THAT THEY ARE ---
+     THE BEST THING IN THIS GAME WAS INVISIBLE. A shopper alight was the
+     ordinary drawing turned fullbright, with the fire they had dropped
+     on the floor doing all of the work: what you actually saw was a
+     normal shopper standing near some flames. Three things fix it and
+     it needs all three — flame off the body, the drawing's own colours
+     going, and the light they throw — so all three are measured. */
+  {
+    const fx = await import('../js/effects.js');
+    const who = g.actors.find(a => a.type === 'SHOPPER' && !a.dead && !a.removed && !a.burning);
+    const p = g.player;
+    p.x = who.x - 80; p.y = who.y;
+    g.fx.bodyFlames.killAll();
+    check('nobody standing about is throwing flame', g.fx.bodyFlames.count === 0);
+
+    who.ignite(400);
+    check('and catching fire does not snap the colour on', who.lit === 0);
+    /* THE RAMP. Snapping the palette on the tic they catch makes a
+       shopper CHANGE COLOUR; a third of a second of it reads as the
+       fire taking hold of their clothes. */
+    for (let t = 0; t < 4; t++) who.burnTic();
+    const part = who.lit;
+    check('it comes up over about a third of a second', part > 0.1 && part < 0.9,
+      `${part.toFixed(2)} after four tics`);
+    for (let t = 0; t < 12; t++) who.burnTic();
+    check('and then they are fully alight', who.lit === 1);
+    note('a burning shopper', `${g.fx.bodyFlames.count} licks of flame on them`);
+    check('and there is flame on them', g.fx.bodyFlames.count > 3);
+
+    /* THE LICKS ARE TONGUES AND NOT A BONFIRE. The first cut threw two
+       a tic at up to thirty-four units, which on a fifty-six-unit
+       person is a column of fire with somebody lost inside it — and the
+       point of a burning shopper is that you can see WHO is burning. */
+    check('but not so much of it that the person is lost inside it',
+      g.fx.bodyFlames.count < 20 && fx.BODY_FIRE.sizeMax < who.height / 2,
+      `${g.fx.bodyFlames.count} alive, up to ${fx.BODY_FIRE.sizeMax} units`);
+
+    /* AND THE LIGHT. A burning person running down a dark aisle lights
+       it, which the store's one fire light does by being pulled toward
+       everything that burns — the wood, the gun, and now them. */
+    g.tics++;                       // a fresh tic, so the glow is only theirs
+    g.fx.bodyFire(who);
+    const acc = { sx: 0, sy: 0, sw: 0, n: 0 };
+    g.fx.glowInto(acc);
+    check('and they pull the fire light toward themselves',
+      acc.n === 1 && Math.hypot(acc.sx / acc.sw - who.x, acc.sy / acc.sw - who.y) < 1,
+      `${acc.n} sources`);
+
+    /* AND IT IS BUDGETED. A crowd fire is dozens of them at once and
+       the aisle is already full of the fire's own flames. */
+    const many = g.actors.filter(a => a.type === 'SHOPPER' && !a.dead && !a.removed).slice(0, 60);
+    for (const a of many) { a.x = p.x + 40; a.y = p.y; a.burning = 400; a.lit = 1; }
+    g.fx.bodyFlames.killAll();
+    g.tics++;
+    let asked = 0, threw = 0;
+    for (const a of many) { asked++; threw += g.fx.bodyFire(a) > 0 ? 1 : 0; }
+    check('and sixty people alight in one tic do not all throw flame',
+      threw === fx.BODY_FIRE.most && asked > threw, `${threw} of ${asked}`);
+
+    /* AND DISTANCE COSTS NOTHING. Somebody alight three rooms away is a
+       glow on the shelving and not a particle system. */
+    g.tics++;
+    const far = many[0];
+    far.x = p.x + fx.BODY_FIRE.near + 200; far.y = p.y;
+    const before = g.fx.bodyFlames.count;
+    g.fx.bodyFire(far);
+    check('and one on the far side of the building throws none at all',
+      g.fx.bodyFlames.count === before);
+    const acc2 = { sx: 0, sy: 0, sw: 0, n: 0 };
+    g.fx.glowInto(acc2);
+    check('but still throws light, which is what you see at that range',
+      acc2.n === 1, `${acc2.n} sources`);
+    for (const a of many) { a.burning = 0; a.lit = 0; }
+  }
+
+  /* --- AND THE COLOUR COMES OFF WHEN THE FIRE DOES --------------- */
+  {
+    const who = g.actors.find(a => a.type === 'SHOPPER' && !a.dead && !a.removed && !a.burning);
+    who.ignite(400);
+    for (let t = 0; t < 20; t++) who.burnTic();
+    check('somebody alight is alight', who.lit === 1 && who.burning > 0);
+    who.chill(300);
+    check('and the extinguisher takes the colour off with the fire',
+      who.burning === 0 && who.lit === 0);
+    /* and the other way it can end: frozen solid mid-run */
+    const other = g.actors.find(a => a.type === 'SHOPPER' && !a.dead && !a.removed && !a.burning && a !== who);
+    other.ignite(400);
+    for (let t = 0; t < 20; t++) other.burnTic();
+    other.chill((await import('../js/actor.js')).Actor.FREEZE_AT * 3);
+    check('and so does being frozen solid', other.frozen && other.lit === 0);
   }
 
   /* --- AND THE MEASUREMENT ---

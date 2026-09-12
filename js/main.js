@@ -281,7 +281,7 @@ async function boot() {
   const audio = new Audio();
   const input = new Input(renderer.domElement);
   const game = new Game({ level, scene, camera, textures, sprites, hud, audio, input, sky: skyImage,
-                         flameAtlas: streamAtlas, fxAtlases, gibAtlases,
+                         flameAtlas: streamAtlas, bodyAtlas: flameAtlas, fxAtlases, gibAtlases,
                          fleet });
   hud.game = game;
   const touch = new TouchControls(input, { root: $('touch'), prefs, onPause: () => pause(true) });

@@ -71,7 +71,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         729 checks, no install and no browser
+  the smoke test         744 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -601,6 +601,51 @@ to reach, through the cross-aisles the fire cannot cross by itself, and
 then goes off in the middle of whatever is on the other side. Set light
 to the queue at the tills and the back of the store is alight in twenty
 seconds — not because the fire travelled but because the people did.
+
+AND YOU CAN SEE THEM. Until recently the best thing in this game was
+invisible: somebody alight was the ordinary drawing turned fullbright,
+and the entire read was carried by the fire they had dropped on the
+floor. What you actually saw was a normal shopper standing near some
+flames. Three things fix it and it needs all three of them.
+
+  THE FLAME ON THEM   licks of fire thrown off the body every tic,
+                      short-lived and rising. They are PARTICLES and the
+                      person is moving eight units a tic, so the ones
+                      behind ARE the trail — the same pool does the fire
+                      and the tail of it, and somebody alight who stops
+                      running piles them up on the spot instead, which
+                      is correct and costs nothing. Sparks and smoke off
+                      them on their own slower clocks, which is the part
+                      of the trail that outlasts the flame and goes
+                      where the wind does.
+  THE SPRITE ITSELF   a fire colour map on the drawing, the same trick
+                      as the ice and for the same reason: multiplying a
+                      green coat by orange gives a muddy brown coat, and
+                      what somebody on fire looks like is their SHAPE in
+                      flame. Luminance is kept, everything else thrown
+                      away, and that one number picks off the ember ramp
+                      — the same eight colours the coals in a burnt
+                      aisle use, so a person burning and the aisle they
+                      set light to are made of the same paint. Hottest
+                      at the feet, because fire climbs: white at the
+                      knees, and their face is the last thing left
+                      recognisable, which is what keeps them legible as
+                      a PERSON rather than a silhouette.
+  THE LIGHT THEY GIVE the flame colour is ADDED and not mixed, so a
+                      burning shopper is brighter than a lit one — every
+                      colour in the ramp is at most white, and a map
+                      alone made a person the colour of terracotta
+                      standing in a dark aisle. And they pull the store's
+                      one fire light toward themselves like everything
+                      else that burns, so a torch running down an aisle
+                      lights it as it goes.
+
+AND ALL OF IT IS BUDGETED, because a crowd fire is dozens of them at
+once and the aisle is already full of the fire's own flames. Nobody more
+than fourteen hundred units off throws a single particle — at that range
+they are a glow on the shelving, which is the right answer anyway — and
+no more than fourteen of them in any one tic. Forty people alight at
+arm's length runs a third of the flame pool.
 
 THE TRAIL IS ONE BELOW A THRESHOLD, and that number is the whole of the
 tuning. A cell that is ignited starts at 55 heat plus whatever strength
@@ -2207,7 +2252,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-729 checks. Every one of them earns its place by having caught something
+744 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -2490,6 +2535,31 @@ that had already reached a screenshot:
     down to the floor as the bottom goes — which is not a workaround,
     it is the collapse, and it is what makes the three seconds read as
     a person going down rather than as a person being erased
+  A SHOPPER ON FIRE THAT LOOKED EXACTLY LIKE A SHOPPER, which is the
+    longest-running of these and was never a bug in anything: the code
+    was right, the mechanic was right, and nobody had ever drawn the
+    fire. Somebody alight was the ordinary sprite with fullbright set,
+    and every screenshot of the best thing in the game is a person
+    standing near some flames on the floor. Three things now, because
+    any one or two of them is not enough: flame licks off the body,
+    which trail because they are particles and the person is running; a
+    fire colour map on the drawing, without which the licks read as
+    somebody standing BEHIND a fire; and the colour being ADDED rather
+    than mixed, without which they are the colour of terracotta,
+    because every colour in the ember ramp is at most white and a map
+    can never make a burning person brighter than a lit one
+  AND THEN A COLUMN OF FIRE WITH SOMEBODY LOST INSIDE IT, which was the
+    first cut of that: two licks a tic at up to thirty-four units, on a
+    person fifty-six units tall, is thirty overlapping blobs each a
+    third of their height. One a tic and smaller leaves the drawing
+    showing through, which is where the colour map does its work — and
+    the point of a burning shopper is that you can see WHO is burning
+  A SHADER ENDING IN THE MIDDLE OF A SENTENCE. The GLSL lives in a
+    JavaScript template literal, and a pair of backticks in a COMMENT
+    inside it closes the string: the file still parsed, and the game
+    died on import with "Unexpected identifier". Thirty seconds to
+    find, and worth writing down because the prose in that file is
+    dense and the temptation to quote an identifier in it is constant
   AND THE SAME BURN RUNNING FROM THE HEAD DOWN, one screenshot earlier.
     vUv.y is measured DOWN the picture — the sprite sheets are
     canvas-backed and arrive with the first row at the top — so the

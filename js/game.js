@@ -55,7 +55,7 @@ const LAMP_RANGE = 340;
 const LAMP_GAIN = 0.30;
 
 export class Game {
-  constructor({ level, scene, camera, textures, sprites, hud, audio, input, sky, flameAtlas, fxAtlases, gibAtlases, fleet }) {
+  constructor({ level, scene, camera, textures, sprites, hud, audio, input, sky, flameAtlas, bodyAtlas, fxAtlases, gibAtlases, fleet }) {
     this.level = level;
     this.scene = scene;
     this.camera = camera;
@@ -121,7 +121,11 @@ export class Game {
     /* and the other stream, which uses the smoke puffs rather than the
        flame frames — a jet of CO2 is a cloud, not a fire */
     this.frost = new FrostStream(this, fxAtlases?.smoke ? { texture: fxAtlases.smoke, frames: SMOKE_PUFFS } : null);
-    this.fx = new Effects(this, fxAtlases || null);
+    /* `bodyAtlas` is the tall flame the wood carries and the gun's
+       muzzle wears, and it is what a person on fire is drawn with — the
+       stream's fireballs are the wrong shape for something standing up.
+       See Effects.bodyFire. */
+    this.fx = new Effects(this, fxAtlases || null, bodyAtlas || null);
     /* and what comes off a person: the pieces and the fire on them */
     this.giblets = new Giblets(this, gibAtlases || null);
     if (flameAtlas) this.flame.attach(scene);
