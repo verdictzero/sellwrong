@@ -39,7 +39,7 @@
    P_NewChaseDir is not something to delete and write again.
    ===================================================================== */
 
-import { SHOPPERS, SPLATS, BLASTS } from './people.js';
+import { SHOPPERS, SPLATS, ASHES, BLASTS } from './people.js';
 import { FIRE_FRAMES, BLAZE_FRAMES, EMBER_FRAMES } from './fireart.js';
 import { TICRATE } from './util.js';
 
@@ -112,6 +112,17 @@ S('SHOP_GIB',    'SHOP', 'A', 1, 'A_Gib', null);      // null next: remove me
    state; what makes it read as ice is the colour map in js/material.js,
    which is a fact about the SHADER and not about the animation. */
 S('SHOP_FROZE',  'SHOP', 'A', -1, null, 'SHOP_FROZE');
+/* AND BURNING AWAY, which is what a block of ice does when the fire
+   reaches it. Also one drawing, also no movement, and the animation is
+   not in this table at all: A_BurnAway winds a number from 0 to 1 and
+   the sprite shader eats the picture with it, from the feet up, with a
+   line of coals at the front. Fullbright for the same reason SHOP_BURN
+   is — the light on them is the fire on them.
+
+   It is a LOOP with no end state, because what ends it is the number
+   reaching one and not the clock running out: see Actor.collapse. */
+S('SHOP_ASH1',   'SHOP', 'A', 4, 'A_BurnAway', 'SHOP_ASH2', { fullbright: true });
+S('SHOP_ASH2',   'SHOP', 'A', 4, 'A_BurnAway', 'SHOP_ASH1', { fullbright: true });
 
 /* ---------------------------------------------------------------------
    Things that are not monsters
@@ -124,6 +135,9 @@ S('CRAT_STAND',  'CRAT', 'A', -1, null, null);
    the same way the shoppers are, so a floor covered in these does not
    read as one stamp repeated. */
 S('BLUD_REST',   'BLUD', 'A', -1, null, null);
+/* And the grey one, which is what is left when the fire finishes
+   somebody rather than something else hitting them. */
+S('ASH_REST',    'ASH0', 'A', -1, null, null);
 
 /* THE LIGHTS HAVE NO STATES, because they have no sprite. There were
    ten of them here — lit, burst, dead for ever, one tube gone, and a
@@ -208,6 +222,14 @@ export const ACTORS = {
        while it holds; and coming out of it they RUN, because nobody
        goes back to the shelves after that. */
     freezable: true, frozen: 'SHOP_FROZE', freezeReturn: 'SHOP_RUN1',
+    /* AND WHAT FIRE DOES TO ONE WHO IS STILL IN THE ICE, which is not
+       what it does to anybody else. `burnAway` is the state, and
+       `ashTics` is how long the whole of it takes — rolled per person so
+       a row of them frozen and then swept does not finish together.
+       Three to four and a half seconds: long enough to watch a person
+       be eaten, short enough that the player does not go and do
+       something else while it happens. */
+    burnAway: 'SHOP_ASH1', ashTics: [3.0 * TICRATE, 4.5 * TICRATE],
     /* AND WHAT THEY LEAVE BEHIND THEM. A drop every eight tics at eight
        units a tic is a line of fire with sixty-four-unit steps in it,
        which on a thirty-two-unit grid is two cells lit and one skipped —
@@ -279,6 +301,8 @@ export const ACTORS = {
   PUFF:    { name: 'Blood',   spawn: 'PUFF1', radius: 4,  height: 8,  noclip: true },
   GORE:    { name: 'Gore',    spawn: 'BLUD_REST', radius: 4, height: 2, noclip: true, flat: true,
              variants: SPLATS },
+  ASH:     { name: 'Ash',     spawn: 'ASH_REST',  radius: 4, height: 2, noclip: true, flat: true,
+             variants: ASHES },
   BLAST:   { name: 'Fireball', spawn: 'BLAST1', radius: 8, height: 96, noclip: true,
              flat: true, fullbright: true },
 

@@ -1416,6 +1416,30 @@ section('the flame');
       Object.keys(sprite.defines).join(', '));
     check('and a sprite can freeze and a surface cannot',
       'FROST' in sprite.defines && !('FROST' in wall.defines));
+    /* AND BURN AWAY, which rides the same define on purpose: it is the
+       same kind of fact about the same kind of thing, and a second
+       define is a second shader permutation for one uniform. */
+    check('and a sprite carries both numbers the fire and the cold write',
+      'frost' in sprite.uniforms && 'ash' in sprite.uniforms &&
+      sprite.uniforms.ash.value === 0);
+    check('and the burn-away eats the drawing rather than fading it',
+      (() => {
+        const src = fs2.readFileSync('js/material.js', 'utf8');
+        const frag = src.slice(src.indexOf('const COMMON_FRAG'), src.indexOf('export function worldUniforms'));
+        /* the three zones: gone, the line of coals, and the scorch ahead
+           of it — a discard, an additive ramp lookup, and a mix */
+        return /if \(ash > 0\.0\)/.test(frag) && /discard/.test(frag) &&
+               /ashGlow = emberRamp/.test(frag) && /c \+ ashGlow/.test(frag);
+      })());
+    /* AND IT RUNS FEET FIRST. vUv.y is measured DOWN the picture — the
+       sprite sheets are canvas-backed and arrive top row first — so the
+       obvious spelling of "from the feet up" ate people from the head
+       down, which is a person dissolving rather than a person on fire. */
+    check('and it runs from the feet up',
+      (() => {
+        const src = fs2.readFileSync('js/material.js', 'utf8');
+        return /float up = vUv\.y;/.test(src) && !/float up = 1\.0 - vUv\.y;/.test(src);
+      })());
     check('and the shader guards both blocks rather than multiplying by zero',
       (() => {
         const src = fs2.readFileSync('js/material.js', 'utf8');
@@ -1587,61 +1611,164 @@ section('the cold');
       who.solid === (who.info.solid ?? !!who.info.monster));
   }
 
-  /* --- FIRE IS THE FAST THAW -------------------------------------- */
+  /* --- OR THE FIRE EATS THEM --------------------------------------
+     THE SECOND OF THE THREE, AND IT CHANGED SIDES. Fire used to melt a
+     frozen shopper free and set them running, which made the
+     flamethrower the UNDO for the extinguisher — a player could spoil
+     their own freeze by sweeping the aisle a moment later. At the
+     user's request the pair are a combination instead: fire on ice is
+     an execution. They stay where they are, an ember front eats the
+     drawing from the feet up (the ASH block in js/material.js) and
+     about three and a half seconds later there is a heap on the lino.
+     No fireball, no thirteen pieces, no stampede — the quiet way of
+     emptying an aisle, and the second one, with the shatter. */
   {
     const g = mk();
     const who = g.actors.find(a => a.type === 'SHOPPER' && !a.dead);
     who.chill(Actor.FREEZE_AT);
-    check('a frozen person cannot be set alight', (who.ignite(300), who.burning === 0));
-    let n = 0;
-    while (who.frost > 0 && n < 200) { who.ignite(300); n++; }
-    note('and how many flames it takes to undo one', `${n} calls`);
-    check('but the flame eats the ice, and quickly',
-      !who.frozen && n < 20, `${n} calls`);
-    check('and the one after that lights them', (who.ignite(300), who.burning > 0));
+    who.ignite(300);
+    check('one flame on a block of ice starts eating it',
+      who.ash > 0 && who.state.name === 'SHOP_ASH1', who.state.name);
+    check('and they are not set running and not set alight',
+      !who.frozen && who.burning === 0 && who.panic === 0 && who.solid);
+    /* AND THE FIRE UNDER THEM IS STILL LIT, because a person burning is
+       how an aisle catches whether or not they run anywhere */
+    check('and the floor under them takes their fuel',
+      g.fire.heatAt(who.x, who.y) > 0, `${g.fire.heatAt(who.x, who.y).toFixed(2)}`);
+    /* THE CLOCK IS THE ONLY THING THAT ENDS IT, which is the same
+       bargain A_Torch makes: more fire does not hurry it along. */
+    const at = who.ash;
+    for (let i = 0; i < 20; i++) who.ignite(300);
+    check('and more fire does not hurry it', who.ash === at);
+
+    let t = 0;
+    for (; t < 400 && !who.removed; t++) who.tic();
+    note('a block of ice, burned', `${t} tics from the first flame to the ash`);
+    check('and it takes a few seconds and not an instant',
+      t > 2.5 * 35 && t < 5.5 * 35, `${t} tics`);
+    check('and what is left is an ash pile and not a body',
+      who.removed && who.dead && g.giblets.ashes === 1);
+    const pile = g.actors.find(a => a.type === 'ASH');
+    check('the heap is on the floor where they were standing',
+      !!pile && Math.hypot(pile.x - who.x, pile.y - who.y) < 1 && pile.flat && !pile.solid);
+    check('and it is one of the three drawings of ash, not of blood',
+      !!pile && pile.state.sprite.slice(0, 3) === 'ASH' && pile.variant < 3);
+  }
+
+  /* --- AND THE SPRITE IS EATEN, WHICH IS THE WHOLE OF THE EFFECT ----
+     The number the shader reads is `ash`, and what has to be true of it
+     is that it starts at nothing, ends at everything, and gets there in
+     one direction — a front that went backwards would be a person
+     un-burning. Checked here rather than by looking at a screenshot
+     because a uniform that stops climbing is invisible until somebody
+     stands and watches a shopper not finish. */
+  {
+    const g = mk();
+    const who = g.actors.find(a => a.type === 'SHOPPER' && !a.dead);
+    who.chill(Actor.FREEZE_AT);
+    who.ignite(300);
+    const seen = [];
+    let last = -1, backwards = 0;
+    for (let i = 0; i < 400 && !who.removed; i++) {
+      who.tic();
+      if (who.ash < last) backwards++;
+      last = who.ash;
+      if (i % 25 === 0) seen.push(+who.ash.toFixed(2));
+    }
+    note('how far through, every 25 tics', seen.join(' '));
+    check('the front only ever goes one way', backwards === 0, `${backwards} steps back`);
+    check('and it reaches the end of them before they are taken away',
+      last >= 0.999 && who.removed, `${last.toFixed(3)}`);
+    /* AND THE ICE IS OFF THEM LONG BEFORE THE FIRE IS THROUGH THEM, or
+       the two effects are fighting over the same pixels: a pale blue
+       statue with coals crawling up it reads as neither. */
+    const g2 = mk();
+    const w2 = g2.actors.find(a => a.type === 'SHOPPER' && !a.dead);
+    w2.chill(Actor.FREEZE_AT);
+    w2.ignite(300);
+    let blue = 0;
+    for (let i = 0; i < 400 && !w2.removed; i++) { w2.tic(); if (w2.frost > 0) blue = i; }
+    check('and the blue is gone in the first half second of it',
+      blue < 20, `${blue} tics`);
   }
 
   /* --- AND THE FLAMETHROWER ITSELF, WHICH IS NOT ignite() ----------
      The block above tests half of a flame particle. The other half is
      the damage, and testing the two apart is exactly how a frozen
      shopper came to be killed INSIDE the ice by the second particle of
-     the stream — the thaw was right, the damage went round it, and the
-     damage won the race. So this drives the real FlameStream._burnActor
-     and asks the question the prose in js/actor.js answers: what comes
-     out the other side. */
+     the stream. So this drives the real FlameStream._burnActor and asks
+     what a whole particle does to a block of ice. */
   {
     const g = mk();
     const who = g.actors.find(a => a.type === 'SHOPPER' && !a.dead);
     const health = who.health, bursts = g.giblets.bursts;
     who.chill(Actor.FREEZE_AT);
-    let n = 0, diedFrozen = false;
-    while (who.frozen && n < 60) {
-      g.flame._burnActor(who, who.x, who.y, who.z);
-      n++;
-      if (who.dead || who.removed) { diedFrozen = who.frozen; break; }
-    }
-    note('flame particles to free one', `${n}`);
-    check('the stream never kills anybody who is still frozen', !diedFrozen);
-    check('and none of it reaches their health through the ice',
+    g.flame._burnActor(who, who.x, who.y, who.z);
+    check('one particle of the stream starts it', who.ash > 0 && !who.removed);
+    check('and the rest of the burst does not shortcut it',
+      (() => { for (let i = 0; i < 30; i++) g.flame._burnActor(who, who.x, who.y, who.z);
+               return !who.removed && who.ash < 0.5; })(), `ash ${who.ash.toFixed(2)}`);
+    check('and none of it reaches their health',
       who.health === health, `${health} -> ${who.health}`);
-    check('and what comes out the other side is alive and alight',
-      !who.frozen && !who.dead && who.burning > 0 && who.state.name.startsWith('SHOP_BURN'),
-      `${who.state.name}, burning ${who.burning}`);
-    check('so a frozen person never becomes burning giblets',
-      g.giblets.bursts === bursts, `${g.giblets.bursts - bursts} bursts`);
+    let t = 0;
+    for (; t < 400 && !who.removed; t++) who.tic();
+    check('and the stream turns them into ash rather than giblets',
+      who.removed && g.giblets.bursts === bursts && g.giblets.ashes === 1,
+      `${g.giblets.bursts - bursts} bursts, ${g.giblets.ashes} ash`);
   }
 
-  /* --- AND A BLAST TAKES THE WHOLE BAR OFF AT ONCE ------------------ */
+  /* --- AND A BLAST DOES THE SAME, BECAUSE IT IS FIRE ---------------- */
   {
     const g = mk();
     const who = g.actors.find(a => a.type === 'SHOPPER' && !a.dead && !a.frozen);
     who.chill(Actor.FREEZE_AT);
     const health = who.health;
     g.explode({ x: who.x + 30, y: who.y, z: who.z });
-    check('a car going up beside a block of ice frees whoever is in it',
-      !who.frozen && !who.dead && who.health === health,
+    check('a car going up beside a block of ice starts eating whoever is in it',
+      !who.frozen && !who.dead && who.ash > 0 && who.health === health,
       `${who.state.name}, health ${health} -> ${who.health}`);
-    check('and then lights them', who.burning > 0, `burning ${who.burning}`);
+    check('and does not blow them apart', who.state.name === 'SHOP_ASH1', who.state.name);
+  }
+
+  /* --- AND THE COLD CANNOT TAKE THEM BACK -------------------------
+     The stream puts a burning person out, which is one of the best
+     things it does. It does not put out somebody burning AWAY: half of
+     them is on the floor already. The check is there because without it
+     the two states are both true at once — blue, and being eaten, and
+     held twice over. */
+  {
+    const g = mk();
+    const who = g.actors.find(a => a.type === 'SHOPPER' && !a.dead && !a.frozen);
+    who.chill(Actor.FREEZE_AT);
+    who.ignite(300);
+    for (let i = 0; i < 20; i++) who.tic();
+    const at = who.ash;
+    for (let i = 0; i < 40; i++) who.chill(20);
+    check('the extinguisher cannot re-freeze somebody being eaten',
+      !who.frozen && who.frost === 0 && who.ash >= at,
+      `frost ${who.frost}, frozen ${who.frozen}`);
+    for (let i = 0; i < 400 && !who.removed; i++) who.tic();
+    check('and they still finish as ash', who.removed && g.giblets.ashes === 1);
+  }
+
+  /* --- AND A BLOW FINISHES ONE THAT IS HALF GONE -------------------
+     Not a shatter — there is no ice left by then — and not a burst
+     either, because there is not enough of a person left to throw
+     around. Whatever hits them puts the rest of them on the floor. */
+  {
+    const g = mk();
+    const who = g.actors.find(a => a.type === 'SHOPPER' && !a.dead && !a.frozen);
+    who.chill(Actor.FREEZE_AT);
+    who.ignite(300);
+    for (let i = 0; i < 30; i++) who.tic();
+    const half = who.ash, shatters = g.giblets.shatters, bursts = g.giblets.bursts;
+    check('they are half way through when the blow lands', half > 0.1 && half < 0.95,
+      `${half.toFixed(2)}`);
+    who.damage(40, g.player, { impact: true });
+    check('a blow on somebody half burnt drops the rest of them',
+      who.removed && who.dead && g.giblets.ashes === 1);
+    check('and it is neither a shatter nor a burst',
+      g.giblets.shatters === shatters && g.giblets.bursts === bursts);
   }
 
   /* --- AND A CORPSE THAWS INTO A CORPSE -----------------------------
@@ -1739,30 +1866,34 @@ section('the cold');
       `${who.state.name}, panic ${who.panic}`);
   }
 
-  /* --- AND A FIRE IN THE AISLE LETS THEM OUT ------------------------
-     REHEATING WITHOUT A DIRECT HIT. The block above the blast tests a
-     flame particle landing on somebody; this is the other path, and the
-     one that makes the mechanic a place rather than an aim: frostTic
-     reads the heat of the CELL they are standing in, so a fire lit at
-     their feet and left alone frees them. Which also means the store
-     thaws itself out as it burns. */
+  /* --- AND A FIRE IN THE AISLE DOES IT WITHOUT BEING AIMED ---------
+     THE SAME RULE, ARRIVING THE OTHER WAY. A flame particle is a hit;
+     this is the floor being alight, which is what the store is full of
+     once it is going. It matters that the two agree, and for a while
+     they did not: the fire system lights anything standing in a cell
+     over 70 of 255 and frostTic was taking the frost off from a fifth
+     of that, so there was a window in which a block of ice at the EDGE
+     of a fire melted free while one in the middle of it was eaten. One
+     rule now, at one line in frostTic — fire on ice is an execution
+     however the fire got there. */
   {
     const g = mk();
     const who = g.actors.find(a => a.type === 'SHOPPER' && !a.dead && !a.frozen);
     who.chill(Actor.FREEZE_AT);
     const parked = who.state.name;
+    check('a block of ice on a cold floor is a block of ice',
+      (who.tic(), who.frozen && who.state.name === parked));
     g.fire.ignite(who.x, who.y, 36, 22);
-    check('a block of ice with a fire at its feet is still a block of ice',
-      who.frozen && who.state.name === parked);
     let t = 0;
-    for (; t < 400 && who.frozen; t++) { g.fire.tic(); who.tic(); }
-    note('a fire at their feet frees one in', `${t} tics`);
-    check('a fire in the cell they are standing in thaws them out',
-      !who.frozen && !who.dead, `${t} tics, dead ${who.dead}`);
-    check('and it takes a few seconds rather than the seventeen of being left',
-      t > 4 && t < Actor.FREEZE_AT * Actor.THAW_EVERY * 0.5, `${t} tics`);
-    check('and they get up and run rather than standing in it',
-      who.state.name === 'SHOP_RUN1' && who.solid && who.panic > 0, who.state.name);
+    for (; t < 60 && who.frozen; t++) { g.fire.tic(); who.tic(); }
+    note('a fire at their feet takes hold in', `${t} tics`);
+    check('a fire in the cell they are standing in starts eating them',
+      !who.frozen && who.ash > 0 && who.state.name === 'SHOP_ASH1',
+      `${who.state.name} after ${t} tics`);
+    check('and it does not have to be aimed at them to do it', t < 12, `${t} tics`);
+    for (let i = 0; i < 400 && !who.removed; i++) { g.fire.tic(); who.tic(); }
+    check('and the aisle finishes them the same way the gun would',
+      who.removed && g.giblets.ashes === 1);
   }
 
   /* --- AND SOMETHING SAYS SO ----------------------------------------
@@ -2202,6 +2333,50 @@ section('the crowd');
     check('and still stays within a few units of where it is',
       running.worst < 4, running.worst.toFixed(2));
     a.panic = 0;
+  }
+
+  /* --- AND A BLOCK OF ICE DOES NOT --------------------------------
+     The sway is what keeps a shop floor of standees from reading as
+     cardboard, and it was running on the frozen ones: a statue rocking
+     gently on its heels, which is the one drawing in the game that has
+     to be dead still. Same for somebody the fire is eating — a body
+     coming apart should sag, not sway.
+
+     Checked through Actor.render rather than through swayOf, because
+     swayOf is not where the mistake was: it was told to sway and it
+     swayed. The guard is at the call, so the call is what is asked. */
+  {
+    const a = inside[3];
+    const Actor = (await import('../js/actor.js')).Actor;
+    const track = () => {
+      let moved = 0, prev = null;
+      for (let t = 0; t < 200; t++) {
+        g.tics = t;
+        a.render(a.x - 300, a.y, 0, 1, 0);
+        const q = { x: a.mesh.position.x, y: a.mesh.position.y, z: a.mesh.position.z };
+        if (prev) moved += Math.hypot(q.x - prev.x, q.y - prev.y, q.z - prev.z);
+        prev = q;
+      }
+      return moved;
+    };
+    a.panic = 0;
+    const warm = track();
+    check('a shopper standing there is never quite still', warm > 1, warm.toFixed(2));
+    a.chill(Actor.FREEZE_AT);
+    check('but a frozen one is', track() === 0, track().toFixed(3));
+    a.frost = 0; a.thaw();
+    a.ash = 0.4;
+    check('and so is one the fire is eating', track() === 0, track().toFixed(3));
+    /* AND THEY SINK WHILE IT HAPPENS, or what is left of a half-burnt
+       shopper hangs in the air with nothing under it — the front eats
+       the drawing from the feet up and the quad does not move itself. */
+    a.render(a.x - 300, a.y, 0, 1, 0);
+    const low = a.mesh.position.y;
+    a.ash = 0.9;
+    a.render(a.x - 300, a.y, 0, 1, 0);
+    check('and settle towards the floor as they go', a.mesh.position.y < low - 10,
+      `${low.toFixed(0)} -> ${a.mesh.position.y.toFixed(0)}`);
+    a.ash = 0;
   }
 }
 

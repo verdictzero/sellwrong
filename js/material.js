@@ -541,12 +541,20 @@ varying float vChar;
   /* HOW FROZEN THIS THING IS, 0 to 1, per sprite. Only the actors ask
      for it, so the walls and the floor never carry the branch. */
   uniform float frost;
+  /* AND HOW FAR THROUGH BEING EATEN BY THE FIRE, on the same terms and
+     under the same define, because the two are the same kind of fact
+     about the same kind of thing and a second define is a second shader
+     permutation for one uniform. See the ASH block in main(). */
+  uniform float ash;
 #endif
 
 ${WORLD_SHADE_GLSL}
 
 void main() {
   vec4 t = texture2D(map, vUv);
+  /* what the burning front of a body being eaten adds, held out here so
+     the one line that adds it at the bottom does not need the define */
+  vec3 ashGlow = vec3(0.0);
   /* and a surface that has no picture takes its own material's colour
      instead — see the note on the attribute in the vertex shader */
   #ifdef INK
@@ -573,6 +581,75 @@ void main() {
     float lum = dot(t.rgb, vec3(0.30, 0.59, 0.11));
     vec3 ice = mix(vec3(0.09, 0.17, 0.31), vec3(0.74, 0.93, 1.05), pow(lum, 0.62));
     t.rgb = mix(t.rgb, ice, frost);
+  }
+
+  /* ------------------------------------------------------------------
+     A PERSON BEING EATEN BY THE FIRE
+
+     Somebody who was frozen when the flame reached them does not melt
+     and run; they are consumed where they stand and collapse into a
+     heap (see Actor.burnAway). This is the whole of what that looks
+     like, and it is done in the shader rather than in art because
+     seventeen shoppers times an animation of a person burning away is
+     art nobody is going to draw, and because the drawing being EATEN —
+     their own coat, their own shape, going — is the part that makes it
+     read as that person rather than as an effect played over them.
+
+     A FRONT, NOT A FADE. Every texel gets a threshold and the front is
+     one number crossing all of them: below it the texel is gone,
+     within a band of it the texel is a coal, and above it the texel is
+     still there but scorched by the heat coming. Three zones, one
+     comparison, and what sweeps across is a ragged edge of fire rather
+     than a person turning transparent.
+
+     FROM THE FEET UP, which is not arbitrary: the fire is on the floor
+     and fire goes up. Seven parts of the threshold are height and three
+     are noise, so the edge is level enough to read as a front and torn
+     enough not to read as a wipe. Two scales of noise, the coarse one
+     about the size of a hand, because one scale is a repeating pattern
+     at this resolution.
+
+     AND THE COALS ARE ADDED, NOT MULTIPLIED, for the same reason the
+     ones on a burnt wall are: they are the only light on a dark thing
+     in a dark room, and a multiplied coal is a coal you cannot see.
+     ------------------------------------------------------------------ */
+  if (ash > 0.0) {
+    float n = emberHash(vec3(floor(vUv * vec2(13.0, 19.0)), 0.0)) * 0.62
+            + emberHash(vec3(floor(vUv * vec2(29.0, 41.0)), 7.0)) * 0.38;
+    /* vUv.y IS MEASURED DOWN THE PICTURE, not up the person. The
+       sprite sheets are canvas-backed and arrive with the first row at
+       the top, so this ran the front the wrong way and ate people from
+       the head down — which reads as a person dissolving rather than as
+       a person on fire, and was obvious in the first screenshot. */
+    float up = vUv.y;                       // the foot of the sprite first
+    float th = up * 0.70 + n * 0.30;
+    /* A LINE, NOT A BELT. The threshold is seven parts height to three
+       parts noise, so a band of 0.15 lit a fifth of the person at once
+       and read as a bonfire they were standing in rather than as a
+       front crossing them. */
+    const float BAND = 0.10;                // how deep the line of coals is
+    /* AND THE SCORCH AHEAD OF IT IS NARROW. At a quarter of the body it
+       blackened everything above the flame line, so a shopper was a
+       silhouette a second in and there was nothing left to watch being
+       eaten. What has to stay legible is the person; what is burning is
+       a line across them. */
+    const float CHAR = 0.14;                // and how far ahead of it the scorch reaches
+    float edge = ash * (1.0 + BAND * 2.0) - BAND;
+    float g = th - edge;
+    if (g < -BAND) discard;                 // this much of them is gone
+    float hot = 1.0 - smoothstep(0.0, BAND, abs(g));
+    float scorch = max(1.0 - smoothstep(0.0, CHAR, max(g, 0.0)),
+                       1.0 - smoothstep(0.0, BAND, -min(g, 0.0)));
+    t.rgb = mix(t.rgb, vec3(0.055, 0.048, 0.042), clamp(scorch, 0.0, 1.0) * 0.93);
+    if (hot > 0.001) {
+      /* the same palette cycle the coals on a burnt wall use, so a body
+         going out and an aisle going out are the same fire */
+      float fl = 0.60 + 0.40 * sin(emberTime * 11.0 + n * 37.0 + vUv.y * 9.0);
+      float idx = clamp(0.42 + hot * 0.40 + fl * 0.20, 0.0, 1.0);
+      /* squared, so the hot core is thin and the edges of the band fall
+         away into the scorch instead of the whole band being white */
+      ashGlow = emberRamp[int(floor(idx * 7.0 + 0.5))] * hot * hot * (0.9 + 0.6 * fl);
+    }
   }
   #endif
   /* HOW BURNT THE FLOOR UNDER THIS PIXEL IS, continuously. The soot goes
@@ -615,7 +692,7 @@ void main() {
     c += emberOf(max(vChar, smoothstep(0.06, 0.92, burn)), vWorld,
                  dot(albedo, vec3(0.2126, 0.7152, 0.0722)), vDepth);
   #endif
-  gl_FragColor = vec4(c, t.a);
+  gl_FragColor = vec4(c + ashGlow, t.a);
 }
 `;
 
@@ -696,6 +773,7 @@ export function createSpriteMaterial(texture, opts = {}) {
   /* every sprite can be frozen; the walls cannot, so only this one
      carries the uniform and the define that reads it */
   u.frost         = { value: 0.0 };
+  u.ash           = { value: 0.0 };
   const blend = opts.blend || 'cutout';
   /* Depth TESTING stays on for all three, always: a flame behind a
      gondola is behind the gondola. It is only depth WRITING that a

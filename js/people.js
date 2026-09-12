@@ -48,6 +48,10 @@ export const CELLS = {
   shoppers: { w: 40, h: 64 },
   giblets:  { w: 16, h: 16 },
   splat:    { w: 56, h: 20 },
+  /* WHAT IS LEFT WHEN THE FIRE FINISHES ONE. Wider than a splat and a
+     little deeper, because a person who has burned away where they
+     stood leaves a heap rather than a stain — see ASH_SPRITE. */
+  ash:      { w: 40, h: 18 },
   blast:    { w: 48, h: 96 },
 };
 
@@ -62,6 +66,7 @@ export const ADULT = 62;
 export const SHOPPERS = 17;
 export const GIBLETS  = 11;
 export const SPLATS   = 3;
+export const ASHES    = 3;
 export const BLASTS   = 26;
 
 /* Sprite set names. A shopper is its own set with one frame in it, so
@@ -69,6 +74,7 @@ export const BLASTS   = 26;
    the cars will use — see Actor.render. */
 export const SHOPPER_SPRITE = 'SHO';    // SHO0 .. SHO16, frame A
 export const SPLAT_SPRITE   = 'BLU';    // BLU0 .. BLU2,  frame A
+export const ASH_SPRITE     = 'ASH';    // ASH0 .. ASH2,  frame A
 export const BLAST_SPRITE   = 'BLST';   // one set, frames A .. Z
 
 /* --------------------------------------------------------------------
@@ -156,6 +162,7 @@ export class Giblets {
     this.splats = [];
     this.bursts = 0;
     this.shatters = 0;
+    this.ashes = 0;
   }
 
   attach(scene) { this.chunks.attach(scene); this.shards.attach(scene); this.trail.attach(scene); }
@@ -266,6 +273,19 @@ export class Giblets {
     }
     /* and a breath of it hanging where they stood */
     g.fx?.frostPuff?.(a.x, a.y, a.z + a.height * 0.5);
+  }
+
+  /** THE OTHER THING LEFT ON THE FLOOR, and it goes on the same shelf
+   *  as the splats: one cap across both, because what a long night must
+   *  not end in is a carpet of sprites, and the floor does not care
+   *  which kind they are. See Actor.collapse. */
+  ashPile(a) {
+    this.ashes++;
+    const g = this.game;
+    const p = g.spawn('ASH', a.x, a.y, a.z + 1, { variant: pRandom() % ASHES });
+    this.splats.push(p);
+    while (this.splats.length > GIB.maxSplats) this.splats.shift()?.remove();
+    return p;
   }
 
   /** What is left on the floor. Capped: the oldest goes when the cap is

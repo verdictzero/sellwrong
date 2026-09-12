@@ -828,7 +828,7 @@ export class Game {
       /* NOT THE ONES IN THE ICE. A_Scare turns them away too, and has
          to, but the count this returns is "how many people started
          running" and a block of ice is not one of them. */
-      if (a.frozen) continue;
+      if (a.held) continue;
       if (dist2(x, y, a.x, a.y) > r2) continue;
       ACTIONS.A_Scare(a, x, y);
       n++;
@@ -848,7 +848,7 @@ export class Game {
          the trigger down: every tic of the flamethrower woke every
          block of ice in the shop, gave it the player as a target and
          set it going. */
-      if (a.frozen) continue;
+      if (a.held) continue;
       if (dist2(from.x, from.y, a.x, a.y) > r2) continue;
       a.target = this.player;
       this.sound?.play(a.info.seeSound, a);

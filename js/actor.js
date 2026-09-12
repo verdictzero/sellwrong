@@ -210,6 +210,11 @@ export class Actor {
     this.frost = 0;              // 0 to FREEZE_AT, and solid at the top
     this.frozen = false;
     this.thawTick = 0;
+    /* being eaten by the fire — see burnAway(), and the `ash` uniform in
+       js/material.js, which is the whole of what it looks like */
+    this.ash = 0;                // 0 to 1, and gone at the top
+    this.ashTics = 0;            // how long the whole of it takes, rolled
+    this.ashBy = null;           // who gets the kill when it finishes
 
     this.variant = opts.variant ?? 0;
     this.spriteOverride = opts.sprite || null;
@@ -264,7 +269,7 @@ export class Actor {
        P_SetMobjState does — that is how a state can be a pure action
        with no frame of its own. The counter stops an accidental cycle
        from locking the game up. */
-    if (this.frozen && !force) return false;
+    if (this.held && !force) return false;
     let guard = 0;
     while (name) {
       const st = stateOf(name);
@@ -281,13 +286,29 @@ export class Actor {
     return false;
   }
 
+  /** NOT AVAILABLE TO BE TOLD TO DO ANYTHING. Two states qualify and
+   *  they are the two the fire and the cold put people in: inside the
+   *  ice, and being eaten. Both are things that HAPPEN to somebody over
+   *  several seconds, and both are ruined by a system deciding halfway
+   *  through that this person should now be running for a door. It is
+   *  one getter and not two checks because the next such state should
+   *  be added here rather than in the four places that ask. */
+  get held() { return this.frozen || this.ash > 0; }
+
   tic() {
     if (this.removed || !this.state) return;
     if (this.burning > 0) this.burnTic();
     if (this.frost > 0) this.frostTic();
     if (this.stateTics === -1) return;          // resting for ever
     if (--this.stateTics > 0) return;
-    if (this.state.next) this.setState(this.state.next);
+    /* FORCED, because this is the actor's OWN animation running on and
+       not another system directing it. The gate in setState refuses
+       everything while a thing is held (see `held`), and a person being
+       eaten by the fire is held — so without the flag here SHOP_ASH1
+       could never reach SHOP_ASH2 and the burn stopped on its first
+       frame. A frozen thing never reaches this line at all: its state
+       rests for ever and the check above returns. */
+    if (this.state.next) this.setState(this.state.next, true);
     else this.remove();
   }
 
@@ -465,8 +486,16 @@ export class Actor {
        lights them, which is the correct amount of mercy. */
     if (this.frozen) {
       if (!opts.fire) { this.shatter(source, opts); return; }
-      this.frost = Math.max(0, this.frost - amount * 2);
-      if (this.frost <= 0) this.thaw();
+      this.burnAway(source);
+      return;
+    }
+    /* AND ONCE THE FIRE HAS THEM, NOTHING HURRIES IT. More fire on
+       somebody already being eaten does nothing — the clock in
+       A_BurnAway is the only thing that ends it, the same bargain
+       A_Torch makes — but a BLOW still lands, and what a blow does to a
+       body that is half ash is finish it where it stands. */
+    if (this.ash > 0) {
+      if (!opts.fire) this.collapse(source);
       return;
     }
     /* ALREADY ON FIRE IS ALREADY DEAD, and more fire does not hurry it.
@@ -509,6 +538,7 @@ export class Actor {
        a block of ice that never gets removed and never stops being
        solid. One line, and the two doors agree. */
     if (this.frozen) { this.shatter(source); return; }
+    if (this.ash > 0) { this.collapse(source); return; }
     this.dead = true;
     this.solid = false;
     this.shootable = false;
@@ -535,11 +565,19 @@ export class Actor {
   ignite(tics = 350) {
     if (!this.flammable || this.removed) return;
     if (this.vehicle) { this.vehicle.ignite(tics); return; }
-    /* FIRE THAWS BEFORE IT BURNS. A frozen person cannot catch — there
-       is a centimetre of ice in the way — so the flame spends itself
-       taking the frost off, and only once it is off does the next
-       particle light them. Which means the flamethrower is the tool for
-       undoing the extinguisher, and that it takes a moment. */
+    /* FIRE ON THE ICE IS NOT A THAW, IT IS AN EXECUTION. This used to
+       melt them free: the flame spent itself taking the frost off and
+       what came out the other side was a person on fire, running. It
+       reads better and plays better the other way round — a block of
+       ice the fire reaches stays exactly where it is and is EATEN, and
+       collapses into a heap of ash — so the two weapons together are a
+       way of taking somebody out of the building quietly, which neither
+       of them is on its own. See burnAway. */
+    if (this.frozen) { this.burnAway(); return; }
+    if (this.ash > 0) return;
+    /* PARTIAL FROST IS STILL A COAT OF IT, and fire still spends itself
+       on that before it lights anybody: somebody the spray has caught
+       but not held takes a particle or two more than a dry one. */
     if (this.frost > 0) {
       this.frost = Math.max(0, this.frost - Actor.FIRE_THAW * 2);
       if (this.frost > 0) return;
@@ -620,11 +658,12 @@ export class Actor {
                        get up and run, which is the outcome that makes
                        freezing them a DECISION rather than a slower way
                        of killing them
-       reheat them     fire eats frost eighty-four times faster than
-                       time does, so the flamethrower is a thawing tool
-                       and the person who comes out the other side of it
-                       is on fire. Standing in a hot cell counts: you do
-                       not have to hit them, you have to make it warm
+       burn them       fire on ice is an EXECUTION and not a thaw. They
+                       stay where they are, the drawing is eaten from
+                       the feet up and they collapse into a heap of ash
+                       — see burnAway. Standing in a hot cell counts:
+                       you do not have to hit them, you have to make it
+                       warm
        break them      anything that hits a frozen person shatters them,
                        whole, into bloody frozen chunks
 
@@ -647,6 +686,8 @@ export class Actor {
   static FREEZE_AT = 100;      // frost units before they go solid
   static THAW_EVERY = 6;       // tics per unit bled back off
   static FIRE_THAW = 14;       // and per tic of fire, which is 84x faster
+                               // — a coat of frost, or the ice going off
+                               // somebody the fire has already got
 
   /**
    * Put cold into something. Below the threshold this is just a tint and
@@ -656,6 +697,13 @@ export class Actor {
    */
   chill(amount) {
     if (this.removed || this.dead || !this.info.freezable) return false;
+    /* AND NOT ON SOMEBODY THE FIRE HAS ALREADY GOT. The stream puts a
+       burning person OUT — see below, and it is one of the best things
+       it does — but a person burning away is not a person with a fire
+       on them, it is a person half of whom is ash on the floor, and
+       there is no putting that back. Without this the two states could
+       both be true at once: blue, and being eaten, and held twice. */
+    if (this.ash > 0) return false;
     /* IT PUTS THE FIRE OUT ON THE WAY PAST, which is the obvious thing a
        fire extinguisher does to a person who is alight and the thing
        that would be most annoying if it did not. A torch that is going
@@ -693,12 +741,20 @@ export class Actor {
   /** Bleeding the cold back off, once a tic. */
   frostTic() {
     if (this.removed) return;
-    /* FIRE WINS, and by a wide margin: the thaw is one unit every six
-       tics on its own and FIRE_THAW a tic while something is burning
-       where they stand, so walking a flame over a frozen aisle unpicks
-       it in under a second. Standing in a hot cell counts — you do not
-       have to hit them, you have to make it warm. */
+    /* FIRE WINS, and by a wide margin: the bleed is one unit every six
+       tics on its own and FIRE_THAW a tic in the heat. For anybody
+       merely CHILLED that is the whole of it — a coat of frost comes
+       off in a warm aisle. For anybody solid it is not a thaw at all
+       any more; the line below sends them to burnAway instead. */
     const hot = this.game.fire ? this.game.fire.heatAt(this.x, this.y) : 0;
+    /* A WARM FLOOR IS STILL FIRE. The fire system lights anything
+       standing in a cell over 70 of 255 (see _burnThings), which for
+       somebody frozen is burnAway — but this function was taking the
+       frost off from a fifth of that, so there was a window between the
+       two thresholds where a block of ice standing at the edge of a fire
+       melted free instead of being eaten. One rule, at one line: fire on
+       ice is an execution however the fire got there. */
+    if (this.frozen && hot > 0.2) { this.burnAway(); return; }
     if (hot > 0.2 || this.burning > 0) {
       this.frost = Math.max(0, this.frost - Actor.FIRE_THAW * (this.burning > 0 ? 1 : hot));
     } else if (++this.thawTick >= Actor.THAW_EVERY) {
@@ -734,8 +790,8 @@ export class Actor {
     /* AND THEY COME OUT FRIGHTENED, whatever they went in as — including
        the frights they were held through. Everything that would have
        scared them bounced off the ice (see A_Scare), so without this a
-       shopper thawed in the middle of a burning aisle would have come
-       out of it and gone back to the shelves. */
+       shopper who was frozen through a stampede would step out of it and
+       go back to the shelves. */
     this.panic = this.info.panicTics ?? 280;
     /* SOMETHING HAS TO SAY IT HAPPENED. Freezing has a noise and a
        colour; the melt had neither, so a person the player had put on
@@ -759,6 +815,78 @@ export class Actor {
    *  see Game.impact, which is the hook a physical weapon calls, and
    *  which is written and tested ahead of the weapon that will use it.
    */
+  /* ------------------------------------------------------------------
+     BURNING AWAY
+
+     What the fire does to somebody who is still in the ice, and the
+     only thing in the game that kills a person slowly enough to watch.
+
+     IT IS NOT A THAW. Fire used to melt a frozen shopper free and set
+     them running, which made the flamethrower the counter to the
+     extinguisher and made freezing somebody a thing the player could
+     undo by mistake. The pair are worth more as a COMBINATION: freeze
+     one, burn them, and they are gone where they stood — no fireball,
+     no thirteen pieces two aisles away, no stampede. It is the quiet
+     way of emptying an aisle, and with the shatter that is now two of
+     them, which is what the second weapon was for.
+
+     WHAT IT LOOKS LIKE IS NOT IN THIS FILE. `ash` winds from 0 to 1 and
+     the sprite shader eats the drawing with it, from the feet up,
+     behind a line of coals — see the ASH block in js/material.js. All
+     that happens here is the number, the smoke, and the heap at the
+     end. The ice goes in the first half second, so the blue is off them
+     well before the fire is through them.
+
+     AND THEY STAY HELD. `held` covers this as well as the ice (see the
+     getter), so nothing scares a half-burnt person into running: a body
+     being eaten that sets off down the aisle would undo the whole
+     effect, and every system that would do it is the same one that used
+     to walk frozen people off.
+     ------------------------------------------------------------------ */
+
+  /** Fire, arriving on somebody frozen solid. */
+  burnAway(source = null) {
+    if (this.removed || this.dead || this.ash > 0) return;
+    /* nothing that cannot be eaten — and anything freezable that has no
+       burn-away state of its own just thaws, which is the old behaviour
+       kept for whatever gets frozen next */
+    if (!this.info.burnAway) { if (this.frozen) this.thaw(); return; }
+    this.frozen = false;             // it is a different hold now
+    this.burning = 0; this.torch = 0;
+    this.ashBy = source || this.game.player;
+    const [lo, hi] = this.info.ashTics ?? [105, 158];
+    this.ashTics = Math.round(lo + (pRandom() / 255) * (hi - lo));
+    this.ash = 0.001;                // held from this instant, not the next
+    this.panic = 0;
+    this.solid = this.info.solid ?? !!this.info.monster;
+    this.setState(this.info.burnAway, true);
+    this.game.sound?.play('ignite', this);
+    if (this.info.painSound) this.game.sound?.play(this.info.painSound, this);
+    /* AND THE BODY IS STILL FUEL. Whatever they are worth goes into the
+       floor under them the moment they catch, exactly as it does for
+       anybody else who goes up — a person burning in an aisle is how the
+       aisle catches, and standing still while it happens does not make
+       them less flammable. */
+    if (this.fuel > 0) this.game.fire?.ignite(this.x, this.y, this.fuel);
+  }
+
+  /** What is left. A heap on the floor, a last breath of smoke, and the
+   *  actor gone — no death state, because there is nothing left to
+   *  animate and the animation was the three seconds before this. */
+  collapse(source = null) {
+    if (this.removed) return;
+    this.dead = true;
+    this.solid = false;
+    this.shootable = false;
+    const g = this.game;
+    g.sound?.play('bodyfall', this);
+    g.fx?.puff(this.x, this.y, this.z + 10, 26, 130);
+    g.fx?.ember(this.x, this.y, this.z + 6, 8, 0.5);
+    g.giblets?.ashPile(this);
+    if (this.monster) g.onMonsterKilled(this, source || this.ashBy);
+    this.remove();
+  }
+
   shatter(source, opts = {}) {
     if (this.removed) return;
     this.dead = true;
@@ -862,6 +990,12 @@ export class Actor {
        player can see it working, which is the whole of the feedback this
        weapon has. */
     if (u.frost) u.frost.value = Math.min(1, this.frost / Actor.FREEZE_AT);
+    /* AND HOW FAR THROUGH BEING EATEN, on the same terms. See the ASH
+       block in js/material.js: the sprite is consumed from the feet up
+       behind a line of coals, and at 1 there is nothing of it left —
+       which is a tenth of a second before collapse() takes the actor
+       away, so the drawing is empty rather than popping out. */
+    if (u.ash) u.ash.value = this.ash;
     /* A car in the back row of the car park has to diminish the way the
        tarmac under it does, or it turns into a silhouette while the bay
        around it stays lit. */
@@ -870,11 +1004,29 @@ export class Actor {
        floor of cardboard. Two sines, phased off the actor's own id, and
        nothing in the simulation moves — this is a drawing offset and the
        thing itself is exactly where the collision says it is. */
-    if (this.info.sway) {
+    /* AND A BLOCK OF ICE DOES NOT LEAN. The sway is what stops a shop
+       floor of standees reading as cardboard, and it was running on the
+       frozen ones too — a statue rocking gently on its heels, which is
+       the one drawing in the game that has to be dead still. Somebody
+       being eaten by the fire is held the same way and for the same
+       reason: a body coming apart should sag, not sway. */
+    /* AND SOMEBODY BEING EATEN SETTLES. The front crosses the drawing
+       from the feet up and the quad does not move, so what was left of
+       a half-burnt shopper HUNG IN THE AIR — a head and a pair of
+       shoulders floating at eye level with nothing under them, which
+       was the first thing wrong with this on screen. The sprite sinks
+       at the rate the front climbs, so the unburnt top of them slides
+       down to the floor as the bottom goes: what the eye sees is a
+       person collapsing into the heap they are about to become.
+
+       0.72 against the threshold's 0.70, because the noise in it puts
+       the average front a little above the pure height ramp. */
+    const sink = this.ash > 0 ? this.ash * this.height * 0.72 : 0;
+    if (this.info.sway && !this.held) {
       const s = swayOf(this, this.game.tics);
       this.mesh.position.set(this.x + s.dx, this.z + (entry.lift || 0) + s.dz, -(this.y + s.dy));
     } else {
-      this.mesh.position.set(this.x, this.z + (entry.lift || 0), -this.y);
+      this.mesh.position.set(this.x, this.z + (entry.lift || 0) - sink, -this.y);
     }
   }
 }
@@ -992,6 +1144,35 @@ export const ACTIONS = {
   },
 
   /* ------------------------------------------------------------------
+     BEING EATEN
+
+     The other end of A_Torch, and deliberately its opposite in every
+     respect: no movement, no panic, no trail, no bang. One number goes
+     up, the shader eats the drawing with it, and at the top there is a
+     heap of ash on the lino.
+
+     BY THE LENGTH OF THE FRAME, not by a fixed step — the same lesson
+     A_Torch learned the hard way. This state runs every four tics, so
+     stepping the number by a constant would make `ashTics` mean a
+     quarter of what it says the day somebody retimes the animation.
+     The frame knows how long it is; ask it.
+     ------------------------------------------------------------------ */
+  A_BurnAway(a) {
+    a.ash = Math.min(1, a.ash + a.state.tics / Math.max(1, a.ashTics));
+    /* THE ICE GOES FIRST, and much faster than the body does: about
+       half a second against three and a half. The blue has to be off
+       them well before the fire is through them or the two effects are
+       fighting over the same pixels — a pale blue statue with coals
+       crawling up it reads as neither. */
+    if (a.frost > 0) a.frost = Math.max(0, a.frost - Actor.FIRE_THAW * 2);
+    /* smoke off them the whole way, and a few sparks off the front */
+    a.game.fx?.puff(a.x, a.y, a.z + a.height * (0.2 + a.ash * 0.7), 14, 70);
+    if ((pRandom() & 1) === 0)
+      a.game.fx?.ember(a.x, a.y, a.z + a.height * a.ash, 1, 0.7);
+    if (a.ash >= 1) a.collapse(a.ashBy);
+  },
+
+  /* ------------------------------------------------------------------
      RUNNING AWAY
 
      Standing still and smelling the air. Nine samples of the fire grid —
@@ -1077,7 +1258,7 @@ export const ACTIONS = {
        somebody inside the ice, and thaw() hands them a fresh fright on
        the way out — which is the correct one, because what they are
        running from is what is there NOW. */
-    if (a.frozen) return;
+    if (a.held) return;
     const full = a.info.panicTics ?? 280;
     const want = Math.min(full, tics ?? full);
     if (want <= a.panic) { a.fleeX = x; a.fleeY = y; return; }

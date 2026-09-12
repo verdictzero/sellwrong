@@ -71,7 +71,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         709 checks, no install and no browser
+  the smoke test         729 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -211,19 +211,20 @@ and the player picks:
                 they thaw, get up and run — which is the outcome that
                 makes freezing somebody a decision rather than a slower
                 way of killing them
-  reheat them   fire eats frost about eighty times faster than time
-                does, so the flamethrower is the thawing tool, and what
-                comes out the other side is a person on fire. A fire
-                anywhere near their feet does it too: the melt reads
-                the heat of the CELL they are standing in, so a store
-                that is burning thaws itself out as it goes
+  burn them     fire on ice is an execution. They stay exactly where
+                they are, an ember front eats the drawing from the feet
+                up, and about three and a half seconds later there is a
+                heap of ash on the lino. A fire anywhere near their feet
+                does it as well as a direct hit — it reads the heat of
+                the CELL they are standing in, so a store that is
+                burning does this to its own frozen people as it goes
   break them    anything at all that hits a frozen person shatters
                 them, whole, into bloody frozen chunks
 
 AND NOTHING ELSE GETS THEM OUT OF IT, which is what makes that a list of
 three rather than a list of three plus whatever happens to go off nearby.
-Being frozen is a HOLD: for as long as the ice is on, every system in the
-game that makes people react is refused. A car going up forty units away,
+Being frozen is a HOLD, and so is being eaten: for as long as either one
+lasts, every system in the game that makes people react is refused. A car going up forty units away,
 the noise of the player's own trigger, a neighbour sprinting past — all of
 them used to reach past the ice and set a block of it running, still
 solid, still blue, with ninety of its hundred frost still on. The lock is
@@ -233,13 +234,35 @@ own the ice. A fright that arrives while somebody is held is dropped
 rather than queued, and a fresh one is handed to them on the way out —
 what you should run from is what is there NOW.
 
-AND THE ICE IS ARMOUR WHILE IT LASTS, which is the one thing about this
-that has to be said out loud. Fire spent on a frozen person goes entirely
-into melting them and none of it reaches their health, so a block of ice
-is briefly the safest thing in a burning shop — the flamethrower frees
-people it cannot hurt until it has freed them. Three particles of the
-stream does it, or one car going up beside them, and then they are an
-ordinary shopper who is on fire.
+THE TWO WEAPONS TOGETHER ARE A THIRD THING, which is the point of the
+second one. Fire used to MELT a frozen shopper free and set them running,
+which made the flamethrower the undo button for the extinguisher: a
+player could spoil their own freeze by sweeping the aisle a moment later.
+Turned round, the pair are a combination — freeze one, burn them, and
+they are gone where they stood. No fireball, no thirteen pieces two
+aisles over, nobody else running. With the shatter that is two quiet ways
+of emptying an aisle, and quiet is the thing the flamethrower alone can
+never be.
+
+AND YOU WATCH IT HAPPEN, which is the other half. Nothing else in this
+game kills a person slowly enough to look at: a shopper the stream
+touches runs for five seconds and explodes, and a frozen one hit with
+anything solid is thirteen pieces in a single frame. This one takes three
+and a half seconds and the whole of it is on the drawing — a line of
+coals crossing them from the feet up, the coat and the shape going with
+it, the body settling as its legs stop being there, and a heap of ash and
+a few embers left on the floor. It is done in the sprite shader rather
+than in art, because seventeen shoppers times an animation of a person
+burning away is art nobody is going to draw, and because the drawing
+being EATEN — their own coat, their own silhouette — is what makes it
+read as that person rather than as an effect played over them.
+
+ONE RULE, HOWEVER THE FIRE ARRIVES. A flame particle, a car going up
+beside them, or simply the floor they are standing on being alight: all
+three do the same thing. That took a fix — the fire system lights
+anything standing in a cell over 70 of 255 and the thaw was reading heat
+from a fifth of that, so there was a window in which a block of ice at
+the EDGE of a fire melted free while one in the middle of it was eaten.
 
 THE COLOUR IS A MAP AND NOT A TINT, which is the difference between
 somebody frozen and somebody with a blue light on them. Multiplying a
@@ -2184,7 +2207,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-709 checks. Every one of them earns its place by having caught something
+729 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -2448,6 +2471,32 @@ that had already reached a screenshot:
     the problem, the NEXT caller was — and the two functions that own
     the ice pass a flag through it. The test knocks on all three doors
     and measures how far the block of ice got: nothing
+  A BLOCK OF ICE ROCKING GENTLY ON ITS HEELS, reported by the user and
+    a straight miss when the freeze went in. Every standee leans and
+    bobs a little — two sines off its own id, which is what stops a
+    shop floor of them reading as a room full of cardboard — and the
+    freeze parked the state machine without ever touching the drawing.
+    So the one figure in the game that has to be dead still was the one
+    still swaying. The guard is at the call in Actor.render rather than
+    inside swayOf, because swayOf was not wrong: it was asked to sway
+    and it swayed. Somebody the fire is eating is held the same way, for
+    the same reason — a body coming apart should sag, not sway
+  A HALF-BURNT SHOPPER HANGING IN THE AIR, which was the first thing
+    wrong with the burn-away on screen and is obvious in hindsight: the
+    front eats the drawing from the feet up and the quad does not move,
+    so what was left of somebody was a head and a pair of shoulders
+    floating at eye level with nothing under them. The sprite sinks at
+    the rate the front climbs now, so the unburnt top of them slides
+    down to the floor as the bottom goes — which is not a workaround,
+    it is the collapse, and it is what makes the three seconds read as
+    a person going down rather than as a person being erased
+  AND THE SAME BURN RUNNING FROM THE HEAD DOWN, one screenshot earlier.
+    vUv.y is measured DOWN the picture — the sprite sheets are
+    canvas-backed and arrive with the first row at the top — so the
+    obvious spelling of "from the feet up" was upside down. A person
+    dissolving from the hat is not a person on fire. The test now pins
+    the direction in the shader source, because it is one character and
+    nothing else in the game would notice
   A PIECE OF CAR ONE PAST THE END OF THE MODEL. rnd() in js/vehicles.js
     is pRandom() / 255 and pRandom() rolls 0 to 255 INCLUSIVE, so it
     returns exactly 1.0 about once in every 256 calls — and the one

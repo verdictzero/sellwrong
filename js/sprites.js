@@ -39,7 +39,8 @@ import { Pix, fbm, valueNoise, speckle, drawTextCentred } from './pixel.js';
 import { makeRng, pRandom } from './util.js';
 import { ramp, PALETTE } from './palette.js';
 import { WEAPON_TILE, WEAPON_TOP, CLEAR_INDEX } from './art-data.js';
-import { CELLS, ADULT, SHOPPERS, SPLATS, BLASTS, SHOPPER_SPRITE, SPLAT_SPRITE, BLAST_SPRITE } from './people.js';
+import { CELLS, ADULT, SHOPPERS, SPLATS, ASHES, BLASTS,
+         SHOPPER_SPRITE, SPLAT_SPRITE, ASH_SPRITE, BLAST_SPRITE } from './people.js';
 import { fireFrames, FIRE_FRAMES, BLAZE_FRAMES, EMBER_FRAMES } from './fireart.js';
 
 /* A frame is a letter, and the letters stop at Z. */
@@ -293,6 +294,58 @@ export function bakeSprites() {
                1 + rng() * 2.6, 'red', 0.10 + rng() * 0.12);
       }
     }, CELLS.splat.w, CELLS.splat.h, 605 + v));
+  }
+
+  /* --- AND WHAT IS LEFT WHEN THE FIRE FINISHES ONE ---
+
+     The other thing a person can turn into, and it is deliberately NOT
+     the splat with the red taken out. A splat is a stain: flat, thin,
+     spread wide by something arriving fast. Somebody who burned away
+     where they stood leaves a HEAP — narrower than the splat is wide,
+     banked up in the middle, with the shape of a person's footprint
+     still in it if you are generous.
+
+     THREE LAYERS AND THE ORDER MATTERS. A wide scatter of pale grey
+     first, which is the ash that went sideways and settled; then the
+     heap itself in the dark end of the grey ramp, because ash in a pile
+     is nearly black and only reads as ash by the dust around it; and
+     then a handful of coals — rust and yellow, four or five of them, no
+     more — sitting in the top of it. The coals are what stop it reading
+     as a puddle of dirty water. There is no ember shader on a sprite
+     (that is a SURFACE thing, see js/material.js), so the last warmth
+     of a person has to be painted in.
+
+     Squashed like the splat is, and for the same reason: it is lying on
+     the floor and this is a billboard standing up on it, so the height
+     is a quarter of the width or it reads as a ball. Three of them,
+     picked per actor off `variants`. --- */
+  for (let v = 0; v < ASHES; v++) {
+    const rng = makeRng(631 + v);
+    bank.addFrame(ASH_SPRITE + v, 'A', radial(p => {
+      const cx = CELLS.ash.w / 2, cy = CELLS.ash.h - 4;
+      const wide = 10 + v * 2;
+      /* the dust that went sideways, and it is the PALEST part: ash on
+         lino is light, and it is what says "ash" rather than "hole" */
+      for (let i = 0; i < 60; i++) {
+        const a = rng() * Math.PI * 2, d = Math.sqrt(rng()) * (wide + 6);
+        p.disc(cx + Math.cos(a) * d, cy + Math.sin(a) * d * 0.26,
+               0.8 + rng() * 1.4, 'grey', 0.30 + rng() * 0.16);
+      }
+      /* and the heap, banked toward the middle and darker in it —
+         mid-grey and not the bottom of the ramp, which came out as a
+         black puddle on the floor and read as a hole in the lino */
+      for (let i = 0; i < 80; i++) {
+        const a = rng() * Math.PI * 2, d = Math.pow(rng(), 1.8) * wide;
+        p.disc(cx + Math.cos(a) * d, cy + Math.sin(a) * d * 0.30 - rng() * 2.0,
+               1 + rng() * 2.0, 'grey', 0.10 + rng() * 0.16);
+      }
+      /* and half a dozen coals still in it */
+      for (let i = 0; i < 7; i++) {
+        const a = rng() * Math.PI * 2, d = Math.pow(rng(), 1.5) * wide * 0.7;
+        p.disc(cx + Math.cos(a) * d, cy + Math.sin(a) * d * 0.30 - 1,
+               0.8 + rng() * 0.8, rng() < 0.35 ? 'yellow' : 'rust', 0.36 + rng() * 0.3);
+      }
+    }, CELLS.ash.w, CELLS.ash.h, 631 + v));
   }
 
   /* --- and the fireball, drawn by the fire routine so that the
