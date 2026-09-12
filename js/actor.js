@@ -241,11 +241,30 @@ export class Actor {
   /* ------------------------------------------------------------------
      The state machine
      ------------------------------------------------------------------ */
-  setState(name) {
-    /* A chain of zero-tic states resolves in one go, the way Doom's
+  setState(name, force = false) {
+    /* ICE TAKES NO DIRECTION, and this line is where that is true rather
+       than merely intended. freeze() parks the state with tics -1, but
+       parking it only stops the actor from moving ITSELF — setState is
+       the door every other system in the game reaches in through, and
+       all of them were walking straight past a block of ice and setting
+       it running. A car went up forty units away (Game.scare), or the
+       player pulled a trigger anywhere in earshot (Game.noise), and the
+       frozen shopper stood up and covered ninety units in under two
+       seconds, still solid, still blue, still with ninety frost on.
+       Nobody wrote that; it is what a hold with no lock on it does.
+
+       So the lock is here, at the one door, and not a guard sprinkled
+       over the callers — because the callers are not the problem. The
+       NEXT caller is. Anything that ever wants a frozen thing to react
+       gets the same answer, and the two functions allowed to overrule it
+       are the two that own the ice: freeze(), parking them, and thaw(),
+       letting them go.
+
+       A chain of zero-tic states resolves in one go, the way Doom's
        P_SetMobjState does — that is how a state can be a pure action
        with no frame of its own. The counter stops an accidental cycle
        from locking the game up. */
+    if (this.frozen && !force) return false;
     let guard = 0;
     while (name) {
       const st = stateOf(name);
@@ -445,7 +464,7 @@ export class Actor {
        going up beside a block of ice frees whoever is in it and then
        lights them, which is the correct amount of mercy. */
     if (this.frozen) {
-      if (!opts.fire) { this.shatter(source); return; }
+      if (!opts.fire) { this.shatter(source, opts); return; }
       this.frost = Math.max(0, this.frost - amount * 2);
       if (this.frost <= 0) this.thaw();
       return;
@@ -482,6 +501,14 @@ export class Actor {
 
   die(source, overkill = 0, opts = {}) {
     if (this.dead) return;
+    /* AND A BLOCK OF ICE THAT IS KILLED COMES APART, which is here for
+       the same reason the gate in setState is: damage() already turns a
+       blow on a frozen thing into a shatter, so nothing reaches this
+       line today. But the gate refuses the death state as readily as it
+       refuses a fright, and a corpse that cannot run its death state is
+       a block of ice that never gets removed and never stops being
+       solid. One line, and the two doors agree. */
+    if (this.frozen) { this.shatter(source); return; }
     this.dead = true;
     this.solid = false;
     this.shootable = false;
@@ -589,13 +616,15 @@ export class Actor {
 
      THREE THINGS CAN HAPPEN TO A FROZEN PERSON and the player picks:
 
-       leave them      the frost bleeds off and they thaw, get up and
-                       carry on shopping, which is the outcome that
-                       makes freezing them a DECISION rather than a
-                       slower way of killing them
-       burn them       fire eats frost much faster than time does, so a
-                       flamethrower is a thawing tool, and the person
-                       who comes out the other side is on fire
+       leave them      the frost bleeds off on its own and they thaw,
+                       get up and run, which is the outcome that makes
+                       freezing them a DECISION rather than a slower way
+                       of killing them
+       reheat them     fire eats frost eighty-four times faster than
+                       time does, so the flamethrower is a thawing tool
+                       and the person who comes out the other side of it
+                       is on fire. Standing in a hot cell counts: you do
+                       not have to hit them, you have to make it warm
        break them      anything that hits a frozen person shatters them,
                        whole, into bloody frozen chunks
 
@@ -603,6 +632,14 @@ export class Actor {
      tool as well as a weapon. A frozen shopper stops being something you
      walk through and becomes something you walk around — and so does
      everybody else, including the crowd running for the doors.
+
+     AND IT IS A HOLD, which is the part that makes the list above a
+     list. Those three are the ONLY ways out, and they are only the only
+     ways out because setState refuses everything else for as long as
+     the ice is on — see the note there. A fright, a bang, the noise of
+     the player's own gun: a system that makes people react does not get
+     to make this one react, or "frozen" is a tint and a pause rather
+     than a state you put somebody in.
      ------------------------------------------------------------------ */
 
   /** How much cold it takes, and how long the thaw is. Public because
@@ -648,7 +685,7 @@ export class Actor {
     this._thawState = this.info.freezeReturn || this.info.see || this.info.spawn;
     this.solid = true;
     this.panic = 0;
-    if (this.info.frozen) this.setState(this.info.frozen);
+    if (this.info.frozen) this.setState(this.info.frozen, true);
     this.stateTics = -1;
     this.game.sound?.play('freeze', this);
   }
@@ -694,20 +731,40 @@ export class Actor {
        a state the living come out of; the dead just stop being blue. */
     if (this.dead || this.removed) { this.frost = 0; return; }
     this.solid = this.info.solid ?? !!this.info.monster;
+    /* AND THEY COME OUT FRIGHTENED, whatever they went in as — including
+       the frights they were held through. Everything that would have
+       scared them bounced off the ice (see A_Scare), so without this a
+       shopper thawed in the middle of a burning aisle would have come
+       out of it and gone back to the shelves. */
     this.panic = this.info.panicTics ?? 280;
+    /* SOMETHING HAS TO SAY IT HAPPENED. Freezing has a noise and a
+       colour; the melt had neither, so a person the player had put on
+       ice simply became a person again between two frames and the
+       reheat read as a bug. Same puff the shatter leaves, and a hiss
+       that runs the other way from the one that froze them. */
+    this.game.fx?.frostPuff?.(this.x, this.y, this.z + this.height * 0.5, 18, 34);
+    this.game.sound?.play('thaw', this);
     const st = this._thawState;
     if (st) this.setState(st);
   }
 
   /** Frozen and then hit: the whole person at once, in pieces. There is
    *  no health left to take off and no death state to run — a thing made
-   *  of ice does not fall over, it stops existing in one frame. */
-  shatter(source) {
+   *  of ice does not fall over, it stops existing in one frame.
+   *
+   *  `opts` is THE BLOW, and everything in it is passed straight to the
+   *  shards: `dx`/`dy` for the way it was swung and `force` for how
+   *  hard, so a hammer throws the pieces down the aisle in front of it
+   *  rather than in a ring on the floor. Nothing supplies them yet —
+   *  see Game.impact, which is the hook a physical weapon calls, and
+   *  which is written and tested ahead of the weapon that will use it.
+   */
+  shatter(source, opts = {}) {
     if (this.removed) return;
     this.dead = true;
     this.solid = false;
     this.shootable = false;
-    this.game.giblets?.shatter(this);
+    this.game.giblets?.shatter(this, opts);
     if (this.monster) this.game.onMonsterKilled(this, source);
     this.remove();
   }
@@ -1010,6 +1067,17 @@ export const ACTIONS = {
    *  up with six hundred people running on the spot for ever because two
    *  of them could see each other. */
   A_Scare(a, x, y, tics) {
+    /* A BLOCK OF ICE DOES NOT HEAR YOU. The gate in setState already
+       stops a frozen shopper being set running by this, but stopping it
+       there and not here leaves the rest of the call happening to them:
+       the pain sound out of a mouth that cannot open, a flee point
+       chosen from where they were standing eleven seconds ago, and a
+       panic counter ticking down through the hold so that the fright
+       has expired by the time they are free to use it. Nothing reaches
+       somebody inside the ice, and thaw() hands them a fresh fright on
+       the way out — which is the correct one, because what they are
+       running from is what is there NOW. */
+    if (a.frozen) return;
     const full = a.info.panicTics ?? 280;
     const want = Math.min(full, tics ?? full);
     if (want <= a.panic) { a.fleeX = x; a.fleeY = y; return; }

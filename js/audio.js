@@ -35,6 +35,15 @@ const DEFS = {
      of ice sounds like when something hits them. */
   freeze:    { kind: 'hiss',  dur: 0.45, f0: 260,  f1: 1500, gain: 0.26 },
   shatter:   { kind: 'noise', dur: 0.22, f0: 5200, f1: 900,  gain: 0.40 },
+  /* and the melt, which is `freeze` played backwards in every sense
+     that matters here: down rather than up, longer, and quieter,
+     because coming out of it is a slower thing than going in */
+  thaw:      { kind: 'hiss',  dur: 0.60, f0: 1500, f1: 260,  gain: 0.18 },
+  /* SOMETHING HITTING SOMETHING, for the weapon that is not built yet
+     — see Game.impact. A thud with a bit of edge left on it: the body
+     of it is the low sweep and what makes it read as a blow rather
+     than a door closing is that it is over in a fifth of a second. */
+  whack:     { kind: 'thud',  dur: 0.20, f0: 300,  f1: 70,   gain: 0.38 },
 
   /* the staff */
   gib:       { kind: 'noise', dur: 0.42, f0: 1500, f1: 180,  gain: 0.44 },

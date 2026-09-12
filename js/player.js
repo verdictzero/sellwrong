@@ -435,13 +435,22 @@ export class Player {
   }
 
   /** The boxcutter: everything in a cone in front, nearest first. */
+  /** THE BOXCUTTER LANDING, and the only weapon in the game that hits
+   *  somebody with something solid. It goes through Game.impact, which
+   *  is the general form of that — a reach, an arc, and the direction
+   *  the blow went — rather than keeping its own copy: a physical
+   *  weapon is coming that will use the same call, and a hook nothing
+   *  in the shipped game exercises is a hook that is broken by the time
+   *  anything needs it.
+   *
+   *  `force` is 1 because a boxcutter is not a hammer. What it buys is
+   *  that a swing at a block of ice throws the pieces down the aisle in
+   *  front of you instead of dropping them in a ring. */
   meleeSwing(d) {
-    const best = this.game.actorsInCone(this, d.range, d.arc, true);
-    if (!best.length) return;
-    const a = best[0];
-    a.damage(d.damage(), this);
-    this.game.sound?.play(d.hitSound, this);
-    this.game.spawnPuff(a.x, a.y, a.z + a.height * 0.6);
+    this.game.impact(this, {
+      range: d.range, arc: d.arc, damage: d.damage(), force: 1,
+      hitSound: d.hitSound, missSound: null,
+    });
   }
 
   /** The flamer: one tic of stream out of the nozzle. Where the nozzle

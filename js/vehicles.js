@@ -454,7 +454,17 @@ class Vehicle {
          This used to sample the hull's two silhouette curves for a point
          on the skin, because the body was BUILT from those curves and
          there were no triangles to ask. There are now. */
-      const pick = tris[(rnd() * tris.length) | 0];
+      /* THE LAST INDEX IS ONE PAST THE END once in every 256 pieces,
+         which is not a rounding worry, it is a crash. rnd() is
+         pRandom() / 255 and pRandom() rolls 0 to 255 INCLUSIVE, so it
+         returns 1.0 about once in 256 calls and (1.0 * n) | 0 is n.
+         Every chunk shed off every car in the lot draws one of these,
+         and a chain reaction across the car park sheds hundreds — so
+         this was not a rare crash, it was a matter of how long the
+         player stood there. Clamped rather than made exclusive because
+         the other nine uses of rnd() in this file are ranges, where
+         reaching the top of one is correct. */
+      const pick = tris[Math.min(tris.length - 1, (rnd() * tris.length) | 0)];
       const px = (pick.a[0] + pick.b[0] + pick.c[0]) / 3;
       const py = (pick.a[1] + pick.b[1] + pick.c[1]) / 3;
       const pz = (pick.a[2] + pick.b[2] + pick.c[2]) / 3;

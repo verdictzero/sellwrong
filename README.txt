@@ -71,7 +71,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         684 checks, no install and no browser
+  the smoke test         709 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -211,11 +211,27 @@ and the player picks:
                 they thaw, get up and run — which is the outcome that
                 makes freezing somebody a decision rather than a slower
                 way of killing them
-  burn them     fire eats frost about eighty times faster than time
+  reheat them   fire eats frost about eighty times faster than time
                 does, so the flamethrower is the thawing tool, and what
-                comes out the other side is a person on fire
+                comes out the other side is a person on fire. A fire
+                anywhere near their feet does it too: the melt reads
+                the heat of the CELL they are standing in, so a store
+                that is burning thaws itself out as it goes
   break them    anything at all that hits a frozen person shatters
                 them, whole, into bloody frozen chunks
+
+AND NOTHING ELSE GETS THEM OUT OF IT, which is what makes that a list of
+three rather than a list of three plus whatever happens to go off nearby.
+Being frozen is a HOLD: for as long as the ice is on, every system in the
+game that makes people react is refused. A car going up forty units away,
+the noise of the player's own trigger, a neighbour sprinting past — all of
+them used to reach past the ice and set a block of it running, still
+solid, still blue, with ninety of its hundred frost still on. The lock is
+one line in Actor.setState, which is the single door all of them came
+through, and the two functions allowed to overrule it are the two that
+own the ice. A fright that arrives while somebody is held is dropped
+rather than queued, and a fresh one is handed to them on the way out —
+what you should run from is what is there NOW.
 
 AND THE ICE IS ARMOUR WHILE IT LASTS, which is the one thing about this
 that has to be said out loud. Fire spent on a frozen person goes entirely
@@ -248,6 +264,31 @@ and fills in thirty, and comes back at a third rather than a half,
 because putting a fire out is defensive, is usually done under time
 pressure, and an extinguisher that is empty when the aisle you wanted is
 alight is a weapon that exists to disappoint.
+
+AND THERE IS A HOOK FOR A WEAPON THAT DOES NOT EXIST. Something physical
+is coming — a bat, a hammer, whatever it turns out to be — and the half
+of a weapon that is hard is not the art, it is the question of what a
+swing MEANS to the rest of the game. Game.impact is the answer, written
+and measured ahead of the thing that will call it: a short reach, a wide
+arc, the nearest thing in it, and a DIRECTION. That last one is the new
+part. The shatter itself needed nothing — a blow on a frozen person was
+already a shatter, because everything that is not fire is — but the
+pieces now go the way the blow went, in a sixty-degree cone either side
+of it and harder the heavier the swing, which is the difference between
+being hit and coming apart on your own. It hits people who are not
+frozen too, as ordinary damage, because breaking is a property of the
+ICE and not of the weapon. It does not push anybody: actors in this game
+have no momentum, they move a whole step or none of it, and knocking a
+shopper across an aisle would be a physics system rather than a
+parameter. When the weapon arrives it is an animation, a table entry and
+one call.
+
+AND THE BOXCUTTER ALREADY SWINGS THROUGH IT, which is what keeps that
+honest. It kept its own copy of reach-arc-nearest; it asks for the
+general form now, so the hook is on a path the shipped game actually
+takes rather than sitting there rotting until something needs it — and
+a boxcutter through a block of ice throws the pieces down the aisle in
+front of you instead of dropping them in a ring.
 
 
 ON A PHONE
@@ -2143,7 +2184,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-684 checks. Every one of them earns its place by having caught something
+709 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -2392,6 +2433,34 @@ that had already reached a screenshot:
     time they spend solid and the state has hysteresis. The test freezes
     one, tics once, and asserts they are still frozen — and then counts
     how long it actually takes, which is about seventeen seconds
+  A BLOCK OF ICE WALKING OFF DOWN THE AISLE, which is the same mistake
+    as the one above made in a different place: freezing somebody
+    stopped them moving THEMSELVES and nothing else. setState is the
+    door every other system in the game reaches an actor through, and
+    it had no lock on it, so all three of the things that make a crowd
+    react reached straight past the ice: a car going up nearby
+    (Game.scare), the noise of the player's own trigger (Game.noise,
+    once per tic for as long as it is held), and a neighbour running
+    past (A_Scare). Measured: a bang forty units away moved a frozen
+    shopper ninety units in under two seconds, still solid, still blue,
+    with ninety of its hundred frost on. The lock is one line at that
+    one door rather than a guard at each caller — the callers were not
+    the problem, the NEXT caller was — and the two functions that own
+    the ice pass a flag through it. The test knocks on all three doors
+    and measures how far the block of ice got: nothing
+  A PIECE OF CAR ONE PAST THE END OF THE MODEL. rnd() in js/vehicles.js
+    is pRandom() / 255 and pRandom() rolls 0 to 255 INCLUSIVE, so it
+    returns exactly 1.0 about once in every 256 calls — and the one
+    place that used it as an array index, picking which of the van's
+    triangles a shed chunk is torn from, then read one past the end and
+    threw. Every chunk off every car draws one of these and a chain
+    reaction across the car park sheds hundreds, so this was not a rare
+    crash, it was a question of how long the player stood and watched.
+    It surfaced because an unrelated change moved the shared random
+    stream by a few calls and the smoke test's exploding car landed on
+    it — which is the argument for a test suite that shares one LCG
+    with the game. Clamped at the point of use: the other nine uses of
+    rnd() in that file are ranges, where reaching the top is correct
   SMOKE WEARING THE FIRE'S COALS, for as long as there has been soot.
     Every sprite in the game shares the fragment shader with the walls,
     and the block that asks the burn grid how burnt the floor is was

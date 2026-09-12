@@ -569,6 +569,72 @@ export class Game {
   }
 
   /* ------------------------------------------------------------------
+     A PHYSICAL BLOW
+
+     THERE IS NO WEAPON BEHIND THIS YET, and it is written anyway. A
+     thing that hits people is coming — a bat, a hammer, whatever it
+     turns out to be — and the half of it that is hard is not the art or
+     the animation, it is the question of what a swing MEANS to the rest
+     of the game. That question has an answer now, it is tested, and
+     when the weapon arrives it calls one function.
+
+     WHAT A SWING IS, here: a short reach, a wide arc, the nearest thing
+     in it, and a direction. The first three are the boxcutter's melee
+     already (see Player.meleeSwing, which is the same shape); the
+     direction is the new part and the reason this is not just melee
+     with a bigger number. A blow has a WAY it went, and the pieces go
+     with it — Giblets.shatter throws the shards in a cone along it.
+
+     AND IT IS AIMED AT THE ICE. Actor.damage already turns anything
+     that is not fire into a shatter, so this needed no special case to
+     break somebody frozen: it needed to carry the swing through so
+     that breaking them LOOKS like being hit rather than like coming
+     apart on its own. That is the whole delta, and it is the thing a
+     weapon cannot add from outside.
+
+     WHAT IT DOES NOT DO is push anybody. Actors in this game have no
+     momentum — they move by tryWalk, a whole step or none of it, which
+     is Doom's and is what stops a crowd oozing through a gap a person
+     could not. Knocking a shopper across an aisle would be a physics
+     system, not a parameter, so a blow that does not kill leaves them
+     standing and cross. The player DOES get shoved, because Player has
+     momx/momy and Player.damage already spends it.
+
+     `count` is how many things one swing reaches. One is a bat; three
+     is a swing through a queue of people who are all made of ice, and
+     that is a decision for whoever builds the weapon rather than one
+     to make here.
+     ------------------------------------------------------------------ */
+  impact(from, opts = {}) {
+    const {
+      range = 88, arc = 0.7, damage = 40, force = 1.8, count = 1,
+      hitSound = 'whack', missSound = 'swing',
+    } = opts;
+    const dx = Math.cos(from.angle), dy = Math.sin(from.angle);
+    const found = this.actorsInCone(from, range, arc, true);
+    if (!found.length) {
+      /* NOTHING SOFT IN THE WAY, so find the wall. A swing that hits
+         shelving still has to land somewhere or the weapon reads as
+         broken every time you miss. */
+      const z = from.eyeZ;
+      const wall = this.level.rayHitWall(from.x, from.y, z, from.x + dx * range, from.y + dy * range, z);
+      if (wall) this.spawnPuff(wall.x, wall.y, wall.z);
+      /* null for a weapon whose own firing sequence already makes the
+         noise of the swing, which the boxcutter's does */
+      if (missSound) this.sound?.play(missSound, from);
+      return [];
+    }
+    const hit = found.slice(0, count);
+    for (const a of hit) {
+      a.damage(damage, from, { impact: true, dx, dy, force });
+      this.spawnPuff(a.x, a.y, a.z + a.height * 0.6);
+    }
+    /* one noise for the swing however many it caught */
+    this.sound?.play(hitSound, from);
+    return hit;
+  }
+
+  /* ------------------------------------------------------------------
      Things in the air
 
      Not Actors. A projectile lives for under a second, moves in a
@@ -759,6 +825,10 @@ export class Game {
        crowd squared at exactly the moment the frame is busiest. */
     for (const a of this.blockmap.nearRadius(x, y, radius, this._scared)) {
       if (a.dead || a.removed || !a.info.panicTics) continue;
+      /* NOT THE ONES IN THE ICE. A_Scare turns them away too, and has
+         to, but the count this returns is "how many people started
+         running" and a block of ice is not one of them. */
+      if (a.frozen) continue;
       if (dist2(x, y, a.x, a.y) > r2) continue;
       ACTIONS.A_Scare(a, x, y);
       n++;
@@ -773,6 +843,12 @@ export class Game {
     const r2 = radius * radius;
     for (const a of this.actors) {
       if (!a.monster || a.dead || a.target) continue;
+      /* AND NOT THROUGH A CENTIMETRE OF ICE. This was the loudest of
+         the three doors into a frozen shopper, because the player holds
+         the trigger down: every tic of the flamethrower woke every
+         block of ice in the shop, gave it the player as a target and
+         set it going. */
+      if (a.frozen) continue;
       if (dist2(from.x, from.y, a.x, a.y) > r2) continue;
       a.target = this.player;
       this.sound?.play(a.info.seeSound, a);

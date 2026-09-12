@@ -228,14 +228,30 @@ export class Giblets {
      skitter. And they leave the same pool behind them, because whatever
      the temperature, that part is unchanged.
      ------------------------------------------------------------------ */
-  shatter(a) {
+  shatter(a, blow = {}) {
     const g = this.game;
     this.shatters++;
     g.sound?.play('shatter', a);
     this.splat(a.x, a.y, a.z);
+    /* WHICH WAY IT WAS SWUNG, if anything said. A blow with a direction
+       on it throws the pieces along that direction inside a cone, and
+       throws them harder; a blow without one — a stray particle, a car
+       going up, the tip of a boxcutter — scatters them in a ring the way
+       it always did. The cone is deliberately WIDE, two thirds of the
+       way to a half-circle either side: a block of ice hit with a hammer
+       does not come apart into a beam of shards, it comes apart mostly
+       forwards. See Actor.shatter, and Game.impact for who supplies it.
+
+       `force` scales the throw and is the number a weapon turns up to
+       make a hit feel heavier. One is a shove; three is a swing that
+       puts somebody through the freezer aisle. */
+    const dir = (blow.dx || blow.dy) ? Math.atan2(blow.dy ?? 0, blow.dx ?? 0) : null;
+    const CONE = 1.05;                      // ± 60°, so the back of it still gets some
+    const force = Math.max(0.2, blow.force ?? 1);
     for (let k = 0; k < GIB.count + 4; k++) {
-      const ang = (pRandom() / 255) * Math.PI * 2;
-      const sp = GIB.speedMin + (pRandom() / 255) * (GIB.speedMax - GIB.speedMin) * 1.25;
+      const spin = (pRandom() / 255) * Math.PI * 2;
+      const ang = dir === null ? spin : dir + ((pRandom() / 128) - 1) * CONE;
+      const sp = (GIB.speedMin + (pRandom() / 255) * (GIB.speedMax - GIB.speedMin) * 1.25) * force;
       const size = GIB.sizeMin * 0.7 + (pRandom() / 255) * (GIB.sizeMax - GIB.sizeMin);
       this.shards.spawn({
         x: a.x, y: a.y, z: a.z + a.height * (0.15 + (pRandom() / 255) * 0.7),

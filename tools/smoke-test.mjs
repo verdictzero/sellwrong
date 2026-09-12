@@ -1476,7 +1476,7 @@ section('the cold');
   const FL = await import('../js/flame.js');
   const pl = await import('../js/player.js');
   const { Game } = await import('../js/game.js');
-  const { Actor } = await import('../js/actor.js');
+  const { Actor, ACTIONS } = await import('../js/actor.js');
   const THREE = await import('three');
   const hudStub = { message() {}, ticMessages() {}, resize() {}, update() {} };
   const inputStub = { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
@@ -1686,6 +1686,244 @@ section('the cold');
     for (let i = 0; i < 200; i++) g.giblets.tic();
     check('and they start no fires where they land',
       g.fire.active.length === liveBefore, `${g.fire.active.length - liveBefore} cells lit`);
+  }
+
+  /* --- OR THEY STAY EXACTLY WHERE THEY ARE --------------------------
+     THE HOLD, and it is the one that shipped broken. freeze() parks the
+     state with tics -1, which stops a frozen shopper moving ITSELF —
+     and every other system in the game reached past that and set them
+     going anyway, because setState was a door with no lock on it. All
+     three doors are measured here and all three were open:
+
+       a car going up next door   Game.scare
+       the player's own trigger   Game.noise, once per tic, on hold
+       a neighbour running past   A_Scare, straight in
+
+     The first of them moved a block of ice ninety units in under two
+     seconds, still solid, still blue, with ninety of its hundred frost
+     still on it. */
+  {
+    const g = mk();
+    const doors = [
+      ['a car going up forty units away', w => g.scare(w.x + 40, w.y, 400)],
+      ['the player pulling the trigger',  w => g.noise({ x: w.x, y: w.y }, 800)],
+      ['somebody running past them',      w => ACTIONS.A_Scare(w, w.x + 100, w.y)],
+    ];
+    for (const [what, knock] of doors) {
+      const who = g.actors.find(a => a.type === 'SHOPPER' && !a.dead && !a.frozen);
+      who.chill(Actor.FREEZE_AT);
+      const x0 = who.x, y0 = who.y, parked = who.state.name;
+      knock(who);
+      for (let t = 0; t < 60; t++) who.tic();
+      const moved = Math.hypot(who.x - x0, who.y - y0);
+      check(`${what} does not set a block of ice running`,
+        who.frozen && who.state.name === parked && moved < 1 && !who.target && who.panic === 0,
+        `${who.state.name}, moved ${moved.toFixed(0)}, panic ${who.panic}`);
+      /* AND THE CLOCK STILL RUNS UNDERNEATH IT. The hold is a hold on
+         acting, not on melting: a gate that also stopped frostTic would
+         have made the first outcome — leave them, they thaw — into
+         "leave them, they are a bollard for the rest of the level". */
+      check('and the thaw goes on running underneath the hold',
+        who.frost === Actor.FREEZE_AT - 10, `frost ${who.frost}`);
+      who.frost = 0; who.thaw();
+    }
+    /* AND THE FRIGHT THEY MISSED IS HANDED TO THEM ON THE WAY OUT,
+       which is why refusing all three costs nothing: what somebody
+       coming out of the ice should run from is what is there NOW. */
+    const who = g.actors.find(a => a.type === 'SHOPPER' && !a.dead && !a.frozen);
+    who.chill(Actor.FREEZE_AT);
+    g.scare(who.x + 40, who.y, 400);
+    while (who.frozen) who.tic();
+    check('and they come out of it frightened and running anyway',
+      who.panic > 0 && who.state.name === 'SHOP_RUN1' && who.solid,
+      `${who.state.name}, panic ${who.panic}`);
+  }
+
+  /* --- AND A FIRE IN THE AISLE LETS THEM OUT ------------------------
+     REHEATING WITHOUT A DIRECT HIT. The block above the blast tests a
+     flame particle landing on somebody; this is the other path, and the
+     one that makes the mechanic a place rather than an aim: frostTic
+     reads the heat of the CELL they are standing in, so a fire lit at
+     their feet and left alone frees them. Which also means the store
+     thaws itself out as it burns. */
+  {
+    const g = mk();
+    const who = g.actors.find(a => a.type === 'SHOPPER' && !a.dead && !a.frozen);
+    who.chill(Actor.FREEZE_AT);
+    const parked = who.state.name;
+    g.fire.ignite(who.x, who.y, 36, 22);
+    check('a block of ice with a fire at its feet is still a block of ice',
+      who.frozen && who.state.name === parked);
+    let t = 0;
+    for (; t < 400 && who.frozen; t++) { g.fire.tic(); who.tic(); }
+    note('a fire at their feet frees one in', `${t} tics`);
+    check('a fire in the cell they are standing in thaws them out',
+      !who.frozen && !who.dead, `${t} tics, dead ${who.dead}`);
+    check('and it takes a few seconds rather than the seventeen of being left',
+      t > 4 && t < Actor.FREEZE_AT * Actor.THAW_EVERY * 0.5, `${t} tics`);
+    check('and they get up and run rather than standing in it',
+      who.state.name === 'SHOP_RUN1' && who.solid && who.panic > 0, who.state.name);
+  }
+
+  /* --- AND SOMETHING SAYS SO ----------------------------------------
+     Freezing has a noise and a colour and the melt had neither, so a
+     person the player had put on ice became a person again between two
+     frames. The puff is the shatter's own, which is the right one: the
+     two things that can happen to the ice should look related. */
+  {
+    const g = mk();
+    const who = g.actors.find(a => a.type === 'SHOPPER' && !a.dead && !a.frozen);
+    who.chill(Actor.FREEZE_AT);
+    const puffs = g.fx.smoke.count;
+    who.frost = 0; who.thaw();
+    check('the melt leaves a breath of frost where they were',
+      g.fx.smoke.count > puffs, `${g.fx.smoke.count - puffs} particles`);
+  }
+
+  /* --- AND SOMETHING TO BREAK THEM WITH -----------------------------
+     THE WEAPON DOES NOT EXIST YET. The user asked for the game to be
+     ready for a physical one — a bat, a hammer, whatever it turns out
+     to be — and what that needs is not art, it is an answer to "what
+     does a swing MEAN". Game.impact is that answer, written and
+     measured ahead of the thing that will call it, so the weapon is an
+     animation and a table entry rather than a design problem.
+
+     Actor.damage already turned anything that was not fire into a
+     shatter, so breaking somebody frozen needed nothing new. What is
+     new is that the blow has a DIRECTION, and that the pieces go with
+     it — which is the whole difference between being hit and coming
+     apart on your own. */
+  {
+    const g = mk();
+    const who = g.actors.find(a => a.type === 'SHOPPER' && !a.dead && !a.frozen);
+    who.chill(Actor.FREEZE_AT);
+    /* stand the player in front of them, facing them */
+    const p = g.player;
+    const ang = Math.atan2(who.y - p.y, who.x - p.x);
+    p.x = who.x - Math.cos(ang) * 50; p.y = who.y - Math.sin(ang) * 50;
+    p.z = who.z; p.viewZ = who.z + 41; p.angle = ang;
+    const shatters = g.giblets.shatters;
+
+    /* facing the other way first: a swing is a cone in front of you.
+       (It may well catch one of the other seven hundred people in the
+       shop, which is the point of a cone and not a sphere — what is
+       checked is that the one behind you is not in it.) */
+    p.angle = ang + Math.PI;
+    check('a swing with your back to them does not reach them',
+      !g.impact(p).includes(who) && !who.removed);
+
+    p.angle = ang;
+    const hit = g.impact(p, { force: 2.4 });
+    check('and a swing at a frozen person breaks them',
+      hit.length === 1 && hit[0] === who && who.removed && who.dead);
+    check('and it is a shatter, the same one anything else gets',
+      g.giblets.shatters === shatters + 1);
+
+    /* AND THE PIECES GO THE WAY IT WAS SWUNG. Thirteen shards with a
+       sixty-degree cone either side of the blow: the mean of them has
+       to point down the swing, and every one of them has to be inside
+       the cone or it is a ring with a bias rather than a direction. */
+    const S = g.giblets.shards;
+    let mx = 0, my = 0, n = 0, worst = 0;
+    for (let i = 0; i < S.max; i++) {
+      if (!S.alive[i]) continue;
+      const a2 = Math.atan2(S.vy[i], S.vx[i]);
+      let d = Math.abs(a2 - ang);
+      while (d > Math.PI) d = Math.abs(d - Math.PI * 2);
+      worst = Math.max(worst, d);
+      mx += S.vx[i]; my += S.vy[i]; n++;
+    }
+    let off = Math.abs(Math.atan2(my, mx) - ang);
+    while (off > Math.PI) off = Math.abs(off - Math.PI * 2);
+    note('the shards off a blow', `${n} pieces, mean ${(off * 57.3).toFixed(0)}° off the swing, ` +
+      `widest ${(worst * 57.3).toFixed(0)}°`);
+    check('the pieces go the way the blow went', off < 0.5, `${(off * 57.3).toFixed(0)}° off`);
+    check('and none of them comes back past the shoulder', worst <= 1.06,
+      `${(worst * 57.3).toFixed(0)}°`);
+  }
+
+  /* --- AND THE REST OF WHAT A BLOW HAS TO DO ------------------------ */
+  {
+    const g = mk();
+    const p = g.player;
+
+    /* IT HITS THINGS THAT ARE NOT FROZEN TOO, and they are hurt rather
+       than broken: the shatter is a property of the ICE, not of the
+       weapon, and a physical weapon that only worked on frozen people
+       would be a worse boxcutter. */
+    const warm = g.actors.find(a => a.type === 'SHOPPER' && !a.dead && !a.frozen);
+    p.x = warm.x - 40; p.y = warm.y; p.z = warm.z; p.viewZ = warm.z + 41;
+    p.angle = Math.atan2(warm.y - p.y, warm.x - p.x);
+    const bursts = g.giblets.bursts;
+    const hit = g.impact(p, { damage: 6 });
+    check('a blow lands on somebody who is not frozen as damage',
+      hit[0] === warm && !warm.dead && warm.health === 6, `health ${warm.health}`);
+    check('and does not shatter them', g.giblets.bursts === bursts);
+    check('and a second one of those kills them the ordinary way',
+      (g.impact(p, { damage: 6 }), warm.dead && g.giblets.bursts === bursts + 1));
+
+    /* ONE SWING, MORE THAN ONE PERSON, if the weapon asks for it. */
+    const g2 = mk();
+    const p2 = g2.player;
+    const queue = g2.actors.filter(a => a.type === 'SHOPPER' && !a.dead)
+      .map(a => ({ a, d: Math.hypot(a.x - p2.x, a.y - p2.y) }))
+      .sort((u, v) => u.d - v.d).slice(0, 3).map(o => o.a);
+    let k = 0;
+    for (const a of queue) {
+      a.x = p2.x + Math.cos(p2.angle) * (40 + k * 12);
+      a.y = p2.y + Math.sin(p2.angle) * (40 + k * 12);
+      a.z = p2.z; k++;
+    }
+    check('one swing can be told to reach more than one of them',
+      g2.impact(p2, { count: 3, range: 120, arc: 1.2 }).length === 3);
+
+    /* AND A SWING AT A WALL LANDS SOMEWHERE, because a weapon that does
+       nothing at all when you miss reads as a broken weapon. The player
+       does not start next to a wall, so this walks a ray out to the
+       first one it can find and stands them a swing's length off it. */
+    const g3 = mk();
+    const p3 = g3.player;
+    /* onto the sales floor, where the walls are — the player starts in
+       the middle of the car park, which is four hundred feet of tarmac
+       in every direction */
+    const inside = g3.actors.find(a => a.type === 'SHOPPER' && !a.dead);
+    p3.x = inside.x; p3.y = inside.y; p3.z = inside.z; p3.viewZ = inside.z + 41;
+    for (const a of g3.actors) if (a.type === 'SHOPPER') a.remove();
+    let wall = null;
+    for (let i = 0; i < 32 && !wall; i++) {
+      p3.angle = (i / 32) * Math.PI * 2;
+      wall = g3.level.rayHitWall(p3.x, p3.y, p3.viewZ,
+        p3.x + Math.cos(p3.angle) * 900, p3.y + Math.sin(p3.angle) * 900, p3.viewZ);
+    }
+    check('there is a wall somewhere in front of the player to swing at', !!wall);
+    /* AND THE ONE PHYSICAL WEAPON THE GAME ALREADY HAS GOES THROUGH IT,
+       which is what keeps the hook honest: a call nothing in the shipped
+       game makes is a call that is broken by the time something needs
+       it. The boxcutter kept its own copy of reach-arc-nearest and now
+       asks for the general form of it, so a swing at a block of ice
+       throws the pieces down the aisle. */
+    {
+      const g4 = mk();
+      const p4 = g4.player;
+      const w4 = g4.actors.find(a => a.type === 'SHOPPER' && !a.dead && !a.frozen);
+      p4.x = w4.x - 40; p4.y = w4.y; p4.z = w4.z; p4.viewZ = w4.z + 41;
+      p4.angle = Math.atan2(w4.y - p4.y, w4.x - p4.x);
+      w4.chill(Actor.FREEZE_AT);
+      let asked = null;
+      const real = g4.impact.bind(g4);
+      g4.impact = (from, o) => { asked = o; return real(from, o); };
+      p4.meleeSwing(pl.WEAPONS.BOXCUTTER);
+      check('the boxcutter swings through the same hook',
+        !!asked && asked.range === pl.WEAPONS.BOXCUTTER.range && asked.force === 1);
+      check('and a boxcutter through a block of ice still shatters it',
+        w4.removed && w4.dead);
+    }
+    p3.x = wall.x - Math.cos(p3.angle) * 40;
+    p3.y = wall.y - Math.sin(p3.angle) * 40;
+    const puffs = g3.actors.filter(a => a.type === 'PUFF').length;
+    check('and a swing that meets one puts a puff on it',
+      g3.impact(p3).length === 0 &&
+      g3.actors.filter(a => a.type === 'PUFF').length === puffs + 1);
   }
 
   /* --- THE WEAPON ITSELF ------------------------------------------- */
