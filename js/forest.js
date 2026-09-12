@@ -383,6 +383,31 @@ export class Forest {
     return lit;
   }
 
+  /** And putting it out: an alight cell goes back to green if it has
+   *  hardly started and to gone if it has, because a tree that is half
+   *  burnt is not a tree you have saved. The line is a third of the way
+   *  through, which is about where a fir stops being a fir. */
+  douse(x, y, radius = 40) {
+    if (!this.cols) return 0;
+    const cx0 = this.cellX(x - radius), cx1 = this.cellX(x + radius);
+    const cy0 = this.cellY(y - radius), cy1 = this.cellY(y + radius);
+    const r2 = radius * radius;
+    let out = 0;
+    for (let cy = cy0; cy <= cy1; cy++)
+      for (let cx = cx0; cx <= cx1; cx++) {
+        const i = this.idx(cx, cy);
+        if (this.state[i] !== 1) continue;
+        const dx = this.worldX(cx) - x, dy = this.worldY(cy) - y;
+        if (dx * dx + dy * dy > r2) continue;
+        this.state[i] = this.prog[i] < 85 ? 0 : 2;
+        if (this.state[i] === 0) this.prog[i] = 0;
+        this._activeSet[i] = 0;
+        this._mark(i);
+        out++;
+      }
+    return out;
+  }
+
   _light(i) {
     this.state[i] = 1;
     this.prog[i] = 1;

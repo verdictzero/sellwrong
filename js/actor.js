@@ -206,6 +206,11 @@ export class Actor {
     this.torch = 0;
     this.burnSprite = null;
 
+    /* cold — see chill(), freeze() and shatter() */
+    this.frost = 0;              // 0 to FREEZE_AT, and solid at the top
+    this.frozen = false;
+    this.thawTick = 0;
+
     this.variant = opts.variant ?? 0;
     this.spriteOverride = opts.sprite || null;
 
@@ -260,6 +265,7 @@ export class Actor {
   tic() {
     if (this.removed || !this.state) return;
     if (this.burning > 0) this.burnTic();
+    if (this.frost > 0) this.frostTic();
     if (this.stateTics === -1) return;          // resting for ever
     if (--this.stateTics > 0) return;
     if (this.state.next) this.setState(this.state.next);
@@ -416,6 +422,12 @@ export class Actor {
 
   damage(amount, source, opts = {}) {
     if (this.dead || this.removed || !this.shootable) return;
+    /* FROZEN AND THEN HIT IS NOT A HIT. Whatever it was — a boxcutter, a
+       car going up next to them, one unlucky particle — a person who is
+       a block of ice comes apart entirely, and the amount does not enter
+       into it. Fire is the exception and is handled a line further on by
+       being a thaw rather than a blow. */
+    if (this.frozen && !opts.fire) { this.shatter(source); return; }
     /* ALREADY ON FIRE IS ALREADY DEAD, and more fire does not hurry it.
        Something with a `burn` state has a clock running the moment it
        catches (see ignite), and that clock is the only thing that ends
@@ -474,6 +486,16 @@ export class Actor {
   ignite(tics = 350) {
     if (!this.flammable || this.removed) return;
     if (this.vehicle) { this.vehicle.ignite(tics); return; }
+    /* FIRE THAWS BEFORE IT BURNS. A frozen person cannot catch — there
+       is a centimetre of ice in the way — so the flame spends itself
+       taking the frost off, and only once it is off does the next
+       particle light them. Which means the flamethrower is the tool for
+       undoing the extinguisher, and that it takes a moment. */
+    if (this.frost > 0) {
+      this.frost = Math.max(0, this.frost - Actor.FIRE_THAW * 2);
+      if (this.frost > 0) return;
+      this.thaw();
+    }
     const wasAlight = this.burning > 0;
     this.burning = Math.max(this.burning, tics);
     /* AND SOME THINGS RUN WITH IT. A `burn` state is a thing that does
@@ -530,6 +552,134 @@ export class Actor {
       if (torched) this.game.fire?.ignite(this.x, this.y, this.info.burnFuel ?? 26, this.info.burnRadius ?? 1);
       else this.game.fire?.ignite(this.x, this.y, 26);
     }
+  }
+
+
+  /* ------------------------------------------------------------------
+     FROZEN
+
+     The other end of the same dial, and it is deliberately NOT the
+     mirror image of being on fire. Fire is a countdown somebody else
+     started: you catch, you run, you go off, and nothing you or the
+     player does in between changes the ending. Cold is a STATE you are
+     held in and can come out of — which is the only reason it is worth
+     having a second stream in the game at all.
+
+     THREE THINGS CAN HAPPEN TO A FROZEN PERSON and the player picks:
+
+       leave them      the frost bleeds off and they thaw, get up and
+                       carry on shopping, which is the outcome that
+                       makes freezing them a DECISION rather than a
+                       slower way of killing them
+       burn them       fire eats frost much faster than time does, so a
+                       flamethrower is a thawing tool, and the person
+                       who comes out the other side is on fire
+       break them      anything that hits a frozen person shatters them,
+                       whole, into bloody frozen chunks
+
+     AND ICE IS SOLID, which is the part that makes this a level-design
+     tool as well as a weapon. A frozen shopper stops being something you
+     walk through and becomes something you walk around — and so does
+     everybody else, including the crowd running for the doors.
+     ------------------------------------------------------------------ */
+
+  /** How much cold it takes, and how long the thaw is. Public because
+   *  the extinguisher's stream is billed against them. */
+  static FREEZE_AT = 100;      // frost units before they go solid
+  static THAW_EVERY = 6;       // tics per unit bled back off
+  static FIRE_THAW = 14;       // and per tic of fire, which is 84x faster
+
+  /**
+   * Put cold into something. Below the threshold this is just a tint and
+   * a slowing; at the threshold it goes solid.
+   *
+   * Returns true if this was the call that froze it.
+   */
+  chill(amount) {
+    if (this.removed || this.dead || !this.info.freezable) return false;
+    /* IT PUTS THE FIRE OUT ON THE WAY PAST, which is the obvious thing a
+       fire extinguisher does to a person who is alight and the thing
+       that would be most annoying if it did not. A torch that is going
+       out loses its countdown with it — they were going to explode and
+       now they are not. */
+    if (this.burning > 0) {
+      this.burning = Math.max(0, this.burning - amount * 4);
+      this.torch = Math.max(0, this.torch - amount * 4);
+      if (this.burning <= 0 && this.burnSprite) { this.burnSprite.remove(); this.burnSprite = null; }
+    }
+    if (this.frozen) { this.frost = Actor.FREEZE_AT; return false; }
+    this.frost = Math.min(Actor.FREEZE_AT, this.frost + amount);
+    if (this.frost >= Actor.FREEZE_AT) { this.freeze(); return true; }
+    return false;
+  }
+
+  freeze() {
+    if (this.frozen || this.removed || this.dead) return;
+    this.frozen = true;
+    this.frost = Actor.FREEZE_AT;
+    this.burning = 0; this.torch = 0;
+    if (this.burnSprite) { this.burnSprite.remove(); this.burnSprite = null; }
+    /* A BLOCK OF ICE IS SOLID whether or not the thing inside it was.
+       It also stops thinking: the state is parked with tics -1, which is
+       this engine's "rest here for ever", and thawing sets it going
+       again from wherever it was. */
+    this._thawState = this.info.freezeReturn || this.info.see || this.info.spawn;
+    this.solid = true;
+    this.panic = 0;
+    if (this.info.frozen) this.setState(this.info.frozen);
+    this.stateTics = -1;
+    this.game.sound?.play('freeze', this);
+  }
+
+  /** Bleeding the cold back off, once a tic. */
+  frostTic() {
+    if (this.removed) return;
+    /* FIRE WINS, and by a wide margin: the thaw is one unit every six
+       tics on its own and FIRE_THAW a tic while something is burning
+       where they stand, so walking a flame over a frozen aisle unpicks
+       it in under a second. Standing in a hot cell counts — you do not
+       have to hit them, you have to make it warm. */
+    const hot = this.game.fire ? this.game.fire.heatAt(this.x, this.y) : 0;
+    if (hot > 0.2 || this.burning > 0) {
+      this.frost = Math.max(0, this.frost - Actor.FIRE_THAW * (this.burning > 0 ? 1 : hot));
+    } else if (++this.thawTick >= Actor.THAW_EVERY) {
+      this.thawTick = 0;
+      this.frost--;
+    }
+    if (this.frost < 0) this.frost = 0;
+    /* THEY COME OUT AT NOTHING AND NOT AT THE THRESHOLD, which is the
+       difference between being frozen and flickering. Freezing happens
+       at FREEZE_AT and thawing at zero, so the state has hysteresis and
+       the whole of the frost bar is the time they spend solid — six tics
+       a unit is about seventeen seconds. Thawing the moment the number
+       dipped under the line, which is what this did first, meant a
+       shopper was a block of ice for six tics and then walked off. */
+    if (this.frozen && this.frost <= 0) this.thaw();
+  }
+
+  /** Out of the ice and back to whatever they were doing, which for a
+   *  shopper is running, because being frozen solid is not something you
+   *  shrug off and go back to the shelves about. */
+  thaw() {
+    if (!this.frozen) return;
+    this.frozen = false;
+    this.solid = this.info.solid ?? !!this.info.monster;
+    this.panic = this.info.panicTics ?? 280;
+    const st = this._thawState;
+    if (st) this.setState(st);
+  }
+
+  /** Frozen and then hit: the whole person at once, in pieces. There is
+   *  no health left to take off and no death state to run — a thing made
+   *  of ice does not fall over, it stops existing in one frame. */
+  shatter(source) {
+    if (this.removed) return;
+    this.dead = true;
+    this.solid = false;
+    this.shootable = false;
+    this.game.giblets?.shatter(this);
+    if (this.monster) this.game.onMonsterKilled(this, source);
+    this.remove();
   }
 
   /* ------------------------------------------------------------------
@@ -619,6 +769,12 @@ export class Actor {
     u.billboardRot.value = billboardRot;
     u.fullbright.value = (this.info.fullbright || this.state.fullbright) ? 1 : 0;
     u.light.value = this.sector ? this.sector.light : 0.7;
+    /* HOW FROZEN, straight onto the shader that does the colour map.
+       It runs up before the threshold as well as at it, so somebody the
+       spray has caught but not yet held goes pale and blue first — the
+       player can see it working, which is the whole of the feedback this
+       weapon has. */
+    if (u.frost) u.frost.value = Math.min(1, this.frost / Actor.FREEZE_AT);
     /* A car in the back row of the car park has to diminish the way the
        tarmac under it does, or it turns into a silhouette while the bay
        around it stays lit. */

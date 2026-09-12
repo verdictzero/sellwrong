@@ -71,7 +71,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         601 checks, no install and no browser
+  the smoke test         653 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -101,16 +101,23 @@ the tab.
 There are seven hundred and thirty-six people in the shop and six fire
 exits for them to get out of, so the shop empties: light one aisle and
 most of the building is in the car park or in the trees inside a minute.
-The status bar counts how many are left, which is the number the game is
-actually played against once the fire is going — you started it, and now
-you have to go and find them. It counts the tank too, because the tank
-empties now.
+
+THE CORNER IS TWO BARS AND NOTHING ELSE, at the user's request. It used
+to be four numbers — how much of the store had gone, how much of the
+wood, how many were left, how much was in the tank — with a running list
+of notifications under them, and all of the words are gone. What is left
+is the two gauges that were already drawn under the numbers: the store
+burning, in fire colours, and whatever is in the thing you are holding.
+The count of the living went with the text and went on purpose; a bar
+cannot say a number and the shop on fire in front of you was always the
+better readout anyway.
 
   WASD          move            MOUSE     look
   SHIFT         run             LMB/CTRL  fire
-  SPACE / F     open, use       WHEEL     flamethrower / boxcutter
-  [  ]          chunkiness      ESC       pause
-  N             palette on / off
+  SPACE / F     open, use       WHEEL     cycle weapons
+  1 2           flamer / extinguisher
+  [  ]          render size     SHIFT [ ] pixel size
+  N             palette on / off          ESC       pause
   `             the frame-rate readout, off by default
 
 Gamepad works. Mouse look needs a click to grab the pointer. On a phone
@@ -153,6 +160,70 @@ that a boxcutter is "what is left when the fuel runs out, which it
 will", and the fuel did not run out. Mouse wheel, or 1. The molotov is
 written, tested and still switched off. The player still cannot be hurt;
 that is one flag at the top of js/player.js.
+
+
+AND THE OTHER END OF IT
+-----------------------
+
+THE SECOND WEAPON IS A FIRE EXTINGUISHER, at the user's request, and it
+is a rifle built out of one — somebody else's model, dropped in as it
+stands the way the van was. Slot 2. It is the same KIND of thing as the
+flamethrower, deliberately: a stream, billed per tic of pour, on its own
+tank with its own latch, so the two are held the same way and used
+against each other.
+
+WHAT IT OBVIOUSLY DOES is put fires out. The jet takes heat out of the
+fuel grid where it lands and out of the wood if it lands there, and it
+clears the ember clock with it — the difference between a fire that is
+out and a fire that is sulking, because a cell left at a glow relights
+anything that wanders past. It is a shorter arm than the flamethrower,
+four hundred units against seven hundred, and it sinks harder: cold gas
+is heavier than the air it is in, so the jet pools along the floor where
+it lands, which is where the fire is.
+
+WHAT IT CANNOT DO IS UNDO ANYTHING. Fuel that has burned is burned, the
+store's percentage never goes backwards, and a charred aisle stays
+charred. So it is not an undo button, it is a firebreak you can draw
+with, and the thing it saves is whatever has not caught yet.
+
+AND IT FREEZES PEOPLE. Enough gas on one and they go solid: a blue
+statue that stops running, stops burning if they were burning, and
+BLOCKS THE AISLE for everybody behind them. Three things can then happen
+and the player picks:
+
+  leave them    the frost bleeds off over about seventeen seconds and
+                they thaw, get up and run — which is the outcome that
+                makes freezing somebody a decision rather than a slower
+                way of killing them
+  burn them     fire eats frost about eighty times faster than time
+                does, so the flamethrower is the thawing tool, and what
+                comes out the other side is a person on fire
+  break them    anything at all that hits a frozen person shatters
+                them, whole, into bloody frozen chunks
+
+THE COLOUR IS A MAP AND NOT A TINT, which is the difference between
+somebody frozen and somebody with a blue light on them. Multiplying a
+red coat by blue gives a dark muddy coat; what a person inside a block of
+ice looks like is their SHAPE in ice. So the texel's luminance is kept,
+everything else is thrown away, and that one number runs up a ramp from a
+deep shadowed blue to a pale lit one — a red coat and a green coat come
+out as the same ice at different brightnesses, which is exactly right.
+
+SHATTERING IS QUIET, and that is the mechanic rather than an oversight.
+A person going off in flames is an explosion: a fireball, heat into the
+floor, and everybody within nine hundred units running. A person
+shattering is a crack and a scatter, and the shopper four feet away
+carries on looking at the beans. A player who wants to clear an aisle
+without starting a stampede now has a way to do it, and it is the only
+way there is.
+
+THE TWO TANKS ARE NOT THE SAME TANK. The flamethrower holds twelve
+seconds and fills in two minutes, because fire is the thing the game is
+about and should be rationed. The extinguisher holds seven and a half
+and fills in thirty, and comes back at a third rather than a half,
+because putting a fire out is defensive, is usually done under time
+pressure, and an extinguisher that is empty when the aisle you wanted is
+alight is a weapon that exists to disappoint.
 
 
 ON A PHONE
@@ -1264,6 +1335,12 @@ pause menu:
             OFF, on shift-[ and shift-]. How big a pixel is, and it
             costs almost nothing
 
+It ships at 600 and 300 with 5:6 pixels, which the user picked off a
+screenshot of it: a full-detail render filtered down onto a grid about
+727 by 300 of tall pixels. That is the setting the whole thing was built
+for — the store legible and the picture made of visible squares, which
+is the pair the one control could never give you.
+
 The widths follow the window's shape either way, so a wider monitor shows
 MORE STORE rather than the same store stretched, and the menu prints both
 actual sizes beside their settings, because "400P" says nothing about how
@@ -1306,11 +1383,35 @@ to a photograph. The bar is laid out in CHUNKY pixels rather than buffer
 ones — its camera is orthographic, so its extents are a unit of measure
 rather than a resolution — which is what keeps it the same size on screen
 when RENDER moves, and at a whole-number ratio the block average puts each
-of its texels back exactly. It also has to survive a 160-column grid now
-that one is a thing you would choose, so the four numbers along the top go
-one scale down and then one READOUT down, from the middle out: the wood
-goes, then the count of the living, and STORE and FUEL stay because they
-are the two a player acts on.
+of its texels back exactly. It is two bars now, and the four numbers and
+the notifications that used to be up there are gone at the user's request;
+the machinery that posted a message is gone with them rather than left
+standing unread.
+
+AND NOTHING IN FRONT OF A WALL IS A WALL, which had been quietly wrong
+since the soot went in. Every sprite in the game shares the fragment
+shader with the walls, and the block that asks the burn grid "how burnt is
+the floor here" is the right question for a surface and the wrong one for
+a thing standing on it: shoppers were being given the soot and the live
+coals of whatever they stood over, and the smoke — which drifts, and so
+sampled a different part of the grid every frame — had the fire's coals
+CRAWLING across it. It is a define now, set by the wall material and by
+nothing else. Walls, floors, ceilings, the ruined roof steel and the
+vehicles are surfaces and burn; sprites are things in front of them.
+
+THE SMOKE ALSO STEPPED. The churn, the sway and the lift all came off the
+whole tic count, which advances thirty-five times a second while the
+renderer runs at sixty or more, so every drifting puff moved in visible
+jerks beside a camera that did not. They read a clock with the fraction
+still on it now. The body of smoke over the fire went from eight frames
+to sixteen — the loop was always exact, it just was not fine, and a step
+every eleven tics of a sprite that size is long enough to watch it hold
+still — and each puff KEEPS the cell it is standing over between frames
+instead of being re-dealt off a list that re-sorts itself, which is what
+had thirty-six of them teleporting. The drifting puffs were four
+independent noise fields, so walking them was not a churn but four cuts;
+they are eight frames of one field scrolled by an eighth of its height,
+which loops.
 
 THREE PASSES, AND IT IS CHEAPER THAN THE TWO IT REPLACED. World into the
 buffer; buffer onto the grid, averaged and dithered and snapped; grid onto
@@ -1952,7 +2053,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-601 checks. Every one of them earns its place by having caught something
+653 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -2135,6 +2236,35 @@ that had already reached a screenshot:
     double-sided now and the file's winding is untouched. The test
     reports both shells' volumes rather than the mesh's, which is the
     number that would have said so in the first place
+  A FROZEN SHOPPER SETTING THE BEANS AISLE ON FIRE, which shipped for
+    about ten minutes and is the funniest way this could have gone
+    wrong. A burning piece of somebody trails fire behind it and lights
+    the floor where it lands — that is how a crowd MOVES a fire and it
+    is one of the best things in the game — and the shatter reused
+    that pool for its pieces. So the one weapon whose job is putting
+    fires out, used properly on a person, started one. The pieces are
+    the same art and the same ballistics; what they do when they arrive
+    is the whole difference, so they are a second pool with a tic of
+    their own that lands a splat and a breath of vapour and nothing
+    else. The test shatters somebody and then runs two hundred tics of
+    giblets and counts the cells that caught: none
+  A BLOCK OF ICE FOR SIX TICS. Freezing put the frost bar at the top
+    and thawing took it off at a unit every six tics — and the thaw
+    triggered the moment the number dipped BELOW the threshold, which
+    it does six tics later. So a frozen shopper was frozen for a sixth
+    of a second and then walked off. Freezing happens at the top of the
+    dial and thawing at the BOTTOM of it now, so the whole bar is the
+    time they spend solid and the state has hysteresis. The test freezes
+    one, tics once, and asserts they are still frozen — and then counts
+    how long it actually takes, which is about seventeen seconds
+  SMOKE WEARING THE FIRE'S COALS, for as long as there has been soot.
+    Every sprite in the game shares the fragment shader with the walls,
+    and the block that asks the burn grid how burnt the floor is was
+    running for all of them: shoppers stained, giblets stained, and the
+    smoke — thirty units up in the air, and drifting, so it sampled a
+    different part of the grid every frame and the coals crawled across
+    it. Nobody had named it until the user did. A define now, set by
+    the wall material and nothing else
   A ROW OF DITHER ONE STEP OUT, every other row, for the whole life of
     the project, and found by accident on the way to something else.
     The post pass ran at SCREEN resolution and worked out its Bayer

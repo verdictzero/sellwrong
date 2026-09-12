@@ -537,6 +537,12 @@ varying float vChar;
   varying vec4 vInk;
 #endif
 
+#ifdef FROST
+  /* HOW FROZEN THIS THING IS, 0 to 1, per sprite. Only the actors ask
+     for it, so the walls and the floor never carry the branch. */
+  uniform float frost;
+#endif
+
 ${WORLD_SHADE_GLSL}
 
 void main() {
@@ -547,23 +553,68 @@ void main() {
     t = mix(t, vec4(vInk.rgb, 1.0), vInk.a);
   #endif
   if (t.a < alphaTest) discard;
+  /* AND WHETHER IT IS FROZEN SOLID.
+
+     A COLOUR MAP AND NOT A TINT, for the same reason the gun's cold
+     plume is not a tint: multiplying a shopper's red coat by blue gives
+     a dark muddy coat, and what a person inside a block of ice looks
+     like is not their own colours dimmed — it is their SHAPE, in ice.
+     So the texel's luminance is kept and everything else is thrown
+     away, and that one number is run up a ramp from a deep shadowed
+     blue to a pale lit one. A red coat and a green coat come out as the
+     same ice at different brightnesses, which is exactly what they
+     should do.
+
+     The exponent is under one so the midtones lift: skin and a dark coat
+     are close together in luminance and would otherwise both land in the
+     bottom of the ramp and read as a silhouette. */
+  #ifdef FROST
+  if (frost > 0.0) {
+    float lum = dot(t.rgb, vec3(0.30, 0.59, 0.11));
+    vec3 ice = mix(vec3(0.09, 0.17, 0.31), vec3(0.74, 0.93, 1.05), pow(lum, 0.62));
+    t.rgb = mix(t.rgb, ice, frost);
+  }
+  #endif
   /* HOW BURNT THE FLOOR UNDER THIS PIXEL IS, continuously. The soot goes
      on the ALBEDO, before the light and before the smoke, because that
      is where it is: a wall with soot on it is a darker wall, and it
      diminishes down an aisle and catches the firelight exactly as the
      wall does. Adding it afterwards would have made a sooty wall in the
-     dark end of aisle nine darker than the air in front of it. */
-  float burn = burnAt(vWorld);
-  float soot = sootAmount(burn, vWorld);
-  vec3 albedo = sootOn(t.rgb, soot, vWorld);
+     dark end of aisle nine darker than the air in front of it.
+
+     AND ONLY A SURFACE GETS IT, which is the fix for a bug that had been
+     running quietly since the soot went in. Everything in this game
+     shares one fragment shader, and this block asks the burn grid "how
+     burnt is the floor HERE" — which for a wall is the right question
+     and for a THING standing on that floor is not. Every sprite in the
+     store was being given the soot and the live coals of whatever it
+     happened to be standing over: shoppers with embers crawling on them,
+     giblets stained, and most visibly the smoke, which is thirty units
+     up in the air and was wearing the coals of the fire underneath it
+     and shedding them as it drifted. A drifting sprite samples a
+     different part of the grid every frame, so the coals CRAWLED.
+
+     So it is a define now, and only the wall material sets it. Walls,
+     floors, ceilings, the ruined roof steel and the vehicles are
+     surfaces and burn; sprites are things standing in front of them. */
+  #ifdef SURFACE_BURN
+    float burn = burnAt(vWorld);
+    float soot = sootAmount(burn, vWorld);
+    vec3 albedo = sootOn(t.rgb, soot, vWorld);
+  #else
+    float burn = 0.0;
+    vec3 albedo = t.rgb;
+  #endif
   float l = worldBand(vLight, vDepth, vSky, fullbright);
   vec3 c = worldShade(albedo, l, vDepth, vWorld, fullbright);
   /* The coals go on AFTER the smoke, so a burnt aisle glows through it —
      and they arrive on how burnt the floor there is rather than on the
      sector's stage, so the first few show up in the recesses while there
      is still stock on the shelves and they thicken from there. */
-  c += emberOf(max(vChar, smoothstep(0.06, 0.92, burn)), vWorld,
-               dot(albedo, vec3(0.2126, 0.7152, 0.0722)), vDepth);
+  #ifdef SURFACE_BURN
+    c += emberOf(max(vChar, smoothstep(0.06, 0.92, burn)), vWorld,
+                 dot(albedo, vec3(0.2126, 0.7152, 0.0722)), vDepth);
+  #endif
   gl_FragColor = vec4(c, t.a);
 }
 `;
@@ -610,7 +661,7 @@ function baseUniforms(texture, opts) {
 export function createWallMaterial(texture, opts = {}) {
   return new THREE.ShaderMaterial({
     uniforms: baseUniforms(texture, opts),
-    defines: { PER_VERTEX_LIGHT: '', ...(opts.ink ? { INK: '' } : {}) },
+    defines: { PER_VERTEX_LIGHT: '', SURFACE_BURN: '', ...(opts.ink ? { INK: '' } : {}) },
     vertexShader: COMMON_VERT,
     fragmentShader: COMMON_FRAG,
     transparent: !!opts.transparent,
@@ -642,6 +693,9 @@ export function createSpriteMaterial(texture, opts = {}) {
   u.billboardRot  = { value: 0.0 };
   u.spriteScale   = { value: new THREE.Vector2(opts.width ?? 64, opts.height ?? 64) };
   u.spriteOffset  = { value: new THREE.Vector2(0, 0) };
+  /* every sprite can be frozen; the walls cannot, so only this one
+     carries the uniform and the define that reads it */
+  u.frost         = { value: 0.0 };
   const blend = opts.blend || 'cutout';
   /* Depth TESTING stays on for all three, always: a flame behind a
      gondola is behind the gondola. It is only depth WRITING that a
@@ -649,7 +703,7 @@ export function createSpriteMaterial(texture, opts = {}) {
      against a pane of glass the first one left behind. */
   return new THREE.ShaderMaterial({
     uniforms: u,
-    defines: { BILLBOARD: '' },
+    defines: { BILLBOARD: '', FROST: '' },
     vertexShader: COMMON_VERT,
     fragmentShader: COMMON_FRAG,
     transparent: blend !== 'cutout' ? true : !!opts.transparent,

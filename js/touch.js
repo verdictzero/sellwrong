@@ -21,6 +21,8 @@
                   exactly as far as the thumb did, and stop when it
                   stops.
 
+     SWAP         above USE, a tap, for the second weapon — a phone
+                  needed one the moment there were two of them
      FLAME        under the right thumb's rest. It is HELD, because the
                   weapon is, and while it is held the same thumb STILL
                   LOOKS: slide it and the flame sweeps the aisle. That
@@ -174,6 +176,9 @@ export class TouchControls {
       this.pointers.set(e.pointerId, { kind, el: btn, lx: e.clientX, ly: e.clientY });
       if (kind === 'fire') t.attack = true;
       if (kind === 'use') { t.use = true; t.usePulse = true; }
+      /* a TAP and not a hold: it fires on the way down and the input
+         layer clears it, the same way the use pulse works */
+      if (kind === 'swap') t.cycle = 1;
       return;
     }
     const x = e.clientX - this.left;
@@ -220,6 +225,7 @@ export class TouchControls {
       case 'move': t.move.x = 0; t.move.y = 0; t.run = false; this._stickOff(); break;
       case 'fire': t.attack = false; p.el.classList.remove('held'); break;
       case 'use': t.use = false; p.el.classList.remove('held'); break;
+      case 'swap': p.el.classList.remove('held'); break;
       case 'pause': p.el.classList.remove('held'); if (deliberate) this.onPause(); break;
       default: break;
     }

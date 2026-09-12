@@ -211,12 +211,25 @@ html.touch .desk-only, html:not(.touch) .touch-only { display: none !important; 
   bottom: calc(var(--edge-y) + var(--btn) * .55);
 }
 
+/* THE WEAPON SWAP, which a phone needed the moment there were two of
+   them. Above USE and the same size, so the right thumb reaches all
+   three without leaving its corner, and cool rather than orange because
+   what it mostly swaps to is the thing that puts fires out. */
+.tb-swap {
+  width: calc(var(--btn) * .72); height: calc(var(--btn) * .72);
+  right: calc(var(--edge-x) + var(--btn) + 14px);
+  bottom: calc(var(--edge-y) + var(--btn) * .55 + var(--btn) * .72 + 12px);
+  border-color: rgba(122, 196, 224, .40);
+  font-size: 11px;
+}
+
 .tb-pause { width: 44px; height: 44px; top: 8px; right: 8px; border-color: rgba(207, 207, 214, .22); }
 .tb-pause i { display: block; width: 4px; height: 14px; margin: 0 2px; background: currentColor; }
 
 /* the left-handed layout is the same layout in a mirror */
 #touch.lefty .tb-fire { right: auto; left: var(--edge-x); }
 #touch.lefty .tb-use  { right: auto; left: calc(var(--edge-x) + var(--btn) + 14px); }
+#touch.lefty .tb-swap { right: auto; left: calc(var(--edge-x) + var(--btn) + 14px); }
 #touch.lefty .tb-pause { right: auto; left: 8px; }
 
 /* the stick: drawn where the thumb landed, towed along behind it */

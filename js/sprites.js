@@ -186,11 +186,20 @@ export function bakeSprites() {
      the scroll that stirs the inside also eats the outline — which is
      what separates smoke from a grey ball with a pattern on it.
 
+     SIXTEEN AND NOT EIGHT, at the user's request that it be smoother.
+     The loop was always exact; what it was not was FINE. Eight frames
+     over a loop that wants to last a second and a half is a step every
+     eleven tics, and eleven tics of a 64-pixel sprite holding still is
+     long enough to see it holding still — the churn read as a flick
+     book. Sixteen is the same loop with half the step, and it costs
+     eight more 64-square sprites, which is nothing. The step it wraps by
+     stays exact because H divides by 16 as happily as by 8.
+
      NOT SNAPPED, unlike almost everything else here. A cut-out edge is
      what makes a Doom sprite a Doom sprite and it is exactly wrong for
      this: smoke has no edge, and the alpha ramp is the whole effect. */
   {
-    const W = 64, H = 64, N = 8;
+    const W = 64, H = 64, N = 16;
     const n = fbm(W, H, 5, 3, 240);
     const fine = fbm(W, H, 11, 2, 341);
     for (let f = 0; f < N; f++) {

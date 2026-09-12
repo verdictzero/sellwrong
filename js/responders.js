@@ -119,7 +119,6 @@ export class Responders {
 
   dispatch(t) {
     this.dispatched.set(t.tier, this.tics);
-    this.game.message(t.dispatch);
     this.game.onResponders?.('dispatch', t);
   }
 
@@ -127,7 +126,6 @@ export class Responders {
     this.arrived.add(t.tier);
     const points = this.arrivalPoints();
     const from = points[(t.tier + this.tics) % points.length];
-    this.game.message(t.arrive);
     this.spawn(t, from);
     this.game.onResponders?.('arrive', t, from);
   }

@@ -378,6 +378,57 @@ export class FireSystem {
     return lit;
   }
 
+  /* ------------------------------------------------------------------
+     AND PUTTING ONE OUT
+
+     The opposite operation, and it is not symmetrical with ignite, which
+     is the interesting part. Fire is a THRESHOLD system — a cell spreads
+     at SPREAD_AT and dies below EMBER_HEAT — so taking heat away is not
+     undoing damage, it is moving a cell across a line. Drop one under
+     SPREAD_AT and it stops recruiting its neighbours; drop it to nothing
+     and it is out, and the front behind it starves.
+
+     WHAT IT CANNOT DO IS PUT THE FUEL BACK. A shelf that has burned is
+     burned: `burntFuel` only goes up, a charred region stays charred,
+     and a region that has gone will not come back because somebody
+     sprayed it. So the extinguisher is not an undo button — it is a
+     firebreak you can draw with, and the thing it saves is whatever has
+     not caught YET.
+
+     EMBERS GO TOO, and this is the difference between a fire that is out
+     and a fire that is sulking. A cell with fuel gone sits at a glow for
+     EMBER_TICS and will relight anything that wanders past; a doused one
+     has its ember clock cleared, so the aisle behind you stays dark.
+
+     @param strength  roughly how much heat comes off, 0..255
+     @returns how many cells it actually cooled */
+  douse(x, y, strength = 90, radius = CELL) {
+    const cx0 = this.cellX(x - radius), cx1 = this.cellX(x + radius);
+    const cy0 = this.cellY(y - radius), cy1 = this.cellY(y + radius);
+    const r2 = radius * radius;
+    let cooled = 0;
+    for (let cy = cy0; cy <= cy1; cy++) {
+      for (let cx = cx0; cx <= cx1; cx++) {
+        const i = this.idx(cx, cy);
+        if (this.sectorOf[i] < 0 || this.heat[i] === 0) continue;
+        /* ROUND, NOT SQUARE, unlike ignite — a spray is a cone and the
+           corner of a box of cells is a cell that never had any gas on
+           it. ignite gets away with a box because fire spreads from
+           whatever it lights and the shape stops mattering a tic later;
+           a doused corner left burning restarts the whole cell. */
+        const dx = this.worldX(cx) - x, dy = this.worldY(cy) - y;
+        if (dx * dx + dy * dy > r2) continue;
+        const fall = 1 - Math.sqrt(dx * dx + dy * dy) / radius;
+        const take = Math.round(strength * (0.35 + 0.65 * fall));
+        const h = this.heat[i] - take;
+        cooled++;
+        if (h <= EMBER_HEAT) { this.heat[i] = 0; this.ember[i] = 0; }
+        else this.heat[i] = h;
+      }
+    }
+    return cooled;
+  }
+
   _activate(i) {
     if (this._activeSet[i]) return;
     this._activeSet[i] = 1;
@@ -652,6 +703,15 @@ export class FireSystem {
       this.game.scene.add(m);
       this.smokes.push(m);
     }
+    /* WHICH CELL EACH PUFF IS SITTING OVER, kept between frames. The
+       candidate list is rebuilt and re-sorted every frame as the fire
+       moves, so dealing the pool off the front of it — which is what
+       this did — handed puff number nine to a different cell most
+       frames, and a puff that changes cell is a puff that TELEPORTS.
+       Thirty-six of them doing that is the jitter the whole thing was
+       accused of. A puff keeps its cell until that cell stops
+       qualifying, and only then is it re-dealt. */
+    this._smokeCell = new Int32Array(this.SMOKE_POOL).fill(-1);
     this._candidates = [];
   }
 
@@ -707,6 +767,9 @@ export class FireSystem {
        which is the right end to drop and is why the budget is a cap on
        the count rather than a filter on the candidates. */
     const pool = Math.max(16, Math.round(this.POOL * (this.game.quality?.effects ?? 1)));
+    /* the same clock the smoke uses — a flame animating in thirty-five
+       steps a second under a camera moving in sixty is the same jerk */
+    const T0 = this.game.smoothTics ?? this.tics;
     let s = 0;
     for (let c = 0; c < cand.length && s < pool; c++) {
       const cd = cand[c];
@@ -736,7 +799,7 @@ export class FireSystem {
         /* Offset by the cell index AND the slot so neighbouring flames
            are out of step with each other — in phase, a wall of fire
            pulses like a heart. */
-        const frame = String.fromCharCode(65 + ((this.tics >> 1) + cd.i * 3 + j * 7) % letters);
+        const frame = String.fromCharCode(65 + (Math.floor(T0 * 0.5) + cd.i * 3 + j * 7) % letters);
         const entry = bank.get(set, frame);
         const u = m.material.uniforms;
         u.map.value = bank.texture(entry, 0);
@@ -762,14 +825,56 @@ export class FireSystem {
        on the nearest square metre of fire is a grey wall in your face,
        and the same thirty-six spaced down a burning aisle is a burning
        aisle. */
-    let q = 0;
+    /* WHO QUALIFIES: buried cells only, spread down the candidate list
+       rather than taken off the front of it — thirty-six puffs all on
+       the nearest square metre of fire is a grey wall in your face, and
+       the same thirty-six spaced down a burning aisle is a burning
+       aisle. */
+    const fit = [];
     const stride = Math.max(1, Math.floor(cand.length / (this.SMOKE_POOL * 2)));
-    for (let c = 0; c < cand.length && q < this.SMOKE_POOL; c += stride) {
+    for (let c = 0; c < cand.length; c += stride) {
       const cd = cand[c];
-      if (cd.h < 110 || cd.core < 0.30) continue;
+      if (cd.h >= 110 && cd.core >= 0.30) fit.push(cd);
+    }
+    /* EVERY PUFF KEEPS THE CELL IT HAD while that cell still qualifies,
+       and the ones that lost theirs take from what is left over. Which
+       is two passes and a small linear scan, against a pool of
+       thirty-six — and it is the difference between smoke that drifts
+       and smoke that flickers between places. */
+    const byCell = new Map();
+    for (const cd of fit) byCell.set(cd.i, cd);
+    const taken = new Set();
+    const mine = new Array(this.SMOKE_POOL).fill(null);
+    for (let q = 0; q < this.SMOKE_POOL; q++) {
+      const cell = this._smokeCell[q];
+      const cd = cell >= 0 ? byCell.get(cell) : null;
+      if (cd && !taken.has(cell)) { mine[q] = cd; taken.add(cell); }
+    }
+    let f = 0;
+    for (let q = 0; q < this.SMOKE_POOL; q++) {
+      if (mine[q]) continue;
+      while (f < fit.length && taken.has(fit[f].i)) f++;
+      if (f >= fit.length) break;
+      mine[q] = fit[f]; taken.add(fit[f].i); f++;
+    }
+
+    /* THE CLOCK WITH THE FRACTION ON IT. The sway, the lift and the
+       frame all used the whole tic count, which steps thirty-five times
+       a second — so on a sixty-hertz monitor every drifting puff moved
+       in visible jerks while the camera beside it was smooth. See
+       Game.smoothTics. */
+    const T = this.game.smoothTics ?? this.tics;
+    for (let q = 0; q < this.SMOKE_POOL; q++) {
+      const cd = mine[q];
       const m = this.smokes[q];
+      this._smokeCell[q] = cd ? cd.i : -1;
+      if (!cd) { m.visible = false; continue; }
       const letters = bank.count('SMOK') || 8;
-      const entry = bank.get('SMOK', String.fromCharCode(65 + (((this.tics * 3) >> 5) + cd.i) % letters));
+      /* AND THE FRAME ROLLS RATHER THAN JUMPS. The set is a billowing
+         loop, so it is walked at a steady rate off the smooth clock and
+         phased by the cell — a puff eleven tics into holding one drawing
+         is a puff you can see holding it. */
+      const entry = bank.get('SMOK', String.fromCharCode(65 + (Math.floor(T * 0.16) + cd.i) % letters));
       const sec = this.game.level.sectors[this.sectorOf[cd.i]];
       const u = m.material.uniforms;
       u.map.value = bank.texture(entry, 0);
@@ -781,14 +886,12 @@ export class FireSystem {
          identical balls at identical heights. */
       u.light.value = sec ? Math.max(0.34, sec.light) : 0.5;
       if (u.sky) u.sky.value = sec ? (sec.sky ?? (sec.outdoor ? 1 : 0)) : 0;
-      const ph = this.tics * 0.014 + hash2(cd.i, 7) * 6.283;
+      const ph = T * 0.014 + hash2(cd.i, 7) * 6.283;
       u.spriteOffset.value.set(Math.sin(ph) * 26, 0);
       const lift = 42 + cd.core * 150 + Math.sin(ph * 1.7) * 12;
       m.position.set(cd.x, (sec ? sec.floor : 0) + lift, -cd.y);
       m.visible = true;
-      q++;
     }
-    for (; q < this.SMOKE_POOL; q++) this.smokes[q].visible = false;
   }
 }
 

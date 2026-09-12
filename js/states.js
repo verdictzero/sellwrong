@@ -105,6 +105,13 @@ S('SHOP_RUN2',   'SHOP', 'A', 3, 'A_Flee', 'SHOP_RUN1');
 S('SHOP_BURN1',  'SHOP', 'A', 2, 'A_Torch', 'SHOP_BURN2', { fullbright: true });
 S('SHOP_BURN2',  'SHOP', 'A', 2, 'A_Torch', 'SHOP_BURN1', { fullbright: true });
 S('SHOP_GIB',    'SHOP', 'A', 1, 'A_Gib', null);      // null next: remove me
+/* AND FROZEN, which is one frame and no action at all. The state exists
+   so a frozen shopper stops running A_Flee — Actor.freeze parks it here
+   with tics -1, this engine's "rest for ever", and the thaw sets them
+   going again from `see`. It is the same drawing as every other shopper
+   state; what makes it read as ice is the colour map in js/material.js,
+   which is a fact about the SHADER and not about the animation. */
+S('SHOP_FROZE',  'SHOP', 'A', -1, null, 'SHOP_FROZE');
 
 /* ---------------------------------------------------------------------
    Things that are not monsters
@@ -196,6 +203,11 @@ export const ACTORS = {
        an aisle at a panicked run, which is the distance that makes the
        mechanic mean something. */
     burn: 'SHOP_BURN1', burnTics: [3.5 * TICRATE, 7 * TICRATE],
+    /* AND THE OTHER END OF IT. `freezable` is what the extinguisher's
+       stream is allowed to work on; `frozen` is where they are parked
+       while it holds; and coming out of it they RUN, because nobody
+       goes back to the shelves after that. */
+    freezable: true, frozen: 'SHOP_FROZE', freezeReturn: 'SHOP_RUN1',
     /* AND WHAT THEY LEAVE BEHIND THEM. A drop every eight tics at eight
        units a tic is a line of fire with sixty-four-unit steps in it,
        which on a thirty-two-unit grid is two cells lit and one skipped —

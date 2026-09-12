@@ -48,11 +48,13 @@ const status = (text, pct) => {
 
 /* HOW MUCH THE WORLD IS DRAWN WITH. The vertical resolution of the
    buffer the 3D goes into — width follows the window's shape, so a wider
-   monitor shows more store rather than the same store stretched. 400 is
-   the default: twice what it was, at the user's request. This is the
-   frame rate control; halving it quarters the pixels being shaded. */
+   monitor shows more store rather than the same store stretched. It
+   defaults to the top of the ladder, at the user's request, because the
+   pixel filter below is what decides how chunky the picture looks now
+   and this one is free to be about detail. It is still the frame rate
+   control; halving it quarters the pixels being shaded. */
 const DETAIL = [120, 150, 200, 240, 300, 400, 480, 600];
-const DEFAULT_DETAIL = 5;
+const DEFAULT_DETAIL = 7;
 
 /* AND HOW BIG A PIXEL IS, which is a different question and used to be
    the same one. This is the grid the finished frame is filtered down
@@ -64,10 +66,12 @@ const DEFAULT_DETAIL = 5;
 
    OFF is last because it is the finest setting there is — the grid
    becomes the buffer, which is exactly what this game did before the two
-   were pulled apart, and it is the default so that nobody's picture
-   changed the day they did. */
+   were pulled apart. It is not the default: the default is 300 rows of
+   5:6 pixels off a 600-row render, chosen by the user off the screenshot
+   of it, which is the setting the whole thing was built for. */
 const PIXELS = [120, 150, 200, 240, 300, 400, 480, 600, 0];
 const PIXELS_OFF = PIXELS.length - 1;
+const DEFAULT_PIXELS = 4;              // 300, which is 5:6 and about 727 across
 
 /* THE SHAPE OF ONE, width over height as displayed. 320x200 filling a
    4:3 monitor is not a square-pixel mode and never was: each pixel stood
@@ -82,6 +86,7 @@ const PIXEL_ASPECT = [
   { v: 0.83333, n: 'TALL 5:6' },      // 320x200 on a 4:3 monitor
   { v: 1.16667, n: 'WIDE 7:6' },      // 256x224 on the same
 ];
+const DEFAULT_PIXAR = 1;               // 5:6, which is the shape Doom was drawn on
 
 /* ---------------------------------------------------------------------
    WHAT TO SPEND THE FRAME ON
@@ -117,14 +122,17 @@ const WOOD   = [{ v: 1, n: 'ALL OF IT' }, { v: 0.6, n: 'NEARER' }, { v: 0.35, n:
    bumped when a default changes, so a saved setting from before does
    not quietly keep the old default alive. */
 const PREF_KEY = 'sellwrong.prefs';
-const PREF_VERSION = 2;
+const PREF_VERSION = 3;
 const DEFAULT_PREFS = { v: PREF_VERSION, sens: 1, invert: false, lefty: false, haptics: true,
-                        detail: DEFAULT_DETAIL, pixels: PIXELS_OFF, pixar: 0,
+                        detail: DEFAULT_DETAIL, pixels: DEFAULT_PIXELS, pixar: DEFAULT_PIXAR,
                         crowd: 0, fx: 0, wood: 0, fps: false };
 function loadPrefs() {
   try {
     const saved = JSON.parse(localStorage.getItem(PREF_KEY) || '{}');
-    if (saved.v !== PREF_VERSION) { delete saved.detail; saved.v = PREF_VERSION; }
+    if (saved.v !== PREF_VERSION) {
+      delete saved.detail; delete saved.pixels; delete saved.pixar;
+      saved.v = PREF_VERSION;
+    }
     return { ...DEFAULT_PREFS, ...saved };
   } catch (e) { return { ...DEFAULT_PREFS }; }
 }
@@ -279,9 +287,10 @@ async function boot() {
   const touch = new TouchControls(input, { root: $('touch'), prefs, onPause: () => pause(true) });
 
   const weapon3d = new Weapon3D({ aspect: 1.6 });
-  await weapon3d.load('assets/models/flamethrower.glb', flameAtlas);
+  await weapon3d.load(flameAtlas);
   game.weapon3d = weapon3d.ready ? weapon3d : null;
   hud.showWeaponSprite = !weapon3d.ready;
+  console.log('guns: ' + (weapon3d.loaded.join(', ') || 'none'));
 
   status('PLANTING THE WOOD', 0.88); await breathe();
   if (forestArt) { game.forest.build(scene, forestArt); game.forest.attachFlames(scene, flameAtlas); }
@@ -397,7 +406,6 @@ async function boot() {
     prefs[key] = (prefs[key] + 1) % list.length;
     if (after) after();                 // the ones that resize the picture
     applyPrefs();
-    game.message($(id).textContent);
   });
   ladder('opt-pixar', 'pixar', PIXEL_ASPECT, () => {
     pixarIndex = prefs.pixar;
@@ -463,7 +471,6 @@ async function boot() {
     if (input.mode === 'touch') { enterFullscreen(); touch.setEnabled(true); }
     else input.requestLock();
     input.keys.clear();
-    game.message('SELLWRONG SUPERSTORE. OPEN ALL NIGHT.');
   }
   title.addEventListener('click', start);
   addEventListener('keydown', e => {
@@ -488,7 +495,6 @@ async function boot() {
     prefs.detail = detailIndex;
     savePrefs(prefs);
     syncMenu();
-    game.message('RENDER ' + DETAIL[detailIndex] + 'P');
   }
 
   function setPixels(i) {
@@ -498,8 +504,6 @@ async function boot() {
     prefs.pixels = pixelIndex;
     savePrefs(prefs);
     syncMenu();
-    game.message('PIXELS ' + (PIXELS[pixelIndex]
-      ? pipeline.gridWidth + '\u00d7' + pipeline.gridHeight : 'OFF'));
   }
 
   /* ---- the loop ---------------------------------------------------- */

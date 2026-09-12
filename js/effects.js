@@ -45,7 +45,7 @@ export class Effects {
        where the wind takes it. Both halves are wanted — a plume that does
        not shed is a prop, and puffs with nothing under them are litter. */
     this.smoke = new Particles({
-      max: 360, texture: atlases?.smoke || null, frames: 4,
+      max: 360, texture: atlases?.smoke || null, frames: SMOKE_PUFFS,
       blend: 'alpha', fullbright: false, light: 0.55, name: 'smoke', renderOrder: 14, nearShrink: 90,
     });
     this._samples = [];
@@ -83,7 +83,11 @@ export class Effects {
       size0: size, size1: size * 4.2,
       c0: [0.34 * warm, 0.30 * warm, 0.28 * warm], c1: [0.16, 0.16, 0.18],
       a0: 0.55, a1: 0,
-      frame: pRandom() & 3, frameRate: 0.02,
+      /* AND IT WALKS THE LOOP. At a fiftieth of a frame a tic the old
+         puff changed drawing three times in its whole life, which with
+         four unrelated blobs was three pops; now it is a smooth churn
+         through a loop twice over while it rises. */
+      frame: pRandom() % SMOKE_PUFFS, frameRate: 0.09,
       drag: 0.992, gravity: 0.004,
     });
   }
@@ -92,6 +96,31 @@ export class Effects {
   splash(x, y, z) {
     this.ember(x, y, z + 6, 2, 0.8);
     if ((pRandom() & 3) === 0) this.puff(x, y, z + 10, 18, 90);
+  }
+
+  /* THE SAME PUFFS, COLD. The smoke frames are shapeless grey billows,
+     which is what a cloud of expanding CO2 is too, so the difference is
+     entirely in the colour and the physics: this one is near-white and
+     blue, it is BRIEF where smoke hangs about, and it falls instead of
+     rising — cold gas is heavier than the air it is in, and a jet of it
+     pools along the floor rather than going up to the ceiling. */
+  frostPuff(x, y, z, size = 22, life = 40) {
+    this.smoke.spawn({
+      x: x + (pRandom() / 255 - 0.5) * 16, y: y + (pRandom() / 255 - 0.5) * 16, z,
+      vx: (pRandom() / 255 - 0.5) * 0.8, vy: (pRandom() / 255 - 0.5) * 0.8,
+      vz: -0.15 - (pRandom() / 255) * 0.35,
+      life: life + (pRandom() % 30),
+      size0: size, size1: size * 2.6,
+      c0: [0.82, 0.94, 1.05], c1: [0.40, 0.56, 0.72],
+      a0: 0.5, a1: 0,
+      frame: pRandom() % SMOKE_PUFFS, frameRate: 0.22,
+      drag: 0.94, gravity: -0.006,
+    });
+  }
+
+  /** Where the extinguisher's stream landed. */
+  chillSplash(x, y, z) {
+    this.frostPuff(x, y, z + 8, 18, 30);
   }
 
   /* ------------------------------------------------------------------
@@ -159,19 +188,36 @@ export class Effects {
    The pictures: a spark and four puffs of smoke, generated like all the
    other art
    ------------------------------------------------------------------ */
+/* How many frames of drifting smoke there are. One loop, not a set of
+   variants — see bakeEffectAtlases. Exported because js/frost.js draws
+   its CO2 with the same atlas and has to walk the same loop. */
+export const SMOKE_PUFFS = 8;
+
 export function bakeEffectAtlases() {
   const spark = new Pix(4, 4, 3, false);
   spark.fill('bone', 1.0);
+  /* EIGHT PUFFS THAT ARE ONE PUFF, which is the fix for smoke that
+     popped. There were four, and they were four INDEPENDENT noise
+     fields: a drifting puff walking from one to the next did not churn,
+     it cut, four times in its life, to a completely different blob. So
+     they are built the way the body of smoke over the fire is built —
+     one fbm field, whose lattice wraps after H rows, sampled with a
+     vertical offset of H/N per frame. Frame N is frame 0 again, every
+     step between them is the same small scroll, and what a puff does
+     over its life is turn over rather than flicker. */
+  const PW = 32, PN = SMOKE_PUFFS;
+  const pn = fbm(PW, PW, 4, 3, 70);
   const puffs = [];
-  for (let f = 0; f < 4; f++) {
-    const p = new Pix(32, 32, 40 + f, false);
-    const n = fbm(32, 32, 4, 3, 70 + f * 13);
-    for (let y = 0; y < 32; y++)
-      for (let x = 0; x < 32; x++) {
+  for (let f = 0; f < PN; f++) {
+    const p = new Pix(PW, PW, 40 + f, false);
+    const off = Math.round(f * PW / PN);
+    for (let y = 0; y < PW; y++)
+      for (let x = 0; x < PW; x++) {
+        const sy = (y + off) % PW;
         const dx = (x - 15.5) / 15.5, dy = (y - 15.5) / 15.5;
         const d = Math.hypot(dx, dy);
         const edge = Math.max(0, 1 - d);
-        const a = Math.max(0, Math.min(1, edge * 1.8 * (0.45 + n[y * 32 + x] * 0.8) - 0.15));
+        const a = Math.max(0, Math.min(1, edge * 1.8 * (0.45 + pn[sy * PW + x] * 0.8) - 0.15));
         if (a <= 0.05) continue;
         p.set(x, y, 235, 232, 230, Math.round(a * 255));
       }

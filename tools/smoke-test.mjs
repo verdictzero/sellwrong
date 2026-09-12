@@ -1277,6 +1277,301 @@ section('the flame');
     check('and it stops at full', (p.ammo.fuel = pl.TANK,
       p.fuelTic(), p.ammo.fuel === pl.TANK));
   }
+
+  /* --- THE SMOKE, AND WHAT IT HAD BEEN INHERITING -----------------
+     Two complaints, both the user's, and they turned out to be about
+     different halves of the same sprite.
+
+     FIRST, IT WAS WEARING THE FIRE'S COALS. Everything in this game
+     shares one fragment shader, and the block that asks the burn grid
+     "how burnt is the floor here" is the right question for a wall and
+     the wrong one for a thing standing in front of one. Every sprite was
+     being given the soot and the live coals of whatever it was over —
+     and smoke drifts, so it sampled a different part of the grid every
+     frame and the coals CRAWLED across it. It is a define now and only
+     surfaces set it.
+
+     SECOND, IT STEPPED. The churn, the sway and the lift all came off
+     the whole tic count, which advances thirty-five times a second while
+     the renderer runs at sixty or more; and the loop was eight frames
+     over about two seconds, which is a step every eleven tics of a
+     sprite big enough to see holding still. */
+  {
+    const mat = await import('../js/material.js');
+    const fs2 = await import('node:fs');
+    const sprites = spr.bakeSprites();
+    const wall = mat.createWallMaterial(null, {});
+    const sprite = mat.createSpriteMaterial(null, {});
+    check('a surface burns and a sprite does not',
+      'SURFACE_BURN' in wall.defines && !('SURFACE_BURN' in sprite.defines),
+      Object.keys(sprite.defines).join(', '));
+    check('and a sprite can freeze and a surface cannot',
+      'FROST' in sprite.defines && !('FROST' in wall.defines));
+    check('and the shader guards both blocks rather than multiplying by zero',
+      (() => {
+        const src = fs2.readFileSync('js/material.js', 'utf8');
+        const frag = src.slice(src.indexOf('const COMMON_FRAG'), src.indexOf('export function worldUniforms'));
+        return /#ifdef SURFACE_BURN[\s\S]*?burnAt\(vWorld\)/.test(frag) &&
+               /#ifdef SURFACE_BURN[\s\S]*?emberOf\(/.test(frag);
+      })());
+
+    /* AND THE LOOPS ARE LOOPS. Both sets are one noise field scrolled by
+       a fraction of its own height, so frame N is frame 0 again and every
+       step between them is the same small move. The four puffs this
+       replaced were four INDEPENDENT fields — walking them was not a
+       churn, it was four cuts. */
+    const smok = sprites.count('SMOK');
+    const fxSrc = fs2.readFileSync('js/effects.js', 'utf8');
+    const puffs = +(fxSrc.match(/export const SMOKE_PUFFS = (\d+)/) || [])[1];
+    note('the two smokes', `${smok} frames over the fire, ${puffs} drifting`);
+    check('the body of smoke has frames enough to churn rather than flick',
+      smok >= 16, `${smok}`);
+    check('and the drifting puffs are a loop rather than a set of blobs',
+      puffs >= 8 && /const pn = fbm\(/.test(fxSrc) && /\(y \+ off\) % PW/.test(fxSrc),
+      `${puffs} frames`);
+    check('and one field makes all of them, or the loop is a slideshow',
+      (fxSrc.match(/fbm\(PW, PW/g) || []).length === 1);
+
+    /* AND THE CLOCK HAS THE FRACTION ON IT */
+    const { Game } = await import('../js/game.js');
+    const THREE9 = await import('three');
+    const g9 = new Game({ level, scene: new THREE9.Scene(), camera: {},
+      textures: tex.bakeTextures(), sprites: spr.bakeSprites(),
+      hud: { message() {}, ticMessages() {} }, audio: null,
+      input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
+               attack: false, use: false, run: false, sample() {}, sensitivity: 0 } });
+    check('on a whole tic the smooth clock is the tic count', g9.smoothTics === g9.tics);
+    g9.update(1 / 35 * 1.5);
+    check('and between two it is between two',
+      g9.smoothTics > g9.tics && g9.smoothTics < g9.tics + 1,
+      `${g9.smoothTics.toFixed(3)} against ${g9.tics}`);
+    const fireSrc = fs2.readFileSync('js/fire.js', 'utf8');
+    check('and the smoke and the flames both read it rather than the tic count',
+      (fireSrc.match(/smoothTics/g) || []).length >= 2 &&
+      !/this\.tics \* 0\.014/.test(fireSrc));
+    check('and a puff keeps the cell it is standing over between frames',
+      /_smokeCell/.test(fireSrc));
+  }
+}
+
+/* ---------- the cold ---------- */
+/* THE SECOND STREAM, which is the first one built the other way up.
+   What is checked here is the pair of things that make it a weapon
+   rather than a recolour: that it takes heat OUT of the grid without
+   giving any fuel back, and that a person it holds can be left, thawed
+   or broken — three outcomes, all reachable, none of them the same as
+   being set on fire. */
+section('the cold');
+{
+  const FR = await import('../js/frost.js');
+  const FL = await import('../js/flame.js');
+  const pl = await import('../js/player.js');
+  const { Game } = await import('../js/game.js');
+  const { Actor } = await import('../js/actor.js');
+  const THREE = await import('three');
+  const hudStub = { message() {}, ticMessages() {}, resize() {}, update() {} };
+  const inputStub = { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
+                      attack: false, use: false, run: false, sample() {}, sensitivity: 0 };
+  const mk = () => new Game({ level: MAP.buildSellWrong(), scene: new THREE.Scene(), camera: {},
+    textures: tex.bakeTextures(), sprites: spr.bakeSprites(), hud: hudStub, audio: null, input: inputStub });
+
+  /* --- IT IS A SHORTER ARM THAN THE FLAME -------------------------
+     A gas jet loses its speed faster than a thrown liquid does and then
+     sinks, so this has to come out with less reach than the flamethrower
+     or the extinguisher is simply a better flamethrower. */
+  {
+    const reach = FR.jetReach(), flame = FL.streamReach();
+    note('the jet / the flame', `${reach.toFixed(0)} against ${flame.toFixed(0)} units`);
+    check('the jet is shorter in the arm than the flame', reach < flame * 0.8,
+      `${reach.toFixed(0)} against ${flame.toFixed(0)}`);
+    check('and it sinks harder, being colder than the air it is in',
+      FR.JET.gravity < FL.STREAM.gravity && FR.JET.drag < FL.STREAM.drag,
+      `gravity ${FR.JET.gravity} drag ${FR.JET.drag}`);
+  }
+
+  /* --- PUTTING A FIRE OUT, AND WHAT IT CANNOT PUT BACK -------------
+     douse moves cells across the thresholds the fire runs on. What it
+     must never do is return fuel: a burnt aisle stays burnt, the store's
+     percentage never goes backwards, and the thing the extinguisher
+     saves is whatever has not caught yet. */
+  {
+    const g = mk();
+    const F = g.fire;
+    const x = 1500, y = 1500;
+    F.ignite(x, y, 400, 160);
+    for (let i = 0; i < 40; i++) g.tic();
+    const hotBefore = F.heatAt(x, y), burntBefore = F.burntFuel, liveBefore = F.active.length;
+    const cooled = F.douse(x, y, 200, 120);
+    const hotAfter = F.heatAt(x, y);
+    note('a fire, doused', `${cooled} cells, heat ${hotBefore.toFixed(2)} -> ${hotAfter.toFixed(2)}`);
+    check('dousing takes the heat out of the grid',
+      cooled > 0 && hotAfter < hotBefore * 0.5, `${hotBefore.toFixed(2)} -> ${hotAfter.toFixed(2)}`);
+    check('and it cannot give the fuel back',
+      F.burntFuel >= burntBefore && Math.abs(F.burntFuel - burntBefore) < 1e-9,
+      `${burntBefore.toFixed(1)} -> ${F.burntFuel.toFixed(1)}`);
+    check('and a region that was charred stays charred',
+      g.level.sectors.filter(s => s.charred).length >= 0);
+    /* AND THE EMBERS GO WITH IT, which is the difference between a fire
+       that is out and a fire that is sulking: a cell left at a glow
+       relights anything that wanders past it. */
+    let glowing = 0;
+    for (let i = 0; i < F.heat.length; i++) if (F.heat[i] > 0 && F.ember[i] > 0) glowing++;
+    check('and nothing it cooled is left glowing',
+      (() => {
+        const cx0 = F.cellX(x - 60), cx1 = F.cellX(x + 60);
+        const cy0 = F.cellY(y - 60), cy1 = F.cellY(y + 60);
+        for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
+          const i = F.idx(cx, cy);
+          if (F.heat[i] === 0 && F.ember[i] > 0) return false;
+        }
+        return true;
+      })(), `${glowing} cells still glowing anywhere`);
+    check('and dousing bare floor is free', F.douse(20000, 20000, 200, 120) === 0);
+    /* ROUND AND NOT SQUARE, unlike ignite: the corner of a box of cells
+       never had any gas on it, and a doused corner left burning restarts
+       the whole cell. */
+    const g2 = mk();
+    g2.fire.ignite(1500, 1500, 400, 400);
+    for (let i = 0; i < 30; i++) g2.tic();
+    const R = 200;
+    const before = g2.fire.heatAt(1500 + R * 0.71, 1500 + R * 0.71);
+    g2.fire.douse(1500, 1500, 250, R);
+    check('the spray is a circle, so the corners of its box are untouched',
+      g2.fire.heatAt(1500 + R * 0.71, 1500 + R * 0.71) === before &&
+      g2.fire.heatAt(1500, 1500) === 0, `corner ${before.toFixed(2)} kept`);
+  }
+
+  /* --- AND WHAT IT DOES TO A PERSON -------------------------------- */
+  {
+    const g = mk();
+    const who = g.actors.find(a => a.type === 'SHOPPER' && !a.dead);
+    check('a shopper is something the cold can work on', !!who && who.info.freezable);
+    note('the dial', `${Actor.FREEZE_AT} to freeze, one back every ${Actor.THAW_EVERY} tics, ` +
+      `${Actor.FIRE_THAW} a tic in a fire`);
+    /* IT RUNS UP BEFORE IT LANDS, which is the whole of the feedback: a
+       shopper the spray has caught but not yet held goes pale first. */
+    who.chill(30);
+    check('a little cold is a tint and not a state', who.frost === 30 && !who.frozen);
+    check('and it reaches the shader that does the colour map',
+      Math.abs(who.frost / Actor.FREEZE_AT - 0.3) < 1e-9);
+    /* AND AT THE THRESHOLD THEY GO SOLID */
+    const froze = who.chill(Actor.FREEZE_AT);
+    check('enough of it and they are solid', froze && who.frozen && who.solid);
+    check('and they have stopped thinking', who.state.name === 'SHOP_FROZE' && who.stateTics === -1);
+    check('and stopped being frightened', who.panic === 0);
+
+    /* THE HYSTERESIS, which is the bug this section exists for. Freezing
+       happens at the top of the dial and thawing at the BOTTOM of it, so
+       the whole bar is time spent solid. Thawing the moment the number
+       dipped under the line — which is what it did first — made a
+       shopper a block of ice for six tics and then a shopper again. */
+    who.frostTic();
+    check('one tic later they are still frozen', who.frozen, `frost ${who.frost}`);
+    let n = 0;
+    while (who.frozen && n < 4000) { who.frostTic(); n++; }
+    note('how long they stand there', `${n} tics, about ${(n / 35).toFixed(0)} seconds`);
+    check('they thaw eventually, and not immediately',
+      !who.frozen && n > Actor.FREEZE_AT * (Actor.THAW_EVERY - 1), `${n} tics`);
+    check('and they come out of it running, not shopping',
+      who.state.name === 'SHOP_RUN1', who.state.name);
+    check('and solid again only in the way they were before',
+      who.solid === (who.info.solid ?? !!who.info.monster));
+  }
+
+  /* --- FIRE IS THE FAST THAW -------------------------------------- */
+  {
+    const g = mk();
+    const who = g.actors.find(a => a.type === 'SHOPPER' && !a.dead);
+    who.chill(Actor.FREEZE_AT);
+    check('a frozen person cannot be set alight', (who.ignite(300), who.burning === 0));
+    let n = 0;
+    while (who.frost > 0 && n < 200) { who.ignite(300); n++; }
+    note('and how many flames it takes to undo one', `${n} calls`);
+    check('but the flame eats the ice, and quickly',
+      !who.frozen && n < 20, `${n} calls`);
+    check('and the one after that lights them', (who.ignite(300), who.burning > 0));
+  }
+
+  /* --- OR THEY BREAK ----------------------------------------------- */
+  {
+    const g = mk();
+    const who = g.actors.find(a => a.type === 'SHOPPER' && !a.dead);
+    const shardsBefore = g.giblets.shatters, burstsBefore = g.giblets.bursts;
+    who.chill(Actor.FREEZE_AT);
+    who.damage(1, g.player);
+    check('anything at all shatters a frozen person', who.removed && who.dead);
+    check('and it is a shatter and not a burst',
+      g.giblets.shatters === shardsBefore + 1 && g.giblets.bursts === burstsBefore,
+      `${g.giblets.shatters - shardsBefore} shatters, ${g.giblets.bursts - burstsBefore} bursts`);
+    check('and the pieces are the cold pool, not the burning one',
+      g.giblets.shards.count > 0 && g.giblets.chunks.count === 0,
+      `${g.giblets.shards.count} shards, ${g.giblets.chunks.count} chunks`);
+    /* THE ONE THAT SHIPPED FOR TEN MINUTES. A burning piece of somebody
+       lights the floor where it lands, which is how a crowd spreads a
+       fire and is one of the best things in the game — and reusing that
+       pool for the cold ones set the aisle alight every time the
+       extinguisher was used properly. */
+    const liveBefore = g.fire.active.length;
+    for (let i = 0; i < 200; i++) g.giblets.tic();
+    check('and they start no fires where they land',
+      g.fire.active.length === liveBefore, `${g.fire.active.length - liveBefore} cells lit`);
+  }
+
+  /* --- THE WEAPON ITSELF ------------------------------------------- */
+  {
+    const W = pl.WEAPONS.EXTINGUISHER;
+    check('the extinguisher is a weapon you are issued with',
+      !!W && new pl.Player({ level, blockmap: null }, 0, 0, 0).owned.EXTINGUISHER === true);
+    check('and it is a stream, on its own tank',
+      W.stream === 'frost' && W.ammo === 'co2' && W.ammoPerShot === 0);
+    check('and it latches when it is empty, like the other one', W.refire > 0);
+    check('and it does no damage at all, which is the point',
+      W.damage() === 0);
+    note('the two tanks', `fuel ${pl.TANK} at one every ${pl.REGEN_EVERY}, ` +
+      `co2 ${pl.BOTTLE} at one every ${pl.CO2_REGEN_EVERY}`);
+    check('the extinguisher holds less and fills faster',
+      pl.BOTTLE < pl.TANK && pl.CO2_REGEN_EVERY < pl.REGEN_EVERY &&
+      pl.CO2_REFIRE_AT < pl.REFIRE_AT);
+    /* the two latches are separate, or emptying one locks out the other */
+    const g = mk();
+    const p = g.player;
+    p.ammo.fuel = 0; p.dry = true;
+    check('an empty flamer does not lock the extinguisher',
+      p.armed('EXTINGUISHER') && !p.armed('FLAMER'));
+    p.ammo.co2 = 0; p.co2Dry = true; p.ammo.fuel = pl.TANK; p.dry = false;
+    check('and an empty extinguisher does not lock the flamer',
+      p.armed('FLAMER') && !p.armed('EXTINGUISHER'));
+    /* and the gauge's pip follows whichever is in hand */
+    p.weapon = 'EXTINGUISHER';
+    check('the gauge asks the weapon in hand which mark it is climbing to',
+      p.refireMark === pl.CO2_REFIRE_AT, `${p.refireMark}`);
+    p.weapon = 'FLAMER';
+    check('and gets a different answer for the other one', p.refireMark === 0);
+  }
+
+  /* --- AND IT IS A MODEL IN YOUR HANDS ----------------------------- */
+  {
+    const w3 = await import('../js/weapon3d.js');
+    const fs3 = await import('node:fs');
+    note('the guns', Object.entries(w3.GUNS).map(([k, d]) =>
+      `${k} ${d.url.split('/').pop()}${d.fit ? ' (fitted)' : ''}`).join(', '));
+    check('there are two guns and both files are there',
+      Object.keys(w3.GUNS).length === 2 &&
+      Object.values(w3.GUNS).every(d => fs3.existsSync(d.url)));
+    const E = w3.GUNS.EXTINGUISHER;
+    /* THE MODEL IS SOMEBODY ELSE'S AND IS NOT REWRITTEN, which is the
+       rule since the van. So the two things the game has to say about it
+       — how big it is in this scene, and where its business end is — are
+       said HERE, in the model's own units, and not baked into the file. */
+    check('the extinguisher says where its nozzle is rather than editing the file',
+      Array.isArray(E.nozzle) && E.nozzle.length === 3 && E.fit === w3.GUN_LENGTH);
+    check('and it has no pilot light, not being a thing that burns',
+      E.pilot === null);
+    check('and its muzzle is desaturated first, so a tint can make it cold',
+      E.cold === true && E.tint[2] > E.tint[0]);
+    check('the flamethrower is untouched: its own frame, its own anchors',
+      !w3.GUNS.FLAMER.fit && !w3.GUNS.FLAMER.nozzle && !w3.GUNS.FLAMER.cold);
+  }
 }
 
 /* ---------- the crowd ---------- */
@@ -1778,25 +2073,34 @@ await (async () => {
       lots.taps[0] <= 4 && lots.taps[1] <= 4, lots.taps.join(','));
   }
 
-  /* --- AND THE READOUT SHRINKS RATHER THAN RUNS OFF THE EDGE ------
-     A 160-column grid is a thing you would now CHOOSE, so the four
-     numbers along the top have to survive one. They go one scale down
-     first and then one READOUT down, from the middle out: the wood
-     goes, then the count of the living, and STORE and FUEL stay because
-     they are the two a player acts on. */
+  /* --- AND THE CORNER IS TWO BARS AND NO WORDS -------------------
+     It was four numbers and a running list of notifications, and it is
+     gone at the user's request. What is checked is that it is GONE —
+     nothing left that writes a word into the upper left, and no message
+     queue behind it that a caller could still push onto — and that the
+     two gauges it grew out of are what is left. */
   {
-    const hudMod = await import('../js/hud.js');
-    const pix = await import('../js/pixel.js');
-    const wide = pix.textWidth(hudMod.Hud.TOP_WIDEST) + 8;
-    const mid = pix.textWidth(hudMod.Hud.TOP_NO_WOOD) + 8;
-    const narrow = pix.textWidth(hudMod.Hud.TOP_NARROW) + 8;
-    note('the top line', `${wide} columns for all four, ${mid} without the wood, ${narrow} for two`);
-    check('the four numbers do not fit the chunkiest grid, which is why there are three lines',
-      wide > 160 && narrow <= 160, `${wide} and ${narrow} against 160`);
-    check('and each shorter one is shorter', narrow < mid && mid < wide);
-    check('and every one of them keeps the two a player acts on',
-      [hudMod.Hud.TOP_WIDEST, hudMod.Hud.TOP_NO_WOOD, hudMod.Hud.TOP_NARROW]
-        .every(t => t.includes('STORE') && t.includes('FUEL')));
+    const hudSrc = fs2.readFileSync('js/hud.js', 'utf8');
+    const top = hudSrc.slice(hudSrc.indexOf('buildTop('), hudSrc.indexOf('buildBig('));
+    note('what is left in the corner', `${top.split('\n').length} lines, ` +
+      `${(top.match(/\bbar\(/g) || []).length} bars drawn`);
+    check('nothing in the corner writes a word',
+      !/bigText\s*\(/.test(top), 'bigText is still reached for in buildTop');
+    check('and the message queue is gone with it, not merely unread',
+      !/this\.messages/.test(hudSrc) && !/\bticMessages\b/.test(hudSrc));
+    check('and nothing anywhere still tries to post one',
+      ['js/game.js', 'js/player.js', 'js/main.js', 'js/responders.js']
+        .every(f => !/\.message\s*\(/.test(fs2.readFileSync(f, 'utf8'))));
+    /* the two gauges: how much of the store has gone, and what is in
+       whatever you are holding */
+    check('the two gauges are still drawn',
+      /bar\(M, burn \/ 100/.test(top) && /bar\(y, tank \/ 100/.test(top));
+    check('and the tank is the held weapon\'s, not the flamer\'s by name',
+      /WEAPONS\[p\.weapon\]/.test(top) && !/maxAmmo\.fuel/.test(top));
+    /* AND THE END-OF-NIGHT CARD STAYS, which is in the middle and is not
+       a notification: it is the only thing left that says anything. */
+    check('the card in the middle of the screen is untouched',
+      /buildBig\(\)/.test(hudSrc) && /bigMessage/.test(hudSrc));
   }
 
   /* --- AND THE SIMULATION CANNOT SEE THEM --- */

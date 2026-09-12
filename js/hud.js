@@ -6,8 +6,8 @@
    size as the walls, before the palette snap. That is the whole point:
    a crisp modern overlay on a chunky world reads as a filter applied to
    a photograph, and one frame of it undoes everything the renderer is
-   doing. The numbers, the messages and the flash are all made of the
-   same pixels as the floor.
+   doing. The bars, the end-of-night card and the flash are all made of
+   the same pixels as the floor.
 
    AND THERE IS ALMOST NOTHING HERE. The status bar is gone. It answered
    "can I keep fighting", and there is no fighting to keep up: the
@@ -83,7 +83,7 @@ export class Hud {
     this.tintMesh.frustumCulled = false;
     this.scene.add(this.tintMesh);
 
-    /* the corner: the two numbers and the running messages */
+    /* the corner: two bars, and there used to be words */
     this.topTex = null;
     this.topMesh = new THREE.Mesh(geo, createHudMaterial(null));
     this.topMesh.renderOrder = 4;
@@ -99,7 +99,6 @@ export class Hud {
     this.bigMesh.visible = false;
     this.scene.add(this.bigMesh);
 
-    this.messages = [];
     this._topKey = '';
     this._bigKey = '';
   }
@@ -114,135 +113,98 @@ export class Hud {
     this._bigKey = '';
   }
 
-  message(text, tics = 105) {
-    this.messages.push({ text: String(text).toUpperCase(), tics });
-    if (this.messages.length > 3) this.messages.shift();
-  }
-
-  ticMessages() {
-    for (const m of this.messages) m.tics--;
-    this.messages = this.messages.filter(m => m.tics > 0);
-  }
-
   /* ------------------------------------------------------------------
-     The corner
+     THE CORNER, WHICH IS TWO BARS AND NOTHING ELSE
 
-     Rebuilt only when something in it changed. Every value that appears
-     goes into the key, so a frame in which nothing moved costs one
-     string comparison.
+     It used to be four numbers and a running list of notifications —
+     STORE 12%, WOOD 0%, LEFT 736, FUEL 100%, and under them whatever the
+     game had last said out loud. All of the words are gone, at the
+     user's request, and what is left is the two GAUGES that were already
+     drawn under the numbers: how much of the store has gone, and how
+     much is in whatever you are holding.
+
+     WHICH IS MOSTLY A BET THAT THE PICTURE IS THE READOUT. A bar filling
+     with fire says "the shop is going" better than a percentage does,
+     because the shop is on fire in front of you and the number was
+     competing with it. The one thing a bar cannot say is a COUNT — how
+     many are still alive is gone with the text, and it is gone on
+     purpose rather than by oversight.
+
+     SO THEY HAVE TO BE READABLE WITHOUT LABELS, which the hairlines they
+     grew out of were not: one pixel of colour under a word is a
+     decoration, and one pixel of colour on its own is dirt. They are
+     three pixels tall at the panel's scale, the same length as each
+     other so they read as a pair, and the empty end of each stays
+     visible so an empty bar is still a bar.
+
+     AND THE SECOND ONE IS WHATEVER IS IN YOUR HANDS. It was the flamer's
+     tank when the flamer was the only thing with a tank; now the
+     extinguisher has one too, so the bar belongs to the WEAPON and a
+     weapon with no tank at all simply does not draw it.
      ------------------------------------------------------------------ */
-  /* The widest the four numbers ever get, as a string, so the scale they
-     are drawn at can be chosen to FIT rather than hoped at. This grew
-     from two numbers to four in one afternoon, and on a phone held
-     upright — a 235-pixel buffer — the fourth one ran off the right-hand
-     edge and the tank was invisible on the one device where knowing
-     about the tank matters most.
-
-     AND THE SAME THING AGAIN, from the other end, the day the pixel
-     filter stopped being the render size. A 160-column grid is now
-     something you would CHOOSE — the chunkiest setting on a full-detail
-     render, which is the look the whole filter exists for — where before
-     it only came with a 160-column picture to match. Four readouts do
-     not go on 160 columns at any scale, and the one that ran off the
-     edge was FUEL: the last one drawn and, by this panel's own
-     reckoning, the one it is least able to spare.
-
-     So they are given up from the middle out. How much of the shop has
-     gone and whether there is anything left to burn it with are the two
-     a player acts on; how many are still alive is the third; the wood is
-     scenery. */
-  static TOP_WIDEST  = 'STORE 100%  WOOD 100%  LEFT 999  FUEL 100%';
-  static TOP_NO_WOOD = 'STORE 100%  LEFT 999  FUEL 100%';
-  static TOP_NARROW  = 'STORE 100%  FUEL 100%';
-
   buildTop(p) {
-    /* One step down rather than clipped: at 235 across the four numbers
-       want 1 and at 640 they get 2, and the messages under them keep the
-       panel's own scale either way. */
-    let s = this.scale;
-    while (s > 1 && textWidth(Hud.TOP_WIDEST) * s + 8 * s > this.width) s--;
-    /* and then one READOUT down rather than clipped, once the scale has
-       nowhere left to go */
-    const fits = str => textWidth(str) * s + 8 * s <= this.width;
-    const showWood = fits(Hud.TOP_WIDEST);
-    const showLeft = showWood || fits(Hud.TOP_NO_WOOD);
-    const widest = showWood ? Hud.TOP_WIDEST : showLeft ? Hud.TOP_NO_WOOD : Hud.TOP_NARROW;
     const g = this.game;
-    const burn = Math.round(g.burnPercent), wood = Math.round(g.forestPercent);
-    const left = g.peopleLeft;
-    /* THE TANK, which is on here because it empties now. Rounded to a
-       percent for the same reason the burn is: this panel is rebuilt
-       whenever anything on it changes, and a raw count that ticks up
-       every tenth of a second would rebuild it three times a second all
-       night for a digit nobody reads. */
-    const fuel = p ? Math.round(100 * p.ammoFor(p.weapon) / (p.maxAmmo.fuel || 1)) : 0;
-    /* AND WHETHER IT WILL FIRE, which since the tank started latching at
-       empty is a different question from how much is in it. `refireMark`
-       is the fraction it has to reach before the flamer lights again, or
-       0 when it is not waiting on anything — so the gauge has a pip on
-       it exactly while the answer is "not yet". */
+    const s = this.scale;
+    const burn = Math.round(g.burnPercent);
+    /* the tank of whatever is being held, or -1 for something that has
+       none — the boxcutter, which never runs out of boxcutter */
+    const d = p ? WEAPONS[p.weapon] : null;
+    const cap = d && d.ammo ? (p.maxAmmo[d.ammo] || 1) : 0;
+    const tank = cap ? Math.round(100 * p.ammoFor(p.weapon) / cap) : -1;
+    /* AND WHETHER IT WILL FIRE, which since the tanks started latching at
+       empty is a different question from how much is in one. `refireMark`
+       is the fraction it has to reach before it lights again, or 0 when
+       it is not waiting on anything — so the gauge has a pip on it
+       exactly while the answer is "not yet". */
     const mark = p ? (p.refireMark || 0) : 0;
-    const key = [this.width, this.scale, s, burn, wood, left, fuel, mark,
-                 showWood, showLeft,
-                 this.messages.map(m => m.text).join('/')].join('|');
+    const key = [this.width, s, burn, tank, mark].join('|');
     if (key === this._topKey) return;
     this._topKey = key;
 
-    const M2 = this.scale;                    // the messages keep their own size
-    const w = Math.min(this.width, Math.max(
-      textWidth(widest) * s + 8 * s,
-      ...this.messages.map(m => (textWidth(m.text) + 8) * M2)));
-    const h = 16 * s + 8 * M2 * this.messages.length + 4;
+    const M = 3 * s, BAR = 3 * s, GAP = 3 * s;
+    const bw = Math.min(this.width - M * 2, 64 * s);
+    const rows = tank >= 0 ? 2 : 1;
+    const w = bw + M * 2;
+    const h = M * 2 + BAR * rows + GAP * (rows - 1);
     const pix = new Pix(w, h, 1, false);
-    const M = 3 * s;
-    /* STORE 12%, a hairline gauge under it, and the wood beside it */
-    let x = bigText(pix, 'STORE', M, M, 'grey', 0.55, s);
-    x = bigText(pix, `${burn}%`, x + 2 * s, M, 'fire', burn > 66 ? 0.92 : burn > 33 ? 0.78 : 0.62, s);
-    const gx0 = M, gw = 48 * s, gy = M + 7 * s;
-    for (let i = 0; i < gw; i++) {
-      const f = i / gw;
-      const on = f * 100 <= burn;
-      for (let k = 0; k < s; k++) pix.ink(gx0 + i, gy + k, on ? 'fire' : 'grey', on ? 0.5 + f * 0.45 : 0.18);
-    }
-    if (showWood) {
-      x = bigText(pix, 'WOOD', x + 6 * s, M, 'grey', 0.55, s);
-      x = bigText(pix, `${wood}%`, x + 2 * s, M, 'fire', wood > 0 ? 0.66 : 0.3, s);
-    }
-    /* and how many are still alive, which since the fire exits went in is
-       the number the player is actually playing against */
-    if (showLeft) {
-      x = bigText(pix, 'LEFT', x + 6 * s, M, 'grey', 0.55, s);
-      x = bigText(pix, `${left}`, x + 2 * s, M, 'bone', left > 0 ? 0.78 : 0.34, s);
-    }
-    /* and how much is in the tank, with its own hairline under it: the
-       two numbers a player acts on are how much of the shop has gone and
-       whether there is anything left to burn it with */
-    x = bigText(pix, 'FUEL', x + 6 * s, M, 'grey', 0.55, s);
-    /* WAITING reads differently from LOW, because they call for opposite
-       things: low is "use it carefully", waiting is "you cannot use it
-       at all yet, go and look at what you have already lit". So a
-       latched tank is drawn red however full it is, and the number is
-       replaced by the mark it is climbing to. */
-    bigText(pix, mark ? `${Math.round(mark * 100)}%?` : `${Math.min(100, fuel)}%`, x + 2 * s, M,
-      mark ? 'red' : fuel > 40 ? 'cyan' : fuel > 12 ? 'yellow' : 'red',
-      mark || fuel <= 12 ? 0.72 : 0.62, s);
-    const fx0 = gx0 + gw + 8 * s, fw = 40 * s;
-    for (let i = 0; i < fw; i++) {
-      const f = i / fw;
-      const on = f * 100 <= fuel;
-      for (let k = 0; k < s; k++)
-        pix.ink(fx0 + i, gy + k, on ? (mark ? 'red' : fuel > 12 ? 'cyan' : 'red') : 'grey',
-                on ? 0.5 : 0.18);
-    }
-    /* and the pip it has to get to, one column of bone standing clear of
-       the bar above and below it so it reads against a filling gauge */
-    if (mark) {
-      const px = fx0 + Math.round(mark * fw);
-      for (let k = -1; k < s + 1; k++) pix.ink(px, gy + k, 'bone', 0.8);
-    }
 
-    this.messages.forEach((m, i) =>
-      bigText(pix, m.text, M, 12 * s + M + i * 8 * M2, 'bone', 0.72, M2));
+    /* ONE BAR. `lit` is how far along it is filled, 0..1; the filled end
+       brightens along its length so a nearly-full bar does not read as a
+       flat block.
+
+       AND THE EMPTY END IS DRAWN TOO, at a third, which is the whole of
+       what stops these being dirt. A bar with nothing in it has to still
+       be a bar or the player cannot tell an empty tank from a tank that
+       has stopped being on the screen — and under the numbers this
+       replaces it never had to, because the word FUEL was doing that
+       job. The surround under it is darker still: two values means the
+       bar has an edge on a pale floor as well as on a black one. */
+    const bar = (y, lit, key_, dim) => {
+      for (let i = -1; i <= bw; i++)
+        for (let k = -1; k <= BAR; k++) pix.ink(M + i, y + k, 'grey', 0.10);
+      for (let i = 0; i < bw; i++) {
+        const f = i / bw;
+        const on = f <= lit;
+        for (let k = 0; k < BAR; k++)
+          pix.ink(M + i, y + k, on ? key_ : 'grey', on ? dim + f * 0.45 : 0.33);
+      }
+    };
+    /* how much of the store has gone */
+    bar(M, burn / 100, 'fire', 0.50);
+    if (tank >= 0) {
+      const y = M + BAR + GAP;
+      /* WAITING READS DIFFERENTLY FROM LOW, because they call for
+         opposite things: low is "use it carefully", waiting is "you
+         cannot use it at all yet, go and look at what you have already
+         lit". So a latched tank is drawn red however full it is. */
+      bar(y, tank / 100, mark ? 'red' : tank > 40 ? 'cyan' : tank > 12 ? 'yellow' : 'red', 0.50);
+      /* and the mark it has to reach, one column of bone standing clear
+         of the bar above and below it so it reads against a filling one */
+      if (mark) {
+        const px = M + Math.round(mark * bw);
+        for (let k = -1; k < BAR + 1; k++) pix.ink(px, y + k, 'bone', 0.85);
+      }
+    }
 
     pix.snap(0);
     if (this.topTex) this.topTex.dispose();

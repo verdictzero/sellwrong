@@ -35,7 +35,8 @@ import { buildSlideDoors } from './slidedoor.js';
 import { buildSky, followSky } from './sky.js';
 import { Forest } from './forest.js';
 import { FlameStream } from './flame.js';
-import { Effects } from './effects.js';
+import { FrostStream } from './frost.js';
+import { Effects, SMOKE_PUFFS } from './effects.js';
 import { Giblets } from './people.js';
 import { Responders } from './responders.js';
 import { Vehicles } from './vehicles.js';
@@ -117,11 +118,14 @@ export class Game {
        they only draw once handed the pictures to draw with. */
     this.forest = new Forest(level);
     this.flame = new FlameStream(this, flameAtlas || null);
+    /* and the other stream, which uses the smoke puffs rather than the
+       flame frames — a jet of CO2 is a cloud, not a fire */
+    this.frost = new FrostStream(this, fxAtlases?.smoke ? { texture: fxAtlases.smoke, frames: SMOKE_PUFFS } : null);
     this.fx = new Effects(this, fxAtlases || null);
     /* and what comes off a person: the pieces and the fire on them */
     this.giblets = new Giblets(this, gibAtlases || null);
     if (flameAtlas) this.flame.attach(scene);
-    if (fxAtlases) this.fx.attach(scene);
+    if (fxAtlases) { this.frost.attach(scene); this.fx.attach(scene); }
     if (gibAtlases) this.giblets.attach(scene);
     this.weapon3d = null;
     /* who the night brings — the escalation is real, the arrivals are
@@ -352,6 +356,16 @@ export class Game {
     if (n === 6) this.accum = 0;          // we are behind; drop the debt
   }
 
+  /* THE CLOCK, WITH THE FRACTION STILL ON IT. `tics` is a whole number
+     that steps thirty-five times a second; the renderer runs at whatever
+     the monitor does, so anything drawn off `tics` alone moves in
+     thirty-five steps a second however smooth the frame rate is. The
+     accumulator already holds the part of a tic that has gone by since
+     the last step, so adding it back gives a continuous time in tics —
+     which is what a drifting, swaying thing wants and what a thing
+     driven by the simulation must NOT have. */
+  get smoothTics() { return this.tics + this.accum * TICRATE; }
+
   tic() {
     this.tics++;
     this.input.sample(1 / TICRATE);
@@ -367,11 +381,11 @@ export class Game {
     this.vehicles.tic();
     this.forest.tic();
     this.flame.tic();
+    this.frost.tic();
     this.fx.tic();
     this.giblets.tic();
     this.applyChar();
     this.ticBurnGrid();
-    this.hud.ticMessages();
 
     if (this.bigMessageTics > 0 && --this.bigMessageTics === 0) this.bigMessage = null;
 
@@ -494,7 +508,6 @@ export class Game {
 
   onMonsterKilled(a, source) { if (source === this.player) this.player.kills++; }
 
-  message(t) { this.hud.message(t); }
   setBigMessage(t, tics) { this.bigMessage = t; this.bigMessageTics = tics; }
 
   /* ------------------------------------------------------------------
@@ -780,7 +793,6 @@ export class Game {
        have to line up on a doorway to open it */
     const near = this.level.linesInBox(player.x - reach, player.y - reach, player.x + reach, player.y + reach, []);
     for (const l of near) if (this.activateLine(l, player)) return true;
-    this.message('NOTHING TO USE');
     return false;
   }
 
@@ -897,6 +909,7 @@ export class Game {
     this.fire.render(p.x, p.y, billboardRot);
     this.forest.render(p.x, p.y, ez, billboardRot, world.emberTime.value, this.quality.wood);
     this.flame.render(billboardRot);
+    this.frost.render(billboardRot);
     this.fx.render(billboardRot);
     this.giblets.render(billboardRot);
     this.renderProjectiles(billboardRot);

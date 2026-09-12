@@ -96,9 +96,18 @@ export async function loadGLB(url, opts = {}) {
   const { json, bin } = parseGLB(await res.arrayBuffer());
   if (json.animations?.length || json.skins?.length) throw new Error('animated or skinned models are not supported');
 
-  /* textures, decoded by the browser */
-  const textures = [];
-  for (const t of json.textures || []) {
+  /* TEXTURES, DECODED BY THE BROWSER AND ONLY THE ONES ASKED FOR.
+     A PBR model brings maps this renderer has no use for — the
+     extinguisher carries a 1024-square metallic-roughness map beside its
+     colour, and there is no metal and no roughness anywhere in this
+     game — and decoding one is a megabyte and a half of PNG and a
+     texture upload for a sampler nothing will ever read. So they are
+     built on demand: `textureFor` is what the material callback's `maps`
+     is filled from, and a map nobody asks for is never touched. */
+  const textureCache = new Map();
+  const textureFor = async idx => {
+    if (textureCache.has(idx)) return textureCache.get(idx);
+    const t = json.textures[idx];
     const im = json.images[t.source];
     if (im.bufferView === undefined) throw new Error('external images are not supported');
     const bv = json.bufferViews[im.bufferView];
@@ -114,20 +123,22 @@ export async function loadGLB(url, opts = {}) {
     tex.flipY = false;                    // glTF's uv origin is the top-left
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.needsUpdate = true;
-    textures.push(tex);
-  }
+    textureCache.set(idx, tex);
+    return tex;
+  };
 
   const makeMaterial = opts.material || ((def, maps) => new THREE.MeshBasicMaterial({ map: maps.map || null }));
   const materialCache = new Map();
-  const materialFor = idx => {
-    if (materialCache.has(idx)) return materialCache.get(idx);
-    const def = idx === undefined ? null : json.materials[idx];
+  /* Every material in the file, built up front so the node walk below
+     can stay synchronous — decoding the pictures is the only await in
+     here and it happens once per material rather than once per node. */
+  for (let i = 0; i < (json.materials || []).length; i++) {
+    const def = json.materials[i];
     const bc = def?.pbrMetallicRoughness?.baseColorTexture;
-    const maps = { map: bc ? textures[bc.index] : null };
-    const m = makeMaterial(def, maps);
-    materialCache.set(idx, m);
-    return m;
-  };
+    materialCache.set(i, makeMaterial(def, { map: bc ? await textureFor(bc.index) : null }));
+  }
+  materialCache.set(undefined, makeMaterial(null, { map: null }));
+  const materialFor = idx => materialCache.get(idx);
 
   const geometries = new Map();
   const geometryFor = (mi, pi) => {

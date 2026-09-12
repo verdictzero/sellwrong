@@ -28,6 +28,13 @@ const DEFS = {
   /* weapons */
   swing:     { kind: 'sweep', dur: 0.12, f0: 700,  f1: 260,  gain: 0.14, wave: 'triangle' },
   cut:       { kind: 'noise', dur: 0.10, f0: 2600, f1: 700,  gain: 0.26 },
+  /* THE COLD PAIR. `freeze` is a hiss running the WRONG WAY — up rather
+     than down, which is the whole difference between a thing catching
+     fire and a thing seizing up — and `shatter` is glass with the bottom
+     taken off it, short and bright, because that is what a person full
+     of ice sounds like when something hits them. */
+  freeze:    { kind: 'hiss',  dur: 0.45, f0: 260,  f1: 1500, gain: 0.26 },
+  shatter:   { kind: 'noise', dur: 0.22, f0: 5200, f1: 900,  gain: 0.40 },
 
   /* the staff */
   gib:       { kind: 'noise', dur: 0.42, f0: 1500, f1: 180,  gain: 0.44 },

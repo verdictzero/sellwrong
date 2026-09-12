@@ -69,6 +69,25 @@ export const INVULNERABLE = true;
 export const TANK = 420;
 export const REGEN_EVERY = 10;
 
+/* AND THE OTHER TANK, which is the same idea with the numbers turned
+   the other way. The extinguisher holds less and fills faster: 260 at
+   one a tic is about seven and a half seconds of gas, and a unit every
+   six tics is a full bottle in under thirty seconds.
+
+   THE RATIO IS THE DESIGN, and it is the opposite of the flamethrower's.
+   A minute of walking buys twelve seconds of setting fire to things,
+   because fire is the thing the game is about and it should be rationed.
+   Putting a fire out is not rationed nearly as hard, because it is
+   defensive, because you are usually doing it under time pressure, and
+   because an extinguisher that is empty when the aisle you wanted is
+   alight is a weapon that exists to disappoint. It still latches, for
+   the same reason the flamer does — a trigger you can stutter is a
+   trigger with no cost — but it comes back at a third rather than a
+   half, so the wait is nearer ten seconds than sixty. */
+export const BOTTLE = 260;
+export const CO2_REGEN_EVERY = 6;
+export const CO2_REFIRE_AT = 0.34;
+
 /* AND IT WILL NOT FIRE AGAIN UNTIL IT IS HALF FULL, at the user's
    request, which is the knob that turns a budget into a DECISION.
 
@@ -131,6 +150,34 @@ export const WEAPONS = {
     sound: 'flame',
   },
 
+  /* THE EXTINGUISHER, which does what a fire extinguisher does and then
+     two things it does not.
+
+     WHAT IT OBVIOUSLY DOES: the stream takes heat out of the fuel grid
+     and puts out what it lands on, store and forest both. It cannot undo
+     a burn — fuel that has gone has gone — so what it saves is the aisle
+     the fire has not reached yet, which makes it a tool for drawing
+     firebreaks rather than an undo button. See FireSystem.douse.
+
+     WHAT IT ALSO DOES: it freezes people. Enough gas on one and they go
+     solid — a blue statue that stops running, stops burning if they were
+     burning, and blocks the aisle for everybody behind them. They thaw
+     if you leave them; fire thaws them much faster; and anything that
+     hits them while they are solid shatters them, whole.
+
+     IT IS THE SAME KIND OF THING AS THE FLAMER — a stream, billed per
+     tic of pour, with a latch at empty — because the two are meant to be
+     held the same way and used against each other. */
+  EXTINGUISHER: {
+    slot: 2, name: 'EXTINGUISHER', sprite: 'FLMG',
+    ready: 'A', fire: ['B', 'C'], fireTics: [2, 2],
+    ammo: 'co2', ammoPerShot: 0, autofire: true,
+    refire: CO2_REFIRE_AT,
+    stream: 'frost',
+    damage: () => 0,
+    sound: 'flame',
+  },
+
   BOXCUTTER: {
     slot: 1, name: 'BOXCUTTER', sprite: 'CUTG',
     ready: 'A', fire: ['B', 'B', 'C'], fireTics: [4, 4, 5],
@@ -165,17 +212,21 @@ export class Player {
     this.shootable = true;
     this.monster = false;
 
-    this.ammo = { fuel: TANK, bottles: 0 };
-    this.maxAmmo = { fuel: TANK, bottles: 12 };
+    this.ammo = { fuel: TANK, co2: BOTTLE, bottles: 0 };
+    this.maxAmmo = { fuel: TANK, co2: BOTTLE, bottles: 12 };
     /* THE LATCH. True from the moment the tank runs out until it is back
        to REFIRE_AT of full, and the only thing that stops the flamer
        firing while there is fuel in it. */
     this.dry = false;
     this.regenTick = 0;
+    /* the extinguisher's own latch and its own clock, because the two
+       tanks refuse and refill on different terms */
+    this.co2Dry = false;
+    this.co2Tick = 0;
     /* TWO WEAPONS NOW. The molotov is built and tested and stays
        switched off; the boxcutter is issued because the tank empties —
        see the note on TANK. */
-    this.owned = { FLAMER: true, BOXCUTTER: true };
+    this.owned = { FLAMER: true, EXTINGUISHER: true, BOXCUTTER: true };
     this.weapon = 'FLAMER';
     this.pendingWeapon = null;
 
@@ -311,7 +362,14 @@ export class Player {
   /** Whether it will actually go off. Two different refusals and the
    *  player is told which: nothing in the tank, or something in the tank
    *  and not yet enough of it — see REFIRE_AT. */
-  armed(w) { return this.hasAmmo(w) && !(WEAPONS[w].refire && this.dry); }
+  armed(w) { return this.hasAmmo(w) && !(WEAPONS[w].refire && this.latched(w)); }
+
+  /* WHICH TANK IS SULKING. Two streams, two tanks, two latches, and a
+     weapon that has neither is never refused. */
+  latched(w) {
+    const d = WEAPONS[w];
+    return d.ammo === 'co2' ? this.co2Dry : d.ammo === 'fuel' ? this.dry : false;
+  }
 
   selectSlot(n) {
     for (const [k, d] of Object.entries(WEAPONS))
@@ -351,17 +409,13 @@ export class Player {
     if (this.pendingWeapon) {
       this.weapon = this.pendingWeapon;
       this.pendingWeapon = null;
-      this.game.message(WEAPONS[this.weapon].name);
       return;
     }
-    if (input.attack) {
-      if (this.armed(this.weapon)) this.startFire();
-      else if (!this._dryClick) {
-        this.game.message(this.dry ? 'NOT ENOUGH PRESSURE'
-                                   : 'NO ' + (this.def.ammo || 'AMMO').toUpperCase());
-        this._dryClick = true;
-      }
-    } else this._dryClick = false;
+    /* A REFUSAL IS SILENT NOW, because the corner that used to say why
+       is two bars. It does not need words: the bar is red and the pip on
+       it is where the trigger starts working again, which is the same
+       sentence in the place the player is already looking. */
+    if (input.attack && this.armed(this.weapon)) this.startFire();
   }
 
   startFire() {
@@ -398,19 +452,21 @@ export class Player {
       if (this.ammo[d.ammo] <= 0) {
         this.fireIndex = -1;
         /* AND IT LATCHES. Empty is not "wait for one unit", it is "wait
-           for half a tank" — see REFIRE_AT — so the refusal has to
-           survive the trickle that starts the moment this happens. */
-        if (!this.dry) {
-          g.message(d.refire ? 'THE TANK IS EMPTY — HALF A TANK TO RESTART'
-                             : 'THE TANK IS EMPTY');
-          this.dry = true;
-        }
+           for a share of a tank" — see REFIRE_AT and CO2_REFIRE_AT — so
+           the refusal has to survive the trickle that starts the moment
+           this happens. */
+        if (d.ammo === 'co2') this.co2Dry = true; else this.dry = true;
         return;
       }
       this.ammo[d.ammo]--;
     }
-    if (!g.flame) return;
-    g.flame.fire(g.nozzle(), this.angle, this.pitch);
+    /* WHICH STREAM, and it is the only line in the firing path that
+       knows there is more than one. Everything above — the billing, the
+       latch, the animation, the noise — is the same for both, because
+       what a held stream weapon does is the same for both. */
+    const stream = d.stream === 'frost' ? g.frost : g.flame;
+    if (!stream) return;
+    stream.fire(g.nozzle(), this.angle, this.pitch);
   }
 
   /** A TANK THAT FILLS ITSELF, very slowly. There is nothing in the shop
@@ -420,18 +476,22 @@ export class Player {
    *  stream takes one a tic and this gives back a tenth of one, so
    *  holding the trigger still empties it in about twelve seconds. */
   fuelTic() {
-    const cap = this.maxAmmo.fuel;
-    if (this.ammo.fuel >= cap) { this.regenTick = 0; this.dry = false; return; }
-    if (++this.regenTick < REGEN_EVERY) return;
-    this.regenTick = 0;
-    this.ammo.fuel = Math.min(cap, this.ammo.fuel + 1);
-    /* and the latch comes off at half, once, with a word for it: the
-       player has been walking for a minute and the only thing they want
-       to know is whether the gun works again */
-    if (this.dry && this.ammo.fuel >= cap * REFIRE_AT) {
-      this.dry = false;
-      this.game.message('HALF A TANK');
-    }
+    this._refill('fuel', REGEN_EVERY, REFIRE_AT, 'regenTick', 'dry');
+    this._refill('co2', CO2_REGEN_EVERY, CO2_REFIRE_AT, 'co2Tick', 'co2Dry');
+  }
+
+  /** One tank, one tic. Both fill on the same terms and differ only in
+   *  the three numbers passed in — see TANK and BOTTLE for why those
+   *  numbers are not the same numbers. */
+  _refill(kind, every, mark, tickKey, dryKey) {
+    const cap = this.maxAmmo[kind];
+    if (this.ammo[kind] >= cap) { this[tickKey] = 0; this[dryKey] = false; return; }
+    if (++this[tickKey] < every) return;
+    this[tickKey] = 0;
+    this.ammo[kind] = Math.min(cap, this.ammo[kind] + 1);
+    /* and the latch comes off at its mark: the pip on the gauge goes and
+       the bar stops being red, which is the whole announcement now */
+    if (this[dryKey] && this.ammo[kind] >= cap * mark) this[dryKey] = false;
   }
 
   /** How full the tank has to be before the flamer will light again,
@@ -439,7 +499,7 @@ export class Player {
    *  draws the pip at. */
   get refireMark() {
     const d = WEAPONS[this.weapon];
-    return this.dry && d.refire ? d.refire : 0;
+    return d.refire && this.latched(this.weapon) ? d.refire : 0;
   }
 
   throwBottle() {

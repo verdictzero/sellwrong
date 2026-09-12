@@ -200,6 +200,7 @@ export class Input {
     if (this.pressed('weapon3')) this.weaponSlot = 3;
     if (this.touch.weapon) { this.weaponSlot = this.touch.weapon; this.touch.weapon = 0; }
     this.weaponCycle = this.wheel; this.wheel = 0;
+    if (this.touch.cycle) { this.weaponCycle = this.touch.cycle; this.touch.cycle = 0; }
     if (pad) {
       if (pad.buttons[4]?.pressed && !this._padLB) this.weaponCycle = -1;
       this._padLB = pad.buttons[4]?.pressed;

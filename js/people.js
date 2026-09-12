@@ -113,6 +113,12 @@ export const GIB = {
   maxSplats: 140,     // sprites left lying about before the oldest goes
 };
 
+/* What a piece of somebody frozen is coloured. Multiplied onto the gore
+   art, so it is a lighting decision and not a repaint: red barely moves,
+   green and blue lift hard, and dark red meat comes out the pale
+   grey-pink of something out of a freezer. */
+const FROZEN_GIB = [1.0, 1.45, 1.85];
+
 export class Giblets {
   /**
    * @param game
@@ -134,11 +140,26 @@ export class Giblets {
       max: 300, texture: art?.trail?.texture || null, frames: art?.trail?.frames || 8,
       blend: 'add', fullbright: true, name: 'gibtrail', renderOrder: 11, nearShrink: 30,
     });
+    /* AND A SECOND POOL FOR THE COLD ONES, which is not tidiness — it
+       is the bug that shipped for about ten minutes. A burning piece of
+       somebody trails fire behind it and lights the floor where it
+       lands, because that is how a crowd spreads a fire and it is one of
+       the best things in the game. Shattering a frozen shopper down the
+       middle of the beans aisle therefore set the beans aisle on fire,
+       which is the exact opposite of what the extinguisher is for. The
+       pieces are the same art and the same ballistics; what they do when
+       they arrive is the whole difference, so they are a different pool
+       with a different tic. */
+    this.shards = new Particles({
+      max: 200, texture: art?.giblets?.texture || null, frames: art?.giblets?.frames || GIBLETS,
+      blend: 'cutout', fullbright: false, light: 1.0, name: 'shards', renderOrder: 13, nearShrink: 80,
+    });
     this.splats = [];
     this.bursts = 0;
+    this.shatters = 0;
   }
 
-  attach(scene) { this.chunks.attach(scene); this.trail.attach(scene); }
+  attach(scene) { this.chunks.attach(scene); this.shards.attach(scene); this.trail.attach(scene); }
 
   /* ------------------------------------------------------------------
      The burst
@@ -179,6 +200,57 @@ export class Giblets {
         drag: GIB.drag, gravity: GIB.gravity,
       });
     }
+  }
+
+  /* ------------------------------------------------------------------
+     AND THE COLD VERSION OF THE SAME THING
+
+     Somebody frozen solid and then hit does not come apart the way
+     somebody on fire does, and the difference is the whole reason this
+     is a second method rather than a flag on the first.
+
+     NO FIREBALL AND NO SCARE. A burst is an explosion — it lights the
+     floor, it throws a column of flame up where the person was, and
+     everybody within nine hundred units runs. Shattering is quiet: a
+     crack and a scatter, and the shopper four feet away carries on
+     looking at the beans. That is not an oversight, it is the mechanic:
+     a player who wants to clear an aisle without starting a stampede
+     now has a way to do it, and it is the only way there is.
+
+     BLOODY AND FROZEN, as asked, and one tint does both. The giblet art
+     is gore — dark reds — and the pieces are drawn through a colour that
+     lifts the blue and green hard and the red barely: what comes out is
+     meat that has gone pale and cold rather than meat with a blue light
+     on it. Every piece keeps its own drawing; only the light on it is
+     cold.
+
+     THE PIECES GO FURTHER AND DROP HARDER, because they are ice rather
+     than burning person: no rise to speak of, more sideways, and they
+     skitter. And they leave the same pool behind them, because whatever
+     the temperature, that part is unchanged.
+     ------------------------------------------------------------------ */
+  shatter(a) {
+    const g = this.game;
+    this.shatters++;
+    g.sound?.play('shatter', a);
+    this.splat(a.x, a.y, a.z);
+    for (let k = 0; k < GIB.count + 4; k++) {
+      const ang = (pRandom() / 255) * Math.PI * 2;
+      const sp = GIB.speedMin + (pRandom() / 255) * (GIB.speedMax - GIB.speedMin) * 1.25;
+      const size = GIB.sizeMin * 0.7 + (pRandom() / 255) * (GIB.sizeMax - GIB.sizeMin);
+      this.shards.spawn({
+        x: a.x, y: a.y, z: a.z + a.height * (0.15 + (pRandom() / 255) * 0.7),
+        vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp,
+        vz: GIB.riseMin * 0.35 + (pRandom() / 255) * GIB.riseMax * 0.4,
+        life: GIB.lifeMin + (pRandom() % (GIB.lifeMax - GIB.lifeMin)),
+        size0: size, size1: size,
+        c0: FROZEN_GIB, c1: FROZEN_GIB, a0: 1, a1: 1,
+        frame: pRandom() % GIBLETS,
+        drag: GIB.drag, gravity: GIB.gravity * 1.25,
+      });
+    }
+    /* and a breath of it hanging where they stood */
+    g.fx?.frostPuff?.(a.x, a.y, a.z + a.height * 0.5);
   }
 
   /** What is left on the floor. Capped: the oldest goes when the cap is
@@ -228,6 +300,19 @@ export class Giblets {
       }
     }
     this.trail.tic();
+
+    /* and the cold ones, which fly the same way and arrive differently:
+       no trail behind them and no heat under them, just a wet noise and
+       a mark on the floor */
+    this.shards.tic((i, nx, ny, nz) => {
+      const x = this.shards.x[i], y = this.shards.y[i], z = this.shards.z[i];
+      const wall = lv.rayHitWall(x, y, z, nx, ny, nz);
+      if (wall) { this._landCold(wall.x, wall.y, wall.z); return true; }
+      const sec = lv.sectorAt(nx, ny);
+      const floor = sec ? sec.floor : 0;
+      if (nz <= floor + 1) { this._landCold(nx, ny, floor); return true; }
+      return false;
+    });
   }
 
   /** A piece has come down. A splat sometimes, a spit of sparks always,
@@ -240,9 +325,20 @@ export class Giblets {
     g.forest?.ignite(x, y, 12);
   }
 
-  render(billboardRot) { this.chunks.render(billboardRot); this.trail.render(billboardRot); }
+  /** And a cold one, which is the same minus every single thing that
+   *  was warm about it. */
+  _landCold(x, y, z) {
+    if (pRandom() < GIB.splatChance) this.splat(x, y, z);
+    if ((pRandom() & 3) === 0) this.game.fx?.frostPuff?.(x, y, z + 6, 12, 24);
+  }
 
-  get liveCount() { return this.chunks.count + this.trail.count; }
+  render(billboardRot) {
+    this.chunks.render(billboardRot);
+    this.shards.render(billboardRot);
+    this.trail.render(billboardRot);
+  }
+
+  get liveCount() { return this.chunks.count + this.shards.count + this.trail.count; }
 }
 
 /* --------------------------------------------------------------------
