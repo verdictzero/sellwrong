@@ -216,6 +216,9 @@ export class Actor {
     this.ash = 0;                // 0 to 1, and gone at the top
     this.ashTics = 0;            // how long the whole of it takes, rolled
     this.ashBy = null;           // who gets the kill when it finishes
+    /* and with a drill in the head — see bore(), and js/bore.js */
+    this.bored = 0;              // tics of it left, and held while any are
+    this.boredBy = null;
 
     this.variant = opts.variant ?? 0;
     this.spriteOverride = opts.sprite || null;
@@ -294,12 +297,14 @@ export class Actor {
    *  through that this person should now be running for a door. It is
    *  one getter and not two checks because the next such state should
    *  be added here rather than in the four places that ask. */
-  get held() { return this.frozen || this.ash > 0; }
+  get held() { return this.frozen || this.ash > 0 || this.bored > 0; }
 
   tic() {
     if (this.removed || !this.state) return;
     if (this.burning > 0) this.burnTic();
     if (this.frost > 0) this.frostTic();
+    if (this.bored > 0) this.boreTic();
+    if (this.removed) return;
     if (this.stateTics === -1) return;          // resting for ever
     if (--this.stateTics > 0) return;
     /* FORCED, because this is the actor's OWN animation running on and
@@ -549,6 +554,10 @@ export class Actor {
        solid. One line, and the two doors agree. */
     if (this.frozen) { this.shatter(source); return; }
     if (this.ash > 0) { this.collapse(source); return; }
+    /* AND THE DRILL IS OVER, whichever way this was reached. The hold
+       has to come off here or the gate in setState refuses the death
+       state and a corpse with a bore in it stands there for ever. */
+    this.bored = 0;
     this.dead = true;
     this.solid = false;
     this.shootable = false;
@@ -931,6 +940,71 @@ export class Actor {
   }
 
   /* ------------------------------------------------------------------
+     A DRILL IN THE HEAD
+
+     The cerebral bore has arrived (js/bore.js), and what happens next
+     is the third hold: two seconds of standing exactly where they were,
+     shaking, screaming, with what was in their head coming out of the
+     top of it — and then they explode. Held for the same reason the
+     ice and the burn-away are held: a person with a drill in their
+     skull who sets off down the aisle because a car went up is not a
+     person with a drill in their skull.
+
+     WHAT IT DOES TO SOMEBODY ALREADY HELD is decided here rather than
+     by the bore, because the bore does not know what a block of ice
+     is: a frozen person is shattered by it the way anything hitting
+     them shatters them, and a person half ash is finished.
+     ------------------------------------------------------------------ */
+  /** The bore has reached the head. Returns what it did. */
+  bore(by = null) {
+    if (this.removed || this.dead) return false;
+    if (this.frozen) { this.shatter(by, { impact: true, force: 1.4 }); return 'shatter'; }
+    if (this.ash > 0) { this.collapse(by); return 'collapse'; }
+    if (this.bored > 0) return false;
+    this.bored = Actor.BORE_TICS;
+    this.boredBy = by || this.game.player;
+    this.panic = 0;
+    /* parked, the way the ice parks them: no action runs while the
+       drill is in, and the drawing shakes instead — see render */
+    if (this.info.bored) this.setState(this.info.bored, true);
+    this.stateTics = -1;
+    if (this.info.painSound) this.game.sound?.play(this.info.painSound, this);
+    return 'drill';
+  }
+
+  static BORE_TICS = 78;       // a shade over two seconds — js/bore.js's number
+
+  /** One tic with the drill in. Blood out of the top of the head,
+   *  pieces of what was in it, and the scream; and at the end of the
+   *  count, the burst. */
+  boreTic() {
+    const g = this.game;
+    if (--this.bored > 0) {
+      const top = this.z + this.height * 0.9;
+      if ((this.bored & 1) === 0) g.giblets?.spurt(this);
+      if ((this.bored % 4) === 0) g.fx?.bloodPuff(this.x, this.y, top);
+      if ((this.bored % 14) === 0 && this.info.painSound) g.sound?.play(this.info.painSound, this);
+      return;
+    }
+    this.boreBurst();
+  }
+
+  /** AND THEN THEY EXPLODE. The same coming-apart the flamethrower gets
+   *  — the fireball and the pieces for a shopper, the gore animation for
+   *  a trooper — because "explode" already means one thing in this game
+   *  and the bore should not teach it a second one. The kill is the
+   *  player's, which is what calls the SWAT. */
+  boreBurst() {
+    const by = this.boredBy;
+    this.bored = 0;
+    if (this.removed || this.dead) return;
+    this.game.giblets?.spurt(this, 10);
+    /* far enough under zero that a trooper takes the gore death */
+    this.health = Math.min(0, (this.info.gibHealth ?? 0) - 1);
+    this.die(by, 100);
+  }
+
+  /* ------------------------------------------------------------------
      Drawing
 
      One quad per actor, spun about Y only, with the frame and rotation
@@ -1070,6 +1144,13 @@ export class Actor {
     if (this.info.sway && !this.held) {
       const s = swayOf(this, this.game.tics);
       this.mesh.position.set(this.x + s.dx, this.z + (entry.lift || 0) + s.dz, -(this.y + s.dy));
+    } else if (this.bored > 0) {
+      /* AND SOMEBODY WITH A DRILL IN THEIR HEAD SHAKES: a couple of
+         units either way, fresh every frame, which on a standee reads
+         as a fit rather than as a sway. Drawing offset only; the body
+         is exactly where the collision says it is. */
+      const jx = (pRandom() / 255 - 0.5) * 3.6, jy = (pRandom() / 255 - 0.5) * 3.6;
+      this.mesh.position.set(this.x + jx, this.z + (entry.lift || 0), -(this.y + jy));
     } else {
       this.mesh.position.set(this.x, this.z + (entry.lift || 0) - sink, -this.y);
     }

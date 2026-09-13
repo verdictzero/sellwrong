@@ -353,6 +353,36 @@ export class Giblets {
     g.fx?.frostPuff?.(a.x, a.y, a.z + a.height * 0.5);
   }
 
+  /* ------------------------------------------------------------------
+     WHAT COMES OUT OF A HEAD WITH A DRILL IN IT
+
+     A spurt: one or two small pieces off the top of the head, thrown
+     up and a little out, that come down over the next second and land
+     as blood does. The same pieces the burst throws — there is no
+     smaller gore drawn — at half the size and a fifth of the speed, so
+     they read as a fountain and not a firework. They carry `kind` 1,
+     which is the one thing that tells the tic below not to put fire on
+     them: a piece off a burning body trails flame, a piece off a
+     drilled one does not.
+     ------------------------------------------------------------------ */
+  spurt(a, n = 1 + (pRandom() & 1)) {
+    for (let k = 0; k < n; k++) {
+      const ang = (pRandom() / 255) * Math.PI * 2;
+      const sp = 0.4 + (pRandom() / 255) * 1.6;
+      const size = GIB.sizeMin * 0.45 + (pRandom() / 255) * 3;
+      this.chunks.spawn({
+        x: a.x, y: a.y, z: a.z + a.height * 0.92,
+        vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp,
+        vz: 2.2 + (pRandom() / 255) * 3.8,
+        life: 30 + (pRandom() % 30),
+        size0: size, size1: size,
+        c0: [1, 1, 1], c1: [1, 1, 1], a0: 1, a1: 1,
+        frame: pRandom() % GIBLETS,
+        drag: 0.985, gravity: GIB.gravity, kind: 1,
+      });
+    }
+  }
+
   /** THE OTHER THING LEFT ON THE FLOOR, and it goes on the same shelf
    *  as the splats: one cap across both, because what a long night must
    *  not end in is a carpet of sprites, and the floor does not care
@@ -387,18 +417,19 @@ export class Giblets {
       /* A piece that goes through the frozen aisle wall and lands in the
          car park is funny exactly once. */
       const wall = lv.rayHitWall(x, y, z, nx, ny, nz);
-      if (wall) { this._land(wall.x, wall.y, wall.z); return true; }
+      if (wall) { this._land(wall.x, wall.y, wall.z, C.kind[i]); return true; }
       const sec = lv.sectorAt(nx, ny);
       const floor = sec ? sec.floor : 0;
-      if (nz <= floor + 1) { this._land(nx, ny, floor); return true; }
+      if (nz <= floor + 1) { this._land(nx, ny, floor, C.kind[i]); return true; }
       return false;
     });
 
-    /* the flame off each piece still in the air */
+    /* the flame off each piece still in the air — except the ones off
+       a drilled head, which were never alight (see spurt) */
     if (C.count) {
       const phase = C.tics;
       for (let i = 0; i < C.max; i++) {
-        if (!C.alive[i]) continue;
+        if (!C.alive[i] || C.kind[i] === 1) continue;
         if ((phase + i) % GIB.trailEvery) continue;
         this.trail.spawn({
           x: C.x[i], y: C.y[i], z: C.z[i],
@@ -441,9 +472,10 @@ export class Giblets {
    *  and it was also an automatic win. The pieces still come off alight,
    *  because a body going up is a body going up; they simply do not hand
    *  the fire on any more. Carrying it is the player's job. */
-  _land(x, y, z) {
+  _land(x, y, z, kind = 0) {
     const g = this.game;
-    g.fx?.splash(x, y, z);
+    /* a piece that was never alight lands as blood, not as sparks */
+    if (kind !== 1) g.fx?.splash(x, y, z);
     if (pRandom() < GIB.splatChance) this.splat(x, y, z);
   }
 

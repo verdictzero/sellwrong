@@ -59,6 +59,14 @@ const DEFS = {
      same boom, longer and lower, with the master gain it needs to be
      the loudest thing in the game */
   bigboom:   { kind: 'boom',  dur: 1.60, f0: 140,  f1: 22,   gain: 0.95 },
+  /* THE CEREBRAL BORE: the sight finding a head, the launcher, the
+     thing in flight, the drill in a skull, and a miss ringing off a
+     wall. All sawtooth, because a drill is a sawtooth. */
+  lock:      { kind: 'sweep', dur: 0.07, f0: 1500, f1: 1500, gain: 0.22, wave: 'square' },
+  borefire:  { kind: 'sweep', dur: 0.35, f0: 300,  f1: 1400, gain: 0.34, wave: 'sawtooth' },
+  borefly:   { kind: 'sweep', dur: 0.20, f0: 1100, f1: 1300, gain: 0.12, wave: 'sawtooth' },
+  bore:      { kind: 'sweep', dur: 0.24, f0: 700,  f1: 1900, gain: 0.30, wave: 'sawtooth' },
+  clang:     { kind: 'thud',  dur: 0.12, f0: 900,  f1: 300,  gain: 0.30 },
 
   /* the staff */
   gib:       { kind: 'noise', dur: 0.42, f0: 1500, f1: 180,  gain: 0.44 },

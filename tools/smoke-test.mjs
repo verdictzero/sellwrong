@@ -364,7 +364,8 @@ const st = await import('../js/states.js');
   const w = spr.bakeWeapons();
   note('weapon frames', w.size);
   check('weapon frames all present',
-    ['CUTGA', 'CUTGB', 'CUTGC', 'FLMGA', 'FLMGB', 'FLMGC', 'MOLGA', 'MOLGB', 'MOLGC'].every(k => w.has(k)));
+    ['FLMGA', 'FLMGB', 'FLMGC', 'MOLGA', 'MOLGB', 'MOLGC'].every(k => w.has(k)));
+  check('and the boxcutter\'s are gone with the boxcutter', !w.has('CUTGA') && !w.has('CUTGB'));
 }
 
 /* ---------- the map ---------- */
@@ -1386,7 +1387,8 @@ section('the flame');
     check('and there is nothing in the level to refill it from',
       !level.things.some(t => t.type === 'FUELCAN'),
       `${level.things.filter(t => t.type === 'FUELCAN').length} cans`);
-    check('the boxcutter is issued, because the tank runs out', !!p.owned.BOXCUTTER);
+    check('the boxcutter is gone, and the bore is issued in its place',
+      !pl.WEAPONS.BOXCUTTER && !p.owned.BOXCUTTER && !!p.owned.BORE && !!pl.WEAPONS.BORE);
     /* billed per tic of stream: thirty tics of pouring costs thirty */
     const was = p.ammo.fuel;
     for (let k = 0; k < 30; k++) p.flameTic(d);
@@ -2091,12 +2093,11 @@ section('the cold');
         p3.x + Math.cos(p3.angle) * 900, p3.y + Math.sin(p3.angle) * 900, p3.viewZ);
     }
     check('there is a wall somewhere in front of the player to swing at', !!wall);
-    /* AND THE ONE PHYSICAL WEAPON THE GAME ALREADY HAS GOES THROUGH IT,
-       which is what keeps the hook honest: a call nothing in the shipped
-       game makes is a call that is broken by the time something needs
-       it. The boxcutter kept its own copy of reach-arc-nearest and now
-       asks for the general form of it, so a swing at a block of ice
-       throws the pieces down the aisle. */
+    /* THE BOXCUTTER USED TO GO THROUGH THIS HOOK and is gone, at the
+       user's request; the hook stays for the physical weapon that is
+       still coming, so it is exercised here directly: a blow with a
+       direction on it at a block of ice throws the pieces down the
+       aisle in front of the swing. */
     {
       const g4 = mk();
       const p4 = g4.player;
@@ -2104,14 +2105,10 @@ section('the cold');
       p4.x = w4.x - 40; p4.y = w4.y; p4.z = w4.z; p4.viewZ = w4.z + 41;
       p4.angle = Math.atan2(w4.y - p4.y, w4.x - p4.x);
       w4.chill(Actor.FREEZE_AT);
-      let asked = null;
-      const real = g4.impact.bind(g4);
-      g4.impact = (from, o) => { asked = o; return real(from, o); };
-      p4.meleeSwing(pl.WEAPONS.BOXCUTTER);
-      check('the boxcutter swings through the same hook',
-        !!asked && asked.range === pl.WEAPONS.BOXCUTTER.range && asked.force === 1);
-      check('and a boxcutter through a block of ice still shatters it',
-        w4.removed && w4.dead);
+      check('nothing in the player\'s hands is a melee weapon any more',
+        Object.values(pl.WEAPONS).every(d => !d.melee) && !('meleeSwing' in p4));
+      check('and a blow through the hook at a block of ice still shatters it',
+        (g4.impact(p4, { damage: 6, force: 1 }), w4.removed && w4.dead));
     }
     p3.x = wall.x - Math.cos(p3.angle) * 40;
     p3.y = wall.y - Math.sin(p3.angle) * 40;
@@ -2187,8 +2184,8 @@ section('the cold');
     const fs3 = await import('node:fs');
     note('the guns', Object.entries(w3.GUNS).map(([k, d]) =>
       `${k} ${d.url.split('/').pop()}${d.fit ? ' (fitted)' : ''}`).join(', '));
-    check('there are two guns and both files are there',
-      Object.keys(w3.GUNS).length === 2 &&
+    check('there are three guns and all three files are there',
+      Object.keys(w3.GUNS).length === 3 &&
       Object.values(w3.GUNS).every(d => fs3.existsSync(d.url)));
     const E = w3.GUNS.EXTINGUISHER;
     /* THE MODEL IS SOMEBODY ELSE'S AND IS NOT REWRITTEN, which is the
@@ -4406,6 +4403,171 @@ section('the van');
     check('the corner draws a health bar, and only once you are hurt',
       /bar\(y, hp \/ 100/.test(hudSrc) && /hurt \? 1 : 0/.test(hudSrc));
   }
+}
+
+/* ---------- the cerebral bore ---------- */
+section('the cerebral bore');
+{
+  const { Game } = await import('../js/game.js');
+  const pl = await import('../js/player.js');
+  const { BORE } = await import('../js/bore.js');
+  const { ACTIONS, Actor } = await import('../js/actor.js');
+  const MAPB = await import('../js/maps/sellwrong.js');
+  const THREEB = await import('three');
+  const mk = () => new Game({
+    level: MAPB.buildSellWrong(), scene: new THREEB.Scene(), camera: {},
+    textures: tex.bakeTextures(), sprites: spr.bakeSprites(),
+    hud: { message() {}, ticMessages() {} }, audio: null,
+    input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
+             attack: false, use: false, run: false, sample() {}, sensitivity: 0 },
+  });
+
+  /* --- the weapon ------------------------------------------------- */
+  const d = pl.WEAPONS.BORE;
+  check('the bore is a weapon, in the boxcutter\'s slot, and it needs a lock',
+    !!d && d.slot === 3 && d.lock === true && d.ammo === 'bores' && !pl.WEAPONS.BOXCUTTER);
+  check('five in the magazine, and a full one back in a minute',
+    pl.BORES === 5 && pl.BORES * pl.BORE_REGEN_EVERY === 60 * 35, `${pl.BORES} x ${pl.BORE_REGEN_EVERY}`);
+  {
+    const fs = await import('node:fs');
+    const G = await import('../js/glb.js');
+    const buf = fs.readFileSync(new URL('../assets/models/bore.glb', import.meta.url));
+    const { json } = G.parseGLB(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+    note('the model', `${json.nodes.length} node, ${json.images.length} image, ${(buf.length / 1024 / 1024).toFixed(1)} MB`);
+    check('the model is the user\'s, with only its diffuse left in it',
+      json.images.length === 1 && json.materials.length === 1 && !json.materials[0].normalTexture &&
+      !json.materials[0].pbrMetallicRoughness.metallicRoughnessTexture);
+    check('and it carries no anchors, so the nozzle is the game\'s number',
+      !json.asset.extras?.anchors, JSON.stringify(json.asset.extras));
+    const w3 = await import('../js/weapon3d.js');
+    check('which js/weapon3d.js has', !!w3.GUNS.BORE && w3.GUNS.BORE.nozzle.length === 3 && w3.GUNS.BORE.url.endsWith('bore.glb'));
+  }
+
+  /* --- the sight -------------------------------------------------- */
+  const g = mk();
+  const p = g.player;
+  p.weapon = 'BORE';
+  const who = g.actors.find(a => a.type === 'SHOPPER' && !a.dead && a.sector && !a.sector.outdoor);
+  /* stand in the aisle, two hundred off somebody, looking at them */
+  const stand = (a, back = 200) => {
+    p.x = a.x - back; p.y = a.y; p.sector = g.level.sectorAt(p.x, p.y); p.z = p.sector.floor; p.viewZ = p.z + 41;
+    p.angle = 0; p.pitch = 0;
+  };
+  stand(who);
+  /* WHOEVER IS NEAREST ALONG THE RAY is the one the sight finds, which
+     in a crowd is not always the one you stood in front of — so the
+     crowd between here and them is cleared, and the flight below is
+     two hundred units long rather than twenty */
+  for (const a of g.actors)
+    if (a !== who && a.type === 'SHOPPER' && Math.hypot(a.x - p.x, a.y - p.y) < 320) a.remove();
+  g.tic();
+  const B = g.bore;
+  check('the sight is on while the bore is in hand', B.active);
+  check('and it finds a person along the view', !!B.aim.actor && B.aim.actor.type === 'SHOPPER', B.aim.actor?.type);
+  check('and locks on to them', !!B.lock && B.lock === B.aim.actor);
+  check('and the aim point is at the height of the eye, not on the floor',
+    Math.abs(B.aim.z - p.viewZ) < 1, `${B.aim.z.toFixed(1)} against ${p.viewZ.toFixed(1)}`);
+  const victim = B.lock;
+  /* look at the ceiling: nothing to lock, and the sight ends on it */
+  p.pitch = 0.7;
+  for (let i = 0; i < BORE.grace + 2; i++) g.tic();
+  check('looking away loses the lock, after a moment', !B.lock && !B.aim.actor);
+  check('and the sight stops at the ceiling', Math.abs(B.aim.z - p.sector.ceil) < 1, `${B.aim.z.toFixed(1)} against ${p.sector.ceil}`);
+  /* THE TRIGGER DOES NOTHING WITHOUT ONE — Turok's rule */
+  check('without a lock the trigger is not armed', !p.armed('BORE'));
+  const ammo0 = p.ammo.bores;
+  check('and firing with nothing locked sends nothing', B.fire(p) === null && B.shots.length === 0 && p.ammo.bores === ammo0);
+  /* and the floor — or whoever is standing on it in the way, since
+     this is a crowd and a ray pitched down crosses the next person's
+     knees fifty units out */
+  p.pitch = -0.7;
+  g.tic();
+  check('or the floor', Math.abs(B.aim.z - p.sector.floor) < 1 || (!!B.aim.actor && B.aim.z < p.viewZ),
+    `${B.aim.z.toFixed(1)} against ${p.sector.floor}`);
+  for (let i = 0; i < BORE.grace + 2; i++) g.tic();
+
+  /* --- the shot --------------------------------------------------- */
+  p.pitch = 0;
+  g.tic();
+  check('back on them, the lock is back', B.lock === victim);
+  check('and the trigger is armed', p.armed('BORE'));
+  p.startFire();
+  check('firing costs one of five', p.ammo.bores === ammo0 - 1 && B.fired === 1 && B.shots.length === 1);
+  const s = B.shots[0];
+  check('the bore leaves the launcher slowly, aimed at the head', s.target === victim && s.speed <= BORE.speed0 * BORE.accel);
+  let flew = 0;
+  const path = [];
+  for (; flew < 120 && !B.drilling.length; flew++) { g.tic(); if (B.shots[0]) path.push(B.shots[0].speed); }
+  note('the flight', `${flew} tics, ${path[0]?.toFixed(1)} to ${path[path.length - 1]?.toFixed(1)} units a tic`);
+  check('it reaches the head in under a second', B.drilling.length === 1 && flew < 35, `${flew} tics`);
+  check('and it sped up on the way', path.length > 2 && path[path.length - 1] > path[0] * 1.5);
+
+  /* --- the drill -------------------------------------------------- */
+  check('the drill is a hold: they stand there, parked, and nothing can scare them',
+    victim.bored > 0 && victim.held && victim.state.name === 'SHOP_BORE' && victim.stateTics === -1);
+  const vx = victim.x, vy = victim.y;
+  ACTIONS.A_Scare(victim, victim.x + 100, victim.y, 200);
+  g.scare(victim.x, victim.y, 400);
+  for (let i = 0; i < 20; i++) g.tic();
+  check('and they have not moved a unit', victim.x === vx && victim.y === vy && victim.bored > 0);
+  const C = g.giblets.chunks;
+  let blood = 0;
+  for (let i = 0; i < C.max; i++) if (C.alive[i] && C.kind[i] === 1) blood++;
+  check('what was in the head is coming out of the top of it', blood > 4, `${blood} pieces in the air`);
+  check('and none of it is on fire', (() => { for (let i = 0; i < C.max; i++) if (C.alive[i] && C.kind[i] !== 1) return false; return true; })());
+  check('the bore is in the head, turning', B.drilling[0].stuck === victim && Math.abs(B.drilling[0].z - (victim.z + victim.height * BORE.headAt)) < 1);
+  check('and nothing else can lock on to them while it is', !B.lockable(victim));
+
+  /* --- and then they explode --------------------------------------- */
+  const bursts = g.giblets.bursts, kills = p.kills;
+  let held = 0;
+  for (; held < 200 && !victim.dead; held++) g.tic();
+  note('the drilling', `${held + 20} tics from the bore going in to the burst`);
+  check('two seconds later they come apart', victim.dead && g.giblets.bursts === bursts + 1, `${g.giblets.bursts - bursts} bursts`);
+  check('and it is the player\'s kill', p.kills === kills + 1);
+  check('and the bore is spent with them', B.drilling.length === 0 && B.shots.length === 0,
+    `${B.shots.length} in flight (${B.shots.map(q => q.target?.type + (q.target?.dead ? ' dead' : '')).join(', ')}), ${B.drilling.length} drilling`);
+  check('the whole thing took a shade over two seconds', Math.abs((held + 21) - BORE.drillTics) <= 2, `${held + 21} against ${BORE.drillTics}`);
+
+  /* --- what it does to the others ----------------------------------- */
+  {
+    /* a block of ice: shattered, not drilled */
+    const g2 = mk(); const p2 = g2.player; p2.weapon = 'BORE';
+    const ice = g2.actors.find(a => a.type === 'SHOPPER' && !a.dead);
+    ice.chill(Actor.FREEZE_AT);
+    check('a frozen shopper can be locked', g2.bore.lockable(ice));
+    const r = ice.bore(p2);
+    check('and the bore shatters a block of ice rather than drilling it', r === 'shatter' && ice.removed);
+    /* a trooper: the gore death, not the ordinary one */
+    const t = g2.spawn('SWAT', p2.x + 200, p2.y, undefined, {});
+    t.target = p2;
+    const r2 = t.bore(p2);
+    check('a trooper takes the drill', r2 === 'drill' && t.held && t.state.name === 'SWAT_BORE');
+    for (let i = 0; i < Actor.BORE_TICS + 2 && !t.dead; i++) g2.tic();
+    check('and comes apart at the end of it, the gore way', t.dead && t.state.name.startsWith('SWAT_XDIE'), t.state?.name);
+    /* the magazine fills itself */
+    p2.ammo.bores = 0;
+    for (let i = 0; i < pl.BORE_REGEN_EVERY + 1; i++) p2.fuelTic();
+    check('the magazine fills itself, one at a time', p2.ammo.bores === 1);
+    /* a target that dies on the way is a target the bore flies past */
+    const g3 = mk(); const p3 = g3.player; p3.weapon = 'BORE';
+    const far = g3.actors.find(a => a.type === 'SHOPPER' && !a.dead && a.sector && !a.sector.outdoor);
+    p3.x = far.x - 300; p3.y = far.y; p3.sector = g3.level.sectorAt(p3.x, p3.y); p3.z = p3.sector.floor; p3.viewZ = p3.z + 41; p3.angle = 0; p3.pitch = 0;
+    g3.tic();
+    if (g3.bore.lock) {
+      const tgt = g3.bore.lock;
+      p3.startFire();
+      g3.tic(); g3.tic();
+      tgt.damage(100, p3);                  // gone before it arrives
+      let n = 0;
+      for (; n < 400 && g3.bore.shots.length; n++) g3.tic();
+      check('a bore whose target died on the way flies on and is spent on a wall',
+        g3.bore.shots.length === 0 && g3.bore.drilling.length === 0 && n < 400, `${n} tics`);
+    }
+  }
+  /* the sight's drawing parts exist */
+  check('the sight has a dot, a reticle and a bore to draw with',
+    ['LASRA', 'LOCKA', 'BOREA', 'BOREB', 'BOREC'].every(k => g.sprites.frames.has(k)));
 }
 
 section('the gun');

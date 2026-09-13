@@ -297,6 +297,23 @@ export class Effects {
     });
   }
 
+  /** Blood in the air, out of the top of a drilled head: the smoke's
+   *  own frames, small, dark red, and gone quickly — a mist over the
+   *  fountain of pieces js/people.js throws, so the spurt has a body. */
+  bloodPuff(x, y, z) {
+    this.smoke.spawn({
+      x: x + (pRandom() / 255 - 0.5) * 6, y: y + (pRandom() / 255 - 0.5) * 6, z,
+      vx: (pRandom() / 255 - 0.5) * 0.6, vy: (pRandom() / 255 - 0.5) * 0.6,
+      vz: 0.9 + (pRandom() / 255) * 0.8,
+      life: 14 + (pRandom() % 10),
+      size0: 7, size1: 16,
+      c0: [0.62, 0.05, 0.04], c1: [0.30, 0.02, 0.02],
+      a0: 0.75, a1: 0,
+      frame: pRandom() % SMOKE_PUFFS, frameRate: 0.2,
+      drag: 0.95, gravity: -0.01,
+    });
+  }
+
   /** Where a flame landed: a spit of sparks and a little smoke. */
   splash(x, y, z) {
     this.ember(x, y, z + 6, 2, 0.8);

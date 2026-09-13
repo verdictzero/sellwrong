@@ -73,6 +73,24 @@ export const GUN_LENGTH = 1.4;
              cold leaving a nozzle very fast
      muzzle  how long and wide that effect is, in metres */
 export const GUNS = {
+  /* THE CEREBRAL BORE, the user's third model and the one with nothing
+     coming out of the nozzle but a red line: the projectile is the
+     world's business (js/bore.js) and the sight is drawn from the point
+     nozzleWorld hands over. Stripped of its normal and metal-rough maps
+     by tools/prep-model.mjs, which is the same treatment the
+     flamethrower got and half of what it weighed. */
+  BORE: {
+    url: 'assets/models/bore.glb',
+    fit: GUN_LENGTH,
+    /* the mouth of the launcher, off the model's own vertices: the
+       furthest along +z are at 34.7 and sit a little under the centre
+       line, so this is just past them and on it */
+    nozzle: [0, -4, 37],
+    pilot: null,
+    /* what leaves the launcher: a short red exhaust, not a flame */
+    tint: [1.6, 0.30, 0.22],
+    muzzle: { len: 0.14, wid: 0.10 },
+  },
   FLAMER: {
     url: 'assets/models/flamethrower.glb',
     tint: [1, 1, 1],

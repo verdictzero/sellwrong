@@ -40,6 +40,7 @@ import { Effects, SMOKE_PUFFS } from './effects.js';
 import { Giblets } from './people.js';
 import { Responders } from './responders.js';
 import { Vehicles } from './vehicles.js';
+import { BoreSystem } from './bore.js';
 
 const THING_TO_ACTOR = {
   SHOPPER: 'SHOPPER',
@@ -146,6 +147,9 @@ export class Game {
        quad but is not an actor */
     this._projGeo = new THREE.PlaneGeometry(1, 1);
     this._projGeo.translate(0, 0.5, 0);
+    /* and the cerebral bore: its sight, its lock and what it fires —
+       after the quad above, which it draws with */
+    this.bore = new BoreSystem(this);
   }
 
   get burnPercent() { return this.fire ? this.fire.burnFraction * 100 : 0; }
@@ -380,6 +384,10 @@ export class Game {
 
     this.player.tic(this.input, 1 / TICRATE);
     for (let i = 0; i < this.actors.length; i++) this.actors[i].tic();
+    /* after the actors, so the bore sees the tic's deaths in the tic
+       they happen — a drill whose head has just burst is spent now, not
+       a tic later */
+    this.bore.tic();
     this.ticProjectiles();
     this.ticDoors();
     for (let i = 0; i < this.slideDoors.length; i++) this.slideDoors[i].tic();
@@ -540,6 +548,42 @@ export class Game {
     }
     out.sort((p, q) => p.d2 - q.d2);
     return out.map(o => o.a);
+  }
+
+  /** WHAT THE EYE IS LOOKING AT: the first wall, floor, ceiling or body
+   *  along the view, with the pitch in it. The bore's sight is this
+   *  once a tic. The same walk as hitscan's, and separate from it
+   *  because hitscan is a shot — it hurts what it finds and is level —
+   *  and this is a look. */
+  trace(from, angle, pitch, range) {
+    const c = Math.cos(pitch);
+    const ax = from.x, ay = from.y, az = from.eyeZ;
+    const tx = ax + Math.cos(angle) * c * range, ty = ay + Math.sin(angle) * c * range;
+    const tz = az + Math.sin(pitch) * range;
+    const wall = this.level.rayHitWall(ax, ay, az, tx, ty, tz);
+    let bestT = wall ? wall.t : 1, best = null;
+    /* the floor and the ceiling of the sector the eye is in, which the
+       wall walk does not know about: a sight aimed at your own feet
+       stops at the lino */
+    const sec = from.sector || this.level.sectorAt(ax, ay);
+    if (sec) {
+      if (tz < sec.floor) bestT = Math.min(bestT, (az - sec.floor) / (az - tz));
+      if (tz > sec.ceil) bestT = Math.min(bestT, (sec.ceil - az) / (tz - az));
+    }
+    const dx = tx - ax, dy = ty - ay;
+    const len2 = dx * dx + dy * dy || 1;
+    for (const a of this.actors) {
+      if (a === from || a.removed || a.dead || !a.shootable) continue;
+      let t = ((a.x - ax) * dx + (a.y - ay) * dy) / len2;
+      if (t <= 0 || t >= bestT) continue;
+      const px = ax + dx * t, py = ay + dy * t;
+      if (dist2(px, py, a.x, a.y) > a.radius * a.radius) continue;
+      const pz = az + (tz - az) * t;
+      if (pz < a.z || pz > a.z + a.height) continue;
+      bestT = t; best = a;
+    }
+    return { x: ax + dx * bestT, y: ay + dy * bestT, z: az + (tz - az) * bestT, actor: best, t: bestT,
+             wall: !best && !!wall && wall.t <= bestT + 1e-9 };
   }
 
   /** A shot that arrives instantly. Walks the ray, takes the nearest of
@@ -999,6 +1043,7 @@ export class Game {
     this.fx.render(billboardRot);
     this.giblets.render(billboardRot);
     this.renderProjectiles(billboardRot);
+    this.bore.render(billboardRot);
 
     /* the red mist of being nearly dead */
     const hurt = clamp(1 - p.health / 100, 0, 1);

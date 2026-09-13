@@ -25,8 +25,10 @@
 
    THREE WEAPONS, and they are an argument about fire.
 
-     BOXCUTTER  no ammo, no fire, kills one thing at a time. What is left
-                when the fuel runs out, which it will.
+     BORE       Turok 2's cerebral bore, the user's model. A red sight,
+                a lock on a head, a projectile that finds it, two seconds
+                of drilling and then they explode. Five in the magazine
+                and one back every twelve seconds; see js/bore.js.
      FLAMER     the verb the game is named after. A short cone, a lot of
                 ignition, and an ammo count that is really a timer on how
                 much of the store you can take — which is now literally
@@ -115,6 +117,16 @@ export const CO2_REFIRE_AT = 0.34;
    two things to say. */
 export const REFIRE_AT = 0.5;
 
+/* THE BORE'S MAGAZINE. Five, and one back every twelve seconds — a
+   minute for a full magazine, on the same self-filling terms as the
+   tanks. It is the slowest thing to refill in the game because it is
+   the only thing that never misses: a lock is a kill, so what the
+   magazine rations is kills, and five in a row is a queue at the tills
+   emptied one skull at a time before you have to wait. No latch: the
+   trigger works with one in it. */
+export const BORES = 5;
+export const BORE_REGEN_EVERY = 12 * TICRATE;
+
 const FRICTION   = 0.90625;
 const WALK_FWD   = 25 / 32,  RUN_FWD  = 50 / 32;
 const WALK_SIDE  = 24 / 32,  RUN_SIDE = 40 / 32;
@@ -130,12 +142,15 @@ const MAX_PITCH  = 0.72;          // about 41 degrees, the usual port limit
    now: the tank holds twelve seconds and fills itself in two minutes,
    and there is nothing in the shop to top it up with.
 
-   The other two are written and finished and are not issued. A boxcutter
-   is a more interesting weapon than a flamethrower in almost every game
-   ever made, and in THIS game it is the wrong verb: the point is not to
-   kill the night crew, it is to burn down the building, and the night
-   crew are simply in the way. Give the player one tool that does the
-   thing the game is about and the game explains itself. */
+   THE BOXCUTTER IS GONE — deleted rather than switched off, at the
+   user's request. It was the melee stand-in, three frames of a forearm
+   and a blade, and the note that stood here for a year said a boxcutter
+   is the wrong verb for this game. What replaced it is not a melee
+   weapon at all: the cerebral bore, below, which is aimed, and is the
+   first thing in the player's hands that kills one person at a time on
+   purpose. Game.impact, the hook a physical weapon calls, stays for the
+   physical weapon that is still coming. The molotov is written, tested
+   and still switched off. */
 export const WEAPONS = {
   FLAMER: {
     slot: 1, name: 'FLAMER', sprite: 'FLMG',
@@ -186,16 +201,24 @@ export const WEAPONS = {
     sound: 'flame',
   },
 
-  BOXCUTTER: {
-    slot: 1, name: 'BOXCUTTER', sprite: 'CUTG',
-    ready: 'A', fire: ['B', 'B', 'C'], fireTics: [4, 4, 5],
-    hitAt: 1,                       // which fire frame lands the blow
-    ammo: null, melee: true, range: 80, arc: 0.9,
-    damage: () => ((pRandom() % 8) + 1) * 2,
-    sound: 'swing', hitSound: 'cut',
+  /* THE CEREBRAL BORE. `lock` is the whole of what makes it different
+     to hold: the trigger does nothing without a head in the sight (see
+     Player.armed, and BoreSystem.lock), and with one the shot is a
+     projectile the bore system owns from the launcher onward. Billed a
+     bore a shot, out of a magazine that refills itself one at a time —
+     see BORES and BORE_REGEN_EVERY. The fire frames are the launcher's
+     recoil and nothing else; the model is drawn by js/weapon3d.js, and
+     the sprite named here is only the fallback for a model that never
+     arrived. */
+  BORE: {
+    slot: 3, name: 'CEREBRAL BORE', sprite: 'FLMG',
+    ready: 'A', fire: ['B', 'C'], fireTics: [5, 14],
+    ammo: 'bores', ammoPerShot: 1, lock: true,
+    damage: () => 0,
+    sound: 'borefire',
   },
   MOLOTOV: {
-    slot: 3, name: 'MOLOTOV', sprite: 'MOLG',
+    slot: 4, name: 'MOLOTOV', sprite: 'MOLG',
     ready: 'A', fire: ['B', 'B', 'C', 'C'], fireTics: [6, 6, 8, 12],
     throwAt: 2,
     ammo: 'bottles', ammoPerShot: 1,
@@ -220,8 +243,8 @@ export class Player {
     this.shootable = true;
     this.monster = false;
 
-    this.ammo = { fuel: TANK, co2: BOTTLE, bottles: 0 };
-    this.maxAmmo = { fuel: TANK, co2: BOTTLE, bottles: 12 };
+    this.ammo = { fuel: TANK, co2: BOTTLE, bores: BORES, bottles: 0 };
+    this.maxAmmo = { fuel: TANK, co2: BOTTLE, bores: BORES, bottles: 12 };
     /* THE LATCH. True from the moment the tank runs out until it is back
        to REFIRE_AT of full, and the only thing that stops the flamer
        firing while there is fuel in it. */
@@ -231,14 +254,19 @@ export class Player {
        tanks refuse and refill on different terms */
     this.co2Dry = false;
     this.co2Tick = 0;
+    /* the bore's magazine has a clock and no latch — see BORES */
+    this.boreTick = 0;
+    this.boreDry = false;
+    /* whether the trigger has already clicked on this press of it */
+    this._clicked = false;
     /* DEBUG MODE: every tank refills to the top once a tic. Off, saved
        with the rest of the settings, and turned on from the pause menu
        — see fuelTic, which is the whole of it. */
     this.debug = false;
-    /* TWO WEAPONS NOW. The molotov is built and tested and stays
-       switched off; the boxcutter is issued because the tank empties —
-       see the note on TANK. */
-    this.owned = { FLAMER: true, EXTINGUISHER: true, BOXCUTTER: true };
+    /* THREE WEAPONS. The molotov is built and tested and stays switched
+       off; the boxcutter is gone; the bore is the third — see the note
+       above WEAPONS. */
+    this.owned = { FLAMER: true, EXTINGUISHER: true, BORE: true };
     this.weapon = 'FLAMER';
     this.pendingWeapon = null;
 
@@ -374,7 +402,14 @@ export class Player {
   /** Whether it will actually go off. Two different refusals and the
    *  player is told which: nothing in the tank, or something in the tank
    *  and not yet enough of it — see REFIRE_AT. */
-  armed(w) { return this.hasAmmo(w) && !(WEAPONS[w].refire && this.latched(w)); }
+  armed(w) {
+    if (!this.hasAmmo(w) || (WEAPONS[w].refire && this.latched(w))) return false;
+    /* AND A WEAPON THAT NEEDS A LOCK NEEDS A LOCK. This is Turok's rule
+       and the whole feel of the bore: it is not a gun you point, it is
+       a gun you wait with. */
+    if (WEAPONS[w].lock && !this.game.bore?.lock) return false;
+    return true;
+  }
 
   /* WHICH TANK IS SULKING. Two streams, two tanks, two latches, and a
      weapon that has neither is never refused. */
@@ -405,7 +440,6 @@ export class Player {
       if (--this.fireTics > 0) return;
       /* the frame we are ABOUT to leave is the one that does the damage */
       this.fireIndex++;
-      if (this.fireIndex === d.hitAt) this.meleeSwing(d);
       if (this.fireIndex === d.throwAt) this.throwBottle();
       if (this.fireIndex >= d.fire.length) {
         this.fireIndex = -1;
@@ -428,6 +462,15 @@ export class Player {
        it is where the trigger starts working again, which is the same
        sentence in the place the player is already looking. */
     if (input.attack && this.armed(this.weapon)) this.startFire();
+    /* EXCEPT THE ONE REFUSAL THAT IS HEARD: a bore with nothing locked
+       clicks, once per press, because a trigger that does nothing at
+       all is a trigger you press harder. The tanks stay silent — their
+       bars say why. */
+    else if (input.attack && this.def.lock && !this._clicked) {
+      this._clicked = true;
+      this.game.sound?.play('noammo', this);
+    }
+    if (!input.attack) this._clicked = false;
   }
 
   startFire() {
@@ -438,27 +481,10 @@ export class Player {
     this.fireIndex = 0;
     this.fireTics = d.fireTics[0];
     this.game.sound?.play(d.sound, this);
+    /* the bore leaves the launcher now, at whatever the sight has */
+    if (d.lock) this.game.bore?.fire(this);
     /* Being shot at wakes the store up, and so does setting fire to it. */
     this.game.noise(this, d.autofire ? 900 : 700);
-  }
-
-  /** The boxcutter: everything in a cone in front, nearest first. */
-  /** THE BOXCUTTER LANDING, and the only weapon in the game that hits
-   *  somebody with something solid. It goes through Game.impact, which
-   *  is the general form of that — a reach, an arc, and the direction
-   *  the blow went — rather than keeping its own copy: a physical
-   *  weapon is coming that will use the same call, and a hook nothing
-   *  in the shipped game exercises is a hook that is broken by the time
-   *  anything needs it.
-   *
-   *  `force` is 1 because a boxcutter is not a hammer. What it buys is
-   *  that a swing at a block of ice throws the pieces down the aisle in
-   *  front of you instead of dropping them in a ring. */
-  meleeSwing(d) {
-    this.game.impact(this, {
-      range: d.range, arc: d.arc, damage: d.damage(), force: 1,
-      hitSound: d.hitSound, missSound: null,
-    });
   }
 
   /** The flamer: one tic of stream out of the nozzle. Where the nozzle
@@ -513,6 +539,7 @@ export class Player {
     }
     this._refill('fuel', REGEN_EVERY, REFIRE_AT, 'regenTick', 'dry');
     this._refill('co2', CO2_REGEN_EVERY, CO2_REFIRE_AT, 'co2Tick', 'co2Dry');
+    this._refill('bores', BORE_REGEN_EVERY, 0, 'boreTick', 'boreDry');
   }
 
   /** One tank, one tic. Both fill on the same terms and differ only in

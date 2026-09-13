@@ -123,6 +123,12 @@ S('SHOP_FROZE',  'SHOP', 'A', -1, null, 'SHOP_FROZE');
    reaching one and not the clock running out: see Actor.collapse. */
 S('SHOP_ASH1',   'SHOP', 'A', 4, 'A_BurnAway', 'SHOP_ASH2', { fullbright: true });
 S('SHOP_ASH2',   'SHOP', 'A', 4, 'A_BurnAway', 'SHOP_ASH1', { fullbright: true });
+/* AND WITH A DRILL IN THEIR HEAD, which is the third hold and the
+   shortest: two seconds of standing exactly where they were, shaking,
+   while the bore does its work, and then Actor.boreBurst. Parked with
+   tics -1 the way the ice is; what moves is the drawing offset in
+   Actor.render and the blood out of js/people.js. See js/bore.js. */
+S('SHOP_BORE',   'SHOP', 'A', -1, null, 'SHOP_BORE');
 
 /* ---------------------------------------------------------------------
    THE SWAT
@@ -186,6 +192,7 @@ const SWAT_GIB = 'OPQRSTUVW';
     i === 0 ? 'A_XScream' : i === 1 ? 'A_Fall' : null,
     i === arr.length - 1 ? null : `SWAT_XDIE${i + 2}`));
 S('SWAT_FROZE',  SWAT_SPRITE, 'G', -1, null, 'SWAT_FROZE');
+S('SWAT_BORE',   SWAT_SPRITE, 'G', -1, null, 'SWAT_BORE');
 S('SWAT_ASH1',   SWAT_SPRITE, 'G', 4, 'A_BurnAway', 'SWAT_ASH2', { fullbright: true });
 S('SWAT_ASH2',   SWAT_SPRITE, 'G', 4, 'A_BurnAway', 'SWAT_ASH1', { fullbright: true });
 
@@ -295,6 +302,8 @@ export const ACTORS = {
        be eaten, short enough that the player does not go and do
        something else while it happens. */
     burnAway: 'SHOP_ASH1', ashTics: [3.0 * TICRATE, 4.5 * TICRATE],
+    /* and where they stand while the bore is in them — see js/bore.js */
+    bored: 'SHOP_BORE',
     /* AND WHAT THEY LEAVE BEHIND THEM. A drop every eight tics at eight
        units a tic is a line of fire with sixty-four-unit steps in it,
        which on a thirty-two-unit grid is two cells lit and one skipped —
@@ -361,6 +370,7 @@ export const ACTORS = {
     seeSound: 'swatsee', painSound: 'swatpain', deathSound: 'swatdie', attackSound: 'shot',
     freezable: true, frozen: 'SWAT_FROZE', freezeReturn: 'SWAT_RUN1',
     burnAway: 'SWAT_ASH1', ashTics: [3.0 * TICRATE, 4.5 * TICRATE],
+    bored: 'SWAT_BORE',
     /* a third again the room's light on them. The sheet is navy on
        black and a car park at night made them a silhouette; most of the
        fix is a tone curve in tools/prep-swat.mjs, because light is

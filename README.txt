@@ -36,8 +36,10 @@ somewhere else: the people, the trees, the sky, and the gun.
   assets/forest/        the wood: ten plants with their burn maps, two grounds
   assets/sky/night.png  the night, baked from a Polyhaven panorama
   assets/models/        the flamethrower, prepared from the user's .glb,
-                          the van, which is the user's .glb, and the police
-                          van, which is the user's other .glb
+                          the van, which is the user's .glb, the police
+                          van, which is the user's other .glb, and the
+                          cerebral bore, the user's fourth, stripped the
+                          way the flamethrower was
   assets/fonts/         Michroma (SIL OFL), the title face
   tools/bake-art.mjs    node tools/bake-art.mjs — turns art/ into source
   tools/prep-people.mjs the crowd's art, crunched down from galvarius
@@ -74,7 +76,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         835 checks, no install and no browser
+  the smoke test         873 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -157,12 +159,10 @@ gauge only ever has two things to say, and while it is latched the fuel
 percentage on the status bar is replaced by the mark it is climbing to
 with a pip on the bar where that is.
 
-That also gives the BOXCUTTER its job back, so it is issued now — the
-note at the top of js/player.js has said since the day it was written
-that a boxcutter is "what is left when the fuel runs out, which it
-will", and the fuel did not run out. Mouse wheel, or 1. The molotov is
-written, tested and still switched off. The player cannot be hurt BY
-FIRE — that is one flag at the top of js/player.js, FIREPROOF, and it
+THE BOXCUTTER IS GONE, deleted at the user's request, and the third
+weapon is the CEREBRAL BORE — see THE CEREBRAL BORE below. Mouse wheel,
+or 1, 2, 3. The molotov is written, tested and still switched off. The
+player cannot be hurt BY FIRE — that is one flag at the top of js/player.js, FIREPROOF, and it
 used to be the whole of the player's invulnerability. A bullet gets
 through it now, because there are bullets: see THE ROAD, AND WHO COMES
 DOWN IT.
@@ -312,12 +312,67 @@ shopper across an aisle would be a physics system rather than a
 parameter. When the weapon arrives it is an animation, a table entry and
 one call.
 
-AND THE BOXCUTTER ALREADY SWINGS THROUGH IT, which is what keeps that
-honest. It kept its own copy of reach-arc-nearest; it asks for the
-general form now, so the hook is on a path the shipped game actually
-takes rather than sitting there rotting until something needs it — and
-a boxcutter through a block of ice throws the pieces down the aisle in
-front of you instead of dropping them in a ring.
+THE BOXCUTTER USED TO SWING THROUGH IT and is deleted; the hook stays,
+and the smoke test swings through it directly so it is not rotting while
+it waits — a blow with a direction on it through a block of ice throws
+the pieces down the aisle in front of you instead of dropping them in a
+ring.
+
+
+THE CEREBRAL BORE
+-----------------
+
+TUROK 2'S, at the user's request, and the user's model: assets/models/
+bore.glb, stripped of the normal and metal-rough maps by
+tools/prep-model.mjs the way the flamethrower was — half of what it
+weighed — and held low and right like the other two. It is the one
+weapon in the game that is AIMED rather than poured, and the rules are
+Turok's; js/bore.js is the whole of it.
+
+THE SIGHT. Every tic the bore is in hand a ray goes out of the eye along
+the view, pitch and all — the flamethrower's aim never needed the pitch;
+this one stops at the floor when you look at your feet — to the first
+wall or the first body. A red line is drawn from the mouth of the
+launcher to that point and a dot put on it. When the point is a person
+the dot becomes a reticle on their head and you are LOCKED: a beep, and
+the reticle stays with the head for fourteen tics after the beam leaves
+it, because a sight that drops the lock the instant you twitch is a
+sight you fight rather than use. Anyone alive and shootable with a head
+can be locked — the crowd, the squad, a block of ice with somebody in it
+— and not a van.
+
+THE TRIGGER DOES NOTHING WITHOUT A LOCK. That is Turok's rule and the
+whole feel of the thing: it is not a gun you point, it is a gun you wait
+with. The refusal clicks, once a press, because a trigger that does
+nothing at all is a trigger you press harder. Five in the magazine and
+one back every twelve seconds — the slowest thing in the game to refill,
+because it is the only thing that never misses: a lock is a kill, so what
+the magazine rations is kills.
+
+THE FLIGHT. The bore leaves the launcher along the line of sight, slowly,
+and every tic bends toward the head it was sent to by at most nine
+degrees while it speeds up threefold — so it leaves in a curve and
+arrives fast, which is the shape of the thing in the original. It stops
+for walls, floors, ceilings and the target's head and nothing else; a
+target that dies on the way is a target it flies straight past and rings
+off a wall.
+
+THE DRILL is the third HOLD, after the ice and the burn-away (see
+Actor.held): two seconds of standing exactly where they were, shaking —
+a drawing offset, fresh every frame, a fit rather than a sway — while
+the bore sits in the skull turning and what was in there comes out of
+the top in a fountain. The fountain is the crowd's own gore pieces at
+half size and a fifth of the speed, carrying a flag that says they were
+never alight, so they trail no fire and land as blood rather than
+sparks; and a red mist over it out of the smoke pool. Nothing scares
+them, nothing hurries it. A block of ice the bore reaches shatters
+instead; somebody half ash is finished.
+
+AND THEN THEY EXPLODE — the same coming-apart the flamethrower gets, the
+fireball and the thirteen pieces for a shopper and the gore animation
+for a trooper, because "explode" already means one thing in this game
+and the bore should not teach it a second one. The kill is the player's,
+and a kill is what calls the SWAT.
 
 
 ON A PHONE
@@ -2430,7 +2485,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-835 checks. Every one of them earns its place by having caught something
+873 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -2987,7 +3042,11 @@ WHAT IS NOT DONE
     it, which is one wall each and buys the whole read of the place
   no music
   no second level, and no level-to-level flow
-  the boxcutter and the molotov are built and switched off
+  the molotov is built and switched off; the boxcutter is deleted
+  the cerebral bore's sight is a one-pixel line, which at 300 rows is a
+    thick red thread and at 600 a hair; and the bore itself is a
+    fourteen-pixel cone that reads as a red blob in flight. Both want
+    art
   only the SWAT fight back. The other five tiers in js/responders.js —
     the night manager, security, the police, the fire brigade, the
     helicopter — are still an alarm, a dispatch and a delay with nobody

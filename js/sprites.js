@@ -431,6 +431,45 @@ export function bakeSprites() {
   });
 
   /* --- the one thing you throw --- */
+  /* --- THE CEREBRAL BORE'S PARTS --------------------------------
+     Three things the weapon in js/bore.js draws in the world, none of
+     them bigger than a coin: the DOT the laser sight puts on whatever
+     it is pointing at, the RETICLE it puts on a head it has locked, and
+     the BORE itself — a stubby drill, three frames of it turning, that
+     flies out of the launcher and sits in somebody's skull for two
+     seconds. All three are red, because Turok's were, and fullbright,
+     because a sight you cannot see in a dark aisle is not a sight. */
+  bank.addFrame('LASR', 'A', radial(p => {
+    p.disc(2.5, 2.5, 2.2, 'red', 0.92);
+    p.ink(2, 2, 'red', 0.99);
+  }, 5, 5, 71), { fullbright: true });
+  bank.addFrame('LOCK', 'A', radial(p => {
+    const c = 8.5;
+    for (let a = 0; a < 64; a++) {
+      const x = Math.round(c + Math.cos(a / 64 * Math.PI * 2) * 6.5), y = Math.round(c + Math.sin(a / 64 * Math.PI * 2) * 6.5);
+      p.ink(x, y, 'red', 0.90);
+    }
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]])
+      for (let k = 4; k <= 8; k++) p.ink(Math.round(c + dx * k), Math.round(c + dy * k), 'red', 0.97);
+    p.ink(8, 8, 'red', 0.99);
+  }, 17, 17, 72), { fullbright: true });
+  for (let f = 0; f < 3; f++) {
+    bank.addFrame('BORE', 'ABC'[f], radial(p => {
+      /* a cone, tip to the right, with a dark band spiralling round it
+         — the band moves a third of a turn a frame, which is the whole
+         of the spin */
+      for (let x = 1; x < 13; x++) {
+        const r = 1.2 + (12 - x) * 0.42;
+        for (let y = -Math.ceil(r); y <= Math.ceil(r); y++) {
+          if (Math.abs(y) > r) continue;
+          const band = ((x * 0.9 + (y + r) * 0.6 + f * 2.1) % 3.0) < 1.1;
+          p.ink(x, 7 + y, band ? 'red' : 'grey', band ? 0.62 : 0.42 - Math.abs(y) / (r * 3.5));
+        }
+      }
+      p.disc(2, 7, 2.4, 'grey', 0.26);              // the housing at the back
+    }, 14, 14, 73 + f), { fullbright: true });
+  }
+
   bank.addFrame('MOLO', 'A', radial(p => {
     for (let y = 12; y < 26; y++) for (let x = 11; x < 19; x++)
       p.ink(x, y, 'green', 0.26 + (x < 15 ? 0.12 : -0.04));
@@ -551,30 +590,10 @@ export function bakeWeapons() {
   const W = new Map();
   const add = (name, pix, opts = {}) => W.set(name, { pix, ...opts });
 
-  /* ---- the boxcutter ----------------------------------------------
-     Forearm out of the bottom-right corner, hand on the body, blade
-     pointing up and left at the middle of the screen. The two swing
-     frames carry the whole assembly through an arc rather than sliding
-     it, so the blade travels further than the elbow does — which is what
-     a swing is. */
-  const cutter = (swing) => weaponPix(64, 64, (p) => {
-    const ang = [-0.55, -1.15, -0.05][swing];      // wind, through, follow
-    const reach = [0, 6, -3][swing];
-    const ex = 58, ey = 66;                        // the elbow, off-frame
-    const hx = Math.round(ex + Math.cos(ang) * (22 + reach));
-    const hy = Math.round(ey + Math.sin(ang) * (22 + reach));
-    bar(p, ex, ey, hx, hy, 5.4, 3.8, 'flesh', 0.40);          // forearm
-    fist(p, hx, hy, 4.4, 'flesh', 0.44);                       // hand
-    const bx = Math.round(hx + Math.cos(ang) * 9);
-    const by = Math.round(hy + Math.sin(ang) * 9);
-    bar(p, hx, hy, bx, by, 3.4, 2.8, 'yellow', 0.50);          // the body
-    bar(p, hx, hy, bx, by, 1.2, 1.0, 'yellow', 0.28);          // its groove
-    const tx = Math.round(bx + Math.cos(ang) * 11);
-    const ty = Math.round(by + Math.sin(ang) * 11);
-    bar(p, bx, by, tx, ty, 1.8, 0.9, 'grey', 0.88);            // the blade
-    bar(p, bx, by, tx, ty, 0.6, 0.4, 'grey', 0.97);            // its edge
-  }, 800 + swing * 7);
-  add('CUTGA', cutter(0)); add('CUTGB', cutter(1)); add('CUTGC', cutter(2));
+  /* THE BOXCUTTER IS GONE — deleted, not switched off, at the user's
+     request. It was three frames of a forearm and a blade built out of
+     `bar` and `fist`, and the two helpers stay because the molotov's
+     hand is made of them too. */
 
   /* ---- the flamer -------------------------------------------------
      This one is a PHOTOGRAPH, cut out of a chroma key, derezzed to 64

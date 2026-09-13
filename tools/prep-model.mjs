@@ -58,7 +58,16 @@ json.nodes.forEach((n, i) => {
   if (n.children?.length || json.nodes.some(o => o.children?.includes(i))) throw new Error('marker ' + n.name + ' is not a root node');
   anchors[key] = (n.translation || [0, 0, 0]).map(v => +v.toFixed(6));
 });
-if (!anchors.pilot || !anchors.nozzle) throw new Error('expected a pilot and a nozzle marker, found ' + Object.keys(anchors).join());
+/* A MODEL WITH NO MARKERS IS ALLOWED THROUGH, as of the cerebral bore:
+   it arrived as a mesh and a diffuse and nothing else, and the only
+   reason to run it through here is the two maps below that an unlit
+   renderer cannot use — ten megabytes of them. Where the nozzle is on a
+   file like that is a number in js/weapon3d.js (see GUNS), which is the
+   same answer the extinguisher got. A model that has SOME markers and
+   not both is still an error, because half a set is a mistake. */
+if (Object.keys(anchors).length && (!anchors.pilot || !anchors.nozzle))
+  throw new Error('expected a pilot and a nozzle marker, found ' + Object.keys(anchors).join());
+if (!Object.keys(anchors).length) console.warn('no marker spheres: stripping the maps only, the anchors are the game\'s business');
 
 const nodeMap = new Map(keepNode.map((old, i) => [old, i]));
 const nodes = keepNode.map(i => {
@@ -144,7 +153,7 @@ const out = {
   asset: {
     ...json.asset,
     generator: (json.asset.generator || '') + ' + tools/prep-model.mjs',
-    extras: { ...(json.asset.extras || {}), anchors, source: inFile.split('/').pop() },
+    extras: { ...(json.asset.extras || {}), ...(Object.keys(anchors).length ? { anchors } : {}), source: inFile.split('/').pop() },
   },
   scene: json.scene ?? 0,
   scenes, nodes, meshes, materials, textures, images, samplers: json.samplers,
@@ -167,4 +176,4 @@ fs.writeFileSync(outFile, Buffer.concat([header, ch(jsonBuf.length, 'JSON'), jso
 const kb = n => (n / 1024).toFixed(0) + 'K';
 console.log(`${outFile}: ${kb(buf.length)} -> ${kb(fs.statSync(outFile).size)}`);
 console.log(`  nodes ${json.nodes.length} -> ${nodes.length}, meshes ${json.meshes.length} -> ${meshes.length}, images ${json.images.length} -> ${images.length}`);
-console.log(`  anchors: pilot ${anchors.pilot.join(', ')}  nozzle ${anchors.nozzle.join(', ')}`);
+if (anchors.pilot) console.log(`  anchors: pilot ${anchors.pilot.join(', ')}  nozzle ${anchors.nozzle.join(', ')}`);

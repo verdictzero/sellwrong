@@ -57,6 +57,10 @@ export class ShaderMaterial extends Stub { dispose() {} }
 export class RawShaderMaterial extends ShaderMaterial {}
 export class MeshBasicMaterial extends Stub { constructor(o) { super(o); this.color = new Color(); } dispose() {} }
 export class Scene extends Group { }
+/* the bore's sight is a two-point line; headless it is a mesh that
+   holds its geometry, which is all anything reads back */
+export class Line extends Mesh {}
+export class LineBasicMaterial extends MeshBasicMaterial {}
 export class Camera extends Stub {}
 export class PerspectiveCamera extends Camera {}
 export class OrthographicCamera extends Camera { updateProjectionMatrix() {} }
