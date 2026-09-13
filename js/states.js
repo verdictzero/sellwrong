@@ -39,7 +39,7 @@
    P_NewChaseDir is not something to delete and write again.
    ===================================================================== */
 
-import { SHOPPERS, SPLATS, ASHES, BLASTS } from './people.js';
+import { SHOPPERS, SPLATS, ASHES, BLASTS, SWAT_SPRITE } from './people.js';
 import { FIRE_FRAMES, BLAZE_FRAMES, EMBER_FRAMES } from './fireart.js';
 import { TICRATE } from './util.js';
 
@@ -123,6 +123,71 @@ S('SHOP_FROZE',  'SHOP', 'A', -1, null, 'SHOP_FROZE');
    reaching one and not the clock running out: see Actor.collapse. */
 S('SHOP_ASH1',   'SHOP', 'A', 4, 'A_BurnAway', 'SHOP_ASH2', { fullbright: true });
 S('SHOP_ASH2',   'SHOP', 'A', 4, 'A_BurnAway', 'SHOP_ASH1', { fullbright: true });
+
+/* ---------------------------------------------------------------------
+   THE SWAT
+
+   The first things in the game that FIGHT, and the first run of states
+   with any length to it since the staff left. It is the Zombieman's
+   table with the numbers looked at again: stand and look, walk in eight
+   states over four drawings, face and fire and face again, flinch, fall
+   in four, lie there, and — if what killed them was enough — come apart
+   in nine.
+
+   THEY HAVE EVERY SIDE. The sheet is five views mirrored to eight (see
+   SWAT_ROTATIONS in js/people.js), so a trooper walking away from you
+   shows you their back, which no shopper can — and which is the whole of
+   what makes a thing you can walk round read as a thing rather than a
+   card. A_Chase sets `angle` to the way it is walking; A_FaceTarget
+   turns it to you before it fires; the rotation is chosen per frame in
+   Actor.render off the difference.
+
+   THE FIRING FRAME IS ORANGE ON THE SHEET — the artist drew the muzzle
+   flash lighting the whole figure — so it is fullbright, and the state
+   table does not need to know how the light on it got there.
+
+   AND THE THREE THINGS THE FIRE AND THE COLD DO TO EVERYBODY ELSE happen
+   to them too: they burn (and keep shooting while they do, because
+   nothing in this table sends them running), they freeze into a block
+   that the next hit shatters, and a block of them the fire reaches is
+   eaten to ash on the same two states a shopper is. Same drawings, same
+   shader, same machinery — see SHOP_FROZE and SHOP_ASH1 for why.
+   ------------------------------------------------------------------- */
+S('SWAT_STAND',  SWAT_SPRITE, 'G', 10, 'A_Look', 'SWAT_STAND');
+/* three tics a frame, four drawings held twice: a walk a shade quicker
+   than the Zombieman's, because these have come to get you */
+S('SWAT_RUN1',   SWAT_SPRITE, 'A', 3, 'A_Chase', 'SWAT_RUN2');
+S('SWAT_RUN2',   SWAT_SPRITE, 'A', 3, 'A_Chase', 'SWAT_RUN3');
+S('SWAT_RUN3',   SWAT_SPRITE, 'B', 3, 'A_Chase', 'SWAT_RUN4');
+S('SWAT_RUN4',   SWAT_SPRITE, 'B', 3, 'A_Chase', 'SWAT_RUN5');
+S('SWAT_RUN5',   SWAT_SPRITE, 'C', 3, 'A_Chase', 'SWAT_RUN6');
+S('SWAT_RUN6',   SWAT_SPRITE, 'C', 3, 'A_Chase', 'SWAT_RUN7');
+S('SWAT_RUN7',   SWAT_SPRITE, 'D', 3, 'A_Chase', 'SWAT_RUN8');
+S('SWAT_RUN8',   SWAT_SPRITE, 'D', 3, 'A_Chase', 'SWAT_RUN1');
+/* Doom's rifle: face, fire, face — ten, eight, eight — and then a step
+   before the next, which A_Chase's "never twice in a row" guarantees and
+   which is the window you play in */
+S('SWAT_ATK1',   SWAT_SPRITE, 'E', 10, 'A_FaceTarget', 'SWAT_ATK2');
+S('SWAT_ATK2',   SWAT_SPRITE, 'F', 8,  'A_SwatFire',   'SWAT_ATK3', { fullbright: true });
+S('SWAT_ATK3',   SWAT_SPRITE, 'E', 8,  'A_FaceTarget', 'SWAT_RUN1');
+S('SWAT_PAIN',   SWAT_SPRITE, 'G', 3,  null,     'SWAT_PAIN2');
+S('SWAT_PAIN2',  SWAT_SPRITE, 'G', 3,  'A_Pain', 'SWAT_RUN1');
+S('SWAT_DIE1',   SWAT_SPRITE, 'H', 5,  null,       'SWAT_DIE2');
+S('SWAT_DIE2',   SWAT_SPRITE, 'I', 5,  'A_Scream', 'SWAT_DIE3');
+S('SWAT_DIE3',   SWAT_SPRITE, 'J', 5,  'A_Fall',   'SWAT_DIE4');
+S('SWAT_DIE4',   SWAT_SPRITE, 'K', 6,  null,       'SWAT_DIE5');
+S('SWAT_DIE5',   SWAT_SPRITE, 'L', 6,  null,       'SWAT_DIE6');
+S('SWAT_DIE6',   SWAT_SPRITE, 'M', 6,  null,       'SWAT_DEAD');
+S('SWAT_DEAD',   SWAT_SPRITE, 'N', -1, null,       null);
+/* coming apart: nine drawings at five tics, and the last one stays */
+const SWAT_GIB = 'OPQRSTUVW';
+[...SWAT_GIB].forEach((L, i, arr) =>
+  S(`SWAT_XDIE${i + 1}`, SWAT_SPRITE, L, i === arr.length - 1 ? -1 : 5,
+    i === 0 ? 'A_XScream' : i === 1 ? 'A_Fall' : null,
+    i === arr.length - 1 ? null : `SWAT_XDIE${i + 2}`));
+S('SWAT_FROZE',  SWAT_SPRITE, 'G', -1, null, 'SWAT_FROZE');
+S('SWAT_ASH1',   SWAT_SPRITE, 'G', 4, 'A_BurnAway', 'SWAT_ASH2', { fullbright: true });
+S('SWAT_ASH2',   SWAT_SPRITE, 'G', 4, 'A_BurnAway', 'SWAT_ASH1', { fullbright: true });
 
 /* ---------------------------------------------------------------------
    Things that are not monsters
@@ -263,6 +328,47 @@ export const ACTORS = {
     flat: true,
     /* and it leans where it stands — see swayOf in js/people.js */
     sway: true,
+  },
+
+  /* A SWAT TROOPER, and the Zombieman's numbers looked at again. Sixty
+     health: five times a shopper, so the stream has to be held on one
+     for a moment rather than waved past — and one on fire keeps coming,
+     because there is no `burn` state here to send them running, which
+     is the point. Three health a tic off the fire finishes one in about
+     five seconds; a torch that shoots back is worse than a torch.
+
+     THEY SHOOT. `missile` is the rifle, `missileRange` is how far they
+     will try it from, and the whole of the aim is in A_SwatFire. Fifty
+     of painchance is one hit in five that makes them flinch, so a
+     stream held on one interrupts it sometimes and not always.
+
+     THEY ARE A TEAM. `team` is what stops a trooper who has just been
+     shot in the back by the man behind him turning round to deal with
+     it — Doom's monsters infight and it is the best thing about them,
+     and it is also the wrong thing for a squad. See Actor.damage.
+
+     AND THEY BURN, FREEZE AND SHATTER like everybody else, on the same
+     states the shoppers use with their own drawings in. No `burn`
+     state, deliberately, so fire does not make them run; `burnAway` and
+     `frozen` because a block of ice with a rifle in it is the best joke
+     the two weapons together tell. */
+  SWAT: {
+    name: 'SWAT', spawn: 'SWAT_STAND', see: 'SWAT_RUN1', pain: 'SWAT_PAIN',
+    missile: 'SWAT_ATK1', death: 'SWAT_DIE1', xdeath: 'SWAT_XDIE1',
+    health: 60, gibHealth: -30, radius: 20, height: 56, mass: 100, painchance: 50,
+    speed: 9, reaction: 8, sightRange: 2400, missileRange: 1500,
+    monster: true, team: 'swat', flammable: true, fuel: 60,
+    seeSound: 'swatsee', painSound: 'swatpain', deathSound: 'swatdie', attackSound: 'shot',
+    freezable: true, frozen: 'SWAT_FROZE', freezeReturn: 'SWAT_RUN1',
+    burnAway: 'SWAT_ASH1', ashTics: [3.0 * TICRATE, 4.5 * TICRATE],
+    /* a third again the room's light on them. The sheet is navy on
+       black and a car park at night made them a silhouette; most of the
+       fix is a tone curve in tools/prep-swat.mjs, because light is
+       multiplied in linear and twice two per cent is four per cent —
+       this is the rest of it. See Actor.render */
+    lit: 1.3,
+    /* not `flat`: they turn, which is the whole reason the sheet has
+       five views on it */
   },
 
   /* Scenery. Solid, mostly, and most of it burns. */

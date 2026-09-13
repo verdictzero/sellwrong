@@ -157,13 +157,20 @@ export class Hud {
        it is not waiting on anything — so the gauge has a pip on it
        exactly while the answer is "not yet". */
     const mark = p ? (p.refireMark || 0) : 0;
-    const key = [this.width, s, burn, tank, mark].join('|');
+    /* AND A THIRD BAR, THE MOMENT SOMETHING HURTS YOU. There was no
+       health on the screen because nothing could take any off; the SWAT
+       can (see js/responders.js), so from the first bullet that lands
+       there is a bar for it — and not before, because a full bar that
+       never moves is the plate of numbers this corner got rid of. */
+    const hp = p ? Math.max(0, Math.round(p.health)) : 100;
+    const hurt = p ? (p.health < 100 || p.dead) : false;
+    const key = [this.width, s, burn, tank, mark, hurt ? hp : -1].join('|');
     if (key === this._topKey) return;
     this._topKey = key;
 
     const M = 3 * s, BAR = 3 * s, GAP = 3 * s;
     const bw = Math.min(this.width - M * 2, 64 * s);
-    const rows = tank >= 0 ? 2 : 1;
+    const rows = 1 + (tank >= 0 ? 1 : 0) + (hurt ? 1 : 0);
     const w = bw + M * 2;
     const h = M * 2 + BAR * rows + GAP * (rows - 1);
     const pix = new Pix(w, h, 1, false);
@@ -204,6 +211,11 @@ export class Hud {
         const px = M + Math.round(mark * bw);
         for (let k = -1; k < BAR + 1; k++) pix.ink(px, y + k, 'bone', 0.85);
       }
+    }
+    /* and what is left of you: bone, going amber, going red */
+    if (hurt) {
+      const y = M + (BAR + GAP) * (rows - 1);
+      bar(y, hp / 100, hp > 50 ? 'bone' : hp > 25 ? 'yellow' : 'red', 0.45);
     }
 
     pix.snap(0);

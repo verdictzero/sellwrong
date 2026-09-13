@@ -53,6 +53,12 @@ export const CELLS = {
      stood leaves a heap rather than a stain — see ASH_SPRITE. */
   ash:      { w: 40, h: 18 },
   blast:    { w: 48, h: 96 },
+  /* THE FIRST PEOPLE IN THE GAME WHO TURN. A SWAT trooper is drawn from
+     five sides and mirrored to eight, so a cell has to hold the widest
+     of those — a side view with a rifle out — and the widest thing on
+     the sheet, which is a body coming apart across the floor. Sixty-four
+     square holds both; see tools/prep-swat.mjs and SWAT_HEIGHT. */
+  swat:     { w: 64, h: 64 },
 };
 
 /* How tall a standing adult is drawn, which is what the shoppers are
@@ -68,6 +74,60 @@ export const GIBLETS  = 11;
 export const SPLATS   = 3;
 export const ASHES    = 3;
 export const BLASTS   = 26;
+
+/* ---------------------------------------------------------------------
+   THE SWAT
+
+   The sheet is the user's and it is drawn the way Doom's own monsters
+   were: five views of every pose that turns — head on, a quarter turn,
+   side on, three quarters, from behind — and one view of everything
+   that happens on the floor. tools/prep-swat.mjs cuts the sheet into one
+   strip in THIS order, the turned frames first at five cells each and
+   the flat ones after, and these two lists are the whole of the contract
+   between the tool and addSwat below.
+
+     A B C D   the walk, four frames
+     E         aiming, the rifle up
+     F         firing — orange, the muzzle flash on the drawing, and
+               fullbright in the state table for it
+     G         the rifle at the hip: standing about, and the flinch
+     H I J K   dying, on the way down
+     L M N     down, three frames of it, and the last one for ever
+     O to W    coming apart, nine frames, the last held
+
+   SWAT_HEIGHT is what the standing figure is scaled to. Sixty, a shade
+   under the crowd's sixty-two, and the reason is the frame of somebody
+   coming apart, which is taller than the somebody: at sixty-four for
+   the figure that frame is sixty-eight and the cell is over the
+   sixty-four-pixel rule everything drawn in this game keeps. Two
+   pixels off a helmet is nothing; a rule with one exception is.
+   ------------------------------------------------------------------- */
+export const SWAT_SPRITE = 'SWAT';
+export const SWAT_TURN   = 'ABCDEFG';
+export const SWAT_FLAT   = 'HIJKLMNOPQRSTUVW';
+export const SWAT_VIEWS  = 5;
+export const SWAT_HEIGHT = 60;
+export const SWAT_CELLS  = SWAT_TURN.length * SWAT_VIEWS + SWAT_FLAT.length;
+
+/* WHICH DRAWING EACH OF THE EIGHT ROTATIONS IS, and whether it is the
+   mirror. Rotation 0 is head on and they go anticlockwise as seen from
+   above, which is the direction Actor.render counts in: 1 is the
+   trooper turned to face your right, showing you their left side. The
+   sheet's quarter, side and three-quarter views are drawn facing LEFT —
+   the rifle points left, so it is their right side you are looking at
+   — which makes those three drawings rotations 7, 6 and 5 as they are,
+   and 1, 2 and 3 in the mirror. Doom's sprites kept the same five and
+   the same trick. */
+export const SWAT_ROTATIONS = [
+  { view: 0, mirror: false },   // 0: head on
+  { view: 1, mirror: true },    // 1: quarter, facing your right
+  { view: 2, mirror: true },    // 2: side on, facing your right
+  { view: 3, mirror: true },    // 3: three quarters away, to the right
+  { view: 4, mirror: false },   // 4: from behind
+  { view: 3, mirror: false },   // 5: three quarters away, to the left
+  { view: 2, mirror: false },   // 6: side on, facing your left
+  { view: 1, mirror: false },   // 7: quarter, facing your left
+];
 
 /* Sprite set names. A shopper is its own set with one frame in it, so
    that ACTORS.SHOPPER can pick between them with the `variants` hook
@@ -93,6 +153,24 @@ export function addSplats(bank, img, opts = {}) {
   const frames = stripFrames(img, CELLS.splat.w);
   frames.forEach((p, i) => bank.addFrame(SPLAT_SPRITE + i, 'A', new Array(8).fill(p), opts));
   return frames.length;
+}
+
+/** The SWAT strip into the bank: eight views a frame for the turned
+ *  ones, built from five drawings and three mirrors, and the same
+ *  drawing eight times for everything that happens on the floor. */
+export function addSwat(bank, img, opts = {}) {
+  const cells = stripFrames(img, CELLS.swat.w);
+  if (cells.length !== SWAT_CELLS)
+    throw new Error(`assets/people/swat.png holds ${cells.length} cells, js/people.js expects ${SWAT_CELLS}`);
+  let at = 0;
+  for (const L of SWAT_TURN) {
+    const views = cells.slice(at, at + SWAT_VIEWS);
+    at += SWAT_VIEWS;
+    const mirrored = views.map(p => p.mirrored());
+    bank.addFrame(SWAT_SPRITE, L, SWAT_ROTATIONS.map(r => (r.mirror ? mirrored : views)[r.view]), opts);
+  }
+  for (const L of SWAT_FLAT) bank.addFrame(SWAT_SPRITE, L, new Array(8).fill(cells[at++]), opts);
+  return cells.length;
 }
 
 /* --------------------------------------------------------------------

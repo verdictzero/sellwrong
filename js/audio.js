@@ -44,6 +44,21 @@ const DEFS = {
      of it is the low sweep and what makes it read as a blow rather
      than a door closing is that it is over in a fifth of a second. */
   whack:     { kind: 'thud',  dur: 0.20, f0: 300,  f1: 70,   gain: 0.38 },
+  /* AND THE FIRST THINGS IN THE GAME THAT SHOOT BACK. A rifle is a
+     crack of noise with no pitch to it; the siren is two sweeps that
+     alternate, played by the van as it comes; and the troopers have a
+     bark, a grunt and a cry, all off the same triangle the shoppers
+     use, lower and shorter, because they are men in helmets. */
+  shot:      { kind: 'noise', dur: 0.14, f0: 3200, f1: 500,  gain: 0.40 },
+  siren:     { kind: 'sweep', dur: 0.55, f0: 620,  f1: 940,  gain: 0.20, wave: 'square' },
+  siren2:    { kind: 'sweep', dur: 0.55, f0: 940,  f1: 620,  gain: 0.20, wave: 'square' },
+  swatsee:   { kind: 'sweep', dur: 0.16, f0: 420,  f1: 300,  gain: 0.24, wave: 'triangle' },
+  swatpain:  { kind: 'sweep', dur: 0.14, f0: 360,  f1: 220,  gain: 0.24, wave: 'triangle' },
+  swatdie:   { kind: 'sweep', dur: 0.50, f0: 380,  f1: 90,   gain: 0.30, wave: 'triangle' },
+  /* the bang a vehicle ends on now, which is four of the old one: the
+     same boom, longer and lower, with the master gain it needs to be
+     the loudest thing in the game */
+  bigboom:   { kind: 'boom',  dur: 1.60, f0: 140,  f1: 22,   gain: 0.95 },
 
   /* the staff */
   gib:       { kind: 'noise', dur: 0.42, f0: 1500, f1: 180,  gain: 0.44 },

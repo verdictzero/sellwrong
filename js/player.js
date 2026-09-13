@@ -39,10 +39,18 @@
 import { PLAYER_RADIUS, PLAYER_HEIGHT, PLAYER_EYE, MAX_STEP, TICRATE,
          angleNorm, clamp, pRandom, pRandomSpread, dist2 } from './util.js';
 
-/* FOR NOW: the player cannot be hurt. One flag here rather than a
-   hundred missing checks, so switching it back on is switching it back
-   on. */
-export const INVULNERABLE = true;
+/* THE PLAYER CANNOT BE HURT BY FIRE. This flag used to say the player
+   could not be hurt at all — one flag rather than a hundred missing
+   checks, asked for while nothing in the game fought back — and half
+   of that is still wanted: the fire is the player's own weapon, the
+   car park goes up in chains the player is standing in the middle of,
+   and a game whose only aim is open mayhem should not end because you
+   stood too near your own work. What it no longer covers is BEING SHOT.
+   The SWAT come up the road now (see js/responders.js), and a trooper
+   whose rifle cannot hurt you is scenery with a sound effect. So a
+   bullet lands — see damage(), and the `shot` flag hitscan carries —
+   and nothing else does. */
+export const FIREPROOF = true;
 
 /* THE TANK EMPTIES NOW, at the user's request, and there is nothing in
    the shop to refill it with — the fuel cans are gone from the level.
@@ -543,7 +551,9 @@ export class Player {
      ------------------------------------------------------------------ */
   damage(amount, source, opts = {}) {
     if (this.dead) return;
-    if (INVULNERABLE) return;
+    /* fire, blasts, the heat of the floor: none of it, by design. A
+       bullet or a van are the two things that get through. */
+    if (FIREPROOF && !opts.shot && !opts.impact) return;
     if (this.armour > 0) {
       const soak = Math.min(this.armour, Math.floor(amount / 3));
       this.armour -= soak; amount -= soak;

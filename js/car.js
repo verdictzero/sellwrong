@@ -113,6 +113,14 @@ const CONTRAST = 0.055;     // Doom's fake contrast, the same number js/level.js
    in the world is beside it, so the model is scaled to that number
    rather than to anything of its own. */
 export const VAN_LENGTH = 174;
+/* AND HOW LONG THE POLICE VAN IS, on the same ruler. The model is an
+   armoured assault truck and its author drew it at eleven metres to the
+   van's one and a third — different files, different units — so the
+   number is set against what the thing IS rather than against the file:
+   a quarter again longer than a panel van, the way a BearCat is beside a
+   Transit, and not a tank's length, because the fire lane it parks
+   across is a hundred and sixty deep. */
+export const POLICE_LENGTH = 214;
 
 /* glTF's own axes: +Y is up and the front of an asset faces +Z, so the
    left flank is +X. (Spec, "Coordinate System and Units".) The game's
@@ -405,7 +413,15 @@ export async function loadVehicleModel(url, opts = {}) {
   if (!res.ok) throw new Error(`${url}: ${res.status}`);
   const { json, bin } = parseGLB(await res.arrayBuffer());
   const def = modelVehicle(json, bin, opts);
-  const tx = json.textures?.[0];
+  /* THE SHEET IS THE ONE THE MATERIAL POINTS AT, not the first one in
+     the file. The van has one image and the two are the same thing; the
+     police van arrives with four — emissive, normal, diffuse and
+     metal-rough, in that order — and textures[0] is a flat black
+     emissive map that painted the whole vehicle black. A GLB says which
+     picture is the colour: the material's baseColorTexture. */
+  const mats = json.materials || [];
+  const painted = mats.find(m => m.pbrMetallicRoughness?.baseColorTexture);
+  const tx = json.textures?.[painted?.pbrMetallicRoughness.baseColorTexture.index ?? 0];
   const im = json.images?.[tx?.source ?? 0];
   if (im?.bufferView === undefined) throw new Error(`${url}: the texture is not in the buffer`);
   const bv = json.bufferViews[im.bufferView];

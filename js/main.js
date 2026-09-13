@@ -24,9 +24,9 @@ import { LofiPipeline } from './lofi.js';
 import { bakeTextures } from './textures.js';
 import { bakeSprites, bakeWeapons } from './sprites.js';
 import { fireFrames } from './fireart.js';
-import { loadVehicleModel } from './car.js';
+import { loadVehicleModel, POLICE_LENGTH } from './car.js';
 import { addStrip, imageData } from './spriteload.js';
-import { CELLS, GIBLETS, BLAST_SPRITE, addStandees, addSplats } from './people.js';
+import { CELLS, GIBLETS, BLAST_SPRITE, addStandees, addSplats, addSwat } from './people.js';
 import { buildSellWrong } from './maps/sellwrong.js';
 import { Game } from './game.js';
 import { Hud } from './hud.js';
@@ -221,6 +221,16 @@ async function boot() {
      nothing here to keep in step. */
   const fleetP = loadVehicleModel('assets/models/van.glb')
     .catch(e => { console.warn('no van, the car park stays empty:', e.message); return null; });
+  /* and the police van, which comes up the road with the SWAT in it —
+     the user's second model, loaded the same way, on its own sheet and
+     never in the slab; see SwatVan in js/vehicles.js and POLICE_LENGTH
+     in js/car.js for how long it is. Without it nobody comes. */
+  const policeP = loadVehicleModel('assets/models/police_assault.glb',
+      { length: POLICE_LENGTH, id: 'police', name: 'Assault van', use: 'police' })
+    .catch(e => { console.warn('no police van, nobody comes:', e.message); return null; });
+  /* and the SWAT themselves: the user's sheet, cut by tools/prep-swat.mjs */
+  const swatP = loadImage('assets/people/swat.png')
+    .catch(e => { console.warn('no SWAT art, using the stand-ins:', e.message); return null; });
 
   status('BAKING TEXTURES', 0.05); await breathe();
   const textures = bakeTextures();
@@ -255,6 +265,10 @@ async function boot() {
     };
     console.log(`the crowd: ${people} shoppers, ${splats} splats, ${blast} frames of fireball`);
   }
+  {
+    const swatImg = await swatP;
+    if (swatImg) console.log(`the squad: ${addSwat(sprites, imageData(swatImg))} cells of SWAT`);
+  }
 
   /* THE FIRE ON THE TREES AND ON THE GUN. The store's three fire sets
      are already in the bank — bakeSprites drew them — and this is the
@@ -275,6 +289,7 @@ async function boot() {
   status('BUILDING SELLWRONG', 0.68); await breathe();
   const level = buildSellWrong();
   const fleet = await fleetP;
+  const police = await policeP;
 
   status('THE FLAMETHROWER', 0.78);
   const hud = new Hud(null);
@@ -282,7 +297,7 @@ async function boot() {
   const input = new Input(renderer.domElement);
   const game = new Game({ level, scene, camera, textures, sprites, hud, audio, input, sky: skyImage,
                          flameAtlas: streamAtlas, bodyAtlas: flameAtlas, fxAtlases, gibAtlases,
-                         fleet });
+                         fleet, police });
   hud.game = game;
   const touch = new TouchControls(input, { root: $('touch'), prefs, onPause: () => pause(true) });
 

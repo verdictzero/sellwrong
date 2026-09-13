@@ -46,10 +46,10 @@
    ===================================================================== */
 
 import * as THREE from 'three';
-import { TICRATE, pRandom } from './util.js';
+import { TICRATE, pRandom, angleDiff, angleNorm, dist2 } from './util.js';
 import {
   carGeometry, chunkGeometry, carMesh, carGeom,
-  carCorners, carBlockers, carBlockRadius, carHeight,
+  carCorners, carBlockers, carBlockRadius, carHeight, carWidth,
 } from './car.js';
 
 /* ---------------------------------------------------------------------
@@ -76,13 +76,34 @@ const WRECK_LIT = 0.42;      // a burnt car is a dark car
 const WRECK_CHAR = 1;        // and js/material.js puts the coals on it
 const CHUNK_CHAR = 0.85;
 
-const BLAST_R = 210;         // what the first one reaches
+/* IT CHARS FIRST, at the user's request. A car used to go from parked
+   to airborne in the tic its health ran out; now the tank going is the
+   END of something you can watch — the paint blackening, the coals
+   coming up through it, embers and smoke off the roof — and how long
+   that takes is rolled per car so a row of them lit together does not go
+   off like a firework display on one fuse. */
+const CHAR_TICS = [4.5 * TICRATE, 7.5 * TICRATE];
+const CHAR_DARK = 0.62;      // how much of its light a charred car has lost at the end
+
+const BLAST_R = 210;         // what the launch bang used to reach
 const BLAST_DMG = 90;
+/* AND THE BANG AT THE END OF THE CHAR IS FOUR OF THE OLD ONE, also at
+   the user's request. Four is spent where four can be seen: four times
+   the fireballs, the embers, the smoke and the light, the heat of the
+   floor pinned to its maximum, and the sound made the loudest thing in
+   the game. The RADIUS is doubled rather than quadrupled — a doubled
+   radius is a quadrupled area, which is what "four times the blast"
+   means on a floor plan — and the damage is doubled, which with the
+   area is eight times what the old bang put into the car park. */
+const FINAL = 4;
+const FINAL_R = BLAST_R * 2;
+const FINAL_DMG = BLAST_DMG * 2;
+const FINAL_FLASH = 26;      // tics the light of it hangs about
 const CRASH_R = 170;         // and the second, which is the smaller bang
 const CRASH_DMG = 55;
 const SCARE_R = 1400;        // and how far away somebody stops shopping
 
-const SHED_LAUNCH = 4;       // pieces thrown as it leaves
+const SHED_LAUNCH = 8;       // pieces thrown as it leaves — twice what it was, see FINAL
 const SHED_CRASH = 11;       // and as it arrives
 const CHUNK_LIFT = [3.5, 11];
 const CHUNK_OUT = [1.2, 5.0];
@@ -250,13 +271,25 @@ class Vehicle {
     this.light = opts.light; this.sky = opts.sky;
     /* what the white bodywork in the sheet is multiplied by — see PAINT */
     this.paint = opts.paint || [1, 1, 1];
+    /* ITS OWN SHEET, if it has one. The lot is one model on one sheet
+       and the slab is built on that; a vehicle that arrives with a
+       different sheet — the police van — can never go into the slab and
+       is drawn as its own mesh from the day it arrives to the day it is
+       a wreck. `own` says so. */
+    this.texture = opts.texture || fleet.texture;
+    this.own = !!opts.own;
 
-    this.state = 'parked';
+    this.state = opts.state || 'parked';
     this.health = HEALTH;
     this.burning = 0;
     this.burnTick = 0;
     this.flames = [];
     this.mesh = null;
+    /* charring — see startChar */
+    this.char = 0;
+    this.charTics = 0;
+    this.charTick = 0;
+    this.flash = 0;
 
     const L = def.length, h = def.box.height;
     this.mid = [0, 0, h / 2];                 // it turns about its middle, not its wheels
@@ -264,12 +297,24 @@ class Vehicle {
     this.vx = 0; this.vy = 0; this.vz = 0;
     this.corners = carCorners(def).map(p => toMesh(p, this.mid, L));
 
-    /* Parked: no mesh, no transform — just vertices in the slab. */
+    /* Parked: no mesh, no transform — just vertices in the slab. Unless
+       it is its own thing, in which case it is a mesh from the start. */
     this.local = null;
-    this.slab = bake(carGeometry(def, {
-      angle: this.yaw, light: this.light, sky: this.sky, origin: this.mid,
-      paint: this.paint,
-    }), this.yaw, 0, 0, this.x, this.y, this.cz);
+    this.slab = null;
+    if (this.own) {
+      this.local = carGeometry(def, {
+        angle: this.yaw, light: this.light, sky: this.sky, origin: this.mid, paint: this.paint,
+      });
+      this.mesh = carMesh(this.texture, this.local);
+      this.mesh.name = 'car:' + def.id;
+      fleet.game.scene.add(this.mesh);
+      this.place();
+    } else {
+      this.slab = bake(carGeometry(def, {
+        angle: this.yaw, light: this.light, sky: this.sky, origin: this.mid,
+        paint: this.paint,
+      }), this.yaw, 0, 0, this.x, this.y, this.cz);
+    }
 
     /* and the part you cannot walk through */
     this.blockers = [];
@@ -298,17 +343,33 @@ class Vehicle {
   /* ------------------------------------------------------------------
      Being shot at, and catching
      ------------------------------------------------------------------ */
+  /** Whether anything can still happen to it: standing in a bay, on
+   *  the road, or already charring. In the air and afterwards it is
+   *  past hurting. */
+  get whole() { return this.state === 'parked' || this.state === 'driving' || this.state === 'charring'; }
+
   damage(n) {
-    if (this.state !== 'parked') return;
+    if (!this.whole) return;
+    /* MORE DAMAGE TO ONE ALREADY CHARRING HURRIES IT: two tics off the
+       fuse per point, so a car that has just started to blacken and is
+       then hit by the bang next door goes early, and a chain reaction
+       across a full row is a ripple rather than a metronome. */
+    if (this.state === 'charring') { this.charTics = Math.max(1, this.charTics - n * 2); return; }
     this.health -= n;
-    if (this.health <= 0) this.blowUp();
+    if (this.health <= 0) this.startChar();
   }
 
   ignite(tics = CATCH_TICS) {
-    if (this.state !== 'parked') return;
+    if (!this.whole) return;
     const first = this.burning <= 0;
     this.burning = Math.max(this.burning, tics);
-    if (!first) return;
+    if (first) this.catch();
+  }
+
+  /** The moment it is alight: the noise, the pool under it and the
+   *  flames on it. Called once by ignite, and by startChar for a car
+   *  that was shot to death without ever having been lit. */
+  catch() {
     const g = this.fleet.game;
     g.sound?.play('ignite', this);
     /* A TANK OF FUEL GOES INTO THE TARMAC. Bare tarmac does not burn,
@@ -319,6 +380,7 @@ class Vehicle {
     g.fire?.ignite(this.x, this.y, FUEL, 70);
     /* and two columns of it standing on the car, because the fire under
        it is on the ground and a car alight is alight all over */
+    if (this.flames.length) return;
     const L = this.def.length;
     for (const t of [-0.22, 0.2]) {
       const c = Math.cos(this.yaw), s = Math.sin(this.yaw);
@@ -336,6 +398,73 @@ class Vehicle {
     this.damage(BURN_DAMAGE);
   }
 
+  /* ------------------------------------------------------------------
+     CHARRING
+
+     What happens between the tank being done for and the tank going.
+     The car leaves the slab and becomes its own mesh — the only way to
+     change one vehicle's vertices without rebuilding thirty-six — and
+     for the next five to seven seconds two of its attributes are wound
+     by hand: `charred`, which js/material.js scatters live coals over
+     in proportion, and `light`, which comes down to a third so the
+     paint goes black under them. The soot is the same coals and the
+     same dark that a wreck ends up with; a charring car is a wreck
+     arriving gradually, and when it reaches the end it goes up on the
+     geometry it has, so what is in the air is the black thing you
+     watched turn black.
+
+     Off it the whole time: sparks, more of them as it goes; smoke,
+     thicker; and the one fire light pulled toward it, harder as it
+     goes, so the bay around a car about to go is lit like a hearth.
+     ------------------------------------------------------------------ */
+  startChar() {
+    if (this.state === 'charring' || !this.whole) return;
+    const g = this.fleet.game;
+    this.state = 'charring';
+    this.char = 0;
+    this.charTick = 0;
+    this.charTics = Math.round(between(CHAR_TICS));
+    if (this.burning <= 0) { this.burning = this.charTics + 40; this.catch(); }
+    /* out of the slab and into a mesh of its own */
+    if (this.slab) { this.slab = null; this.fleet.dirty = true; }
+    if (!this.local) this.local = carGeometry(this.def, {
+      angle: this.yaw, light: this.light, sky: this.sky, origin: this.mid, paint: this.paint,
+    });
+    if (!this.mesh) {
+      this.mesh = carMesh(this.texture, this.local);
+      this.mesh.name = 'car:' + this.def.id;
+      g.scene.add(this.mesh);
+    }
+    this.light0 = Float32Array.from(this.local.light);
+    this.place();
+    g.sound?.play('burn', this);
+  }
+
+  charTic() {
+    const g = this.fleet.game;
+    this.char = Math.min(1, this.char + 1 / Math.max(1, this.charTics));
+    const k = this.char;
+    /* the vertices, every third tic: the coals and the dark */
+    if ((++this.charTick % 3) === 0 && this.mesh) {
+      const geo = this.mesh.geometry;
+      const ch = geo.getAttribute('charred'), lt = geo.getAttribute('light');
+      ch.array.fill(k * WRECK_CHAR);
+      for (let i = 0; i < lt.array.length; i++) lt.array[i] = this.light0[i] * (1 - CHAR_DARK * k);
+      ch.needsUpdate = true; lt.needsUpdate = true;
+      /* and the arrays the wreck will be baked from, so what lands is
+         what left */
+      this.local.charred.fill(k * WRECK_CHAR);
+      for (let i = 0; i < lt.array.length; i++) this.local.light[i] = lt.array[i];
+    }
+    const h = carHeight(this.def);
+    g.fx?.ember(this.x, this.y, this.cz + h * 0.3, 1 + ((k * 2.5) | 0), 0.5 + k);
+    if ((this.charTick % 3) === 1) g.fx?.puff(this.x, this.y, this.cz + h * 0.5, 22 + 18 * k, 160);
+    g.fx?.glowAt(this.x, this.y, 0.8 + 1.6 * k);
+    if ((this.charTick % 10) === 0) g.fire?.ignite(this.x, this.y, 40);
+    if ((this.charTick % 24) === 0) g.sound?.play('burn', this);
+    if (k >= 1) this.blowUp();
+  }
+
   douse() {
     for (const f of this.flames) f.remove();
     this.flames.length = 0;
@@ -349,16 +478,15 @@ class Vehicle {
      as it arrives; see the note at the top of the file.
      ------------------------------------------------------------------ */
   blowUp() {
-    if (this.state !== 'parked') return;
+    if (!this.whole) return;
     const g = this.fleet.game, d = this.def;
     this.state = 'air';
     this.burning = 0;
     this.douse();
     this.unblock();
-    this.fleet.dirty = true;
-    this.slab = null;
+    if (this.slab) { this.fleet.dirty = true; this.slab = null; }
 
-    this.boom(BLAST_R, BLAST_DMG, 1);
+    this.bigBoom();
     g.scare?.(this.x, this.y, SCARE_R);
 
     this.vz = between(LIFT);
@@ -372,41 +500,74 @@ class Vehicle {
     this.pitchRate = (rnd() - 0.5) * 2 * PITCH_SPIN;
     this.yawRate = (rnd() - 0.5) * 2 * YAW_SPIN;
 
-    /* its own mesh now, for as long as it is off the ground */
-    this.local = carGeometry(d, {
-      angle: this.yaw, light: this.light, sky: this.sky, origin: this.mid,
-      paint: this.paint,
-    });
-    this.mesh = carMesh(this.fleet.texture, this.local);
-    this.mesh.name = 'car:' + d.id;
-    g.scene.add(this.mesh);
+    /* its own mesh now, for as long as it is off the ground — unless it
+       already has one, charred, in which case that is what flies */
+    if (!this.mesh) {
+      this.local = carGeometry(d, {
+        angle: this.yaw, light: this.light, sky: this.sky, origin: this.mid,
+        paint: this.paint,
+      });
+      this.mesh = carMesh(this.texture, this.local);
+      this.mesh.name = 'car:' + d.id;
+      g.scene.add(this.mesh);
+    }
     this.place();
 
     this.shed(SHED_LAUNCH);
   }
 
-  /** A bang, centred on wherever the car is standing. */
-  boom(radius, damage, blasts) {
+  /** A bang, centred on wherever the car is standing. `scale` is how
+   *  many of the old bang this is — see FINAL. */
+  boom(radius, damage, blasts, scale = 1, opts = {}) {
     const g = this.fleet.game;
     const at = { x: this.x, y: this.y, z: this.ground };
-    g.explode(at, { radius, damage, heat: 260, heatRadius: 96, ignite: 340 });
-    const L = this.def.length;
-    for (let k = 0; k < blasts + 2; k++) {
-      const t = (rnd() - 0.5) * 0.7 * L, u = (rnd() - 0.5) * 0.5 * L;
+    g.explode(at, { radius, damage, heat: Math.min(255, 260 * scale), heatRadius: 96 * Math.sqrt(scale),
+                    ignite: 340, sound: opts.sound });
+    const L = this.def.length, W = carWidth(this.def);
+    /* the fireballs, spread over the car's own footprint — and a big one
+       spreads them past it, because a bang four times the size is not
+       four times the fireballs in the same square */
+    const n = (blasts + 2) * scale, wide = 0.7 + 0.25 * (scale - 1);
+    for (let k = 0; k < n; k++) {
+      const t = (rnd() - 0.5) * wide * L, u = (rnd() - 0.5) * (0.5 + 0.4 * (scale - 1)) * L;
       const c = Math.cos(this.yaw), s = Math.sin(this.yaw);
       g.spawn('BLAST', this.x + c * t - s * u, this.y + s * t + c * u, this.ground);
     }
-    g.fx?.ember(this.x, this.y, this.ground + 20, 26, 1);
-    for (let k = 0; k < 7; k++) g.fx?.puff(this.x, this.y, this.ground + 24 + k * 6, 34, 200);
+    g.fx?.ember(this.x, this.y, this.ground + 20, 26 * scale, 1);
+    for (let k = 0; k < 7 * scale; k++)
+      g.fx?.puff(this.x + (rnd() - 0.5) * W * scale, this.y + (rnd() - 0.5) * W * scale,
+                 this.ground + 24 + (k % 7) * 6, 34, 200);
+  }
+
+  /** THE BANG AT THE END OF THE CHAR — four of the old launch bang, on
+   *  the terms set out at FINAL. What a bang this size adds that a
+   *  smaller one did not need is a FLASH: the fire light thrown at the
+   *  car for the next second, decaying, so the whole car park is lit
+   *  from the bay for a moment and then is not. */
+  bigBoom() {
+    this.boom(FINAL_R, FINAL_DMG, 1, FINAL, { sound: 'bigboom' });
+    this.flash = FINAL_FLASH;
   }
 
   /* ------------------------------------------------------------------
      Flying, and arriving
      ------------------------------------------------------------------ */
   tic() {
+    /* the light of the bang, hanging about and going */
+    if (this.flash > 0) {
+      this.fleet.game.fx?.glowAt(this.x, this.y, 6 * (this.flash / FINAL_FLASH));
+      this.flash--;
+    }
+    if (this.state === 'charring') { this.charTic(); return; }
     if (this.burning > 0) this.burnTic();
+    /* AND IF THAT WAS THE TIC IT TIPPED OVER, stop here: burnTic can
+       start the char, and a car that has just started charring must not
+       fall through to the settle below, which is written for a car that
+       has landed and would integrate a car that has not off numbers it
+       does not have yet. It chars from the next tic. */
+    if (this.state === 'charring') return;
     if (this.state === 'wreck') { this.smoulderTic(); return; }
-    if (this.state === 'parked') return;
+    if (this.state === 'parked' || this.state === 'driving') return;
 
     if (this.state === 'air') {
       this.vz -= GRAVITY;
@@ -494,11 +655,15 @@ class Vehicle {
   rest() {
     const g = this.fleet.game;
     this.state = 'wreck';
-    g.scene.remove(this.mesh);
-    this.mesh.geometry.dispose(); this.mesh.material.dispose();
-    this.mesh = null;
-    this.fleet.restOf(bake(this.local, this.yaw, this.rx, this.rz, this.x, this.y, this.cz));
-    this.local = null;
+    /* into the slab with the other wrecks — unless it is on a sheet of
+       its own, in which case the mesh it has is the mesh it keeps */
+    if (!this.own) {
+      g.scene.remove(this.mesh);
+      this.mesh.geometry.dispose(); this.mesh.material.dispose();
+      this.mesh = null;
+      this.fleet.restOf(bake(this.local, this.yaw, this.rx, this.rz, this.x, this.y, this.cz));
+      this.local = null;
+    }
     /* Still in the way, and still about as tall: a box turned over is
        exactly as tall as it was, and the tilt it came to rest at adds a
        little. Its own corners know, so they are asked rather than told. */
@@ -667,6 +832,164 @@ class Chunk {
 }
 
 /* =====================================================================
+   ONE THAT DRIVES
+
+   The police van, which is the first vehicle in the game with somewhere
+   to go. It is an ordinary Vehicle in every respect that matters —
+   shootable, flammable, it chars and it goes up on the same arithmetic
+   as the customers' vans — with one state in front of `parked` that
+   nothing else has: DRIVING, along a list of points the map hands out
+   (see level.swatRoutes), at a speed, with its three blockers carried
+   along under it.
+
+   IT IS NOT A CAR PHYSICS EITHER. The position rides the polyline
+   exactly and the heading eases toward each segment's direction at a
+   fixed rate, which is enough: a van pulling round a T-junction at a
+   walking pace reads as a van pulling round a T-junction, and nothing
+   about how it got there is ever looked at twice. It stops where the
+   route ends, squares up along the front, and is a parked van from then
+   on — the responders decide what comes out of it.
+
+   AND IT DOES NOT STOP FOR ANYBODY. The lot is full of people running
+   from a fire, and a squad van coming up the frontage lane at speed
+   goes through them: anything solid in front of it is hit hard enough
+   to come apart, and the player is shoved and hurt, which is the one
+   thing other than a rifle that gets through their fireproofing.
+   ===================================================================== */
+const DRIVE_SPEED = 15;          // units a tic — twice a running shopper; the road in is long
+const DRIVE_TURN = 0.09;         // radians a tic the heading may change
+const RUNOVER_DMG = 220;         // what the front of a van does to a person
+const RUNOVER_PLAYER = 28;       // and to you
+const SIREN_EVERY = 19;          // tics between the two notes
+
+export class SwatVan extends Vehicle {
+  /**
+   * @param fleet
+   * @param def      the police van, from modelVehicle
+   * @param texture  its own sheet
+   * @param route    points to drive through, in order; the last is where
+   *                 it stops. `x`, `y`, and on the last one `angle`,
+   *                 which it squares up to once it is there
+   */
+  constructor(fleet, def, texture, route) {
+    const start = route[0], next = route[1] || route[0];
+    const sec = fleet.game.level.sectorAt(start.x, start.y);
+    super(fleet, def, {
+      x: start.x, y: start.y, z: sec ? sec.floor : 0,
+      angle: Math.atan2(next.y - start.y, next.x - start.x),
+      light: sec ? sec.light : 0.74, sky: sec ? (sec.sky ?? (sec.outdoor ? 1 : 0)) : 1,
+      paint: [1, 1, 1], texture, own: true, state: 'driving',
+    });
+    this.route = route.slice(1);
+    this.driven = 0;
+    this.sirenTick = 0;
+    this.sirenNote = 0;
+    this.arrivedTic = -1;
+  }
+
+  tic() {
+    if (this.state === 'driving') { this.drive(); return; }
+    super.tic();
+  }
+
+  /** How far it is, in whole units, from the next point on its route. */
+  get toNext() {
+    const p = this.route[0];
+    return p ? Math.hypot(p.x - this.x, p.y - this.y) : 0;
+  }
+
+  drive() {
+    const g = this.fleet.game;
+    const p = this.route[0];
+    if (!p) { this.park(); return; }
+    /* the heading, eased; the position, exact */
+    const want = Math.atan2(p.y - this.y, p.x - this.x);
+    const d = angleDiff(want, this.yaw);
+    this.yaw = angleNorm(this.yaw + Math.max(-DRIVE_TURN, Math.min(DRIVE_TURN, d)));
+    const left = this.toNext;
+    const step = Math.min(DRIVE_SPEED, left);
+    this.x += Math.cos(want) * step; this.y += Math.sin(want) * step;
+    this.driven += step;
+    if (left - step < 0.5) this.route.shift();
+    if ((g.tics & 3) === 0) { this.updateSector(); this.cz = this.ground + this.def.box.height / 2 * this.def.length; }
+    this.place();
+    this.carryBlockers();
+    this.runOver();
+    /* the siren: two notes, alternating, for as long as it is moving */
+    if (++this.sirenTick >= SIREN_EVERY) {
+      this.sirenTick = 0;
+      g.sound?.play(this.sirenNote ? 'siren2' : 'siren', this);
+      this.sirenNote ^= 1;
+    }
+    /* embers off the flash of the lights would be a lie, so nothing; but
+       a van on fire on the road still burns */
+    if (this.burning > 0) this.burnTic();
+  }
+
+  /** The three cylinders, moved to under the van rather than remade:
+   *  spawning three actors a tic is garbage the blockmap can do without,
+   *  and a moved actor is one hash. */
+  carryBlockers() {
+    const bl = carBlockers(this.def, this.x, this.y, this.yaw);
+    for (let i = 0; i < this.blockers.length && i < bl.length; i++) {
+      const a = this.blockers[i];
+      a.x = bl[i].x; a.y = bl[i].y; a.z = this.ground;
+      this.fleet.game.blockmap?.moved(a);
+    }
+  }
+
+  /** Anybody in front of it. Checked at the nose, against the crowd
+   *  near it, and against the player. */
+  runOver() {
+    const g = this.fleet.game;
+    const c = Math.cos(this.yaw), s = Math.sin(this.yaw);
+    const L = this.def.length, r = carBlockRadius(this.def);
+    const nx = this.x + c * 0.42 * L, ny = this.y + s * 0.42 * L;
+    const near = g.blockmap ? g.blockmap.near(nx, ny, this._near || (this._near = [])) : g.actors;
+    for (let i = 0; i < near.length; i++) {
+      const a = near[i];
+      if (a.removed || a.dead || !a.solid || a.vehicle || !a.shootable) continue;
+      const rr = r + a.radius;
+      if (dist2(nx, ny, a.x, a.y) > rr * rr) continue;
+      a.damage(RUNOVER_DMG, null, { impact: true, dx: c, dy: s, force: 2.5 });
+    }
+    const p = g.player;
+    if (p && !p.dead) {
+      const rr = r + p.radius;
+      if (dist2(nx, ny, p.x, p.y) < rr * rr) p.damage(RUNOVER_PLAYER, this, { impact: true });
+    }
+  }
+
+  /** It has arrived: squared up along the front, in the way, and a van
+   *  from here on. */
+  park() {
+    this.state = 'parked';
+    if (this.parkAngle !== undefined) this.yaw = this.parkAngle;
+    this.updateSector();
+    this.cz = this.ground + this.def.box.height / 2 * this.def.length;
+    this.place();
+    this.block(carHeight(this.def));
+    this.arrivedTic = this.fleet.game.tics;
+    this.fleet.game.sound?.play('doorclose', this);
+  }
+
+  /** Where somebody steps out: the flank facing `toward` (a point —
+   *  the shop), a little along the length, clear of the blockers. */
+  door(k = 0, toward = { x: this.x, y: this.y + 1000 }) {
+    const c = Math.cos(this.yaw), s = Math.sin(this.yaw);
+    const L = this.def.length, half = carWidth(this.def) / 2;
+    /* which side is nearer the shop: the left (+y in model space, which
+       is -s, c in the world) or the right */
+    const lx = -s, ly = c;
+    const side = (toward.x - this.x) * lx + (toward.y - this.y) * ly >= 0 ? 1 : -1;
+    const out = half + 26;
+    const t = [0, -0.22, 0.22, -0.4, 0.4][k % 5] * L;
+    return { x: this.x + c * t + lx * side * out, y: this.y + s * t + ly * side * out,
+             angle: Math.atan2(ly * side, lx * side) };
+  }
+}
+
+/* =====================================================================
    THE LOT
    ===================================================================== */
 export class Vehicles {
@@ -740,6 +1063,11 @@ export class Vehicles {
     this.rebuild();
     return this;
   }
+
+  /** A vehicle that is not one of the lot's — a van that has driven in.
+   *  It is ticked, counted and cleaned up with the rest; it is never in
+   *  the slab, because it has a sheet of its own. */
+  addVehicle(v) { this.all.push(v); return v; }
 
   /** One piece of wreckage that has stopped moving, into the slab. */
   restOf(slab) {

@@ -518,8 +518,17 @@ export class Actor {
     if (this.health <= 0) { this.die(source, amount, opts); return; }
 
     /* Being shot makes a monster look at whoever did it, unless it is
-       already very cross with somebody else. */
-    if (source && source !== this && (!this.target || this.threshold <= 0)) {
+       already very cross with somebody else.
+
+       OR UNLESS IT WAS ONE OF ITS OWN. Doom's monsters infight — a
+       stray shot from the one behind and the two of them are at each
+       other — and for a bestiary that is the best thing in the game.
+       For a squad it is the wrong thing: a line of troopers coming down
+       an aisle at you would turn on itself the first time the rear rank
+       fired through the front, and the player would stand and watch.
+       So a hit from a team-mate is a hit and not a grudge. */
+    const friendly = source && source.info && this.info.team && source.info.team === this.info.team;
+    if (source && source !== this && !friendly && (!this.target || this.threshold <= 0)) {
       this.target = source;
       this.threshold = 100;
       if (this.state === stateOf(this.info.spawn) && this.info.see) this.setState(this.info.see);
@@ -1007,7 +1016,15 @@ export class Actor {
     }
     u.billboardRot.value = billboardRot;
     u.fullbright.value = (this.info.fullbright || this.state.fullbright) ? 1 : 0;
-    u.light.value = this.sector ? this.sector.light : 0.7;
+    /* `lit` on the type is a multiplier on the room's light, and one
+       thing declares it: the SWAT, whose sheet is navy on black and who
+       came out of the van at night as a silhouette with a visor. Doom
+       painted its soldiers in browns and pinks for exactly this reason.
+       A multiplier alone could not do it — light is applied in LINEAR
+       and the navy is two per cent there, so twice it is four — and
+       most of the work is a tone curve in tools/prep-swat.mjs; this is
+       the last third. */
+    u.light.value = (this.sector ? this.sector.light : 0.7) * (this.info.lit || 1);
     /* HOW FROZEN, straight onto the shader that does the colour map.
        It runs up before the threshold as well as at it, so somebody the
        spray has caught but not yet held goes pale and blue first — the
@@ -1125,6 +1142,36 @@ export const ACTIONS = {
   A_FaceTarget(a) {
     if (!a.target) return;
     a.angle = Math.atan2(a.target.y - a.y, a.target.x - a.x);
+  },
+
+  /* ------------------------------------------------------------------
+     THE RIFLE
+
+     Doom's A_PosAttack, near enough: face the target, one shot down
+     the eye line with the Zombieman's spread on it, three to fifteen
+     off whatever it meets first. The spread is the whole of the
+     difficulty — about five and a half degrees either way, which at
+     point blank never misses and across the car park mostly does, so
+     the answer to a squad of these is distance and the answer to
+     distance is that they walk.
+
+     WHAT IT HITS is decided by Game.hitscan, which walks the ray past
+     every actor and the player alike; a trooper standing in the line
+     of fire is hit by the one behind him and — see the team rule in
+     Actor.damage — does not hold it against him. The muzzle flash is
+     the drawing's own (the F frame is orange and fullbright); what is
+     added here is the light of it on the aisle, through the same glow
+     everything else on fire contributes to.
+     ------------------------------------------------------------------ */
+  A_SwatFire(a) {
+    ACTIONS.A_FaceTarget(a);
+    const g = a.game;
+    g.sound?.play(a.info.attackSound, a);
+    const spread = ((pRandom() - pRandom()) / 255) * 0.1;
+    const damage = ((pRandom() % 5) + 1) * 3;
+    g.hitscan(a, a.angle + spread, 2048, damage, { shot: true });
+    g.fx?.muzzle(a);
+    a.shots = (a.shots || 0) + 1;
   },
 
   /* A person, briefly, becomes thirteen things and a fireball. All of

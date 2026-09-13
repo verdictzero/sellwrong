@@ -28,17 +28,20 @@ somewhere else: the people, the trees, the sky, and the gun.
                           steel frame a burnt-out roof leaves behind
   art/                  the logo, the old sprite weapon, the seven four-view
                           vehicle sheets and the atlas packed out of them —
-                          which nothing loads any more, and waits there for
-                          the responders' riot van and APC
+                          which nothing loads any more — and art/people/,
+                          the SWAT sheet as the user drew it
   assets/people/        the crowd, and what is left of one: seventeen
-                          shoppers, eleven pieces, three splats, a fireball
+                          shoppers, eleven pieces, three splats, a fireball;
+                          and the squad, fifty-one cells of SWAT
   assets/forest/        the wood: ten plants with their burn maps, two grounds
   assets/sky/night.png  the night, baked from a Polyhaven panorama
   assets/models/        the flamethrower, prepared from the user's .glb,
-                          and the van, which is the user's .glb
+                          the van, which is the user's .glb, and the police
+                          van, which is the user's other .glb
   assets/fonts/         Michroma (SIL OFL), the title face
   tools/bake-art.mjs    node tools/bake-art.mjs — turns art/ into source
   tools/prep-people.mjs the crowd's art, crunched down from galvarius
+  tools/prep-swat.mjs   the SWAT sheet, found cell by cell and cut into a strip
   tools/prep-forest.sh  copies the wood's art over from the golf project
   tools/bake-sky.mjs    the sky: 8k panorama to 1024 palette pixels
   tools/prep-model.mjs  strips the marker spheres out of a .glb, keeps their positions
@@ -71,7 +74,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         770 checks, no install and no browser
+  the smoke test         835 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -158,8 +161,11 @@ That also gives the BOXCUTTER its job back, so it is issued now — the
 note at the top of js/player.js has said since the day it was written
 that a boxcutter is "what is left when the fuel runs out, which it
 will", and the fuel did not run out. Mouse wheel, or 1. The molotov is
-written, tested and still switched off. The player still cannot be hurt;
-that is one flag at the top of js/player.js.
+written, tested and still switched off. The player cannot be hurt BY
+FIRE — that is one flag at the top of js/player.js, FIREPROOF, and it
+used to be the whole of the player's invulnerability. A bullet gets
+through it now, because there are bullets: see THE ROAD, AND WHO COMES
+DOWN IT.
 
 AND THERE IS A SWITCH IN THE PAUSE MENU THAT TURNS ALL OF THAT OFF.
 DEBUG: INFINITE AMMO fills every tank — the flamethrower's, the
@@ -1285,17 +1291,71 @@ rather than bends, so they get the other thing a junction has: a give-way
 bar across the mouth of the minor road, which is the marking that says
 "this is a junction" before you have looked at anything else.
 
-js/responders.js is the PLACEHOLDER for what comes down it: the shape of
-the thing, with nothing in it that can hurt you yet. One number, the
-ALARM, climbs with how much of the store and the wood has gone, how many
-people you have killed, and how long anything has been alight. Six tiers — the
-night manager, security, the police, the fire brigade, riot police, the
-helicopter — each have an alarm they are dispatched at (you hear about
-it) and a delay before they arrive, at one end of the road. Arrival
-calls spawn(), which today records the wave and returns. The fight, when
-it exists, is against people whose job is to make the fire stop, and
-defeated() is where a beaten tier reports in. The escalation is done;
-the people are not.
+THE SWAT COME DOWN IT, at the user's request, and they are the first
+thing in the game that fights back.
+
+WHAT CALLS THEM IS A KILL. Not the fire — a supermarket alight is the fire
+brigade's business — but the moment somebody is dead by your hand the
+night has changed: SIRENS across the middle of the screen, and sixteen
+seconds later the first van is on the road. It is the user's police van,
+an armoured assault truck loaded the same way the customers' van is (see
+THE ART) and drawn as its own mesh on its own sheet, because it can never
+be in the slab with the others and, unlike them, it MOVES: in along the
+through road from whichever end it was sent to, up the leg of the ring,
+along the frontage lane, and across the fire lane in front of the doors —
+the strip the map keeps empty because nobody parks there, which is what a
+fire lane is for. The route is the map's (level.swatRoutes, level.swatBays;
+the lot's own numbers are in scope there and nowhere else), the driving is
+SwatVan in js/vehicles.js, and it is not a car physics: the position rides
+the polyline exactly and the heading eases toward it at a fixed rate, which
+at a van's pace round a T-junction is all anybody looks at. It does not
+stop for anybody. A crowd running from the fire is a crowd in the road, and
+a squad van at speed goes through it; the player is shoved and hurt, which
+with a bullet is the only thing that gets through the fireproofing.
+
+THEN THE CREW. Parked, it unloads a trooper every second and a half onto
+the footway, six of them, and when the crew is out it does not stop: one
+every nine seconds, for as long as it stands there, and another van every
+forty to seventy seconds after that, each sooner than the last, up to four
+on the road or standing at once. There is a budget — twenty-two troopers
+on their feet across every van, and a van that would unload past it waits
+— and that budget is the whole of what keeps a long night from filling the
+lot with navy blue. Which makes the VAN the thing to deal with: it is a
+vehicle, it burns, chars and goes up like any other (see AND THEN IT GOES
+UP), and a van that has gone up is a van that has stopped. That is the
+fight now: the store behind you, the lot in front of you, and the road
+bringing more.
+
+A TROOPER IS THE ZOMBIEMAN with the numbers looked at again, and he walks
+on the chase this file has described for a year with nobody in it —
+A_Look, A_Chase, P_NewChaseDir, untouched. Sixty health, so the stream is
+held on one for a moment rather than waved past; a rifle at anything he
+can see, face-fire-face on Doom's own ten-eight-eight, three to fifteen
+off whatever the shot meets first with the Zombieman's five and a half
+degrees of spread either way, which at point blank never misses and across
+the car park mostly does; one hit in five makes him flinch. They are a
+TEAM: a trooper shot in the back by the man behind him does not turn round
+to deal with it, because Doom's infighting is the best thing in Doom and
+the wrong thing for a squad. They come out of the van already after you.
+And everything the fire and the cold do to a shopper they do to a
+trooper, on the same states with his own drawings in — except that there
+is no `burn` state, deliberately, so fire does not make him run: a torch
+that shoots back is worse than a torch. A block of ice with a rifle in it
+is the best joke the two weapons together tell.
+
+AND YOU CAN BE HURT NOW. There was no health on the screen because nothing
+could take any off; from the first bullet that lands there is a third bar
+in the corner — bone, going amber, going red — and not before, because a
+full bar that never moves is the plate of numbers that corner got rid of.
+When it is gone you die in aisle five like the card always said.
+
+THE REST OF js/responders.js is still the shape it was: one number, the
+ALARM, climbing with how much of the store and the wood has gone and how
+long anything has been alight, and six tiers — night manager, security,
+the police, the fire brigade, riot police, the helicopter — each with an
+alarm they are dispatched at and a delay before they would arrive. That
+escalation is written and tested and still records a wave and returns;
+the squad has a trigger of its own and does not wait for it.
 
 
 THE SKY AND THE NAME
@@ -1483,11 +1543,13 @@ Eight states, four drawings, 32 tics — a bit under a second, which is the
 pace of a walk. A_Chase runs on every one of the eight, so the monster gets
 eight chances a cycle to notice you have moved.
 
-NOTHING WALKS AT THE MOMENT. The two staff monsters that used that run of
-states are gone and the responders that will use it are not written, so
-the next two paragraphs describe a machine with nobody in it. It stays
-exactly as it is, because it is correct and because getting it correct a
-second time from the same source would take longer than reading it does.
+THE SWAT WALK ON IT. The two staff monsters that used that run of states
+are gone, and for a long while the next two paragraphs described a
+machine with nobody in it, kept exactly as it was because it was correct
+and because getting it correct a second time from the same source would
+have taken longer than reading it. Then the squad arrived (see THE ROAD,
+AND WHO COMES DOWN IT) and walked on it without a line of it changing,
+which is the argument for keeping correct code made in full.
 
 THE CHASE IS P_NewChaseDir. A monster does not path-find. It picks whichever
 of eight compass directions points most nearly at you, tries to walk that
@@ -1935,7 +1997,8 @@ faked by mirroring one view look wrong from seven of the eight. A walk
 cycle faked by sliding one drawing about looks wrong from all of them. So a
 shopper does not walk, and every side of one is the front — which is how
 Doom drew anything it only had one picture of, and it is what the actor's
-`flat` flag has always meant. They SWAY instead: two sines phased off the
+`flat` flag has always meant. (The SWAT are the exception and the proof:
+they were DRAWN from five sides, so they turn — see below.) They SWAY instead: two sines phased off the
 actor's own id, an inch and a half of lean and half an inch of bob, in a
 direction that also comes off the id so that no two of them move together.
 It is a drawing offset and nothing in the simulation moves. On the title
@@ -1967,6 +2030,32 @@ frame would scale them all back to the same size and turn a rising mushroom
 into a flickering still. It is resampled to twenty-six because a frame is a
 letter and the letters stop at Z.
 
+THE SWAT ARE THE USER'S SHEET, and the first people in the game with
+ROTATIONS: eleven rows on a magenta ground, the first seven of them five
+views of one pose — head on, a quarter turn, side on, three quarters, from
+behind — and the rest a death, three frames of lying there and nine of
+coming apart, drawn from the front only. That is Doom's own economy
+exactly: five drawings, and rotations 1, 2 and 3 are the mirror of 7, 6
+and 5, which js/people.js says in a table (SWAT_ROTATIONS) and
+Pix.mirrored does. A trooper walking away from you shows you his back,
+which no shopper can, and it is the whole of what makes a thing you can
+walk round read as a thing rather than a card.
+
+tools/prep-swat.mjs cuts it, and two things about that were harder than
+they sound. THE SHEET IS A JPEG, so the magenta is not a colour but a
+cloud of them and every edge carries a halo where the ground bled into the
+ink; the tool measures how magenta each pixel is, spends that number as
+the pixel's transparency, and unmixes the magenta back out of what colour
+is left, so a halo pixel a third magenta becomes a two-thirds-opaque
+pixel of the colour it was hiding. AND THE CELLS ARE NOT ON A GRID: the
+widest side view is twice the width of the narrowest back view and the
+lying frames are stacked three high in the last column, so the cells are
+FOUND — an XY cut, splitting on empty rows and then empty columns and
+again until nothing splits — with one seam found by hand, where the death
+row's blood reaches the gore row under it. Sixty tall, a shade under the
+crowd's sixty-two, because the frame of somebody coming apart is taller
+than the somebody and the sixty-four-pixel rule is a rule.
+
 
 THE CAR PARK IS ONE VAN, THREE DOZEN TIMES, at the user's request, and
 it arrived MODELLED — a GLB, dropped in as it is. There is no other kind
@@ -1977,7 +2066,13 @@ down, because it was a good piece of work aimed at the wrong question.
 WHAT IS LEFT IS SHORT. The file's own triangles, its own UVs, its own
 texture, drawn both sides. A second GLB would drop in beside this one
 with no new code at all, which is the thing the old system could never
-say.
+say — and then one did, the police van, and it cost eight lines: the
+loader was taking the FIRST image in the file for the sheet, and the
+police van arrives with four (emissive, normal, diffuse, metal-rough, in
+that order), so the first cut of it was painted with a flat black
+emissive map. A GLB says which picture is the colour — the material's
+baseColorTexture — and the loader asks it now. See THE ROAD, AND WHO
+COMES DOWN IT for what the van does.
 
 AND THEY ARE NOT ALL THE SAME COLOUR, at the user's request. One model
 in every bay is a delivery fleet, which was a joke worth exactly one
@@ -2245,12 +2340,41 @@ AND THEN IT GOES UP
 -------------------
 
 A car is flammable and shootable, so the flamethrower lights it, the fire
-under it keeps it lit, and about four seconds later the tank goes. What
-follows is one sequence and every part of it is arithmetic you can read.
+under it keeps it lit, and about four seconds later the tank is done for.
+What follows is one sequence and every part of it is arithmetic you can
+read.
 
-THE FIRST BANG throws a blast that damages and IGNITES everything within
-about two hundred units, clears the car park of anybody who can be
-frightened, and puts the car in the air.
+IT CHARS FIRST, at the user's request. A car used to go from parked to
+airborne in the tic its health ran out; now the tank going is the END of
+something you watch. For five to seven and a half seconds — rolled per
+car, so a row lit together does not go off like a firework display on one
+fuse — the car leaves the slab for a mesh of its own, the only way to
+change one vehicle's vertices without rebuilding thirty-six, and two of
+its attributes are wound by hand: `charred`, which js/material.js scatters
+live coals across in proportion, and `light`, which comes down to under
+half so the paint goes black beneath them. Sparks off it the whole time,
+more as it goes; smoke, thicker; and the one fire light pulled toward it,
+harder as it goes, so the bay round a car about to go is lit like a
+hearth. More damage to a car already charring HURRIES it — two tics off
+the fuse a point — so a chain reaction across a full row is a ripple
+rather than a metronome. It is a wreck arriving gradually, and when it
+reaches the end it goes up on the geometry it has, so what is in the air
+is the black thing you watched turn black.
+
+THE FIRST BANG IS FOUR OF THE OLD ONE, also at the user's request, and
+four is spent where four can be seen: four times the fireballs, spread
+past the car's own footprint rather than four times as many in the same
+square, four times the embers and the smoke, the heat of the floor pinned
+to the top of its scale, a light thrown at the bay and decaying over the
+next second so the whole car park is lit from it for a moment and then is
+not, and a sound made the loudest thing in the game. The RADIUS is doubled
+rather than quadrupled — a doubled radius is a quadrupled area, which is
+what four times the blast means on a floor plan — and the damage is
+doubled, which with the area is eight times what the old bang put into the
+car park. It damages and IGNITES everything within four hundred and
+twenty units, clears the car park of anybody who can be frightened, and
+puts the car in the air. The second bang, where it lands, is what it
+always was.
 
 THE TUMBLE IS NOT A PHYSICS ENGINE and does not want to be. It is a
 velocity and a gravity of 0.85 units per tic per tic — the same fall the
@@ -2306,7 +2430,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-770 checks. Every one of them earns its place by having caught something
+835 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -2664,6 +2788,33 @@ that had already reached a screenshot:
     dissolving from the hat is not a person on fire. The test now pins
     the direction in the shader source, because it is one character and
     nothing else in the game would notice
+  A CHARRING CAR AT MINUS INFINITY. The char phase was put in front of
+    the launch, and the tic that tipped a burning car over into it —
+    burnTic, three lines up in the same function — then fell through
+    to the settle code below, which is written for a car that has
+    LANDED and integrates its resting angle off numbers a parked car
+    does not have. One tic of NaN angles put the lowest corner of the
+    box at infinity and the car's middle at minus that, and the first
+    spark thrown off it asked the level which sector minus infinity was
+    in. The fix is one line — stop after the tic that starts the char —
+    and the lesson is the same as the frozen walk-off's: a state added
+    to a function written as a run of ifs has to be checked again after
+    every call that can change it
+  A POLICE VAN PAINTED BLACK. The loader took the first image in a GLB
+    for its sheet, and for the van that was the only image. The police
+    van carries four — emissive, normal, diffuse, metal-rough — and the
+    first is a flat black emissive map, so the whole truck arrived
+    matte black with no lettering. A GLB says which picture is the
+    colour, in the material's baseColorTexture, and the loader asks it
+    now; the test checks that the colour image is NOT the first one in
+    the file, so the shortcut cannot come back
+  A DEATH ROW WITH ITS FRAMES OUT OF ORDER. The SWAT sheet stacks the
+    three lying-down frames in the last column of the death row, and
+    grouping the found cells into rows by their vertical middles put
+    the second lying frame beside the third falling one, because their
+    middles were near enough. So the trooper fell, lay down, knelt up
+    again and lay down. That band is cut COLUMNS FIRST now, and the
+    order the cut returns is the order the frames play in
   A PIECE OF CAR ONE PAST THE END OF THE MODEL. rnd() in js/vehicles.js
     is pRandom() / 255 and pRandom() rolls 0 to 255 INCLUSIVE, so it
     returns exactly 1.0 about once in every 256 calls — and the one
@@ -2804,15 +2955,14 @@ WHAT IS NOT DONE
     crowd all facing you. At Doom's sprite scale in a dark shop this
     reads; in daylight it would not
   every vehicle in the car park is the same van. It is the user's model
-    and it is the only one in the project: about thirty-six of them now
-    that the lot is twice as long, sparse, clustered near the doors and
-    thinning to almost nothing at the ends, and only the heading differs
-    — no colour variation, no dents, nothing that would break the
-    repeat. The six drawn vehicles that
-    used to be measured and waiting are deleted with the system that
-    built them; their sheets are still in art/ if anybody wants them
-    back, and a second GLB would drop in beside the van with no code at
-    all
+    and it is the only civilian one in the project: about thirty-six of
+    them now that the lot is twice as long, sparse, clustered near the
+    doors and thinning to almost nothing at the ends, and only the
+    heading and the paint differ — no dents, nothing that would break
+    the repeat. The six drawn vehicles that used to be measured and
+    waiting are deleted with the system that built them; their sheets
+    are still in art/ if anybody wants them back. The second GLB did
+    drop in beside the van — the police van — and cost eight lines
   the windows are the renderer's, not the game's. The four civilian
     sheets were rendered with see-through glass, so a windscreen shows
     the seats and, past them, the green screen; the tool paints the
@@ -2828,17 +2978,23 @@ WHAT IS NOT DONE
     in — the only thing it collides with is the ground. Two cars going up
     together can end up inside one another, which so far has looked more
     like a pile-up than like a bug
-  nothing drives. The riot van and the APC are built, measured and packed
-    and there is nowhere for them to be until js/responders.js brings
-    them up the road
+  the police van drives on a polyline and stops for nothing: it does
+    not steer round a wreck in the fire lane, it does not slow for a
+    crowd, and two of them sent to the same bay would arrive inside one
+    another. The bays are taken in order so they do not, and a wreck
+    keeps its bay
   four of the six neighbouring units are a shopfront with nothing behind
     it, which is one wall each and buys the whole read of the place
   no music
   no second level, and no level-to-level flow
   the boxcutter and the molotov are built and switched off
-  nothing in the game fights back yet. Doom's chase — A_Look, A_Chase and
-    P_NewChaseDir — is still in js/actor.js with nothing calling it, kept
-    for the responders coming up the road
+  only the SWAT fight back. The other five tiers in js/responders.js —
+    the night manager, security, the police, the fire brigade, the
+    helicopter — are still an alarm, a dispatch and a delay with nobody
+    at the end of it; the squad has a trigger of its own
+  a trooper does not put fires out, does not use a door on purpose (the
+    sliders open for anything solid, so he gets in), and walks into a
+    burning car park like anybody else. Which is how most of them die
   the touch controls were proven on an emulated phone — real touch
     events through Chromium, both thumbs at once — and not yet on glass;
     the look speed, the dead zone and the button sizes want a real thumb
@@ -2847,17 +3003,18 @@ WHAT IS NOT DONE
     Chromium, which draws them correctly and slowly; fifty-four thousand
     instances at 400 rows is well inside any real GPU, but nobody has
     yet watched it on one
-  the player cannot be hurt — asked for, for now, and one flag in
-    js/player.js. The tank is finite as of this pass and fills itself
-    very slowly; nothing else refills it
-  nobody comes down the road yet: js/responders.js escalates, announces
-    and records the waves, and spawn() is one function waiting for
-    actors and art
+  the player cannot be hurt by fire — asked for, and one flag in
+    js/player.js, FIREPROOF. Bullets and vans get through it; nothing
+    else does. The tank is finite and fills itself very slowly; nothing
+    else refills it, and nothing refills your health at all
+  the SWAT sheet is a JPEG, decoded to a PNG in a browser and kept in
+    art/people/ as that PNG, because node has no JPEG decoder and one
+    was not worth writing for a file converted once
   nothing follows you into the wood, and the wood's fire and the
     store's do not cross the car park to each other; the flamethrower is
     the bridge
   the trees are 128 and 256 pixels, the sky 1024, the gun's paint 1024,
-    the van's sheet 512x256: art that came from outside
+    the van's sheet 512x256, the police van's 1024: art that came from outside
     was left as it came, and the 64-pixel rule stands for everything the
     game draws itself
   no save

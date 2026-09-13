@@ -147,14 +147,30 @@ export class Effects {
      to stay off the drawing, because on that one the drawing is the
      effect.
      ------------------------------------------------------------------ */
+  /** The per-tic reset of the budget and the light, done by whoever
+   *  asks first in a tic. Pulled out of bodyFire the day a burning van
+   *  wanted to add to the same light without being a body. */
+  _newTic() {
+    const g = this.game;
+    if (this._fireTic === g.tics) return;
+    this._fireTic = g.tics;
+    this._fireLeft = BODY_FIRE.most;
+    this._glow.sx = this._glow.sy = this._glow.sw = 0; this._glow.n = 0;
+  }
+
+  /** Something that is not a body pulling the one fire light toward
+   *  itself: a vehicle charring in its bay, a rifle going off. `w` is
+   *  how much of the light it is worth against a burning person's one. */
+  glowAt(x, y, w = 1) {
+    this._newTic();
+    this._glow.sx += x * w; this._glow.sy += y * w;
+    this._glow.sw += w; this._glow.n++;
+  }
+
   bodyFire(a, scale = 1) {
     const g = this.game, p = g.player;
     if (!p || a.removed) return 0;
-    if (this._fireTic !== g.tics) {
-      this._fireTic = g.tics;
-      this._fireLeft = BODY_FIRE.most;
-      this._glow.sx = this._glow.sy = this._glow.sw = 0; this._glow.n = 0;
-    }
+    this._newTic();
     const d2 = dist2(a.x, a.y, p.x, p.y);
     /* THE LIGHT IS NOT BUDGETED AND NOT RANGED THE SAME WAY. A torch
        three aisles off is not worth a particle and is very much worth
@@ -209,6 +225,37 @@ export class Effects {
     const G = this._glow;
     if (G.sw <= 0) return;
     acc.sx += G.sx; acc.sy += G.sy; acc.sw += G.sw; acc.n += G.n;
+  }
+
+  /* ------------------------------------------------------------------
+     A RIFLE GOING OFF
+
+     The flash is on the drawing — the firing frame is orange and
+     fullbright — so what is needed here is what the drawing cannot do:
+     the light of it on the aisle for a frame, and a spit of hot gas
+     out of the muzzle. Two licks off the body-fire pool, at the height
+     of the rifle and out in front of it, gone in a quarter of a
+     second; and the one fire light pulled hard toward the shooter, so
+     a squad firing down a dark aisle lights it in flashes. `shots` on
+     the trooper is for the test.
+     ------------------------------------------------------------------ */
+  muzzle(a) {
+    this.glowAt(a.x, a.y, 2.5);
+    const c = Math.cos(a.angle), s = Math.sin(a.angle);
+    const h = (a.height || 56) * 0.66;
+    for (let k = 0; k < 2; k++) {
+      const out = 16 + k * 9;
+      this.bodyFlames.spawn({
+        x: a.x + c * out, y: a.y + s * out, z: a.z + h,
+        vx: c * 1.4, vy: s * 1.4, vz: 0.2,
+        life: 4 + k * 3,
+        size0: 14 - k * 4, size1: 4,
+        c0: [1, 0.95, 0.7], c1: [1, 0.55, 0.15],
+        a0: 0.9, a1: 0,
+        frame: pRandom() % (this.bodyFlames.opts.frames || 1), frameRate: 0.8,
+        drag: 0.8, gravity: 0,
+      });
+    }
   }
 
   /* ------------------------------------------------------------------

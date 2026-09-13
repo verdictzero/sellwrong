@@ -3956,6 +3956,31 @@ section('the van');
     return v;
   })();
 
+  /* --- AND THE POLICE VAN, which is the user's second model -----------
+     Loaded the same way, on its own sheet; longer, because it is an
+     armoured truck and the number is set against what it is rather than
+     against the file (see POLICE_LENGTH). The one thing that went wrong
+     loading it is worth a check of its own: it carries FOUR images, and
+     the first of them is a flat black emissive map. */
+  const police = await (async () => {
+    const glb = await import('../js/glb.js');
+    const bytes = fs.readFileSync('assets/models/police_assault.glb');
+    const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    const { json, bin } = glb.parseGLB(ab);
+    note('the police van', `${json.meshes.length} mesh, ${json.materials.length} material, ${json.images.length} images`);
+    const painted = json.materials.find(m => m.pbrMetallicRoughness?.baseColorTexture);
+    const colour = json.textures[painted.pbrMetallicRoughness.baseColorTexture.index].source;
+    check('its colour is not the first image in the file, so the loader has to ask the material',
+      colour !== 0 && /diffuse/i.test(json.images[colour].name || ''), `image ${colour}`);
+    const v = car.modelVehicle(json, bin, { length: car.POLICE_LENGTH, id: 'police', name: 'Assault van', use: 'police' });
+    check('it is a truck: longer than the van, wider, and taller',
+      car.carLength(v) > car.carLength(van) && car.carWidth(v) > car.carWidth(van) && car.carHeight(v) > car.carHeight(van),
+      `${car.carLength(v)} long, ${car.carWidth(v).toFixed(0)} wide, ${car.carHeight(v).toFixed(0)} tall`);
+    check('and it fits across the fire lane', car.carWidth(v) < 160, `${car.carWidth(v).toFixed(0)} wide`);
+    check('and every triangle of it is on the sheet', v.model.tris.every(t => !t.ink));
+    return v;
+  })();
+
   /* --- and seventy-seven of them, parked ---------------------------- */
   const { Game } = await import('../js/game.js');
   const THREE2 = await import('three');
@@ -3967,6 +3992,7 @@ section('the van');
     input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
              attack: false, use: false, run: false, sample() {}, sensitivity: 0 },
     fleet: { texture: {}, def: van },                // it never draws in here
+    police: { texture: {}, def: police },
   });
   const V = gm.vehicles;
   note('the car park', `${V.count} vehicles in ${(level.carSlots || []).length} bays`);
@@ -4069,18 +4095,69 @@ section('the van');
 
     const seen = [];
     let blasts = 0;
+    const bangs = [];
     const realExplode = gm.explode.bind(gm);
-    gm.explode = (a, o) => { blasts++; return realExplode(a, o); };
-    for (let i = 0; i < 500 && target.state !== 'wreck'; i++) {
+    gm.explode = (a, o) => { blasts++; bangs.push(o); return realExplode(a, o); };
+    /* WATCHING IT CHAR: how long it spends there, and what the vertices
+       do while it does. The car leaves the slab for a mesh of its own
+       the tic it starts, and that mesh's `charred` and `light` are the
+       two numbers js/material.js turns into coals and black paint. */
+    let charTics = 0, charMesh = null, charMid = null, blastsBefore = 0, embersAt = -1;
+    const fx = gm.fx;
+    const realEmber = fx.ember.bind(fx);
+    let embers = 0;
+    fx.ember = (...a) => { embers++; return realEmber(...a); };
+    for (let i = 0; i < 700 && target.state !== 'wreck'; i++) {
       gm.tic();
       if (seen[seen.length - 1] !== target.state) seen.push(target.state);
+      if (target.state === 'charring') {
+        charTics++;
+        charMesh = target.mesh;
+        if (charTics === 1) { blastsBefore = blasts; embersAt = embers; }
+        if (charTics === 90) charMid = {
+          charred: target.mesh.geometry.getAttribute('charred').array[0],
+          light: target.mesh.geometry.getAttribute('light').array[0],
+          light0: target.light0[0],
+        };
+      }
     }
+    fx.ember = realEmber;
     note('one vehicle, lit', seen.join(' -> '));
     check('being on fire eventually takes it apart',
       target.health < startHealth && target.state === 'wreck');
-    check('and it went up, flew, and came down', seen.join(',') === 'parked,air,settle,wreck', seen.join(','));
+    /* IT CHARS FIRST, at the user's request, and then goes up. */
+    check('and it charred, went up, flew, and came down',
+      seen.join(',') === 'parked,charring,air,settle,wreck', seen.join(','));
+    note('and how long it charred for', `${charTics} tics, ${(charTics / 35).toFixed(1)}s`);
+    check('the char is long enough to watch and short enough to wait for',
+      charTics >= 4.5 * 35 - 2 && charTics <= 7.5 * 35 + 2, `${charTics} tics`);
+    check('a charring car is its own mesh, out of the slab',
+      !!charMesh && charMesh.name === 'car:' + van.id && !target.slab);
+    check('and halfway through, its coals are up and its paint is down',
+      charMid && charMid.charred > 0.25 && charMid.charred < 0.8 &&
+      charMid.light < charMid.light0 * 0.85 && charMid.light > charMid.light0 * 0.4,
+      charMid ? `charred ${charMid.charred.toFixed(2)}, light ${charMid.light.toFixed(2)} of ${charMid.light0.toFixed(2)}` : 'no midpoint');
+    check('nothing exploded while it was charring', blasts === blastsBefore || bangs.length <= 2,
+      `${blasts - blastsBefore} bangs during the char`);
+    check('and it threw embers the whole time', embers - embersAt >= charTics * 0.9,
+      `${embers - embersAt} embers over ${charTics} tics`);
     /* TWO BANGS: one as it leaves and one as it lands. */
     check('it exploded twice, not once', blasts >= 2, `${blasts} explosions`);
+    /* AND THE FIRST IS FOUR OF THE OLD ONE — at the user's request. What
+       the old bang was is written down here rather than read from the
+       file, because the file no longer has it: radius 210, damage 90,
+       three fireballs, 26 embers, 7 puffs. */
+    {
+      const first = bangs[0];
+      check('the launch bang reaches twice as far — four times the area',
+        first && first.radius === 420, `${first?.radius}`);
+      check('and hits twice as hard', first && first.damage === 180, `${first?.damage}`);
+      check('and pins the heat of the floor to the top of the scale', first && first.heat === 255, `${first?.heat}`);
+      check('and is the loudest thing in the game', first && first.sound === 'bigboom', `${first?.sound}`);
+      const second = bangs[1];
+      check('the crash bang is what it always was', second && second.radius === 170 && second.damage === 55,
+        `${second?.radius} / ${second?.damage}`);
+    }
 
     /* IT LANDS ON ITS ROOF. That is the whole point of aiming the roll
        rate at the flight time rather than picking one and hoping. */
@@ -4112,6 +4189,222 @@ section('the van');
     const gone = V.all.filter(v => v.state !== 'parked').length;
     note('the lot after one went up', `${gone} of ${V.count} vehicles`);
     check('and the bang set light to whatever was near enough', gone >= 1);
+  }
+
+  /* ==================================================================
+     THE SQUAD
+
+     The first thing in the game that fights back: a van up the road
+     after the first kill, troopers out of the side of it, a rifle. It
+     is tested end to end on the real map with the real routes, because
+     every piece of it — the drive, the bay, the door, the chase, the
+     shot — is a place the pieces can disagree, and a van that parks in
+     a wall or a trooper who steps out inside the van is exactly the
+     kind of bug a screenshot finds and a unit test does not.
+     ================================================================== */
+  section('the squad');
+  {
+    const ppl = await import('../js/people.js');
+    const { readPNG } = await import('./png-read.mjs');
+    const { ACTIONS } = await import('../js/actor.js');
+    const { SWAT: S } = await import('../js/responders.js');
+    /* A FRESH GAME, because the one above has just had a car park go up
+       in it and a squad walking through a burning lot is a squad that
+       is dead in nine seconds — which is correct, and is not what this
+       is measuring. */
+    const gs = new Game({
+      level: MAP.buildSellWrong(), scene: new THREE2.Scene(), camera: {},
+      textures: gm.textures, sprites: spr.bakeSprites(),
+      hud: { message() {}, ticMessages() {} }, audio: null,
+      input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
+               attack: false, use: false, run: false, sample() {}, sensitivity: 0 },
+      fleet: { texture: {}, def: van },
+      police: { texture: {}, def: police },
+    });
+    const R = gs.responders;
+
+    /* --- the art ------------------------------------------------------
+       The user's sheet, cut by tools/prep-swat.mjs into a strip in the
+       order js/people.js reads it back. Five drawings a turned frame and
+       three mirrors, exactly as Doom's own sprites did it. */
+    {
+      const img = readPNG(new URL('../assets/people/swat.png', import.meta.url));
+      check('assets/people/swat.png is the strip the tables are built on',
+        img.w === ppl.CELLS.swat.w * ppl.SWAT_CELLS && img.h === ppl.CELLS.swat.h,
+        `${img.w}x${img.h}, want ${ppl.CELLS.swat.w * ppl.SWAT_CELLS}x${ppl.CELLS.swat.h}`);
+      const n = ppl.addSwat(gs.sprites, img);
+      check('and the loader takes every cell of it', n === ppl.SWAT_CELLS, `${n}`);
+      const A = gs.sprites.frames.get('SWATA');
+      const same = (p, q) => {
+        if (p.w !== q.w || p.h !== q.h) return false;
+        for (let i = 0; i < p.data.length; i++) if (p.data[i] !== q.data[i]) return false;
+        return true;
+      };
+      check('a turned frame has eight views', A.views.length === 8 && A.views.every(v => v.w === ppl.CELLS.swat.w));
+      check('and rotation 1 is the mirror of rotation 7, not a copy of it',
+        same(A.views[1], A.views[7].mirrored()) && !same(A.views[1], A.views[7]));
+      check('and head on and from behind are two different drawings', !same(A.views[0], A.views[4]));
+      const lying = gs.sprites.frames.get('SWATN');
+      check('and lying down is the same from every side', lying.views.every(v => v === lying.views[0]));
+      /* the scale */
+      const tallOf = p => { let top = p.h; for (let y = 0; y < p.h; y++) for (let x = 0; x < p.w; x++) if (p.alphaAt(x, y) > 8) { top = Math.min(top, y); } return p.h - top; };
+      note('a trooper, head on', `${tallOf(A.views[0])} tall in a ${ppl.CELLS.swat.h} cell`);
+      check('the standing trooper is the height the table says', Math.abs(tallOf(A.views[0]) - ppl.SWAT_HEIGHT) <= 1);
+      check('and every cell keeps the 64-pixel rule', ppl.CELLS.swat.w <= 64 && ppl.CELLS.swat.h <= 64);
+    }
+
+    /* --- the map's part ------------------------------------------- */
+    const onTarmac = p => { const s2 = level.sectorAt(p.x, p.y); return !!s2 && /road|junction/i.test(s2.name); };
+    check('the map publishes a way in from each end of the road',
+      !!level.swatRoutes?.west && !!level.swatRoutes?.east && level.swatRoutes.west.length >= 3);
+    check('and every point on both of them is on the road',
+      [...level.swatRoutes.west, ...level.swatRoutes.east].every(onTarmac),
+      [...level.swatRoutes.west, ...level.swatRoutes.east].filter(q => !onTarmac(q)).map(q => level.sectorAt(q.x, q.y)?.name || 'off the map').join('; '));
+    check('and the bays are in the fire lane, where nobody parks',
+      level.swatBays.length >= S.bays && level.swatBays.every(b => /fire lane/.test(level.sectorAt(b.x, b.y)?.name || '')));
+
+    /* --- the call -------------------------------------------------- */
+    const p = gs.player;
+    check('nobody has been called before a kill', !R.called && R.vans.length === 0 && p.kills === 0);
+    const who = gs.actors.find(a => a.type === 'SHOPPER' && !a.dead && !a.removed);
+    who.damage(100, p);
+    gs.tic();
+    check('killing somebody is the call', p.kills >= 1 && R.called);
+    check('and the van is not here yet', R.vans.length === 0);
+    for (let i = 0; i < S.firstDelay + 2 && !R.vans.length; i++) gs.tic();
+    const v = R.vans[0];
+    check('a van is on the road after the drive from the station', !!v && v.state === 'driving');
+    if (v) {
+      const end = level.roadEnds.find(e => e.side === v.side);
+      check('it started where the road leaves the map', Math.hypot(v.x - end.x, v.y - end.y) < 1);
+      check('it is the police van, on its own sheet, as its own mesh',
+        v.def === police && v.own && !!v.mesh && !v.slab);
+      check('and it is three of Doom cylinders like every other vehicle',
+        v.blockers.length === 3 && v.blockers.every(b => b.solid && b.vehicle === v));
+      const x0 = v.x, b0 = v.blockers[0].x;
+      for (let i = 0; i < 20; i++) gs.tic();
+      check('it moves', v.x !== x0 && v.driven > 150, `${v.driven.toFixed(0)} units in 20 tics`);
+      check('and its cylinders move with it',
+        v.blockers[0].x !== b0 && Math.hypot(v.blockers[1].x - v.x, v.blockers[1].y - v.y) < 1e-6);
+      let t = 20;
+      for (; t < 3000 && v.state === 'driving'; t++) gs.tic();
+      note('the drive', `${t} tics, ${v.driven.toFixed(0)} units`);
+      check('it arrives and parks', v.state === 'parked', v.state);
+      check('in its bay, in the fire lane',
+        Math.hypot(v.x - v.bay.x, v.y - v.bay.y) < 1 && /fire lane/.test(level.sectorAt(v.x, v.y)?.name || ''),
+        `${v.x.toFixed(0)}, ${v.y.toFixed(0)} in ${level.sectorAt(v.x, v.y)?.name}`);
+      check('squared up along the front', Math.abs(Math.sin(v.yaw)) < 1e-9, `${v.yaw.toFixed(3)}`);
+      check('and in the way there', p.thingInWay(v.x, v.y));
+
+      /* --- the crew ------------------------------------------------ */
+      for (let i = 0; i <= S.unloadEvery + 2 && R.troopers === 0; i++) gs.tic();
+      const first = gs.actors.find(a => a.type === 'SWAT');
+      check('and it unloads a trooper', !!first);
+      if (first) {
+        const half = car.carWidth(police) / 2;
+        check('who steps out on the shop side of it, clear of it, on the ground',
+          first.y > v.y + half && !!level.sectorAt(first.x, first.y),
+          `${(first.y - v.y).toFixed(0)} off the van's line, ${level.sectorAt(first.x, first.y)?.name}`);
+        check('and is after you from the first step',
+          first.target === p && /^SWAT_(RUN|ATK)/.test(first.state.name), first.state.name);
+        check('and turns: not a standee', !first.flat && first.info.team === 'swat');
+      }
+      for (let i = 0; i < S.unloadEvery * S.crew + 5; i++) gs.tic();
+      note('the crew', `${R.troopers} on their feet, ${R.spawned} ever`);
+      check('the whole crew is out inside the time', R.spawned >= S.crew, `${R.spawned} of ${S.crew}`);
+      const before = R.spawned;
+      for (let i = 0; i < S.trickle + 5; i++) gs.tic();
+      check('and it keeps unloading after the crew is out', R.spawned > before, `${R.spawned} after ${before}`);
+      const walked = gs.actors.filter(a => a.type === 'SWAT' && !a.dead)
+        .map(a => Math.hypot(a.x - v.x, a.y - v.y));
+      note('where they have got to', `${walked.filter(d => d > 200).length} of ${walked.length} more than 200 from the van`);
+      check('and the troopers walk off toward you rather than standing at the door',
+        walked.some(d => d > 200));
+
+      /* --- the rifle ------------------------------------------------ */
+      const a = gs.actors.find(q => q.type === 'SWAT' && !q.dead);
+      const px = p.x, py = p.y;
+      p.x = a.x + 160; p.y = a.y;
+      a.angle = 0;
+      check('a trooper can see you at a hundred and sixty', a.canSee(p));
+      p.health = 100;
+      const shots0 = a.shots || 0;
+      /* five, not thirty: at this range every shot lands and thirty of
+         them is a dead player, which the rest of this section needs not
+         to have */
+      for (let i = 0; i < 5; i++) ACTIONS.A_SwatFire(a);
+      check('the rifle fires', a.shots === shots0 + 5);
+      check('and the shots land on you — the player is not bulletproof', p.health < 100 && !p.dead, `100 -> ${p.health}`);
+      const hb = p.health;
+      p.damage(20, null, { fire: true });
+      check('but fire still does nothing to you', p.health === hb, `${hb} -> ${p.health}`);
+      /* THE TEAM RULE: a trooper hit by the man behind him does not turn
+         round, because a squad that infights is a squad you watch */
+      const b = gs.actors.find(q => q.type === 'SWAT' && !q.dead && q !== a);
+      b.target = null; b.threshold = 0;
+      b.damage(3, a);
+      check('a trooper shot by a trooper holds no grudge', b.target !== a);
+      b.target = p;
+      /* and the chase pulls the trigger on its own */
+      p.health = 100;
+      let shotsBefore = 0;
+      for (const q of gs.actors) if (q.type === 'SWAT') shotsBefore += q.shots || 0;
+      p.x = a.x + 320; p.y = a.y;
+      for (let i = 0; i < 175; i++) { p.health = 100; gs.tic(); }
+      let shotsAfter = 0;
+      for (const q of gs.actors) if (q.type === 'SWAT') shotsAfter += q.shots || 0;
+      note('five seconds beside the squad', `${shotsAfter - shotsBefore} shots fired`);
+      check('a trooper who can see you shoots without being told', shotsAfter > shotsBefore);
+      p.x = px; p.y = py; p.health = 100;
+
+      /* --- how they die --------------------------------------------- */
+      const beaten = R.defeatedCount;
+      const d1 = gs.actors.find(q => q.type === 'SWAT' && !q.dead);
+      d1.damage(60, p);
+      check('sixty is a death, on the way down', d1.dead && d1.state.name === 'SWAT_DIE1');
+      const d2 = gs.actors.find(q => q.type === 'SWAT' && !q.dead);
+      d2.damage(200, p);
+      check('and two hundred is coming apart', d2.dead && d2.state.name === 'SWAT_XDIE1');
+      for (let i = 0; i < 80; i++) gs.tic();
+      check('and both lie there afterwards, out of the way',
+        d1.state.name === 'SWAT_DEAD' && d1.state.tics === -1 && !d1.solid &&
+        d2.state.name === 'SWAT_XDIE9' && d2.state.tics === -1);
+      check('and the squad counts its losses', R.defeatedCount >= beaten + 2);
+      const d3 = gs.actors.find(q => q.type === 'SWAT' && !q.dead);
+      if (d3) {
+        d3.chill(100);
+        check('a trooper freezes like anybody else', d3.frozen && d3.state.name === 'SWAT_FROZE');
+        d3.damage(5, p);
+        check('and a frozen one shatters', d3.removed);
+      }
+
+      /* --- and the van is the thing to deal with --------------------- */
+      v.ignite();
+      let states = [];
+      for (let i = 0; i < 900 && v.state !== 'wreck'; i++) {
+        gs.tic();
+        if (states[states.length - 1] !== v.state) states.push(v.state);
+      }
+      note('the van, lit', states.join(' -> '));
+      check('a squad van burns, chars and goes up like any other vehicle',
+        states.join(',') === 'parked,charring,air,settle,wreck', states.join(','));
+      check('and keeps its own mesh through it, out of the slab', v.own && !!v.mesh && !v.slab);
+      check('and is no longer a van anybody counts', !R.liveVans.includes(v));
+      const out = v.unloaded;
+      for (let i = 0; i < S.trickle * 2; i++) gs.tic();
+      check('and a wrecked van unloads nobody', v.unloaded === out);
+    }
+    /* THE CAP, over a long night */
+    for (let i = 0; i < 1400; i++) { p.health = 100; gs.tic(); }
+    note('the night so far', `${R.vans.length} vans, ${R.troopers} troopers up, ${R.spawned} ever, ${R.defeatedCount} down`);
+    check('there are never more troopers on their feet than the budget', R.troopers <= S.maxTroopers);
+    check('and never more vans on the road or standing than the budget', R.liveVans.length <= S.maxVans);
+    check('and the vans keep coming', R.vans.length >= 2, `${R.vans.length}`);
+
+    /* the corner grows a third bar the moment something hurts you */
+    const hudSrc = fs.readFileSync('js/hud.js', 'utf8');
+    check('the corner draws a health bar, and only once you are hurt',
+      /bar\(y, hp \/ 100/.test(hudSrc) && /hurt \? 1 : 0/.test(hudSrc));
   }
 }
 

@@ -2,38 +2,40 @@
    GROCERY STORE SIMULATOR — who comes when a supermarket is on fire at 2am
    =====================================================================
 
-   A PLACEHOLDER, and an honest one: this file is the SHAPE of the thing
-   that is coming, with nothing in it that can hurt you yet. What it
-   already does is keep score of how loud the night has got and decide,
-   on that score, who has been called and when they turn up. What it
-   does not do yet is put anybody on the road. The hooks are here; the
-   actors, the models and the fights are not.
+   THE SWAT COME, and they are the first thing in the game that fights
+   back. The rest of this file is still the shape it was — an alarm that
+   only climbs, six tiers that are dispatched at a threshold and arrive
+   after a drive — and that shape is kept, because the night manager and
+   the fire brigade are still coming one day and the escalation is
+   already written and tested. What is new is underneath it: one squad,
+   on its own trigger, that does not wait for the alarm.
 
-   THE ALARM is one number, 0..100: how much of the store has gone, how
-   much of the wood, how many of the staff, and how long anything has
-   been alight — because a fire nobody has noticed is a fire nobody has
-   reported, and a fire that has been going for ten minutes has been
-   reported by everyone. It only ever goes up. Nothing you do quiets it.
+   WHAT CALLS THEM IS A KILL. Not the fire — a supermarket alight is the
+   fire brigade's business — but the moment somebody is dead by your
+   hand the night has changed, and the first van is on the road. From
+   then on they keep coming: a van every forty to seventy seconds, up to
+   a handful standing at once, each one pulling up across the fire lane
+   in front of the doors and unloading its crew one at a time onto the
+   footway. When the crew is out it does not stop; it trickles, one
+   trooper every nine seconds, for as long as it stands there. Which
+   makes the VAN the thing to deal with — a squad van is a vehicle and
+   burns, chars and goes up like any other, and a van that has gone up
+   is a van that has stopped — and that is the fight: the store behind
+   you, the lot in front of you, and the road bringing more.
 
-   THE TIERS are who the alarm brings, in order, each with a threshold
-   on the alarm and a delay before they are actually here — the drive
-   from the station. They are DISPATCHED when the alarm crosses their
-   line (you hear about it: a message, sirens in the distance) and they
-   ARRIVE after their delay, at one end of the road, which is the whole
-   reason the road runs off into the wood in both directions. When they
-   arrive `spawn()` is called with where; today it announces them and
-   returns.
+   WHERE THEY GO is the map's business. level.swatRoutes is the way in
+   from each end of the road and level.swatBays is where a van may stop,
+   both worked out where the lot's own numbers are; this file joins one
+   to the other and drives nothing itself. See SwatVan in js/vehicles.js
+   for the driving and js/states.js for the trooper.
 
-   THE FIGHT, when it exists, is against people whose job is to make the
-   fire stop: they will put fires out (the fire system already exposes
-   heat per cell; extinguishing is subtracting from it), they will try to
-   get between you and the store, and each tier will be harder to get
-   past than the last. `defeated()` is where a tier's members report in
-   when they are down, so a cleared tier can stay cleared. That, and a
-   set of sprites, is the work; the escalation is done.
+   THE BUDGET is a cap on troopers alive at once, across every van, and
+   it is the whole of what keeps a long night from filling the lot with
+   navy blue. A van that would unload past it waits.
    ===================================================================== */
 
-import { TICRATE } from './util.js';
+import { TICRATE, pRandom } from './util.js';
+import { SwatVan } from './vehicles.js';
 
 /* Who, at what alarm, and how long they take to get here. Delays are in
    tics. `count` and `note` describe the wave that will arrive when there
@@ -74,6 +76,32 @@ export function alarmOf({ storePct = 0, woodPct = 0, kills = 0, minutesAlight = 
     storePct * ALARM.store + woodPct * ALARM.wood + kills * ALARM.kill + minutesAlight * ALARM.minute);
 }
 
+/* ---------------------------------------------------------------------
+   THE SQUAD, IN NUMBERS
+
+   `after` is the kill that calls them — the first — and `firstDelay`
+   is the drive from wherever they were, which is long enough to have
+   forgotten and short enough that you have not gone far. `every` is
+   the gap between vans after that, rolled, and shrinks as the night
+   goes on (see nextVanAt): the third van comes sooner than the second.
+   ------------------------------------------------------------------- */
+export const SWAT = {
+  after: 1,                              // kills before anybody is called
+  firstDelay: 16 * TICRATE,              // the first van's drive
+  every: [40 * TICRATE, 70 * TICRATE],   // and the gap between vans
+  quicker: 0.85,                         // what each van does to the next gap
+  minEvery: 18 * TICRATE,                // but never closer than this
+  maxVans: 4,                            // standing or coming at once
+  crew: 6,                               // what a van carries
+  unloadEvery: 50,                       // tics between one and the next
+  trickle: 9 * TICRATE,                  // and after the crew is out, for ever
+  maxTroopers: 22,                       // alive at once, across every van
+  bays: 9,                               // spaces along the fire lane
+};
+
+const rnd = () => pRandom() / 255;
+const between = ([a, b]) => a + rnd() * (b - a);
+
 export class Responders {
   constructor(game) {
     this.game = game;
@@ -84,6 +112,15 @@ export class Responders {
     this.defeatedCount = 0;
     this.waves = [];                 // what spawn() was asked for, for anyone watching
     this.tics = 0;
+
+    /* the squad */
+    this.called = false;             // somebody has died by your hand
+    this.calledAt = -1;
+    this.nextVanAt = -1;
+    this.gap = 0;                    // the current gap between vans, in tics
+    this.vans = [];                  // every SwatVan that has come, wreck or not
+    this.side = 0;                   // which end of the road the next one uses
+    this.spawned = 0;                // troopers put on the ground, ever
   }
 
   get tier() { return Math.max(0, ...this.arrived); }
@@ -102,6 +139,7 @@ export class Responders {
     this.tics++;
     const g = this.game;
     if (g.fire?.burningCells > 0 || g.forest?.burningCells > 0) this.alightTics++;
+    this.squadTic();
     /* once a second is plenty for something that only ever climbs */
     if (this.tics % TICRATE) return;
     const a = alarmOf({
@@ -131,9 +169,9 @@ export class Responders {
   }
 
   /**
-   * PLACEHOLDER. Where a wave would be put on the road. Records what was
-   * asked for and returns; when there are actors to spawn, this is the
-   * one function that changes.
+   * PLACEHOLDER, still: where a tier's wave would be put on the road.
+   * Records what was asked for and returns. The SWAT do not come
+   * through here — they have a trigger of their own, below.
    */
   spawn(t, from) {
     this.waves.push({ tier: t.tier, name: t.name, count: t.count, x: from.x, y: from.y, heading: from.heading, side: from.side, tic: this.tics });
@@ -143,5 +181,139 @@ export class Responders {
   defeated(actor) {
     this.defeatedCount++;
     this.game.onResponders?.('defeated', actor);
+  }
+
+  /* ------------------------------------------------------------------
+     THE SQUAD
+     ------------------------------------------------------------------ */
+  /** Vans that are still a van: on the road, standing, or charring. A
+   *  wreck is not one, and neither is one in the air. */
+  get liveVans() { return this.vans.filter(v => v.whole); }
+
+  /** Troopers on their feet, anywhere. Counted, not kept, for the same
+   *  reason Game.peopleLeft is. */
+  get troopers() {
+    let n = 0;
+    for (const a of this.game.actors) if (a.type === 'SWAT' && !a.dead && !a.removed) n++;
+    return n;
+  }
+
+  squadTic() {
+    const g = this.game, p = g.player;
+    if (!p) return;
+    /* THE CALL. One kill, and the first van is on its way. */
+    if (!this.called && p.kills >= SWAT.after) this.call();
+    if (!this.called || p.dead) return;
+    /* the next van, if there is room on the road for one */
+    if (this.tics >= this.nextVanAt && this.liveVans.length < SWAT.maxVans && g.police) {
+      this.sendVan();
+      this.gap = Math.max(SWAT.minEvery, this.gap ? this.gap * SWAT.quicker : between(SWAT.every));
+      this.nextVanAt = this.tics + Math.round(this.gap);
+    }
+    /* and what comes out of the ones that are here */
+    for (const v of this.vans) {
+      if (v.state !== 'parked' && v.state !== 'charring') continue;
+      if (v.unloadAt === undefined) v.unloadAt = this.tics + SWAT.unloadEvery;
+      if (this.tics < v.unloadAt) continue;
+      if (this.troopers >= SWAT.maxTroopers) { v.unloadAt = this.tics + TICRATE; continue; }
+      if (this.unload(v)) {
+        v.unloaded = (v.unloaded || 0) + 1;
+        v.unloadAt = this.tics + (v.unloaded < SWAT.crew ? SWAT.unloadEvery : SWAT.trickle);
+      } else v.unloadAt = this.tics + 12;          // the door is blocked; try again shortly
+    }
+  }
+
+  call() {
+    this.called = true;
+    this.calledAt = this.tics;
+    this.nextVanAt = this.tics + SWAT.firstDelay;
+    this.gap = 0;
+    const g = this.game;
+    g.setBigMessage?.('SIRENS', 3 * TICRATE);
+    g.sound?.play('siren', null);
+    g.onResponders?.('called');
+  }
+
+  /** The route for the next van: in from one end of the road, alternating,
+   *  along the frontage lane to the first free bay, and into it. */
+  routeFor(bay, side) {
+    const lv = this.game.level;
+    const routes = lv.swatRoutes;
+    if (!routes) return null;
+    const way = (routes[side] || Object.values(routes)[0]).map(p => ({ x: p.x, y: p.y }));
+    const last = way[way.length - 1];
+    /* which way along the front it is coming: from the west, +x */
+    const dir = bay.x >= last.x ? 1 : -1;
+    const ay = bay.approach?.y ?? last.y;
+    way.push({ x: bay.x - dir * 420, y: ay });
+    way.push({ x: bay.x - dir * 120, y: bay.y });
+    way.push({ x: bay.x, y: bay.y });
+    /* squared up along the front once it stops, facing the way it came */
+    way[way.length - 1].angle = dir > 0 ? 0 : Math.PI;
+    return way;
+  }
+
+  /** A bay nobody is standing in — a wreck counts as standing. The
+   *  middle one first, then either side of it, working outward. */
+  freeBay() {
+    const bays = this.game.level.swatBays;
+    if (!bays || !bays.length) return null;
+    const taken = new Set(this.vans.map(v => v.bay));
+    return bays.slice(0, SWAT.bays).find(b => !taken.has(b)) || null;
+  }
+
+  sendVan() {
+    const g = this.game;
+    const bay = this.freeBay();
+    if (!bay) return null;
+    const side = this.side++ % 2 ? 'east' : 'west';
+    const route = this.routeFor(bay, side);
+    if (!route) return null;
+    const v = new SwatVan(g.vehicles, g.police.def, g.police.texture, route);
+    v.parkAngle = route[route.length - 1].angle;
+    v.bay = bay;
+    v.side = side;
+    g.vehicles.addVehicle(v);
+    this.vans.push(v);
+    g.onResponders?.('van', v);
+    return v;
+  }
+
+  /** One trooper out of the side door, if there is room to stand. Tries
+   *  the five places along the flank before giving up for this tic. */
+  unload(v) {
+    const g = this.game, lv = g.level;
+    const toward = { x: v.x, y: v.y + 1000 };            // the shop is north of the fire lane
+    for (let k = 0; k < 5; k++) {
+      const d = v.door(k, toward);
+      const sec = lv.sectorAt(d.x, d.y);
+      if (!sec) continue;
+      if (!this.roomAt(d.x, d.y, 20)) continue;
+      const a = g.spawn('SWAT', d.x, d.y, undefined, { angle: d.angle });
+      /* they know why they are here: the player, from the first step */
+      a.target = g.player;
+      a.threshold = 0;
+      a.setState(a.info.see);
+      a.van = v;
+      this.spawned++;
+      g.sound?.play('swatsee', a);
+      return a;
+    }
+    return null;
+  }
+
+  /** Nothing solid within `r` of a point, and the player is not there. */
+  roomAt(x, y, r) {
+    const g = this.game;
+    const list = g.blockmap ? g.blockmap.near(x, y, this._near || (this._near = [])) : g.actors;
+    for (let i = 0; i < list.length; i++) {
+      const o = list[i];
+      if (o.removed || !o.solid || o.dead) continue;
+      const rr = r + o.radius;
+      if ((o.x - x) ** 2 + (o.y - y) ** 2 < rr * rr) return false;
+    }
+    const p = g.player;
+    if (p && !p.dead && (p.x - x) ** 2 + (p.y - y) ** 2 < (r + p.radius) ** 2) return false;
+    return true;
   }
 }

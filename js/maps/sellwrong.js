@@ -1580,6 +1580,39 @@ export function buildSellWrong() {
     { x: OX0 + 240, y: (THRU_Y0 + THRU_Y1) / 2, heading: 0, side: 'west' },
     { x: OX1 - 240, y: (THRU_Y0 + THRU_Y1) / 2, heading: Math.PI, side: 'east' },
   ];
+  /* AND THE WAY IN FROM EACH END, for whatever drives. The ring road is
+     the only tarmac on the map with nothing parked on it, so a vehicle
+     arriving follows it: in along the through road to the T-junction,
+     up the leg, along the frontage lane, and the last point is wherever
+     it has been told to stop. Centre-line waypoints, in the order they
+     are driven; js/responders.js appends the bay.
+
+     WHERE THEY STOP is the fire lane — the strip between the frontage
+     lane and the canopy that the map keeps empty on purpose, because
+     nobody parks there — and a squad van pulled up across the fire lane
+     in front of the doors is exactly what the fire lane is for. Five
+     bays, the middle one in front of the entrance, the rest either side
+     of it, all facing along the front so a van unloads its crew toward
+     the shop. Which end they come from decides which way they face. */
+  {
+    const THRU_MID = (THRU_Y0 + THRU_Y1) / 2;
+    const FRONT_MID = (ROAD_Y0 + ROAD_Y1) / 2;
+    const WEST_LEG = (RING_X0 + LOT_X0) / 2, EAST_LEG = (LOT_X1 + RING_X1) / 2;
+    /* between the frontage lane and the TOWER FACE, not the canopy: the
+       porch comes forward eighty units in front of the doors, and a van
+       centred on the fire lane's own middle stood half in it */
+    const FIRE_MID = (FIRELANE_Y + PORCH_Y) / 2;
+    const DOORS_X = (PORCH_X0 + PORCH_X1) / 2;
+    level.swatRoutes = {
+      west: [{ x: level.roadEnds[0].x, y: THRU_MID }, { x: WEST_LEG, y: THRU_MID },
+             { x: WEST_LEG, y: FRONT_MID }],
+      east: [{ x: level.roadEnds[1].x, y: THRU_MID }, { x: EAST_LEG, y: THRU_MID },
+             { x: EAST_LEG, y: FRONT_MID }],
+    };
+    level.swatBays = [0, -1, 1, -2, 2, -3, 3, -4, 4].map(k => ({
+      x: DOORS_X + k * 560, y: FIRE_MID, approach: { y: FRONT_MID },
+    }));
+  }
   level.title = 'SELLWRONG — SUPERSTORE';
   /* Where a customer may stand. The crowd is placed through it and the
      smoke test holds every one of them against it. */

@@ -55,7 +55,7 @@ const LAMP_RANGE = 340;
 const LAMP_GAIN = 0.30;
 
 export class Game {
-  constructor({ level, scene, camera, textures, sprites, hud, audio, input, sky, flameAtlas, bodyAtlas, fxAtlases, gibAtlases, fleet }) {
+  constructor({ level, scene, camera, textures, sprites, hud, audio, input, sky, flameAtlas, bodyAtlas, fxAtlases, gibAtlases, fleet, police }) {
     this.level = level;
     this.scene = scene;
     this.camera = camera;
@@ -132,8 +132,10 @@ export class Game {
     if (fxAtlases) { this.frost.attach(scene); this.fx.attach(scene); }
     if (gibAtlases) this.giblets.attach(scene);
     this.weapon3d = null;
-    /* who the night brings — the escalation is real, the arrivals are
-       not yet; see js/responders.js */
+    /* who the night brings: the SWAT, in the user's van, once you have
+       killed somebody — see js/responders.js. `police` is that van's
+       model and sheet, and without it nobody comes. */
+    this.police = police || null;
     this.responders = new Responders(this);
     this.idle = false;                 // the title: the world stands still and the eye wanders
     this._nozzle = { x: 0, y: 0, z: 0 };
@@ -510,7 +512,11 @@ export class Game {
     this.onStateChange?.(this.state);
   }
 
-  onMonsterKilled(a, source) { if (source === this.player) this.player.kills++; }
+  onMonsterKilled(a, source) {
+    if (source === this.player) this.player.kills++;
+    /* and the squad keeps its own count — see js/responders.js */
+    if (a.info.team) this.responders?.defeated(a);
+  }
 
   setBigMessage(t, tics) { this.bigMessage = t; this.bigMessageTics = tics; }
 
@@ -538,7 +544,7 @@ export class Game {
 
   /** A shot that arrives instantly. Walks the ray, takes the nearest of
    *  the first actor it crosses and the first wall. */
-  hitscan(from, angle, range, damage) {
+  hitscan(from, angle, range, damage, opts = {}) {
     const tx = from.x + Math.cos(angle) * range;
     const ty = from.y + Math.sin(angle) * range;
     const z = from.eyeZ;
@@ -564,7 +570,7 @@ export class Game {
     }
 
     if (best) {
-      best.a.damage(damage, from);
+      best.a.damage(damage, from, opts);
       this.spawnPuff(best.x, best.y, z);
       return best.a;
     }
@@ -733,8 +739,8 @@ export class Game {
    *  is not a feature anybody wrote, it is what happens when cars are
    *  flammable and explosions light things. */
   explode(a, opts = {}) {
-    const { radius = 150, damage = 60, heat = 230, heatRadius = 86, ignite = 320 } = opts;
-    this.sound?.play('explode', a);
+    const { radius = 150, damage = 60, heat = 230, heatRadius = 86, ignite = 320, sound = 'explode' } = opts;
+    this.sound?.play(sound, a);
     this.fire.ignite(a.x, a.y, heat, heatRadius);
     for (const o of this.actorsInConeAround(a, radius)) {
       if (o === a) continue;

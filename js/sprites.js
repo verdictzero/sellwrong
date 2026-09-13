@@ -40,7 +40,8 @@ import { makeRng, pRandom } from './util.js';
 import { ramp, PALETTE } from './palette.js';
 import { WEAPON_TILE, WEAPON_TOP, CLEAR_INDEX } from './art-data.js';
 import { CELLS, ADULT, SHOPPERS, SPLATS, ASHES, BLASTS,
-         SHOPPER_SPRITE, SPLAT_SPRITE, ASH_SPRITE, BLAST_SPRITE } from './people.js';
+         SHOPPER_SPRITE, SPLAT_SPRITE, ASH_SPRITE, BLAST_SPRITE,
+         SWAT_SPRITE, SWAT_TURN, SWAT_FLAT, SWAT_HEIGHT } from './people.js';
 import { fireFrames, FIRE_FRAMES, BLAZE_FRAMES, EMBER_FRAMES } from './fireart.js';
 
 /* A frame is a letter, and the letters stop at Z. */
@@ -148,6 +149,43 @@ export function bakeSprites() {
         p.disc(cx - 1, head + 4, 2.0, 'flesh', 0.52);
       }, W, H, 820 + v));
     }
+  }
+
+  /* --- and the squad, when the squad has not arrived ---------------
+     The same bargain for the SWAT: a navy body of the right height under
+     every letter the state table names, so the chase, the rifle and the
+     deaths all run headless and the user's sheet lands on top under the
+     same names (see addSwat in js/people.js). The standing letters are
+     one figure with a rifle; the falling ones lean over; the lying and
+     the coming-apart ones are a body's length of navy on the floor. */
+  {
+    const H = CELLS.swat.h, W = CELLS.swat.w;
+    const draw = (kind, k) => radial(p => {
+      const cx = W >> 1, foot = H - 1;
+      if (kind === 'up') {
+        const head = H - SWAT_HEIGHT;
+        for (let y = foot - 27; y <= foot; y++)                               // legs
+          for (let x = -5; x <= 5; x++) if (Math.abs(x) > 1) p.ink(cx + x, y, 'blue', 0.22);
+        for (let y = head + 12; y < foot - 26; y++)                          // vest
+          for (let x = -7; x <= 7; x++) p.ink(cx + x, y, 'grey', 0.10 + (x < 0 ? 0.05 : 0));
+        p.hline(cx - 14, cx + 9, head + 22, 'grey', 0.06);                    // the rifle
+        p.hline(cx - 14, cx + 9, head + 23, 'grey', 0.08);
+        p.disc(cx, head + 6, 5.5, 'grey', 0.08);                              // helmet
+        p.hline(cx - 3, cx + 3, head + 7, 'cyan', 0.55);                      // visor
+      } else if (kind === 'down') {
+        const lean = k * 6;
+        for (let y = foot - 40 + lean; y <= foot; y++)
+          for (let x = -7; x <= 7; x++) p.ink(cx + x, y, y < foot - 22 + lean ? 'grey' : 'blue', 0.16);
+        p.disc(cx, foot - 42 + lean, 5.5, 'grey', 0.08);
+      } else {
+        for (let y = foot - 9; y <= foot; y++)
+          for (let x = -28; x <= 28; x++) p.ink(cx + x, y, kind === 'gore' ? 'red' : 'blue', 0.22);
+        if (kind === 'gore') for (let i = 0; i < 12; i++) p.disc(cx - 24 + i * 4, foot - 14 - (i % 3) * 5, 1.5, 'red', 0.4);
+      }
+    }, W, H, 900 + k);
+    [...SWAT_TURN].forEach(L => bank.addFrame(SWAT_SPRITE, L, draw('up', 0)));
+    [...SWAT_FLAT].forEach((L, i) =>
+      bank.addFrame(SWAT_SPRITE, L, draw(i < 4 ? 'down' : i < 7 ? 'flat' : 'gore', i)));
   }
 
   /* --- fire, in three sizes -----------------------------------------
