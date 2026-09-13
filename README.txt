@@ -3178,9 +3178,13 @@ WHAT IS NOT DONE
     JPEG decoder and one was not worth writing for files converted once
   the army trooper is cut, loadable and proven, and nothing in the game
     spawns one: no actor, no states, and main.js does not fetch the
-    strip. Asked for that way — prepared now, decided later. The SWAT's
-    table in js/states.js is the one to copy when the time comes, and
-    the smoke test pins the boundary so that it is crossed on purpose
+    strip. Asked for that way — prepared now, built later. THE ORDER IS
+    DECIDED: the SWAT, then the army after them, then a SUPER ARMY after
+    the army, whose sheet has not arrived. What "after" is measured in
+    — the pressure, the clock, the count of the dead — and what brings
+    them are not. The SWAT's table in js/states.js is the one to copy
+    when the time comes, and the smoke test pins the boundary so that it
+    is crossed on purpose
   nothing follows you into the wood, and the wood's fire and the
     store's do not cross the car park to each other; the flamethrower is
     the bridge

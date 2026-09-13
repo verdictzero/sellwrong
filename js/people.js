@@ -115,9 +115,11 @@ export const BLASTS   = 26;
    THE ARMY TROOPER IS PREPARED AND NOT IN THE GAME. The sheet is cut,
    the strip is in assets/people/, and this table and addTroops read it
    back, which the smoke test proves; there is no actor, no state and
-   nothing that loads it, at the user's request — cut now, decided
-   later. See THE SWAT in js/states.js for what the letters will mean
-   when there is one.
+   nothing that loads it, at the user's request — cut now, built later.
+   The order of the night is decided, though: the SWAT, then the army
+   after them, then a super army after the army, whose sheet is still
+   to come and will be a third entry here. See THE SWAT in js/states.js
+   for what the letters will mean when there is one.
    ------------------------------------------------------------------- */
 export const TROOPS = {
   SWAT: {
