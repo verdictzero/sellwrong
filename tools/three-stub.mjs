@@ -21,7 +21,7 @@ export class CanvasTexture extends Stub {
 }
 export class DataTexture extends Stub { constructor(d, w, h) { super(); this.image = { data: d, width: w, height: h }; } }
 export class Vector2 { constructor(x = 0, y = 0) { this.x = x; this.y = y; } set(x, y) { this.x = x; this.y = y; return this; } }
-export class Vector3 extends Vector2 { constructor(x = 0, y = 0, z = 0) { super(x, y); this.z = z; } set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; } }
+export class Vector3 extends Vector2 { constructor(x = 0, y = 0, z = 0) { super(x, y); this.z = z; } set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; } multiplyScalar(k) { this.x *= k; this.y *= k; this.z *= k; return this; } }
 export class Color { constructor() {} setRGB() { return this; } setHex() { return this; } }
 export class Group {
   constructor() { this.children = []; }

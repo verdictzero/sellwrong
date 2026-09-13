@@ -2234,6 +2234,28 @@ section('the cold');
        the flame one day takes the conversion with it */
     check('and it hangs off the group while the muzzle hangs off the model',
       /group\.add\(g\.pilot\)/.test(gunSrc) && /inner\.add\(g\.muzzle\)/.test(gunSrc));
+
+    /* --- AND THE BORE IS HELD SMALLER AND FARTHER OFF ----------------
+       A third smaller and a third farther from the eye than the other
+       two, at the user's request, and the two are per-gun numbers in
+       GUNS rather than a change to VIEW, which the flamethrower was
+       tuned against. "Farther off" is a push straight back along the
+       view — z alone — and the first version of this check pinned the
+       opposite: the whole position scaled along the line from the eye,
+       which keeps a point's place on screen, and did, for the gun's
+       centre, which is below the bottom of the frame by design; the
+       gun shrank around a point nobody can see and all but left the
+       picture. Pushed straight back it recedes toward the middle and
+       stays in its corner, which is what farther off looks like. */
+    const B = w3.GUNS.BORE;
+    check('the bore is held a third smaller than the other two, and a third farther off',
+      Math.abs(B.fit - w3.GUN_LENGTH * 0.67) < 1e-9 && B.out === 1.33 &&
+      E.out === undefined && w3.GUNS.FLAMER.out === undefined && E.fit === w3.GUN_LENGTH);
+    check('and farther off is a push straight back along the view, z alone, not the whole position scaled',
+      /\(VIEW\.pos\[2\] \+ this\.kick \* 0\.025\) \* \(G\.def\.out \?\? 1\)/.test(gunSrc) &&
+      !/multiplyScalar\(G\.def\.out/.test(gunSrc));
+    check('and its exhaust is scaled with it, being in metres and not in the model',
+      Math.abs(B.muzzle.len - 0.14 * 0.67) < 0.002 && Math.abs(B.muzzle.wid - 0.10 * 0.67) < 0.002);
     /* AND THE FILE IS WHAT SAYS WHERE. Both anchors come out of the
        flamethrower's own asset.extras, and the pilot sits just under
        the barrel tip — a few centimetres, not a third of the gun. */
@@ -4375,28 +4397,87 @@ section('the van');
         check('and a frozen one shatters', d3.removed);
       }
 
-      /* --- and the van is the thing to deal with --------------------- */
-      v.ignite();
-      let states = [];
-      for (let i = 0; i < 900 && v.state !== 'wreck'; i++) {
-        gs.tic();
-        if (states[states.length - 1] !== v.state) states.push(v.state);
+      /* --- FIREPROOF, at the user's request -------------------------
+         The police and the police van. Fire is the whole of what the
+         flag refuses — the stream, the floor, a blast — and a bullet, a
+         van and the bore are not fire. The one thing fire does to a
+         trooper is let a frozen one out: fire on a fireproof block of
+         ice is a thaw, because nothing inside it can be eaten. */
+      const fp = gs.actors.find(q => q.type === 'SWAT' && !q.dead && !q.frozen);
+      check('a trooper is fireproof, and so not flammable, and worth nothing as fuel',
+        !!fp && fp.fireproof && !fp.flammable && fp.fuel === 0 && !fp.info.burnAway && !fp.info.burn);
+      if (fp) {
+        const hp = fp.health;
+        fp.ignite(300);
+        check('he does not catch', fp.burning === 0 && fp.torch === 0 && fp.lit === 0);
+        fp.damage(50, p, { fire: true });
+        check('and fire does him no harm', fp.health === hp && !fp.dead, `${hp} -> ${fp.health}`);
+        /* the stream, on him: the particle is spent and nothing else */
+        gs.flame._burnActor(fp, fp.x, fp.y, fp.z + 20);
+        check('the flamethrower splashes off him', fp.health === hp && fp.burning === 0);
+        /* a car going up beside him */
+        gs.explode({ x: fp.x + 30, y: fp.y, z: fp.z }, { radius: 200, damage: 500, heat: 255 });
+        check('and a car going up beside him does not touch him', fp.health === hp && fp.burning === 0 && !fp.dead);
+        /* the floor: a shopper on the same hot cell catches; he does not */
+        const shop = gs.spawn('SHOPPER', fp.x + 8, fp.y + 8, undefined, {});
+        gs.fire.ignite(fp.x, fp.y, 255, 40);
+        for (let i = 0; i < 20; i++) gs.fire._burnThings();
+        check('the burning floor lights the shopper beside him and not him',
+          shop.burning > 0 && fp.burning === 0 && fp.health === hp, `shopper ${shop.burning}, trooper ${fp.burning}`);
+        shop.remove();
+        /* and what still gets through: a bullet */
+        fp.damage(9, null, { shot: true });
+        check('but a bullet still does', fp.health === hp - 9, `${hp} -> ${fp.health}`);
+        /* fire on the ice is a thaw */
+        fp.chill(100);
+        check('frozen', fp.frozen);
+        fp.damage(20, p, { fire: true });
+        check('fire on a frozen trooper is a thaw and not an execution',
+          !fp.removed && !fp.dead && fp.ash === 0 && fp.frozen && fp.frost < 100, `frost ${fp.frost}, ash ${fp.ash}`);
+        for (let i = 0; i < 10 && fp.frozen; i++) fp.damage(20, p, { fire: true });
+        check('and enough of it lets him out, running', !fp.frozen && !fp.dead && !fp.removed && fp.state.name === 'SWAT_RUN1', fp.state.name);
       }
-      note('the van, lit', states.join(' -> '));
-      check('a squad van burns, chars and goes up like any other vehicle',
-        states.join(',') === 'parked,charring,air,settle,wreck', states.join(','));
-      check('and keeps its own mesh through it, out of the slab', v.own && !!v.mesh && !v.slab);
-      check('and is no longer a van anybody counts', !R.liveVans.includes(v));
+
+      /* --- and the van cannot be dealt with ------------------------- */
+      check('the police van is fireproof', v.fireproof);
+      const vh = v.health, vs = v.state;
+      v.ignite();
+      check('it does not catch', v.burning === 0 && v.state === vs && v.flames.length === 0);
+      v.damage(1000);
+      check('nor char when shot to death', v.state === vs && v.health === vh, `${v.state}, ${v.health}`);
+      gs.explode({ x: v.x + 40, y: v.y, z: v.ground }, { radius: 400, damage: 900, heat: 255 });
+      v.startChar(); v.blowUp();
+      check('nor go up for a bang beside it, nor when told to', v.state === vs && v.health === vh && v.burning === 0);
       const out = v.unloaded;
-      for (let i = 0; i < S.trickle * 2; i++) gs.tic();
-      check('and a wrecked van unloads nobody', v.unloaded === out);
+      for (let i = 0; i < 900; i++) { p.health = 100; gs.tic(); }
+      check('nine hundred tics later it is where it was, standing', v.state === 'parked' && R.liveVans.includes(v));
+      check('and still unloading', v.unloaded > out, `${v.unloaded} after ${out}`);
     }
-    /* THE CAP, over a long night */
+
+    /* --- THE CURVE ----------------------------------------------------
+       Exponential, at the user's request: equal steps in time multiply
+       the presence by the same amount. The pure function first, then
+       the caps it drives, then a long night. */
+    const { pressureAfter } = await import('../js/responders.js');
+    check('the pressure is 1 at the call, 2 a doubling later, 8 after three',
+      pressureAfter(0) === 1 && pressureAfter(S.doubling) === 2 && pressureAfter(3 * S.doubling) === 8);
+    check('and a doubling is a doubling wherever on the curve it starts — which is what exponential means',
+      [0, 500, 1234, 4000, 9999].every(t0 => Math.abs(pressureAfter(t0 + S.doubling) / pressureAfter(t0) - 2) < 1e-9));
+    check('the caps, the gap and the trickle are all the same number read four ways',
+      Math.min(S.bays, Math.floor(S.vans * 4)) === (() => { const save = R.calledAt; R.calledAt = R.tics - 2 * S.doubling; const c = R.vanCap; R.calledAt = save; return c; })() &&
+      (() => { const save = R.calledAt; R.calledAt = R.tics - 2 * S.doubling; const ok = R.trooperCap === Math.min(S.maxTroopers, S.troopers * 4) && Math.abs(R.trickleNow() - Math.max(S.minTrickle, S.trickle / 4)) < 1e-9; R.calledAt = save; return ok; })());
+    check('and every gap has a floor, so the curve asks nothing the road cannot do',
+      (() => { const save = R.calledAt; R.calledAt = R.tics - 40 * S.doubling; const ok = R.gapNow() === S.minEvery && R.trickleNow() === S.minTrickle && R.trooperCap === S.maxTroopers && R.vanCap === S.bays; R.calledAt = save; return ok; })());
+    /* THE LONG NIGHT: the caps only ever climb, and the lot fills */
+    const capsBefore = { troopers: R.trooperCap, vans: R.vanCap, ever: R.spawned };
     for (let i = 0; i < 1400; i++) { p.health = 100; gs.tic(); }
-    note('the night so far', `${R.vans.length} vans, ${R.troopers} troopers up, ${R.spawned} ever, ${R.defeatedCount} down`);
-    check('there are never more troopers on their feet than the budget', R.troopers <= S.maxTroopers);
-    check('and never more vans on the road or standing than the budget', R.liveVans.length <= S.maxVans);
-    check('and the vans keep coming', R.vans.length >= 2, `${R.vans.length}`);
+    note('the night so far', `${((R.tics - R.calledAt) / 35).toFixed(0)}s since the call, pressure ${R.pressure.toFixed(1)}: ${R.vans.length} vans, ${R.troopers} troopers up of ${R.trooperCap} allowed, ${R.spawned} ever, ${R.defeatedCount} down`);
+    check('there are never more troopers on their feet than the curve allows', R.troopers <= R.trooperCap);
+    check('and never more vans on the road or standing than it allows', R.liveVans.length <= R.vanCap);
+    check('and forty seconds on, more of both are allowed than were',
+      R.trooperCap > capsBefore.troopers && R.vanCap >= capsBefore.vans && R.spawned > capsBefore.ever);
+    check('three minutes in, the whole fire lane is spoken for', R.vanCap === S.bays && R.vans.length >= 4, `${R.vans.length} vans`);
+    check('and the troopers allowed have doubled at least twice since the call', R.trooperCap >= 4 * S.troopers, `${R.trooperCap}`);
 
     /* the corner grows a third bar the moment something hurts you */
     const hudSrc = fs.readFileSync('js/hud.js', 'utf8');

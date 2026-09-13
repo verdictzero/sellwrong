@@ -278,6 +278,12 @@ class Vehicle {
        a wreck. `own` says so. */
     this.texture = opts.texture || fleet.texture;
     this.own = !!opts.own;
+    /* FIREPROOF, which for a vehicle is invulnerable: fire is the only
+       thing that ends one — shot to death is a char, and a char is a
+       fire — so a vehicle that fire does nothing to is one nothing does
+       anything to. The police van wears it, at the user's request; see
+       damage, ignite, startChar and blowUp, which all ask. */
+    this.fireproof = !!opts.fireproof;
 
     this.state = opts.state || 'parked';
     this.health = HEALTH;
@@ -349,7 +355,7 @@ class Vehicle {
   get whole() { return this.state === 'parked' || this.state === 'driving' || this.state === 'charring'; }
 
   damage(n) {
-    if (!this.whole) return;
+    if (!this.whole || this.fireproof) return;
     /* MORE DAMAGE TO ONE ALREADY CHARRING HURRIES IT: two tics off the
        fuse per point, so a car that has just started to blacken and is
        then hit by the bang next door goes early, and a chain reaction
@@ -360,7 +366,7 @@ class Vehicle {
   }
 
   ignite(tics = CATCH_TICS) {
-    if (!this.whole) return;
+    if (!this.whole || this.fireproof) return;
     const first = this.burning <= 0;
     this.burning = Math.max(this.burning, tics);
     if (first) this.catch();
@@ -418,7 +424,7 @@ class Vehicle {
      goes, so the bay around a car about to go is lit like a hearth.
      ------------------------------------------------------------------ */
   startChar() {
-    if (this.state === 'charring' || !this.whole) return;
+    if (this.state === 'charring' || !this.whole || this.fireproof) return;
     const g = this.fleet.game;
     this.state = 'charring';
     this.char = 0;
@@ -478,7 +484,7 @@ class Vehicle {
      as it arrives; see the note at the top of the file.
      ------------------------------------------------------------------ */
   blowUp() {
-    if (!this.whole) return;
+    if (!this.whole || this.fireproof) return;
     const g = this.fleet.game, d = this.def;
     this.state = 'air';
     this.burning = 0;
@@ -835,12 +841,19 @@ class Chunk {
    ONE THAT DRIVES
 
    The police van, which is the first vehicle in the game with somewhere
-   to go. It is an ordinary Vehicle in every respect that matters —
-   shootable, flammable, it chars and it goes up on the same arithmetic
-   as the customers' vans — with one state in front of `parked` that
-   nothing else has: DRIVING, along a list of points the map hands out
-   (see level.swatRoutes), at a speed, with its three blockers carried
-   along under it.
+   to go. It is an ordinary Vehicle in the ways that matter — three
+   cylinders, its own mesh, the same box — with one state in front of
+   `parked` that nothing else has: DRIVING, along a list of points the
+   map hands out (see level.swatRoutes), at a speed, with its three
+   blockers carried along under it.
+
+   AND IT IS FIREPROOF, at the user's request, which for a vehicle is
+   invulnerable (see the flag in Vehicle): it does not catch, it does
+   not char, it does not go up, and a car going up in the next bay does
+   not touch it. It used to burn like the customers' vans and going up
+   was what stopped it unloading; nothing stops it now. The squad is
+   dealt with one trooper at a time, and the van is the road's end of a
+   pipe.
 
    IT IS NOT A CAR PHYSICS EITHER. The position rides the polyline
    exactly and the heading eases toward each segment's direction at a
@@ -878,7 +891,7 @@ export class SwatVan extends Vehicle {
       x: start.x, y: start.y, z: sec ? sec.floor : 0,
       angle: Math.atan2(next.y - start.y, next.x - start.x),
       light: sec ? sec.light : 0.74, sky: sec ? (sec.sky ?? (sec.outdoor ? 1 : 0)) : 1,
-      paint: [1, 1, 1], texture, own: true, state: 'driving',
+      paint: [1, 1, 1], texture, own: true, fireproof: true, state: 'driving',
     });
     this.route = route.slice(1);
     this.driven = 0;
@@ -921,8 +934,9 @@ export class SwatVan extends Vehicle {
       g.sound?.play(this.sirenNote ? 'siren2' : 'siren', this);
       this.sirenNote ^= 1;
     }
-    /* embers off the flash of the lights would be a lie, so nothing; but
-       a van on fire on the road still burns */
+    /* embers off the flash of the lights would be a lie, so nothing —
+       and nothing burns either, being fireproof; the line stands for a
+       vehicle that is not */
     if (this.burning > 0) this.burnTic();
   }
 

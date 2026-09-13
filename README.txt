@@ -76,7 +76,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         873 checks, no install and no browser
+  the smoke test         894 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -325,9 +325,18 @@ THE CEREBRAL BORE
 TUROK 2'S, at the user's request, and the user's model: assets/models/
 bore.glb, stripped of the normal and metal-rough maps by
 tools/prep-model.mjs the way the flamethrower was — half of what it
-weighed — and held low and right like the other two. It is the one
-weapon in the game that is AIMED rather than poured, and the rules are
-Turok's; js/bore.js is the whole of it.
+weighed — and held low and right like the other two, a third smaller
+and a third farther from the eye than they are (at the user's request:
+it is a big square thing and at the flamethrower's size it was a
+quarter of the picture). Both numbers are the gun's own in GUNS rather
+than a change to VIEW, and "farther" is a push straight back along the
+view, z alone — the first try scaled the whole position along the line
+from the eye, which keeps a point's place on screen and did, for the
+gun's centre, which is below the bottom of the frame by design, so the
+launcher shrank around a point nobody can see and all but left the
+picture; see WHAT WENT WRONG. It is the one weapon in the game that is
+AIMED rather than poured, and the rules are Turok's; js/bore.js is the
+whole of it.
 
 THE SIGHT. Every tic the bore is in hand a ray goes out of the eye along
 the view, pitch and all — the flamethrower's aim never needed the pitch;
@@ -1369,17 +1378,32 @@ a squad van at speed goes through it; the player is shoved and hurt, which
 with a bullet is the only thing that gets through the fireproofing.
 
 THEN THE CREW. Parked, it unloads a trooper every second and a half onto
-the footway, six of them, and when the crew is out it does not stop: one
-every nine seconds, for as long as it stands there, and another van every
-forty to seventy seconds after that, each sooner than the last, up to four
-on the road or standing at once. There is a budget — twenty-two troopers
-on their feet across every van, and a van that would unload past it waits
-— and that budget is the whole of what keeps a long night from filling the
-lot with navy blue. Which makes the VAN the thing to deal with: it is a
-vehicle, it burns, chars and goes up like any other (see AND THEN IT GOES
-UP), and a van that has gone up is a van that has stopped. That is the
-fight now: the store behind you, the lot in front of you, and the road
-bringing more.
+the footway, six of them, and when the crew is out it does not stop: it
+trickles, one every nine seconds to begin with, for as long as it stands
+there — which is for ever, because the van is FIREPROOF (below) and
+nothing in the game ends one.
+
+AND IT RAMPS EXPONENTIALLY, at the user's request, and the ramp is one
+number: the PRESSURE, 1 at the call and doubling every minute from then
+on, without limit. Everything that says how much police there is — how
+many vans may be on the road or standing at once (two, to begin with), how
+many troopers may be on their feet across every van (six), how long
+between vans (fifty-five seconds, give or take a fifth), how long between
+one trooper and the next out of a standing van (nine) — is that starting
+value times the pressure, read off the curve at the moment the question
+is asked rather than fixed at the call. So a minute after the first kill
+the vans come twice as often and twice as many are allowed out; two
+minutes, four times; three, eight; and the same minute of the night is
+the same everywhere, because it is one curve read four ways. The floors
+(a van every six seconds, a trooper every two) and the ceiling (eighty on
+their feet) are what the engine is asked to carry, not the design, and
+the bays are the map's nine; the curve reaches all of them inside four
+minutes and then holds the lot there. It is js/responders.js, top to
+bottom, and pressureAfter() is the curve as a pure function for the test
+to pin: equal steps in time multiply by the same amount, which is what
+exponential means. There is no goal in this game and this is the nearest
+thing to an ending it has: the night gets worse at a rate that does not
+care how well you are doing.
 
 A TROOPER IS THE ZOMBIEMAN with the numbers looked at again, and he walks
 on the chase this file has described for a year with nobody in it —
@@ -1392,11 +1416,33 @@ the car park mostly does; one hit in five makes him flinch. They are a
 TEAM: a trooper shot in the back by the man behind him does not turn round
 to deal with it, because Doom's infighting is the best thing in Doom and
 the wrong thing for a squad. They come out of the van already after you.
-And everything the fire and the cold do to a shopper they do to a
-trooper, on the same states with his own drawings in — except that there
-is no `burn` state, deliberately, so fire does not make him run: a torch
-that shoots back is worse than a torch. A block of ice with a rifle in it
-is the best joke the two weapons together tell.
+
+THE POLICE ARE FIREPROOF, at the user's request — the troopers and the
+van both — and it is one flag on each (`fireproof` on the actor type in
+js/states.js, `fireproof` on the Vehicle) asked in the handful of places
+fire arrives: Actor.damage refuses anything flagged `fire`, which is the
+stream, the burning floor, a blast and a torch running past; Actor.ignite
+refuses to light one because a fireproof thing is not a flammable thing;
+the floor fire does not bother asking; and the van's damage, ignite,
+startChar and blowUp all return at the door, which for a vehicle is
+invulnerable, since fire is the only thing that ends one. The stream
+splashes off the armour and heats the tarmac under it. A car going up in
+the next bay does nothing to the van. Nothing eats a trooper to ash; the
+two ash states are gone with the flag that reached them. What still gets
+through: a bullet (the man behind him), a van (his own, if he is standing
+in the lane when the next one comes), and the bore — which is the answer
+to them, and is rationed, which is the point. The flamethrower is not the
+answer to the SWAT any more than it is to a bullet.
+
+THE COLD STILL WORKS. A trooper freezes like anybody else, on his own
+drawing, and a block of ice with a rifle in it is the best joke the two
+weapons together tell. And it is the one place fire does anything to a
+trooper: fire on a fireproof block of ice is a THAW, not the execution it
+is for a shopper, because nothing inside can be eaten — the old melt rule
+from before burn-away, kept for the one kind of person it is right for.
+Freeze one and the flamethrower lets him out, running; the bore or a blow
+is what finishes him. Fire on the floor under a frozen trooper thaws him
+the same way, where it would eat a shopper.
 
 AND YOU CAN BE HURT NOW. There was no health on the screen because nothing
 could take any off; from the first bullet that lands there is a third bar
@@ -2485,7 +2531,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-873 checks. Every one of them earns its place by having caught something
+894 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -2870,6 +2916,23 @@ that had already reached a screenshot:
     middles were near enough. So the trooper fell, lay down, knelt up
     again and lay down. That band is cut COLUMNS FIRST now, and the
     order the cut returns is the order the frames play in
+  A LAUNCHER THAT LEFT THE PICTURE. The bore was asked to be a third
+    smaller and a third farther off, and the first version of "farther
+    off" scaled the gun's whole position along the line from the eye —
+    on the theory, which is true, that a point moved along that line
+    keeps its place on screen, so the gun would keep its corner of the
+    frame and only shrink. The point that kept its place was the gun's
+    CENTRE, which sits below the bottom of the frame by design (VIEW.pos
+    is low and right so the body is off screen and the barrel comes in
+    across the corner), so the launcher shrank around a point nobody
+    can see and what was left in the picture was one edge of it. The
+    push is straight back along the view now, z alone, which is what
+    holding a thing farther from your face is; it recedes toward the
+    middle the way anything farther off does, and the whole of the
+    launcher's mouth end is in the corner at half its old size. Caught
+    by the screenshot, not the test, which can only pin which line the
+    push is on: a picture is the one check a scene graph in a stub
+    cannot give you
   A PIECE OF CAR ONE PAST THE END OF THE MODEL. rnd() in js/vehicles.js
     is pRandom() / 255 and pRandom() rolls 0 to 255 INCLUSIVE, so it
     returns exactly 1.0 about once in every 256 calls — and the one
@@ -3052,8 +3115,15 @@ WHAT IS NOT DONE
     helicopter — are still an alarm, a dispatch and a delay with nobody
     at the end of it; the squad has a trigger of its own
   a trooper does not put fires out, does not use a door on purpose (the
-    sliders open for anything solid, so he gets in), and walks into a
-    burning car park like anybody else. Which is how most of them die
+    sliders open for anything solid, so he gets in), and walks through a
+    burning car park without noticing it, being fireproof. Nothing you
+    can pour stops one; the bore is five kills a minute and the curve
+    is more than that inside three
+  the police van cannot be ended by anything in the game. It was made
+    fireproof, and for a vehicle fireproof is invulnerable, since being
+    shot to death is a char and a char is a fire; so a stray bullet
+    from its own crew bounces off it too. Nine of them stand in the fire
+    lane for the rest of the night, unloading
   the touch controls were proven on an emulated phone — real touch
     events through Chromium, both thumbs at once — and not yet on glass;
     the look speed, the dead zone and the button sizes want a real thumb

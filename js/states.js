@@ -152,12 +152,12 @@ S('SHOP_BORE',   'SHOP', 'A', -1, null, 'SHOP_BORE');
    flash lighting the whole figure — so it is fullbright, and the state
    table does not need to know how the light on it got there.
 
-   AND THE THREE THINGS THE FIRE AND THE COLD DO TO EVERYBODY ELSE happen
-   to them too: they burn (and keep shooting while they do, because
-   nothing in this table sends them running), they freeze into a block
-   that the next hit shatters, and a block of them the fire reaches is
-   eaten to ash on the same two states a shopper is. Same drawings, same
-   shader, same machinery — see SHOP_FROZE and SHOP_ASH1 for why.
+   THE COLD DOES TO THEM WHAT IT DOES TO EVERYBODY ELSE: they freeze
+   into a block that the next blow shatters, on the same state and the
+   same shader a shopper does — see SHOP_FROZE. The fire does NOTHING to
+   them, at the user's request: no burn, no ash, and the two ash states
+   that used to sit here are gone with the flag that made them
+   reachable. See the SWAT actor below for the whole of it.
    ------------------------------------------------------------------- */
 S('SWAT_STAND',  SWAT_SPRITE, 'G', 10, 'A_Look', 'SWAT_STAND');
 /* three tics a frame, four drawings held twice: a walk a shade quicker
@@ -193,8 +193,8 @@ const SWAT_GIB = 'OPQRSTUVW';
     i === arr.length - 1 ? null : `SWAT_XDIE${i + 2}`));
 S('SWAT_FROZE',  SWAT_SPRITE, 'G', -1, null, 'SWAT_FROZE');
 S('SWAT_BORE',   SWAT_SPRITE, 'G', -1, null, 'SWAT_BORE');
-S('SWAT_ASH1',   SWAT_SPRITE, 'G', 4, 'A_BurnAway', 'SWAT_ASH2', { fullbright: true });
-S('SWAT_ASH2',   SWAT_SPRITE, 'G', 4, 'A_BurnAway', 'SWAT_ASH1', { fullbright: true });
+/* no SWAT_ASH: a trooper is fireproof and nothing eats one — see the
+   actor below */
 
 /* ---------------------------------------------------------------------
    Things that are not monsters
@@ -340,36 +340,41 @@ export const ACTORS = {
   },
 
   /* A SWAT TROOPER, and the Zombieman's numbers looked at again. Sixty
-     health: five times a shopper, so the stream has to be held on one
-     for a moment rather than waved past — and one on fire keeps coming,
-     because there is no `burn` state here to send them running, which
-     is the point. Three health a tic off the fire finishes one in about
-     five seconds; a torch that shoots back is worse than a torch.
+     health: five times a shopper, though the stream never gets at it —
+     see FIREPROOF below. A rifle bullet does, from the man behind him.
 
      THEY SHOOT. `missile` is the rifle, `missileRange` is how far they
      will try it from, and the whole of the aim is in A_SwatFire. Fifty
      of painchance is one hit in five that makes them flinch, so a
-     stream held on one interrupts it sometimes and not always.
+     bullet interrupts one sometimes and not always.
 
      THEY ARE A TEAM. `team` is what stops a trooper who has just been
      shot in the back by the man behind him turning round to deal with
      it — Doom's monsters infight and it is the best thing about them,
      and it is also the wrong thing for a squad. See Actor.damage.
 
-     AND THEY BURN, FREEZE AND SHATTER like everybody else, on the same
-     states the shoppers use with their own drawings in. No `burn`
-     state, deliberately, so fire does not make them run; `burnAway` and
-     `frozen` because a block of ice with a rifle in it is the best joke
-     the two weapons together tell. */
+     THEY ARE FIREPROOF, at the user's request, and the flag is the
+     whole of it (see Actor.damage, Actor.ignite and Actor.frostTic):
+     the stream splashes off the armour, the floor they walk over does
+     not hurt them, a car going up beside them does not hurt them, and
+     they never catch — no `burn`, no `burnAway`, no ash. What gets
+     through is a bullet, a van and the bore. The flamethrower is not
+     the answer to them; the bore is, and it is rationed.
+
+     THE COLD STILL WORKS. `frozen` because a block of ice with a rifle
+     in it is the best joke the two weapons together tell — and it is
+     the one place fire does anything to a trooper: fire on a fireproof
+     block of ice is a THAW, not the execution it is for a shopper,
+     because nothing inside it can be eaten. So freeze one and the
+     flamethrower lets him out, and the bore or a blow finishes him. */
   SWAT: {
     name: 'SWAT', spawn: 'SWAT_STAND', see: 'SWAT_RUN1', pain: 'SWAT_PAIN',
     missile: 'SWAT_ATK1', death: 'SWAT_DIE1', xdeath: 'SWAT_XDIE1',
     health: 60, gibHealth: -30, radius: 20, height: 56, mass: 100, painchance: 50,
     speed: 9, reaction: 8, sightRange: 2400, missileRange: 1500,
-    monster: true, team: 'swat', flammable: true, fuel: 60,
+    monster: true, team: 'swat', fireproof: true,
     seeSound: 'swatsee', painSound: 'swatpain', deathSound: 'swatdie', attackSound: 'shot',
     freezable: true, frozen: 'SWAT_FROZE', freezeReturn: 'SWAT_RUN1',
-    burnAway: 'SWAT_ASH1', ashTics: [3.0 * TICRATE, 4.5 * TICRATE],
     bored: 'SWAT_BORE',
     /* a third again the room's light on them. The sheet is navy on
        black and a car park at night made them a silhouette; most of the

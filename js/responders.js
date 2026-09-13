@@ -13,25 +13,31 @@
    WHAT CALLS THEM IS A KILL. Not the fire — a supermarket alight is the
    fire brigade's business — but the moment somebody is dead by your
    hand the night has changed, and the first van is on the road. From
-   then on they keep coming: a van every forty to seventy seconds, up to
-   a handful standing at once, each one pulling up across the fire lane
+   then on they keep coming, each one pulling up across the fire lane
    in front of the doors and unloading its crew one at a time onto the
-   footway. When the crew is out it does not stop; it trickles, one
-   trooper every nine seconds, for as long as it stands there. Which
-   makes the VAN the thing to deal with — a squad van is a vehicle and
-   burns, chars and goes up like any other, and a van that has gone up
-   is a van that has stopped — and that is the fight: the store behind
-   you, the lot in front of you, and the road bringing more.
+   footway; and when the crew is out it does not stop, it trickles, for
+   as long as it stands there, which is for ever, because a squad van
+   is fireproof (see SwatVan) and nothing in the game ends one.
+
+   AND IT RAMPS EXPONENTIALLY, at the user's request, and the ramp is
+   ONE NUMBER: the PRESSURE, 1 at the call and doubling every so many
+   seconds from then on, without limit. Everything that says how much
+   police there is — how many vans may be on the road or standing, how
+   many troopers may be on their feet, how long between vans, how long
+   between one trooper and the next out of a standing van — is a
+   starting value times that number, read off the curve at the moment
+   the question is asked rather than fixed at the call. So the same
+   minute of the night is the same everywhere: the vans come twice as
+   often, the doors open twice as often and twice as many are allowed
+   out, all together. The floors under the gaps and the ceiling on the
+   troopers are what the engine can carry, not the design; the design
+   is the curve, and the curve does not stop.
 
    WHERE THEY GO is the map's business. level.swatRoutes is the way in
    from each end of the road and level.swatBays is where a van may stop,
    both worked out where the lot's own numbers are; this file joins one
    to the other and drives nothing itself. See SwatVan in js/vehicles.js
    for the driving and js/states.js for the trooper.
-
-   THE BUDGET is a cap on troopers alive at once, across every van, and
-   it is the whole of what keeps a long night from filling the lot with
-   navy blue. A van that would unload past it waits.
    ===================================================================== */
 
 import { TICRATE, pRandom } from './util.js';
@@ -81,26 +87,43 @@ export function alarmOf({ storePct = 0, woodPct = 0, kills = 0, minutesAlight = 
 
    `after` is the kill that calls them — the first — and `firstDelay`
    is the drive from wherever they were, which is long enough to have
-   forgotten and short enough that you have not gone far. `every` is
-   the gap between vans after that, rolled, and shrinks as the night
-   goes on (see nextVanAt): the third van comes sooner than the second.
+   forgotten and short enough that you have not gone far.
+
+   THEN THE CURVE. `doubling` is how often the pressure doubles, from
+   the call; the four `at pressure 1` numbers are what the night starts
+   at, and every one of them is divided or multiplied by the pressure
+   as it is used (see pressure, vanCap, trooperCap, gapNow, trickleNow).
+   A minute in: twice the vans allowed, twice the troopers, half the
+   gap, half the trickle. Two minutes: four times. Three: eight. The
+   floors and the ceiling are the engine's, and the bays are the map's;
+   the curve reaches all of them inside four minutes and then simply
+   holds the lot at what the engine will carry.
    ------------------------------------------------------------------- */
 export const SWAT = {
   after: 1,                              // kills before anybody is called
   firstDelay: 16 * TICRATE,              // the first van's drive
-  every: [40 * TICRATE, 70 * TICRATE],   // and the gap between vans
-  quicker: 0.85,                         // what each van does to the next gap
-  minEvery: 18 * TICRATE,                // but never closer than this
-  maxVans: 4,                            // standing or coming at once
+  doubling: 60 * TICRATE,                // how often the pressure doubles, from the call
+  every: 55 * TICRATE,                   // the gap between vans, at pressure 1, give or take a fifth
+  minEvery: 6 * TICRATE,                 // and the least it can ever be
+  vans: 2,                               // on the road or standing at once, at pressure 1
+  troopers: 6,                           // on their feet at once, at pressure 1
+  maxTroopers: 80,                       // and the most the engine is asked to carry
   crew: 6,                               // what a van carries
   unloadEvery: 50,                       // tics between one and the next
-  trickle: 9 * TICRATE,                  // and after the crew is out, for ever
-  maxTroopers: 22,                       // alive at once, across every van
+  trickle: 9 * TICRATE,                  // and after the crew is out, for ever, at pressure 1
+  minTrickle: 2 * TICRATE,               // and the least that can be
   bays: 9,                               // spaces along the fire lane
 };
 
+/** The curve, as a pure function: how many times harder the night is
+ *  pressing `tics` after the call. 1 at the call, 2 a doubling later,
+ *  4 after two, and so on — equal steps in time multiply by the same
+ *  amount, which is what exponential means and what the test pins. */
+export function pressureAfter(tics) {
+  return Math.pow(2, Math.max(0, tics) / SWAT.doubling);
+}
+
 const rnd = () => pRandom() / 255;
-const between = ([a, b]) => a + rnd() * (b - a);
 
 export class Responders {
   constructor(game) {
@@ -117,11 +140,29 @@ export class Responders {
     this.called = false;             // somebody has died by your hand
     this.calledAt = -1;
     this.nextVanAt = -1;
-    this.gap = 0;                    // the current gap between vans, in tics
-    this.vans = [];                  // every SwatVan that has come, wreck or not
+    this.gap = 0;                    // the gap the last van set, in tics
+    this.vans = [];                  // every SwatVan that has come
     this.side = 0;                   // which end of the road the next one uses
     this.spawned = 0;                // troopers put on the ground, ever
   }
+
+  /* ------------------------------------------------------------------
+     THE CURVE, read off the clock
+     ------------------------------------------------------------------ */
+  /** How hard the night is pressing now: 0 before the call, 1 at it,
+   *  and doubling every SWAT.doubling tics from then on. */
+  get pressure() { return this.called ? pressureAfter(this.tics - this.calledAt) : 0; }
+  /** Vans allowed on the road or standing at once, now. The bays are
+   *  the ceiling: a van with nowhere to stop is not sent. */
+  get vanCap() { return Math.min(SWAT.bays, Math.floor(SWAT.vans * this.pressure)); }
+  /** Troopers allowed on their feet at once, now, across every van. */
+  get trooperCap() { return Math.min(SWAT.maxTroopers, Math.floor(SWAT.troopers * this.pressure)); }
+  /** The gap to the next van, now: the starting gap over the pressure,
+   *  give or take a fifth so two nights are not the same night. */
+  gapNow() { return Math.max(SWAT.minEvery, SWAT.every * (0.8 + 0.4 * rnd()) / this.pressure); }
+  /** The gap between one trooper and the next out of a standing van
+   *  whose crew is already out, now. */
+  trickleNow() { return Math.max(SWAT.minTrickle, SWAT.trickle / this.pressure); }
 
   get tier() { return Math.max(0, ...this.arrived); }
   get nextTier() { return TIERS.find(t => !this.dispatched.has(t.tier)) || null; }
@@ -187,7 +228,9 @@ export class Responders {
      THE SQUAD
      ------------------------------------------------------------------ */
   /** Vans that are still a van: on the road, standing, or charring. A
-   *  wreck is not one, and neither is one in the air. */
+   *  wreck is not one, and neither is one in the air — which since the
+   *  van became fireproof is every van that has ever come, but the
+   *  count is kept honest against the day something else ends one. */
   get liveVans() { return this.vans.filter(v => v.whole); }
 
   /** Troopers on their feet, anywhere. Counted, not kept, for the same
@@ -204,21 +247,26 @@ export class Responders {
     /* THE CALL. One kill, and the first van is on its way. */
     if (!this.called && p.kills >= SWAT.after) this.call();
     if (!this.called || p.dead) return;
-    /* the next van, if there is room on the road for one */
-    if (this.tics >= this.nextVanAt && this.liveVans.length < SWAT.maxVans && g.police) {
+    /* the next van, if the curve allows another on the road. The gap is
+       read off the curve as each van leaves, not set at the call, so
+       the fourth van comes on the fourth van's terms; and when the cap
+       itself climbs past the vans standing, the next is sent the tic
+       it does, because the gap has long since run out */
+    if (this.tics >= this.nextVanAt && this.liveVans.length < this.vanCap && g.police) {
       this.sendVan();
-      this.gap = Math.max(SWAT.minEvery, this.gap ? this.gap * SWAT.quicker : between(SWAT.every));
+      this.gap = this.gapNow();
       this.nextVanAt = this.tics + Math.round(this.gap);
     }
     /* and what comes out of the ones that are here */
+    const cap = this.trooperCap;
     for (const v of this.vans) {
       if (v.state !== 'parked' && v.state !== 'charring') continue;
       if (v.unloadAt === undefined) v.unloadAt = this.tics + SWAT.unloadEvery;
       if (this.tics < v.unloadAt) continue;
-      if (this.troopers >= SWAT.maxTroopers) { v.unloadAt = this.tics + TICRATE; continue; }
+      if (this.troopers >= cap) { v.unloadAt = this.tics + TICRATE; continue; }
       if (this.unload(v)) {
         v.unloaded = (v.unloaded || 0) + 1;
-        v.unloadAt = this.tics + (v.unloaded < SWAT.crew ? SWAT.unloadEvery : SWAT.trickle);
+        v.unloadAt = this.tics + (v.unloaded < SWAT.crew ? SWAT.unloadEvery : Math.round(this.trickleNow()));
       } else v.unloadAt = this.tics + 12;          // the door is blocked; try again shortly
     }
   }
@@ -253,8 +301,8 @@ export class Responders {
     return way;
   }
 
-  /** A bay nobody is standing in — a wreck counts as standing. The
-   *  middle one first, then either side of it, working outward. */
+  /** A bay nobody is standing in. The middle one first, then either
+   *  side of it, working outward; a van never leaves one. */
   freeBay() {
     const bays = this.game.level.swatBays;
     if (!bays || !bays.length) return null;

@@ -585,11 +585,13 @@ export class FireSystem {
 
   /** Anything standing in a hot cell catches, and anything alive in one
    *  gets hurt. Includes the player: there is no safe way to stand in
-   *  a fire you started. */
+   *  a fire you started. Excludes the fireproof — the SWAT — who walk
+   *  through it; Actor.damage would refuse the hurt anyway, but there
+   *  is no sense asking. */
   _burnThings() {
     const g = this.game;
     for (const a of g.actors) {
-      if (a.removed || a.noclip) continue;
+      if (a.removed || a.noclip || a.fireproof) continue;
       const h = this.heat[this.idx(this.cellX(a.x), this.cellY(a.y))];
       if (h < 70) continue;
       if (a.flammable && !a.burning) a.ignite(280 + (pRandom() & 127));

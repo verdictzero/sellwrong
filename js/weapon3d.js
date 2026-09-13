@@ -58,10 +58,12 @@ export const GUN_LENGTH = 1.4;
 /* THE GUNS, keyed by the weapon that holds them.
 
      url     the model
-     fit     scale it to GUN_LENGTH and centre it on its own box. Absent
+     fit     scale it to this length and centre it on its own box. Absent
              means the model is already in this scene's frame, which is
              true of exactly one of them and only because it was made for
              it
+     out     how far in front of the eye it is held, as a multiple of
+             VIEW.pos's z. Absent means 1: where the flamethrower is
      nozzle  where the business end is, in the MODEL'S own units. Absent
              means the file says so itself, in asset.extras.anchors
      pilot   a small flame that is always alight, on the same terms.
@@ -81,15 +83,32 @@ export const GUNS = {
      flamethrower got and half of what it weighed. */
   BORE: {
     url: 'assets/models/bore.glb',
-    fit: GUN_LENGTH,
+    /* A THIRD SMALLER AND A THIRD FARTHER OFF than the other two, at
+       the user's request: the launcher is a big square thing, and at
+       the flamethrower's size and distance it was a quarter of the
+       picture. `fit` is the size. `out` multiplies how far in front of
+       the eye it is held — z alone, a push straight back along the
+       view, which is what holding a thing farther from your face is.
+       The first try scaled the whole position, along the line from the
+       eye, on the theory that a point moved along that line keeps its
+       place on screen; it does, but the place it kept was the gun's
+       CENTRE, which sits below the bottom of the frame by design, so
+       the gun shrank around a point you cannot see and all but left the
+       picture. Pushed straight back it recedes toward the middle of the
+       screen the way anything farther off does, and stays in its
+       corner. The two numbers together halve it on screen. See update(). */
+    fit: GUN_LENGTH * 0.67,
+    out: 1.33,
     /* the mouth of the launcher, off the model's own vertices: the
        furthest along +z are at 34.7 and sit a little under the centre
        line, so this is just past them and on it */
     nozzle: [0, -4, 37],
     pilot: null,
-    /* what leaves the launcher: a short red exhaust, not a flame */
+    /* what leaves the launcher: a short red exhaust, not a flame —
+       scaled with the launcher, since it hangs off the model's group
+       in metres and not off the model */
     tint: [1.6, 0.30, 0.22],
-    muzzle: { len: 0.14, wid: 0.10 },
+    muzzle: { len: 0.094, wid: 0.067 },
   },
   FLAMER: {
     url: 'assets/models/flamethrower.glb',
@@ -405,7 +424,10 @@ export class Weapon3D {
     const jx = firing ? (Math.random() - 0.5) * 0.006 : 0;
     const jy = firing ? (Math.random() - 0.5) * 0.005 : 0;
 
-    g.position.set(VIEW.pos[0] + bobX + jx, VIEW.pos[1] - bobY + jy, VIEW.pos[2] + this.kick * 0.025);
+    /* `out` is a push straight back along the view — z alone, kick and
+       all — see the note on the bore in GUNS for why not the whole
+       vector */
+    g.position.set(VIEW.pos[0] + bobX + jx, VIEW.pos[1] - bobY + jy, (VIEW.pos[2] + this.kick * 0.025) * (G.def.out ?? 1));
     g.rotation.set(VIEW.pitch + this.sway.y, VIEW.yaw + this.sway.x, VIEW.roll + this.sway.x * 0.4, 'YXZ');
     g.updateMatrixWorld(true);
 

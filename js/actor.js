@@ -177,8 +177,12 @@ export class Actor {
     this.solid = info.solid ?? !!info.monster;
     this.shootable = info.shootable ?? !!info.monster;
     this.noclip = !!info.noclip;
-    this.flammable = !!info.flammable;
-    this.fuel = info.fuel ?? 0;
+    /* FIREPROOF is the stronger word and wins: a thing that fire does
+       nothing to is not also a thing that catches. See damage(),
+       ignite() and frostTic() for the three places it is asked. */
+    this.fireproof = !!info.fireproof;
+    this.flammable = !!info.flammable && !this.fireproof;
+    this.fuel = this.fireproof ? 0 : (info.fuel ?? 0);
     this.flat = !!info.flat;
 
     this.target = null;
@@ -492,9 +496,26 @@ export class Actor {
        lights them, which is the correct amount of mercy. */
     if (this.frozen) {
       if (!opts.fire) { this.shatter(source, opts); return; }
+      /* FIRE ON A FIREPROOF BLOCK OF ICE IS A THAW — the one place in
+         the game fire is. Nothing inside can be eaten, so the fire is
+         spent on the ice at twice its damage, which is the old melt
+         rule the paragraph above describes, kept for the one kind of
+         person it is right for. Freeze a trooper and the flamethrower
+         lets him out; the bore or a blow is what finishes him. */
+      if (this.fireproof) {
+        this.frost = Math.max(0, this.frost - amount * 2);
+        if (this.frost <= 0) this.thaw();
+        return;
+      }
       this.burnAway(source);
       return;
     }
+    /* FIREPROOF, and fire is the whole of what the flag refuses: the
+       stream, the floor, a blast, a torch running past. A bullet, a
+       van and the bore are not fire and land as they always did. The
+       SWAT wear it (see js/states.js), and it is why the flamethrower
+       is not the answer to them. */
+    if (opts.fire && this.fireproof) return;
     /* AND ONCE THE FIRE HAS THEM, NOTHING HURRIES IT. More fire on
        somebody already being eaten does nothing — the clock in
        A_BurnAway is the only thing that ends it, the same bargain
@@ -582,6 +603,8 @@ export class Actor {
      it worth having — it keeps setting light to the floor it walks over.
      ------------------------------------------------------------------ */
   ignite(tics = 350) {
+    /* `flammable` is already false for anything fireproof — see the
+       constructor — so a trooper is refused here without a second flag */
     if (!this.flammable || this.removed) return;
     if (this.vehicle) { this.vehicle.ignite(tics); return; }
     /* FIRE ON THE ICE IS NOT A THAW, IT IS AN EXECUTION. This used to
@@ -796,7 +819,10 @@ export class Actor {
        two thresholds where a block of ice standing at the edge of a fire
        melted free instead of being eaten. One rule, at one line: fire on
        ice is an execution however the fire got there. */
-    if (this.frozen && hot > 0.2) { this.burnAway(); return; }
+    if (this.frozen && hot > 0.2 && !this.fireproof) { this.burnAway(); return; }
+    /* (a fireproof one on a hot floor falls through to the line below
+       and is simply thawed by it: fire on that ice is a thaw, see
+       damage()) */
     if (hot > 0.2 || this.burning > 0) {
       this.frost = Math.max(0, this.frost - Actor.FIRE_THAW * (this.burning > 0 ? 1 : hot));
     } else if (++this.thawTick >= Actor.THAW_EVERY) {
