@@ -263,6 +263,10 @@ export class Player {
        with the rest of the settings, and turned on from the pause menu
        — see fuelTic, which is the whole of it. */
     this.debug = false;
+    /* AND THE OTHER DEBUG SWITCH, which is one branch in damage() below.
+       It is not a heal: it stops you being hurt from the moment it goes
+       on, so turned on at forty health you stay at forty for ever. */
+    this.invincible = false;
     /* THREE WEAPONS. The molotov is built and tested and stays switched
        off; the boxcutter is gone; the bore is the third — see the note
        above WEAPONS. */
@@ -578,6 +582,19 @@ export class Player {
      ------------------------------------------------------------------ */
   damage(amount, source, opts = {}) {
     if (this.dead) return;
+    /* INVINCIBLE IS THIS BRANCH AND NOTHING ELSE, for the same reason
+       infinite ammo is one branch in fuelTic: everything that hurts the
+       player in this game arrives here — the rifles, the vans, the fire
+       that FIREPROOF already refuses — and the only way out of the level
+       alive is health reaching zero on the line below. Refusing the
+       whole function is therefore the whole feature, and nothing else in
+       the game needs to know the mode exists. It takes the shove with
+       it: being knocked sideways by a van is part of being hit by one.
+
+       It does not heal. Turn it on at forty health and you stay at
+       forty, which is the honest reading of the word and keeps the
+       switch from quietly being two features. */
+    if (this.invincible) return;
     /* fire, blasts, the heat of the floor: none of it, by design. A
        bullet or a van are the two things that get through. */
     if (FIREPROOF && !opts.shot && !opts.impact) return;

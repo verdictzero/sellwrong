@@ -83,7 +83,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         952 checks, no install and no browser
+  the smoke test         961 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -174,7 +174,7 @@ used to be the whole of the player's invulnerability. A bullet gets
 through it now, because there are bullets: see THE ROAD, AND WHO COMES
 DOWN IT.
 
-AND THERE IS A SWITCH IN THE PAUSE MENU THAT TURNS ALL OF THAT OFF.
+AND THERE ARE TWO SWITCHES IN THE PAUSE MENU THAT TURN ALL OF THAT OFF.
 DEBUG: INFINITE AMMO fills every tank — the flamethrower's, the
 extinguisher's and the molotovs — back to the top once a tic, so nothing
 ever empties and neither latch ever catches. It is for looking at the
@@ -182,8 +182,21 @@ place rather than for playing it: with the fire as slow as it now is,
 walking the whole shop to see what it looks like burnt should not also
 be a two-minute wait every twelve seconds.
 
-It is ONE BRANCH, in Player.fuelTic, and that is deliberate. Everything
-that asks a question about ammunition — whether the trigger works,
+DEBUG: INVINCIBLE is the other one, at the user's request, and it is the
+same shape: one branch, at the top of Player.damage, which returns. Every
+way the player can be hurt arrives there — the rifles, the vans, the fire
+FIREPROOF already refuses — and the only way out of the level dead is the
+health check at the bottom of that same function, so refusing it is the
+whole feature and nothing else in the game knows the mode is there. It
+takes the SHOVE with it, because being knocked sideways by a van is part
+of being hit by one. And it is NOT a heal: turn it on at forty health and
+you stay at forty for ever, which is the honest reading of the word and
+keeps one switch from quietly being two. It is what makes the squad
+watchable — nine vans and eighty troopers is a fight you lose in about
+fifteen seconds, and looking at it is a different job from surviving it.
+
+INFINITE AMMO IS ONE BRANCH, in Player.fuelTic, and that is deliberate.
+Everything that asks a question about ammunition — whether the trigger works,
 whether the gauge is red, where the refire pip sits, whether the gun is
 latched — reads the tank, and the refill runs once a tic upstream of all
 of them. So the spending still happens exactly as it always did and is
@@ -2657,7 +2670,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-952 checks. Every one of them earns its place by having caught something
+961 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

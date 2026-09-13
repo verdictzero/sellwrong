@@ -126,7 +126,7 @@ const PREF_KEY = 'sellwrong.prefs';
 const PREF_VERSION = 3;
 const DEFAULT_PREFS = { v: PREF_VERSION, sens: 1, invert: false, lefty: false, haptics: true,
                         detail: DEFAULT_DETAIL, pixels: DEFAULT_PIXELS, pixar: DEFAULT_PIXAR,
-                        crowd: 0, fx: 0, wood: 0, fps: false, debug: false };
+                        crowd: 0, fx: 0, wood: 0, fps: false, debug: false, godmode: false };
 function loadPrefs() {
   try {
     const saved = JSON.parse(localStorage.getItem(PREF_KEY) || '{}');
@@ -395,6 +395,7 @@ async function boot() {
     $('opt-wood').textContent = 'THE WOOD: ' + WOOD[prefs.wood].n;
     setTog('opt-fps', prefs.fps);
     setTog('opt-debug', prefs.debug);
+    setTog('opt-godmode', prefs.godmode);
     $('opt-full').textContent = inFullscreen() ? 'LEAVE FULLSCREEN' : 'FULLSCREEN';
   }
   function applyPrefs() {
@@ -406,8 +407,10 @@ async function boot() {
     game.quality.effects = FX[prefs.fx].v;
     game.quality.wood = WOOD[prefs.wood].v;
     $('fps').hidden = !prefs.fps;
-    /* and the one that is not a picture setting: see Player.fuelTic */
+    /* and the two that are not picture settings: see Player.fuelTic and
+       Player.damage, which are one branch each */
     game.player.debug = !!prefs.debug;
+    game.player.invincible = !!prefs.godmode;
     savePrefs(prefs);
     syncMenu();
   }
@@ -438,6 +441,7 @@ async function boot() {
   ladder('opt-wood', 'wood', WOOD);
   toggle('opt-fps', 'fps');
   toggle('opt-debug', 'debug');
+  toggle('opt-godmode', 'godmode');
   $('opt-full').addEventListener('click', () => (inFullscreen() ? exitFullscreen() : enterFullscreen()));
   document.addEventListener('fullscreenchange', syncMenu);
   document.addEventListener('webkitfullscreenchange', syncMenu);

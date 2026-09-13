@@ -2171,6 +2171,41 @@ section('the cold');
     check('and it takes both latches off with them', !dbg.dry && !dbg.co2Dry);
     check('and both guns will fire again',
       dbg.armed('FLAMER') && dbg.armed('EXTINGUISHER'));
+    /* --- AND THE OTHER ONE, WHICH IS ONE BRANCH IN damage() -------
+       Everything that can hurt the player arrives at Player.damage —
+       the rifles, the vans, the fire FIREPROOF already refuses — and
+       the only way out of the level dead is health reaching zero in
+       there. So refusing the function is the whole feature. */
+    const inv = mk().player;
+    check('invincibility is off unless it is asked for', inv.invincible === false);
+    inv.health = 70;
+    inv.damage(9, null, { shot: true });
+    check('a bullet lands while it is off', inv.health === 61, `${inv.health}`);
+    inv.invincible = true;
+    inv.damage(9, null, { shot: true });
+    inv.damage(220, null, { impact: true, dx: 1, dy: 0, force: 2.5 });
+    inv.damage(40, null, { fire: true });
+    check('and nothing lands while it is on', inv.health === 61 && !inv.dead, `${inv.health}`);
+    check('and it is not a heal: the health you had is the health you keep', inv.health === 61);
+    check('and the shove goes with the hit', inv.momx === 0 && inv.momy === 0);
+    check('and a thousand rifle rounds cannot kill you',
+      (() => { for (let k = 0; k < 1000; k++) inv.damage(15, null, { shot: true }); return !inv.dead && inv.health === 61; })());
+    inv.invincible = false;
+    inv.damage(200, null, { shot: true });
+    check('and switching it off puts you back where anybody can', inv.dead);
+    /* the menu has both switches, and main.js wires both onto the player */
+    {
+      const fs2 = await import('node:fs');
+      const html = fs2.readFileSync('index.html', 'utf8');
+      const main = fs2.readFileSync('js/main.js', 'utf8');
+      check('the pause menu offers both debug switches',
+        /id="opt-debug"[^>]*>DEBUG: INFINITE AMMO</.test(html) &&
+        /id="opt-godmode"[^>]*>DEBUG: INVINCIBLE</.test(html));
+      check('and both are remembered and put on the player',
+        /godmode: false/.test(main) && /toggle\('opt-godmode', 'godmode'\)/.test(main) &&
+        /game\.player\.invincible = !!prefs\.godmode/.test(main));
+    }
+
     /* and holding the trigger down cannot outrun it */
     for (let k = 0; k < 400; k++) { dbg.flameTic(pl.WEAPONS.FLAMER); dbg.fuelTic(); }
     check('and holding the trigger down never empties it',
