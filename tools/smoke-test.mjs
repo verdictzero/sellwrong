@@ -54,6 +54,46 @@ function check(name, cond, detail = '') {
 const section = s => console.log(`\n  ${s}\n  ${'-'.repeat(s.length)}`);
 const note = (k, v) => console.log(`    ${k.padEnd(34)} ${v}`);
 
+/* ---------- the shaders, before anything imports one ----------------
+   A GLSL block lives in a JavaScript template literal, and a template
+   literal with no interpolation ends at the NEXT backtick wherever that
+   is — so a pair of them in a COMMENT closes the shader mid-sentence
+   and the rest of it silently becomes JavaScript. The file still parses
+   as far as node is concerned; the game dies on IMPORT with "Unexpected
+   identifier", naming a word out of a comment, and says nothing about
+   which file or why.
+
+   It has cost two debugging sessions, and it has to be checked HERE,
+   at the top, reading the file as TEXT — a check further down cannot
+   run, because the import that kills the process happens first. What is
+   asserted is not "is there a stray backtick" but "does each shader
+   still reach the line it is supposed to end on", which is the thing
+   that actually goes wrong. */
+{
+  const fs0 = await import('node:fs');
+  const src = fs0.readFileSync('js/material.js', 'utf8');
+  for (const [tag, last] of [['const COMMON_VERT', 'gl_Position'],
+                             ['const COMMON_FRAG', 'gl_FragColor']]) {
+    const at = src.indexOf(tag);
+    const open = at < 0 ? -1 : src.indexOf('`', at);
+    const close = open < 0 ? -1 : src.indexOf('`', open + 1);
+    const whole = close > open && src.slice(open + 1, close).includes(last);
+    /* SAID NOW, NOT AT THE END. Everything else in this file records a
+       failure and prints the list when the run finishes — and this run
+       will not finish: the import a few lines down is the thing that
+       throws. So this one says what is wrong and stops, which is the
+       whole point of it. */
+    if (!whole) {
+      console.error(`\n  BROKEN SHADER\n  -------------\n` +
+        `    ${tag.slice(6)} in js/material.js does not reach ${last}.\n` +
+        `    A backtick in a comment inside the GLSL has ended the template\n` +
+        `    literal early, and the rest of the shader is now JavaScript.\n`);
+      process.exit(1);
+    }
+    check(`${tag.slice(6)} runs to its own last line`, whole);
+  }
+}
+
 /* ---------- palette ---------- */
 section('palette');
 const pal = await import('../js/palette.js');
@@ -1422,6 +1462,12 @@ section('the flame');
     check('and a sprite carries both numbers the fire and the cold write',
       'frost' in sprite.uniforms && 'ash' in sprite.uniforms &&
       sprite.uniforms.ash.value === 0);
+    /* AND NO BACKTICKS IN THE SHADER, which has now cost two debugging
+       sessions. The GLSL lives in a JavaScript template literal and a
+       pair of them in a COMMENT closes the string mid-sentence: the
+       file still parses, and the game dies on import with "Unexpected
+       identifier". The prose in that file is dense and the temptation
+       to quote an identifier in it is constant, so it is a check. */
     check('and the burn-away eats the drawing rather than fading it',
       (() => {
         const src = fs2.readFileSync('js/material.js', 'utf8');
@@ -3531,6 +3577,142 @@ section('the van');
         body.map(st => `${(st.sum * 100).toFixed(0)}% of the sheet, biggest ${(st.big * 100).toFixed(1)}%`).join('; '));
       check('and the whole model is on the sheet, so no panel is guessed at',
         stats.every(st => st.textured), `${stats.filter(st => !st.textured).length} untextured primitives`);
+    }
+
+    /* --- AND THE WHITE PAINT COMES OFF IT ---------------------------
+       A car park of one model in every bay was a joke worth one look.
+       It is twelve colours now, and it is still one model, one sheet
+       and one draw call: the paint rides in the vertices and the WHITE
+       in the texture is isolated in the shader, by luminance with a
+       saturation guard, and multiplied (see the INK block in
+       js/material.js).
+
+       WHAT IS CHECKED HERE is the claim the two numbers make: that
+       everything which must NOT take the colour — the grille, the
+       tyres, the glass, the bumpers, the sheet's own grey background —
+       sits entirely below the ramp, and that every bright neutral texel
+       sits entirely above it.
+
+       THE BAND BETWEEN THEM IS NOT EMPTY and is not meant to be: it is
+       the paint's own shading, the falloff from a lit panel to a
+       shadowed one, and it takes a PART of the colour, which is exactly
+       what makes a tinted van look painted rather than filled in. An
+       earlier version of this check asserted a gap with nothing in it
+       and failed on 7.7% of the sheet, all of it the side of the van.
+
+       AND IT IS DONE IN LINEAR, which is the trap this fell into first.
+       The sheet is an sRGB texture and is decoded on the way out of
+       texture2D, so the numbers in the shader are not the numbers a
+       colour picker says about the PNG. Set off the file, the ramp
+       caught only the brightest highlights and what came out was a
+       white van with a red pinstripe down every edge.
+
+       The thresholds are READ OUT OF THE SHADER rather than repeated
+       here, so this cannot quietly drift away from what runs. */
+    {
+      const { readPNG } = await import('./png-read.mjs');
+      const matSrc = fs.readFileSync('js/material.js', 'utf8');
+      const m = matSrc.match(/float pm = smoothstep\(([\d.]+), ([\d.]+), pl\) \* \(1\.0 - smoothstep\(([\d.]+), ([\d.]+), ps\)\)/);
+      check('the shader says where the white paint is', !!m);
+      const [LO, HI, S0, S1] = m ? m.slice(1).map(Number) : [0, 1, 0, 1];
+      note('the paint mask', `luminance ${LO} to ${HI}, saturation guard ${S0} to ${S1}, in linear`);
+
+      const bv = json.bufferViews[json.images[0].bufferView];
+      /* `bin` is a Uint8Array VIEW on the file, so the slice has to be
+         taken on the view and not by handing Buffer.from an offset it
+         will ignore */
+      const sheet = readPNG(Buffer.from(bin.subarray(bv.byteOffset || 0,
+                                                     (bv.byteOffset || 0) + bv.byteLength)));
+      const lin = c => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+      const smooth = (a, b, x) => { const u = Math.min(1, Math.max(0, (x - a) / (b - a))); return u * u * (3 - 2 * u); };
+      const maskAt = i => {
+        const r = lin(sheet.data[i*4]), g = lin(sheet.data[i*4+1]), b2 = lin(sheet.data[i*4+2]);
+        const l = 0.30 * r + 0.59 * g + 0.11 * b2;
+        const mx = Math.max(r, g, b2), mn = Math.min(r, g, b2);
+        return { l, m: smooth(LO, HI, l) * (1 - smooth(S0, S1, mx ? (mx - mn) / mx : 0)) };
+      };
+      const N = sheet.w * sheet.h;
+      let paintLike = 0, shading = 0, missedPaint = 0, caughtDark = 0, took = 0;
+      for (let i = 0; i < N; i++) {
+        const { l, m: mask } = maskAt(i);
+        took += mask;
+        if (l > HI + 0.05) {
+          /* bright AND neutral: the bodywork. The few bright texels that
+             are NOT neutral are the lenses, and the guard is there to
+             leave them alone. */
+          const r = lin(sheet.data[i*4]), g = lin(sheet.data[i*4+1]), b2 = lin(sheet.data[i*4+2]);
+          const mx = Math.max(r, g, b2), mn = Math.min(r, g, b2);
+          if ((mx ? (mx - mn) / mx : 0) < S0) { paintLike++; if (mask < 0.99) missedPaint++; }
+        } else if (l < LO - 0.05) { if (mask > 0.01) caughtDark++; }
+        else shading++;
+      }
+      note('the sheet, under the mask',
+        `${(100 * paintLike / N).toFixed(0)}% is paint, ${(100 * shading / N).toFixed(1)}% is its shading, ` +
+        `${(100 * took / N).toFixed(0)}% of the sheet takes colour`);
+      check('the van is a white van, so there is a lot of paint to take',
+        paintLike > N * 0.15, `${(100 * paintLike / N).toFixed(0)}%`);
+      check('every bright neutral texel takes the colour', missedPaint === 0, `${missedPaint} missed`);
+      check('and nothing below the ramp takes any of it', caughtDark === 0, `${caughtDark} caught`);
+      check('and about a quarter of the sheet is painted, which is a van',
+        took / N > 0.15 && took / N < 0.35, `${(100 * took / N).toFixed(0)}%`);
+
+      /* and the named parts, which is what any of this is for */
+      const at = (x, y) => maskAt(y * sheet.w + x).m;
+      for (const [what, x, y, want] of [['a side panel', 150, 165, 1], ['the roof', 360, 160, 1],
+                                        ['the grille', 120, 70, 0], ['a tyre', 60, 105, 0],
+                                        ['the glass', 190, 45, 0], ['the sheet behind it', 255, 128, 0]]) {
+        check(`${what} ${want ? 'takes' : 'does not take'} the paint`,
+          want ? at(x, y) > 0.95 : at(x, y) < 0.05, `${at(x, y).toFixed(2)}`);
+      }
+    }
+
+    /* --- AND THE COLOURS THEMSELVES -------------------------------- */
+    {
+      const veh2 = await import('../js/vehicles.js');
+      const P = veh2.PAINT;
+      note('the fleet', `${P.length} entries, ${new Set(P.map(c => c.join(','))).size} colours`);
+      check('there is more than one colour of van', new Set(P.map(c => c.join(','))).size > 6);
+      check('and every one of them is three numbers in range',
+        P.every(c => c.length === 3 && c.every(v => v >= 0 && v <= 1)));
+      /* NOTHING TOO DARK TO SURVIVE. This multiplies twice — the sheet's
+         own shading, and then a car park at dusk — so a colour picked at
+         the value a van is really painted comes out as a black shape
+         with wheels. The first palette was, and did. */
+      check('and none of them is too dark to still be a colour on screen',
+        P.every(c => Math.max(...c) >= 0.4), P.map(c => Math.max(...c).toFixed(2)).join(' '));
+      check('and the white the model came in is still in the lot',
+        P.some(c => c[0] === 1 && c[1] === 1 && c[2] === 1));
+
+      /* OFF THE BAY'S OWN POSITION, not a fresh random: the map lays the
+         lot out with a seeded stream and drawing from it here would move
+         every number after it, which is most of the level. */
+      const slot = { x: 1234, y: -567, variant: 2 };
+      check('a bay gets the same paint every time the level is built',
+        veh2.paintOf(slot) === veh2.paintOf({ ...slot }));
+      check('and the bay next to it usually gets a different one',
+        veh2.paintOf(slot) !== veh2.paintOf({ ...slot, x: slot.x + 186 }));
+      /* and it spreads: a hash that piles up on one entry is a fleet */
+      const seen = new Map();
+      for (let i = 0; i < 400; i++) {
+        const c = veh2.paintOf({ x: i * 186 + 300, y: (i % 7) * 220, variant: i % 5 });
+        seen.set(c, (seen.get(c) || 0) + 1);
+      }
+      const most = Math.max(...seen.values());
+      check('and it spreads over the palette rather than piling up',
+        seen.size >= Math.min(8, new Set(P.map(c => c.join(','))).size) && most < 400 * 0.30,
+        `${seen.size} of ${P.length} used, commonest ${most} of 400`);
+
+      /* AND IT REACHES THE VERTICES, in the channel that was already
+         there: `a` of 0 says this surface has a picture, and the rgb
+         beside it is what the white in that picture is multiplied by. */
+      const painted = car.carGeometry(v, { length: v.length, paint: [0.25, 0.5, 0.75] });
+      const ink4 = painted.ink;
+      check('the paint rides in the vertices rather than in a second material',
+        ink4.length === painted.position.length / 3 * 4 &&
+        ink4[3] === 0 && ink4[0] === 0.25 && ink4[1] === 0.5 && ink4[2] === 0.75);
+      const plain = car.carGeometry(v, { length: v.length });
+      check('and a vehicle that asks for no colour is white, which is the model',
+        plain.ink[0] === 1 && plain.ink[1] === 1 && plain.ink[2] === 1 && plain.ink[3] === 0);
     }
 
     /* AND A FLAT MATERIAL STILL RIDES IN THE VERTICES. This model has

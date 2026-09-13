@@ -20,7 +20,9 @@ import fs from 'node:fs';
 import zlib from 'node:zlib';
 
 export function readPNG(file) {
-  const d = fs.readFileSync(file);
+  /* a path, a URL, or the bytes themselves — the van's sheet lives
+     inside a .glb and never touches the disk */
+  const d = Buffer.isBuffer(file) ? file : fs.readFileSync(file);
   let pos = 8, w = 0, h = 0, bitDepth = 8, colorType = 6, idat = [];
   let palette = null, trns = null;
   while (pos < d.length) {

@@ -71,7 +71,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         748 checks, no install and no browser
+  the smoke test         770 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -1979,6 +1979,60 @@ texture, drawn both sides. A second GLB would drop in beside this one
 with no new code at all, which is the thing the old system could never
 say.
 
+AND THEY ARE NOT ALL THE SAME COLOUR, at the user's request. One model
+in every bay is a delivery fleet, which was a joke worth exactly one
+look; a car park is what this is meant to be, and a car park is a dozen
+colours of the same few shapes. It is still one model, one texture and
+one draw call — that was the thing worth keeping — so a red van is not
+a second file. It is the same texel, multiplied.
+
+THE WHITE IS ISOLATED IN THE SHADER, out of the texel itself, rather
+than painted into a copy of the sheet by hand. The van's paint is white:
+bright and dead neutral. Everything that must not take the colour — the
+grille, the bumpers, the tyres, the glass — is far darker. So a
+luminance ramp with a saturation guard picks out the bodywork exactly,
+and it does it per TEXEL, which is the whole reason it looks like paint:
+every bit of shading the artist put in the sheet survives, so the
+shadowed flank of a blue van is dark blue and the lit roof is bright
+blue. A flat colour over the body would have thrown all of that away.
+Nineteen per cent of the sheet is paint, eight per cent is the shading
+on it, and the shading takes a part of the colour, which is the bit that
+sells it.
+
+THE COLOUR RIDES IN A CHANNEL THAT WAS ALREADY THERE. Every vehicle
+vertex already carried an `ink` — what an untextured surface is painted,
+for the flat materials glTF allows, with a flag saying whether to use
+it. When the flag is off, the three numbers beside it were zeroes saying
+nothing. They are the paint now. One attribute, two meanings, no new
+bytes: a surface with no picture IS that colour, and a surface with one
+has its white multiplied by it.
+
+IN LINEAR, AND THAT IS THE WHOLE TRAP. The sheet is an sRGB texture and
+is decoded on the way out of the sampler, so the numbers in the shader
+are not the numbers a colour picker says about the PNG. Set off the file
+— paint at 0.75 to 0.94, ramp from 0.55 — the ramp caught only the
+brightest highlights, and what came out was a white van with a red
+pinstripe down every edge. Measured in linear instead: background 0.06,
+tyres and grille under 0.09, glass 0.28, the darkest shadowed paint
+0.53, a lit panel 0.67, the roof 0.78. The ramp goes between the glass
+and the shadow.
+
+WHICH BAY GETS WHICH is a hash of the bay's own position and not a fresh
+random, for two reasons: the map lays the lot out with its own seeded
+stream and drawing from it here would move every number after it, which
+is most of the level; and a fleet that is the same fleet every time the
+level is built is a fleet you can take a screenshot of twice. The quiet
+colours are in the list twice, which is the cheapest weighting there is
+— a real car park is mostly white, silver and beige with a few colours
+in it, and a list sampled evenly puts a turquoise van in every eighth
+bay.
+
+AND NOTHING IS AS DARK AS A VAN REALLY IS, because this multiplies
+twice: the sheet's own shading, and then a car park at dusk on top of
+it. The first palette was picked at the values a van is actually painted
+— 0.24 to 0.6 — and the lot came out as two whites and ten grey shapes
+with wheels.
+
 WHAT A MODELLED VEHICLE NEEDS, AND IT IS NOTHING. There is no
 preparation step and no tool: assets/models/van.glb is the author's own
 export, byte for byte, and js/car.js reads it as it stands. It walks the
@@ -2252,7 +2306,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-748 checks. Every one of them earns its place by having caught something
+770 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -2554,6 +2608,32 @@ that had already reached a screenshot:
     third of their height. One a tic and smaller leaves the drawing
     showing through, which is where the colour map does its work — and
     the point of a burning shopper is that you can see WHO is burning
+  A WHITE VAN WITH A RED PINSTRIPE DOWN EVERY EDGE, which is a good
+    picture of getting a colour space wrong. The mask that isolates the
+    van's white paint is a luminance ramp, and its two numbers were
+    measured off the PNG: paint at 0.75 to 0.94, so a ramp from 0.55.
+    But the sheet is an sRGB texture and is DECODED on the way out of
+    the sampler, so what the shader sees is 0.50 to 0.78 linear — and a
+    ramp starting at 0.55 caught the highlights along the panel edges
+    and nothing else. Re-measured in linear the bands are miles apart
+    (glass 0.28, the darkest shadowed paint 0.53) and the ramp goes
+    between them. The test reads the two numbers OUT of the shader and
+    applies them to the van's own sheet, decoded the same way, so the
+    check and the thing it checks cannot drift
+  A CAR PARK OF GREY SHAPES WITH WHEELS, one screenshot later. The
+    palette was picked at the values a van is really painted, 0.24 to
+    0.6, and this multiplies twice — the sheet's own shading first and
+    then a lot at dusk on top of it. Nothing under about 0.4 in its
+    strongest channel survives to the screen. The test holds every
+    entry against that floor
+  A SMOKE TEST THAT COULD NOT REPORT ITS OWN FAILURE. A backtick in a
+    comment inside the GLSL ends the template literal early and the game
+    dies on IMPORT; the check that would have caught it recorded a
+    failure and waited for the summary at the end of the run, which
+    never came, because the import that kills the process is a few lines
+    further down. It is the first thing the suite does now, reads the
+    file as TEXT, and prints and exits on the spot rather than counting
+    a failure nobody will ever see
   A PILOT LIGHT HANGING UNDER THE GUN, reported by the user and
     measured at 0.537m off on a gun 1.4 metres long — a fifth of the
     screen's height below the barrel and nearly off the bottom of the

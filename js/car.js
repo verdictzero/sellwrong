@@ -177,6 +177,10 @@ function pen(v, opts = {}) {
   const {
     angle = 0, length = v.length, light = 0.74, sky = 1, charred = 0,
     origin = [0, 0, 0],           // which point of the model the mesh is about
+    /* what the white bodywork in the sheet is multiplied by. White is
+       the model as its author painted it, and is what everything that
+       does not ask gets. */
+    paint = [1, 1, 1],
   } = opts;
   const pos = [], uv = [], lit = [], skies = [], chars = [], norms = [], inks = [];
   const ca = Math.cos(angle), sa = Math.sin(angle);
@@ -199,10 +203,23 @@ function pen(v, opts = {}) {
     pos.push((p[0] - origin[0]) * length, (p[2] - origin[2]) * length, -(p[1] - origin[1]) * length);
     uv.push(t[0], t[1]);
     lit.push(l); skies.push(sky); chars.push(charred);
-    /* WHAT THIS SURFACE IS PAINTED IF IT HAS NO PICTURE: its own
-       material's baseColorFactor, and a 1 to say so. Zeroes mean the
-       sheet, which is what the UVs are for. */
-    inks.push(ink ? ink[0] : 0, ink ? ink[1] : 0, ink ? ink[2] : 0, ink ? 1 : 0);
+    /* WHAT THIS SURFACE IS PAINTED, in the two senses a vehicle needs,
+       and the fourth number says which — see the INK block in
+       js/material.js, which is where both are spent.
+
+         a = 1   no picture at all: this IS the colour, off the
+                 material's own baseColorFactor
+         a = 0   there is a picture, and this is what the WHITE PAINT in
+                 it is multiplied by — which is how one model, one sheet
+                 and one draw call produce a car park of different
+                 coloured vans
+
+       It used to push zeroes in the second case, which is the same
+       thing as white and is why this costs nothing: the channel was
+       already there and already carried per vertex, and it was simply
+       not saying anything. */
+    if (ink) inks.push(ink[0], ink[1], ink[2], 1);
+    else inks.push(paint[0], paint[1], paint[2], 0);
     /* WHICH WAY THIS FACE POINTS. The shader lights nothing from a
        normal, so this never reaches the GPU; it is kept so the smoke
        test can hold a triangle against what the model said about it. */
@@ -571,7 +588,11 @@ export function carMesh(texture, a) {
      face of a solid that already covers it, and removes the question. */
   const mesh = new THREE.Mesh(carGeom(a), createWallMaterial(texture, {
     side: THREE.DoubleSide,
-    ink: true,                     // the flat material rides in the vertices
+    /* THE VERTICES CARRY THE PAINT, in both of its senses: what an
+       untextured surface is coloured, and what the white bodywork in a
+       textured one is multiplied by. One attribute, one define, and a
+       car park of twelve colours in one draw call. */
+    ink: true,
   }));
   /* Y then X then Z, applied in that order in the object's own frame:
      yaw it to its heading, roll it about its own length, then tip it

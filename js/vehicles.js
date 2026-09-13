@@ -170,6 +170,73 @@ function mergeInto(mesh, texture, scene, list) {
 }
 
 /* =====================================================================
+   THE PAINT
+
+   ONE MODEL, ONE SHEET, ONE DRAW CALL, AND A CAR PARK THAT IS NOT ALL
+   THE SAME COLOUR. The whole lot is a single mesh — seventy-seven
+   vehicles in one geometry, which is the thing worth keeping — so a red
+   van cannot be a different file or a different texture. It is the same
+   texel multiplied by a colour that rides in the vertices, in the ink
+   channel that was already there and was saying nothing (see the INK
+   block in js/material.js, which is where the white paint is isolated
+   and where this is spent).
+
+   WHAT THE COLOURS ARE. A supermarket car park in a town where half the
+   population has already left, so: the white the model came in, a
+   couple of dirty near-whites and silvers, and then the browns, tans,
+   greens, maroons and blues that a fifteen-year-old panel van is
+   actually painted. Nothing bright — a lot full of primary colours
+   reads as a toy box, and this one has to read as somewhere people
+   parked to go and buy bread. The saturated ones are the exceptions
+   they are in a real car park: one red, one blue, one yellow.
+
+   AND THEY ARE ALL BRIGHTER THAN THEY LOOK ON PAPER, because this
+   multiplies TWICE. The sheet's own shading is in the texel already,
+   and then the car park's light — which is dusk, in a town where the
+   power is going — is on top of that. The first cut of this palette was
+   picked at the values a van is actually painted, 0.24 to 0.6, and the
+   lot came out as two whites and ten grey shapes with wheels. Nothing
+   under about 0.4 in its strongest channel survives to the screen.
+   ===================================================================== */
+/* AND THE QUIET ONES ARE IN IT TWICE, which is the whole of the
+   weighting: a real car park is mostly white, silver and beige with a
+   few colours in it, and a list of twelve sampled evenly puts a
+   turquoise van in every eighth bay. Repeating an entry is the cheapest
+   weight there is and it reads off the page. */
+export const PAINT = [
+  [1.00, 1.00, 1.00],   // white, which is the model as its author painted it
+  [1.00, 1.00, 1.00],
+  [0.94, 0.92, 0.84],   // cream, a van that has been outside a while
+  [0.94, 0.92, 0.84],
+  [0.78, 0.80, 0.84],   // silver
+  [0.92, 0.68, 0.30],   // ochre
+  [0.76, 0.50, 0.28],   // rust brown
+  [0.46, 0.72, 0.44],   // green
+  [0.40, 0.66, 0.82],   // sky blue
+  [0.80, 0.34, 0.30],   // maroon
+  [0.95, 0.26, 0.20],   // and the loud ones, which are the exceptions
+  [0.30, 0.46, 0.92],   // they are in a real car park: one red, one
+  [0.96, 0.80, 0.24],   // blue, one yellow
+  [0.36, 0.74, 0.70],   // and one turquoise, because it is 1987
+];
+
+/** Which paint a bay gets, off its own position.
+ *
+ *  NOT A FRESH RANDOM, for two reasons. The lot is laid out by the map
+ *  with its own seeded stream and drawing from it here would move every
+ *  number after it, which is most of the level. And a fleet that is the
+ *  same fleet every time the level is built is a fleet you can take a
+ *  screenshot of twice. `variant` is in the hash as well, so a map that
+ *  later wants to steer the colours has a handle on them without this
+ *  needing to know anything about bays.
+ */
+export function paintOf(slot, n = PAINT.length) {
+  let h = ((slot.x | 0) * 374761393 + (slot.y | 0) * 668265263 + (slot.variant | 0) * 2246822519) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return PAINT[((h ^ (h >>> 16)) >>> 0) % n];
+}
+
+/* =====================================================================
    ONE VEHICLE
    ===================================================================== */
 class Vehicle {
@@ -181,6 +248,8 @@ class Vehicle {
     this.yaw = opts.angle;
     this.rx = 0; this.rz = 0;                 // roll about its length, pitch nose over tail
     this.light = opts.light; this.sky = opts.sky;
+    /* what the white bodywork in the sheet is multiplied by — see PAINT */
+    this.paint = opts.paint || [1, 1, 1];
 
     this.state = 'parked';
     this.health = HEALTH;
@@ -199,6 +268,7 @@ class Vehicle {
     this.local = null;
     this.slab = bake(carGeometry(def, {
       angle: this.yaw, light: this.light, sky: this.sky, origin: this.mid,
+      paint: this.paint,
     }), this.yaw, 0, 0, this.x, this.y, this.cz);
 
     /* and the part you cannot walk through */
@@ -305,6 +375,7 @@ class Vehicle {
     /* its own mesh now, for as long as it is off the ground */
     this.local = carGeometry(d, {
       angle: this.yaw, light: this.light, sky: this.sky, origin: this.mid,
+      paint: this.paint,
     });
     this.mesh = carMesh(this.fleet.texture, this.local);
     this.mesh.name = 'car:' + d.id;
@@ -400,9 +471,13 @@ class Vehicle {
     this.settle = SETTLE;
 
     /* burnt, from here on */
+    /* AND A BURNT RED VAN IS STILL A RED VAN. The char darkens what is
+       left of the paint rather than replacing it, which is the right
+       answer: a wreck you can still tell the colour of is a wreck you
+       remember parking next to. */
     this.local = carGeometry(this.def, {
       angle: this.yaw, light: this.light * WRECK_LIT, sky: this.sky,
-      origin: this.mid, charred: WRECK_CHAR,
+      origin: this.mid, charred: WRECK_CHAR, paint: this.paint,
     });
     this.mesh.geometry.dispose();
     this.mesh.geometry = carGeom(this.local);
@@ -488,7 +563,7 @@ class Vehicle {
         x: wx, y: wy, z: wz, ground: this.ground,
         vx: Math.cos(a) * sp + this.vx, vy: Math.sin(a) * sp + this.vy,
         vz: between(CHUNK_LIFT) + Math.max(0, this.vz) * 0.4,
-        light: this.light, sky: this.sky,
+        light: this.light, sky: this.sky, paint: this.paint,
       }));
     }
   }
@@ -514,6 +589,7 @@ class Chunk {
     const L = def.length;
     this.local = chunkGeometry(def, cut, {
       angle: 0, light: o.light * 0.7, sky: o.sky, charred: CHUNK_CHAR,
+      paint: o.paint,                    // a piece off a green van is green
     });
     const mid = [(cut.x0 + cut.x1) / 2, (cut.y0 + cut.y1) / 2, (cut.z0 + cut.z1) / 2];
     this.corners = [];
@@ -639,6 +715,14 @@ export class Vehicles {
    * while there is one. The drawn fleet's riot van and APC are still
    * measured and still packed in their atlas, waiting for
    * js/responders.js to drive them up the road.
+   *
+   * BUT THEY ARE NOT ALL THE SAME COLOUR ANY MORE, at the user's
+   * request. One model in seventy-seven bays is a delivery fleet, which
+   * was a joke worth one look; a car park is what this is meant to be,
+   * and a car park is twelve colours of the same shape. The paint rides
+   * in the vertices and the white in the sheet is isolated in the
+   * shader — see PAINT above, and the INK block in js/material.js — so
+   * it is still one texture and still one draw call.
    */
   place(slots) {
     if (!this.texture || !slots) return this;
@@ -649,6 +733,7 @@ export class Vehicles {
         x: slot.x, y: slot.y, z: sec ? sec.floor : 0, angle: slot.angle,
         light: sec ? sec.light : 0.74,
         sky: sec ? (sec.sky ?? (sec.outdoor ? 1 : 0)) : 1,
+        paint: paintOf(slot),
       }));
     }
     this.dirty = true;

@@ -570,10 +570,57 @@ void main() {
      they went in (see emberOf); this is the same argument about a
      person. */
   vec3 glowAdd = vec3(0.0);
-  /* and a surface that has no picture takes its own material's colour
-     instead — see the note on the attribute in the vertex shader */
   #ifdef INK
+  /* ------------------------------------------------------------------
+     WHAT THIS SURFACE IS PAINTED, in the two senses a vehicle needs,
+     and the alpha channel says which:
+
+       a = 1   the surface has no picture at all and vInk.rgb IS its
+               colour — the second material, carried in the vertices
+               rather than costing a second draw call
+       a = 0   the surface has a picture, and vInk.rgb is what the WHITE
+               PAINT in that picture is multiplied by
+
+     THE SECOND SENSE IS HOW A CAR PARK GETS MORE THAN ONE COLOUR OF
+     VAN. There is one model, one texture and one mesh for the whole lot
+     — seventy-seven vehicles in a single draw call, which is the thing
+     worth keeping — so a red van cannot be a different file or a
+     different sheet. It has to be the same texel, multiplied.
+
+     AND THE MASK IS READ OUT OF THE TEXEL ITSELF rather than painted
+     into the sheet by hand. The van's own paint is white: bright and
+     dead neutral. Everything that must NOT take the colour — the
+     grille, the bumpers, the tyres, the glass — is far darker. So a
+     luminance ramp with a saturation guard isolates the bodywork
+     exactly, and it does it per TEXEL, which is the whole reason this
+     looks like paint: every bit of shading the artist put in the sheet
+     survives, so the shadowed flank of a blue van is dark blue and the
+     lit roof is bright blue. Painting a flat colour over the body would
+     have thrown all of that away.
+
+     THE NUMBERS ARE IN LINEAR AND THAT IS THE WHOLE TRAP. The sheet is
+     an sRGB texture and is decoded on the way out of texture2D, so what
+     arrives here is NOT what a colour picker says about the PNG. The
+     thresholds were first set off the file — paint at 0.75 to 0.94,
+     ramp from 0.55 — and in linear the paint is 0.50 to 0.78, so the
+     ramp caught only the brightest highlights: what came out was a
+     white van with a red pinstripe down every edge, which is a good
+     picture of getting a colour space wrong. Measured in linear, on the
+     file: background 0.06, tyres and grille under 0.09, glass 0.28,
+     the darkest shadowed paint 0.53, a lit panel 0.67, the roof 0.78.
+     The ramp sits in the gap between the glass and the shadow.
+
+     MULTIPLIED, NOT MIXED. White times red is red; light grey times red
+     is a darker red. Which is what paint does.
+     ------------------------------------------------------------------ */
     t = mix(t, vec4(vInk.rgb, 1.0), vInk.a);
+    if (vInk.a < 0.5) {
+      float pl = dot(t.rgb, vec3(0.30, 0.59, 0.11));
+      float pmx = max(t.r, max(t.g, t.b)), pmn = min(t.r, min(t.g, t.b));
+      float ps = pmx > 0.0 ? (pmx - pmn) / pmx : 0.0;
+      float pm = smoothstep(0.32, 0.52, pl) * (1.0 - smoothstep(0.06, 0.14, ps));
+      t.rgb = mix(t.rgb, t.rgb * vInk.rgb, pm);
+    }
   #endif
   if (t.a < alphaTest) discard;
   /* AND WHETHER IT IS FROZEN SOLID.
