@@ -397,7 +397,24 @@ export class Weapon3D {
     if (G.pilot) {
       pv = this._tmp.copy(G.anchors.pilot);
       G.inner.localToWorld(pv);
+      /* AND THEN BACK OUT OF THE WORLD AGAIN, because the flame is a
+         child of the GROUP and not of the model — it has to be, or it
+         would inherit the half-turn that points the barrel at the
+         camera and we would be looking at the back of the quad.
+
+         This line was missing and the pilot light sat a third of the
+         gun's length below and in front of the barrel, measured at
+         0.537m off on a gun 1.4m long. A world-space point assigned to
+         `position` is read in the PARENT's space, so the group's own
+         transform — the whole of VIEW.pos, the yaw, the bob — was
+         applied to it a second time. The tell was that the glow it
+         throws ON the gun was in the right place while the flame was
+         not: the shader takes `pv` in view space and is correct, and
+         only the mesh needed converting. The muzzle never had the bug
+         because it is parented to the model and given the anchor in
+         the model's own units. */
       G.pilot.position.copy(pv);
+      G.group.worldToLocal(G.pilot.position);
       G.pilot.scale.set(flick, 0.8 + flick * 0.35, 1);
       G.pilot.material.uniforms.frame.value = (tics >> 1) % this.frames;
       G.pilot.visible = !firing;

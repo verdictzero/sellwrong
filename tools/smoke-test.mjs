@@ -2157,6 +2157,53 @@ section('the cold');
       E.cold === true && E.tint[2] > E.tint[0]);
     check('the flamethrower is untouched: its own frame, its own anchors',
       !w3.GUNS.FLAMER.fit && !w3.GUNS.FLAMER.nozzle && !w3.GUNS.FLAMER.cold);
+
+    /* --- AND THE PILOT LIGHT IS ON THE NOZZLE -----------------------
+       Reported by the user as misaligned, and it was: 0.537m off on a
+       gun 1.4m long, a fifth of the screen's height below the barrel
+       and nearly off the bottom of the frame.
+
+       THE TWO EFFECTS ON THE GUN HANG OFF DIFFERENT THINGS, and that
+       asymmetry is the whole of it. The muzzle is a child of the MODEL,
+       so it takes the anchor in the model's own units and is right by
+       construction. The pilot flame cannot be — the model is turned a
+       half circle to point its barrel at the camera, and a flame quad
+       inheriting that turn is a flame seen from behind — so it hangs
+       off the GROUP instead, and a point handed to `position` is read
+       in the PARENT's space. It was being given a WORLD-space point, so
+       the group's own transform — the whole of VIEW.pos, the yaw, the
+       bob — was applied to it a second time.
+
+       The tell, for anyone who meets this again: the glow the pilot
+       throws ON the gun was in the right place the whole time. That
+       uniform takes the same vector in view space and is correct; only
+       the mesh needed converting back out of the world.
+
+       There is no scene graph in this test — the three stub is a
+       handful of empty classes — so what is pinned is the pair of
+       conversions in the source, which is where the fault was. */
+    const gunSrc = fs3.readFileSync('js/weapon3d.js', 'utf8');
+    const place = gunSrc.slice(gunSrc.indexOf('if (G.pilot) {'), gunSrc.indexOf('the muzzle, only while firing'));
+    check('the pilot light is put where the model says, not where the group is',
+      /G\.inner\.localToWorld\(pv\)/.test(place) &&
+      /G\.group\.worldToLocal\(G\.pilot\.position\)/.test(place));
+    /* and the asymmetry that makes that necessary, so that re-parenting
+       the flame one day takes the conversion with it */
+    check('and it hangs off the group while the muzzle hangs off the model',
+      /group\.add\(g\.pilot\)/.test(gunSrc) && /inner\.add\(g\.muzzle\)/.test(gunSrc));
+    /* AND THE FILE IS WHAT SAYS WHERE. Both anchors come out of the
+       flamethrower's own asset.extras, and the pilot sits just under
+       the barrel tip — a few centimetres, not a third of the gun. */
+    const glb = fs3.readFileSync('assets/models/flamethrower.glb');
+    const jlen = glb.readUInt32LE(12);
+    const meta = JSON.parse(glb.subarray(20, 20 + jlen).toString('utf8'));
+    const anc = meta.asset?.extras?.anchors || {};
+    const apart = Math.hypot(...[0, 1, 2].map(i => anc.pilot[i] - anc.nozzle[i]));
+    note('pilot to nozzle', `${(apart * 100).toFixed(1)}cm apart in the model`);
+    check('the flamethrower carries both anchors itself',
+      Array.isArray(anc.pilot) && Array.isArray(anc.nozzle));
+    check('and the pilot sits a few centimetres off the nozzle',
+      apart > 0.01 && apart < 0.2, `${apart.toFixed(3)} model units`);
   }
 }
 

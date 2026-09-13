@@ -71,7 +71,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         744 checks, no install and no browser
+  the smoke test         748 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -2252,7 +2252,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-744 checks. Every one of them earns its place by having caught something
+748 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -2554,6 +2554,23 @@ that had already reached a screenshot:
     third of their height. One a tic and smaller leaves the drawing
     showing through, which is where the colour map does its work — and
     the point of a burning shopper is that you can see WHO is burning
+  A PILOT LIGHT HANGING UNDER THE GUN, reported by the user and
+    measured at 0.537m off on a gun 1.4 metres long — a fifth of the
+    screen's height below the barrel and nearly off the bottom of the
+    frame. The two effects on the flamethrower hang off different
+    things, and that asymmetry is the whole of it: the muzzle is a
+    child of the MODEL and takes its anchor in the model's own units,
+    so it is right by construction; the pilot flame cannot be, because
+    the model is turned a half circle to point its barrel at the camera
+    and a quad that inherits that turn is a flame seen from behind. So
+    it hangs off the group instead — and a point handed to `position`
+    is read in the PARENT's space, while it was being given a WORLD
+    one. The group's own transform, which is the whole of the view
+    offset plus the yaw and the bob, was applied to it twice. The tell,
+    for anyone who meets this again: the glow the pilot throws ON the
+    gun was in the right place the whole time, because that uniform
+    takes the same vector in view space and was correct. Only the mesh
+    needed converting back out of the world
   A SHADER ENDING IN THE MIDDLE OF A SENTENCE. The GLSL lives in a
     JavaScript template literal, and a pair of backticks in a COMMENT
     inside it closes the string: the file still parsed, and the game
