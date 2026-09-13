@@ -29,10 +29,13 @@ somewhere else: the people, the trees, the sky, and the gun.
   art/                  the logo, the old sprite weapon, the seven four-view
                           vehicle sheets and the atlas packed out of them —
                           which nothing loads any more — and art/people/,
-                          the SWAT sheet as the user drew it
+                          the SWAT sheet and the army sheet as the user
+                          drew them
   assets/people/        the crowd, and what is left of one: seventeen
                           shoppers, eleven pieces, three splats, a fireball;
-                          and the squad, fifty-one cells of SWAT
+                          the squad, fifty-one cells of SWAT; and the army
+                          trooper, fifty-one cells cut the same way and
+                          not yet in the game
   assets/forest/        the wood: ten plants with their burn maps, two grounds
   assets/sky/night.png  the night, baked from a Polyhaven panorama
   assets/models/        the flamethrower, prepared from the user's .glb,
@@ -43,7 +46,8 @@ somewhere else: the people, the trees, the sky, and the gun.
   assets/fonts/         Michroma (SIL OFL), the title face
   tools/bake-art.mjs    node tools/bake-art.mjs — turns art/ into source
   tools/prep-people.mjs the crowd's art, crunched down from galvarius
-  tools/prep-swat.mjs   the SWAT sheet, found cell by cell and cut into a strip
+  tools/prep-troops.mjs a troops sheet — the SWAT's or the army's — found
+                          cell by cell and cut into a strip
   tools/prep-forest.sh  copies the wood's art over from the golf project
   tools/bake-sky.mjs    the sky: 8k panorama to 1024 palette pixels
   tools/prep-model.mjs  strips the marker spheres out of a .glb, keeps their positions
@@ -76,7 +80,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         894 checks, no install and no browser
+  the smoke test         908 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -2142,8 +2146,9 @@ Pix.mirrored does. A trooper walking away from you shows you his back,
 which no shopper can, and it is the whole of what makes a thing you can
 walk round read as a thing rather than a card.
 
-tools/prep-swat.mjs cuts it, and two things about that were harder than
-they sound. THE SHEET IS A JPEG, so the magenta is not a colour but a
+tools/prep-troops.mjs cuts it (it was tools/prep-swat.mjs until a second
+sheet arrived; see THE ARMY TROOPER below), and two things about that were
+harder than they sound. THE SHEET IS A JPEG, so the magenta is not a colour but a
 cloud of them and every edge carries a halo where the ground bled into the
 ink; the tool measures how magenta each pixel is, spends that number as
 the pixel's transparency, and unmixes the magenta back out of what colour
@@ -2156,6 +2161,38 @@ again until nothing splits — with one seam found by hand, where the death
 row's blood reaches the gore row under it. Sixty tall, a shade under the
 crowd's sixty-two, because the frame of somebody coming apart is taller
 than the somebody and the sixty-four-pixel rule is a rule.
+
+THE ARMY TROOPER IS THE USER'S SECOND SHEET, prepared the same way and,
+at the user's request, NOT YET IN THE GAME. Same artist, same eleven rows
+in the same order — seven poses in five views, the fall, the three lying
+frames stacked in the last column, the nine of coming apart — on the same
+magenta, as a JPEG again, decoded in a browser to art/people/army_sheet.png
+and cut by the same tool into assets/people/army.png: fifty-one cells,
+sixty-four square, in the order the SWAT's are. The tool is driven by a
+table now (TROOPS in js/people.js: which sheet, which strip, how tall,
+how much lift) and the SWAT strip it writes is byte for byte the one the
+old tool wrote, which was checked when it was renamed. THE SAME SIXTY
+TALL, so the two stand level side by side — and at that scale three of
+the army's floor frames, the last splatter and the two pools a body ends
+as, come out sixty-five, seventy-one and seventy-two across against a
+cell of sixty-four. The SWAT's sheet happened to fit; this one does not,
+by a few columns of the thin smear at a pool's edge. Scaling the whole
+figure down until the pools fit makes a trooper fifty-three tall beside a
+SWAT at sixty, so instead a FLOOR frame — never the figure — may lose up
+to eight columns off its two edges, and the tool says what fraction of
+the ink that was: a tenth of a per cent of the splatter, four per cent of
+one pool and two of the other, all of it the tail of a smear. A QUARTER
+OF THE LIFT is the
+other number of the army's own — 0.85 against the SWAT's 0.62 — because
+the tone curve that rescued
+navy from the dark would turn tan and olive pale: the army figure is drawn
+three and a half times brighter in linear than the SWAT to begin with, and
+the tool prints the figure's mean before and after so the next sheet can
+be set by the same number. addTroops reads either strip back into the
+bank under its own name, the smoke test proves both, and that is the
+whole of what exists: no actor, no states, nothing loads it, and the
+letters mean nothing until there is one. When there is, THE SWAT in
+js/states.js is the table to copy, letter for letter.
 
 
 THE CAR PARK IS ONE VAN, THREE DOZEN TIMES, at the user's request, and
@@ -2531,7 +2568,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-894 checks. Every one of them earns its place by having caught something
+908 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -3136,9 +3173,14 @@ WHAT IS NOT DONE
     js/player.js, FIREPROOF. Bullets and vans get through it; nothing
     else does. The tank is finite and fills itself very slowly; nothing
     else refills it, and nothing refills your health at all
-  the SWAT sheet is a JPEG, decoded to a PNG in a browser and kept in
-    art/people/ as that PNG, because node has no JPEG decoder and one
-    was not worth writing for a file converted once
+  the SWAT sheet and the army sheet are JPEGs, decoded to PNGs in a
+    browser and kept in art/people/ as those PNGs, because node has no
+    JPEG decoder and one was not worth writing for files converted once
+  the army trooper is cut, loadable and proven, and nothing in the game
+    spawns one: no actor, no states, and main.js does not fetch the
+    strip. Asked for that way — prepared now, decided later. The SWAT's
+    table in js/states.js is the one to copy when the time comes, and
+    the smoke test pins the boundary so that it is crossed on purpose
   nothing follows you into the wood, and the wood's fire and the
     store's do not cross the car park to each other; the flamethrower is
     the bridge

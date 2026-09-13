@@ -155,11 +155,11 @@ export function bakeSprites() {
      The same bargain for the SWAT: a navy body of the right height under
      every letter the state table names, so the chase, the rifle and the
      deaths all run headless and the user's sheet lands on top under the
-     same names (see addSwat in js/people.js). The standing letters are
+     same names (see addTroops in js/people.js). The standing letters are
      one figure with a rifle; the falling ones lean over; the lying and
      the coming-apart ones are a body's length of navy on the floor. */
   {
-    const H = CELLS.swat.h, W = CELLS.swat.w;
+    const H = CELLS.troops.h, W = CELLS.troops.w;
     const draw = (kind, k) => radial(p => {
       const cx = W >> 1, foot = H - 1;
       if (kind === 'up') {

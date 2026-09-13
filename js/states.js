@@ -141,7 +141,7 @@ S('SHOP_BORE',   'SHOP', 'A', -1, null, 'SHOP_BORE');
    in nine.
 
    THEY HAVE EVERY SIDE. The sheet is five views mirrored to eight (see
-   SWAT_ROTATIONS in js/people.js), so a trooper walking away from you
+   TROOP_ROTATIONS in js/people.js), so a trooper walking away from you
    shows you their back, which no shopper can — and which is the whole of
    what makes a thing you can walk round read as a thing rather than a
    card. A_Chase sets `angle` to the way it is walking; A_FaceTarget

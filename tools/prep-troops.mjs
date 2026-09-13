@@ -1,18 +1,28 @@
 /* =====================================================================
-   Cut the SWAT sheet into the game's strip format
+   Cut a troops sheet into the game's strip format
    =====================================================================
 
-     node tools/prep-swat.mjs [art/people/police_assault_sheet.png]
+     node tools/prep-troops.mjs SWAT
+     node tools/prep-troops.mjs ARMY
 
-   THE SHEET IS THE USER'S, and it is the first piece of people art in
-   the game with ROTATIONS in it: eleven rows on a magenta ground, the
-   first seven of them five views of the same pose — head on, a quarter
-   turn, side on, three quarters and from behind — and the rest a death,
-   three frames of lying there, and nine of coming apart, drawn from the
-   front only. That is Doom's own economy exactly: five drawings, and
-   the other three views are the mirror of the second, third and fourth.
-   js/people.js knows which (see SWAT_TURN) and Pix.mirrored does the
-   rest.
+   TWO SHEETS NOW, both the user's, both drawn the same way, and this
+   was tools/prep-swat.mjs until the second one arrived: which sheet,
+   which strip, how tall and how much lift are read off TROOPS in
+   js/people.js by the name on the command line, and nothing else
+   changed — the SWAT strip this writes is byte for byte the one the
+   old tool wrote, which was checked when it was renamed.
+
+   THE SHEETS ARE THE FIRST PEOPLE ART in the game with ROTATIONS in
+   it: eleven rows on a magenta ground, the first seven of them five
+   views of the same pose — head on, a quarter turn, side on, three
+   quarters and from behind — and the rest a death, three frames of
+   lying there, and nine of coming apart, drawn from the front only.
+   That is Doom's own economy exactly: five drawings, and the other
+   three views are the mirror of the second, third and fourth.
+   js/people.js knows which (see TROOP_ROTATIONS) and Pix.mirrored does
+   the rest. The army sheet has the same eleven rows in the same order
+   — same artist, same layout — so it goes through the same cut with
+   two numbers of its own.
 
    IT IS A JPEG, which is why this reads a PNG. There is no JPEG decoder
    in node and there is not going to be one written here for a file
@@ -36,7 +46,7 @@
    it; that band is split by hand at the one empty line between them.
 
    ONE SCALE FOR EVERYTHING, off the standing figure: a trooper in
-   armour and a helmet is drawn sixty-four tall against the crowd's
+   armour and a helmet is drawn sixty tall against the crowd's
    sixty-two, and every other cell — the side views, the corpse, the
    splash — comes down by the same factor, so a body on the floor is
    the length the person was. The filter is the crowd's: a box filter
@@ -54,10 +64,13 @@ register('./loader.mjs', import.meta.url);
 import fs from 'node:fs';
 import { readPNG, writePNG } from './png-read.mjs';
 
-const { CELLS, SWAT_TURN, SWAT_FLAT, SWAT_VIEWS, SWAT_HEIGHT } = await import('../js/people.js');
+const { CELLS, TROOPS } = await import('../js/people.js');
 
-const SRC = process.argv[2] || 'art/people/police_assault_sheet.png';
-const OUT = new URL('../assets/people/swat.png', import.meta.url);
+const WHICH = (process.argv[2] || 'SWAT').toUpperCase();
+const T = TROOPS[WHICH];
+if (!T) throw new Error(`no troops called ${WHICH}; js/people.js knows ${Object.keys(TROOPS).join(', ')}`);
+const SRC = new URL('../' + T.sheet, import.meta.url);
+const OUT = new URL('../' + T.strip, import.meta.url);
 const im = readPNG(SRC);
 const { w: W, h: H, data } = im;
 
@@ -74,8 +87,8 @@ function ground(i) {
 const KEY = [255, 0, 255];
 
 /* AND LIFTED, because the sheet was painted for a bright ground and the
-   game is a car park at night. The uniform is navy at about forty of
-   two hundred and fifty-five, which in the linear light the renderer
+   game is a car park at night. The SWAT uniform is navy at about forty
+   of two hundred and fifty-five, which in the linear light the renderer
    works in is two per cent — so a trooper under the lot's floodlights
    came out as a silhouette with a visor, and turning the LIGHT up on
    him (see `lit` on the actor type) barely moved it: twice two per cent
@@ -83,8 +96,14 @@ const KEY = [255, 0, 255];
    raised to this power, which lifts the darks by a lot, the mids by a
    little and leaves the brights where they were, so the navy is still
    navy and is visible at fifty units in a dark lot. The orange muzzle
-   flash and the pale visor are already bright and are barely touched. */
-const LIFT = 0.62;
+   flash and the pale visor are already bright and are barely touched.
+
+   THE POWER IS THE SHEET'S OWN, off TROOPS: 0.62 for the navy, 0.85
+   for the army's tan and olive, which are three and a half times
+   brighter in linear to begin with and would go pale under the SWAT's
+   curve. Measured, not guessed — the tool prints the figure's mean
+   before and after so the next sheet can be set by the same number. */
+const LIFT = T.lift;
 const lift = new Uint8Array(256);
 for (let i = 0; i < 256; i++) lift[i] = Math.round(255 * Math.pow(i / 255, LIFT));
 
@@ -208,21 +227,34 @@ console.log(`${above.length} turned rows of ${above.map(r => r.boxes.length).joi
    --------------------------------------------------------------------- */
 const turned = above;
 const flat = [...dying, ...gore1, ...below.flatMap(r => r.boxes)];
-if (turned.length !== SWAT_TURN.length)
-  throw new Error(`${turned.length} turned rows on the sheet, js/people.js names ${SWAT_TURN.length}`);
+if (turned.length !== T.turn.length)
+  throw new Error(`${turned.length} turned rows on the sheet, js/people.js names ${T.turn.length}`);
 for (const r of turned)
-  if (r.boxes.length !== SWAT_VIEWS)
-    throw new Error(`a turned row has ${r.boxes.length} views, not ${SWAT_VIEWS}`);
-if (flat.length !== SWAT_FLAT.length)
-  throw new Error(`${flat.length} flat frames on the sheet, js/people.js names ${SWAT_FLAT.length}`);
+  if (r.boxes.length !== T.views)
+    throw new Error(`a turned row has ${r.boxes.length} views, not ${T.views}`);
+if (flat.length !== T.flat.length)
+  throw new Error(`${flat.length} flat frames on the sheet, js/people.js names ${T.flat.length}`);
+
+/* the figure's brightness, before and after the curve, for the record */
+{
+  let n = 0, y0 = 0, y1 = 0;
+  for (const r of turned) for (const [x0, ya, x1, yb] of r.boxes)
+    for (let y = ya; y < yb; y++) for (let x = x0; x < x1; x++) {
+      const i = (y * W + x) * 4;
+      if (!solid(x, y)) continue;
+      const Y = (0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]) / 255;
+      n++; y0 += Y; y1 += Math.pow(Y, LIFT);
+    }
+  console.log(`the figure averages ${(y0 / n).toFixed(3)} of white on the sheet, ${(y1 / n).toFixed(3)} after a lift of ${LIFT}`);
+}
 
 /* ---------------------------------------------------------------------
    Down to size
    --------------------------------------------------------------------- */
 /* the scale, off the standing figure head-on */
 const stand = turned[0].boxes[0];
-const K = SWAT_HEIGHT / (stand[3] - stand[1]);
-console.log(`standing ${stand[3] - stand[1]} tall on the sheet, ${SWAT_HEIGHT} in the game: ${K.toFixed(3)}`);
+const K = T.height / (stand[3] - stand[1]);
+console.log(`standing ${stand[3] - stand[1]} tall on the sheet, ${T.height} in the game: ${K.toFixed(3)}`);
 
 /** A box filter on premultiplied alpha, with the ground unmixed on the
  *  way in — see the note at the top, and tools/prep-people.mjs, which
@@ -253,11 +285,51 @@ function shrink([x0, y0, x1, y1], gain = 1.25) {
 
 const order = [...turned.flatMap(r => r.boxes), ...flat];
 const cells = order.map(b => shrink(b));
-const { w: cw, h: ch } = CELLS.swat;
+const { w: cw, h: ch } = CELLS.troops;
+
+/* A POOL WIDER THAN THE CELL IS TRIMMED, NOT SHRUNK. The army's last
+   three gore frames — a splatter and the two pools a body ends as,
+   with the helmet in one — come out sixty-five, seventy-one and
+   seventy-two across at the scale the standing figure sets, and the
+   cell is sixty-four because the rule is sixty-four. The SWAT's sheet
+   happened to fit; this one does not, by a few columns of the thin
+   smear at a pool's edge. The two honest ways out are to scale the
+   whole figure down until the pool fits, which makes an army trooper
+   fifty-three tall beside a SWAT at sixty, or to take the outermost
+   columns off the pool, which nobody will ever see. So a FLAT frame —
+   a thing on the floor, never the figure — may lose up to eight
+   columns, split between its two sides, and the tool says how much of
+   the ink that was: a tenth of a per cent, four, and two. A turned
+   frame over the cell is still an error, as is a pool over by more. */
+const TRIM_MAX = 8;
+const nTurned = turned.length * T.views;
+function trim(c, k) {
+  if (c.w <= cw) return c;
+  const over = c.w - cw;
+  if (k < nTurned || over > TRIM_MAX || c.h > ch)
+    throw new Error(`cell ${k} is ${c.w}x${c.h} and does not fit ${cw}x${ch} — widen CELLS.troops in js/people.js, or bring height down`);
+  const left = over >> 1;
+  const out = new Uint8ClampedArray(cw * c.h * 4);
+  let kept = 0, all = 0;
+  for (let y = 0; y < c.h; y++)
+    for (let x = 0; x < c.w; x++) {
+      const a = c.data[(y * c.w + x) * 4 + 3];
+      all += a;
+      if (x < left || x >= left + cw) continue;
+      kept += a;
+      const s = (y * c.w + x) * 4, d = (y * cw + x - left) * 4;
+      out[d] = c.data[s]; out[d + 1] = c.data[s + 1]; out[d + 2] = c.data[s + 2]; out[d + 3] = a;
+    }
+  const L = k - nTurned < T.flat.length ? T.flat[k - nTurned] : '?';
+  console.log(`cell ${k} (${L}, on the floor) trimmed from ${c.w} to ${cw} across: ${((1 - kept / all) * 100).toFixed(1)}% of its ink was in the ${over} columns cut`);
+  return { w: cw, h: c.h, data: out };
+}
+cells.forEach((c, k) => { cells[k] = trim(c, k); });
+
 const strip = Buffer.alloc(cw * cells.length * ch * 4);
 cells.forEach((c, k) => {
   if (c.w > cw || c.h > ch)
-    throw new Error(`cell ${k} is ${c.w}x${c.h} and does not fit ${cw}x${ch} — widen CELLS.swat in js/people.js`);
+    throw new Error(`cell ${k} is ${c.w}x${c.h} and does not fit ${cw}x${ch}`);
   /* centred across, standing on the bottom: a walker's planted foot and
      a corpse's back are both on the floor */
   const ox = k * cw + ((cw - c.w) >> 1), oy = ch - c.h;
@@ -269,4 +341,4 @@ cells.forEach((c, k) => {
 });
 const bytes = writePNG(cw * cells.length, ch, strip);
 fs.writeFileSync(OUT, bytes);
-console.log(`assets/people/swat.png: ${cells.length} x ${cw}x${ch}, ${(bytes.length / 1024).toFixed(1)}K`);
+console.log(`${T.strip}: ${cells.length} x ${cw}x${ch}, ${(bytes.length / 1024).toFixed(1)}K`);

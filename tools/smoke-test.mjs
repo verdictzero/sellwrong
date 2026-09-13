@@ -4243,34 +4243,62 @@ section('the van');
     const R = gs.responders;
 
     /* --- the art ------------------------------------------------------
-       The user's sheet, cut by tools/prep-swat.mjs into a strip in the
-       order js/people.js reads it back. Five drawings a turned frame and
-       three mirrors, exactly as Doom's own sprites did it. */
-    {
-      const img = readPNG(new URL('../assets/people/swat.png', import.meta.url));
-      check('assets/people/swat.png is the strip the tables are built on',
-        img.w === ppl.CELLS.swat.w * ppl.SWAT_CELLS && img.h === ppl.CELLS.swat.h,
-        `${img.w}x${img.h}, want ${ppl.CELLS.swat.w * ppl.SWAT_CELLS}x${ppl.CELLS.swat.h}`);
-      const n = ppl.addSwat(gs.sprites, img);
-      check('and the loader takes every cell of it', n === ppl.SWAT_CELLS, `${n}`);
-      const A = gs.sprites.frames.get('SWATA');
-      const same = (p, q) => {
-        if (p.w !== q.w || p.h !== q.h) return false;
-        for (let i = 0; i < p.data.length; i++) if (p.data[i] !== q.data[i]) return false;
-        return true;
-      };
-      check('a turned frame has eight views', A.views.length === 8 && A.views.every(v => v.w === ppl.CELLS.swat.w));
+       The user's sheets, cut by tools/prep-troops.mjs into strips in the
+       order js/people.js reads them back. Five drawings a turned frame
+       and three mirrors, exactly as Doom's own sprites did it. TWO OF
+       THEM: the SWAT, who are in the game, and the army trooper, who is
+       cut, loadable and proven here and is NOT in the game — no actor,
+       no state, nothing loads the strip — at the user's request. */
+    const same = (p, q) => {
+      if (p.w !== q.w || p.h !== q.h) return false;
+      for (let i = 0; i < p.data.length; i++) if (p.data[i] !== q.data[i]) return false;
+      return true;
+    };
+    const tallOf = p => { let top = p.h; for (let y = 0; y < p.h; y++) for (let x = 0; x < p.w; x++) if (p.alphaAt(x, y) > 8) { top = Math.min(top, y); } return p.h - top; };
+    check('the troops table names two sheets cut the same way, the SWAT and the army',
+      Object.keys(ppl.TROOPS).join(',') === 'SWAT,ARMY' &&
+      ppl.TROOPS.ARMY.turn === ppl.TROOPS.SWAT.turn && ppl.TROOPS.ARMY.flat === ppl.TROOPS.SWAT.flat &&
+      ppl.TROOPS.ARMY.cells === ppl.TROOPS.SWAT.cells && ppl.SWAT_CELLS === ppl.TROOPS.SWAT.cells);
+    check('and both sheets are kept, decoded, beside the strips cut from them',
+      Object.values(ppl.TROOPS).every(t => fs.existsSync(t.sheet) && fs.existsSync(t.strip)));
+    for (const [key, t] of Object.entries(ppl.TROOPS)) {
+      const cell = ppl.CELLS.troops;
+      const img = readPNG(new URL('../' + t.strip, import.meta.url));
+      check(`${t.strip} is the strip the tables are built on`,
+        img.w === cell.w * t.cells && img.h === cell.h, `${img.w}x${img.h}, want ${cell.w * t.cells}x${cell.h}`);
+      const n = ppl.addTroops(gs.sprites, img, key);
+      check(`and the loader takes every cell of it, under ${t.sprite}`, n === t.cells && gs.sprites.frames.has(t.sprite + 'A'), `${n}`);
+      const A = gs.sprites.frames.get(t.sprite + 'A');
+      check('a turned frame has eight views', A.views.length === 8 && A.views.every(v => v.w === cell.w));
       check('and rotation 1 is the mirror of rotation 7, not a copy of it',
         same(A.views[1], A.views[7].mirrored()) && !same(A.views[1], A.views[7]));
       check('and head on and from behind are two different drawings', !same(A.views[0], A.views[4]));
-      const lying = gs.sprites.frames.get('SWATN');
+      const lying = gs.sprites.frames.get(t.sprite + 'N');
       check('and lying down is the same from every side', lying.views.every(v => v === lying.views[0]));
       /* the scale */
-      const tallOf = p => { let top = p.h; for (let y = 0; y < p.h; y++) for (let x = 0; x < p.w; x++) if (p.alphaAt(x, y) > 8) { top = Math.min(top, y); } return p.h - top; };
-      note('a trooper, head on', `${tallOf(A.views[0])} tall in a ${ppl.CELLS.swat.h} cell`);
-      check('the standing trooper is the height the table says', Math.abs(tallOf(A.views[0]) - ppl.SWAT_HEIGHT) <= 1);
-      check('and every cell keeps the 64-pixel rule', ppl.CELLS.swat.w <= 64 && ppl.CELLS.swat.h <= 64);
+      note(`a ${key} trooper, head on`, `${tallOf(A.views[0])} tall in a ${cell.h} cell, lift ${t.lift}`);
+      check('the standing trooper is the height the table says', Math.abs(tallOf(A.views[0]) - t.height) <= 1);
+      check('and every cell keeps the 64-pixel rule', cell.w <= 64 && cell.h <= 64);
+      /* every cell has something in it — a cut that found a smear of
+         JPEG halo instead of a drawing would leave an empty one */
+      const cells = Array.from({ length: t.cells }, (_, k) => {
+        let n2 = 0; for (let y = 0; y < cell.h; y++) for (let x = 0; x < cell.w; x++) if (img.data[((y * img.w) + k * cell.w + x) * 4 + 3] > 8) n2++; return n2;
+      });
+      check('and every cell holds a drawing', cells.every(c => c > 60), cells.map((c, k) => c <= 60 ? k : null).filter(k => k !== null).join(','));
     }
+    /* the two figures are the same sheet layout, so the same letter is
+       the same pose: the army's firing frame is as orange as the SWAT's */
+    {
+      const glow = p => { let o = 0, n = 0; for (let y = 0; y < p.h; y++) for (let x = 0; x < p.w; x++) { if (p.alphaAt(x, y) < 128) continue; n++; const i = (y * p.w + x) * 4; if (p.data[i] > 180 && p.data[i + 1] > 90 && p.data[i + 2] < 120) o++; } return n ? o / n : 0; };
+      const sf = gs.sprites.frames.get('SWATF').views[0], af = gs.sprites.frames.get('ARMYF').views[0];
+      const sa = gs.sprites.frames.get('SWATA').views[0], aa = gs.sprites.frames.get('ARMYA').views[0];
+      note('how orange the firing frame is', `SWAT ${(glow(sf) * 100).toFixed(0)}% against ${(glow(sa) * 100).toFixed(0)}% walking; army ${(glow(af) * 100).toFixed(0)}% against ${(glow(aa) * 100).toFixed(0)}%`);
+      check('the firing frame is the lit one on both sheets', glow(sf) > glow(sa) * 2 && glow(af) > glow(aa) * 2);
+    }
+    /* AND THAT IS ALL THE ARMY IS, for now */
+    check('the army trooper is prepared and not implemented: no actor, no states, nothing loads it',
+      !st.ACTORS.ARMY && !st.STATES?.ARMY_STAND && !/army\.png/.test(fs.readFileSync('js/main.js', 'utf8')) &&
+      !/ARMY/.test(fs.readFileSync('js/states.js', 'utf8')) && !/ARMY/.test(fs.readFileSync('js/responders.js', 'utf8')));
 
     /* --- the map's part ------------------------------------------- */
     const onTarmac = p => { const s2 = level.sectorAt(p.x, p.y); return !!s2 && /road|junction/i.test(s2.name); };

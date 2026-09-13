@@ -26,7 +26,7 @@ import { bakeSprites, bakeWeapons } from './sprites.js';
 import { fireFrames } from './fireart.js';
 import { loadVehicleModel, POLICE_LENGTH } from './car.js';
 import { addStrip, imageData } from './spriteload.js';
-import { CELLS, GIBLETS, BLAST_SPRITE, addStandees, addSplats, addSwat } from './people.js';
+import { CELLS, GIBLETS, BLAST_SPRITE, addStandees, addSplats, addTroops } from './people.js';
 import { buildSellWrong } from './maps/sellwrong.js';
 import { Game } from './game.js';
 import { Hud } from './hud.js';
@@ -228,7 +228,9 @@ async function boot() {
   const policeP = loadVehicleModel('assets/models/police_assault.glb',
       { length: POLICE_LENGTH, id: 'police', name: 'Assault van', use: 'police' })
     .catch(e => { console.warn('no police van, nobody comes:', e.message); return null; });
-  /* and the SWAT themselves: the user's sheet, cut by tools/prep-swat.mjs */
+  /* and the SWAT themselves: the user's sheet, cut by tools/prep-troops.mjs.
+     (The army trooper's strip sits beside it, cut the same way, and is
+     not loaded: nothing spawns one yet. See TROOPS in js/people.js.) */
   const swatP = loadImage('assets/people/swat.png')
     .catch(e => { console.warn('no SWAT art, using the stand-ins:', e.message); return null; });
 
@@ -267,7 +269,7 @@ async function boot() {
   }
   {
     const swatImg = await swatP;
-    if (swatImg) console.log(`the squad: ${addSwat(sprites, imageData(swatImg))} cells of SWAT`);
+    if (swatImg) console.log(`the squad: ${addTroops(sprites, imageData(swatImg), 'SWAT')} cells of SWAT`);
   }
 
   /* THE FIRE ON THE TREES AND ON THE GUN. The store's three fire sets
