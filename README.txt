@@ -38,11 +38,11 @@ somewhere else: the people, the trees, the sky, and the gun.
                           not yet in the game
   assets/forest/        the wood: ten plants with their burn maps, two grounds
   assets/sky/night.png  the night, baked from a Polyhaven panorama
-  assets/models/        the flamethrower, prepared from the user's .glb,
-                          the van, which is the user's .glb, the police
-                          van, which is the user's other .glb, and the
-                          cerebral bore, the user's fourth, stripped the
-                          way the flamethrower was
+  assets/models/        the flamethrower, the fire extinguisher rifle and
+                          the cerebral bore, all three Vaportrash's and all
+                          three stripped by tools/prep-model.mjs; the van,
+                          which is the user's .glb, and the police van,
+                          which is the user's other one
   assets/fonts/         Michroma (SIL OFL), the title face
   tools/bake-art.mjs    node tools/bake-art.mjs — turns art/ into source
   tools/prep-people.mjs the crowd's art, crunched down from galvarius
@@ -50,7 +50,10 @@ somewhere else: the people, the trees, the sky, and the gun.
                           cell by cell and cut into a strip
   tools/prep-forest.sh  copies the wood's art over from the golf project
   tools/bake-sky.mjs    the sky: 8k panorama to 1024 palette pixels
-  tools/prep-model.mjs  strips the marker spheres out of a .glb, keeps their positions
+  tools/prep-model.mjs  a .glb down to what this renderer binds: the colour
+                          map, four attributes, one tight view an accessor
+                          — and marker spheres out of the mesh and into
+                          the file's extras, for a model that has them
   tools/build-site.sh   assembles public/ — what actually gets published
   tools/bake-icons.mjs  the home-screen icon, out of the game's own fire
   tools/smoke-test.mjs  node tools/smoke-test.mjs — no install, no browser
@@ -80,7 +83,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         908 checks, no install and no browser
+  the smoke test         913 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -1296,24 +1299,57 @@ the same class with the fire's own frames on it.
 THE GUN IN YOUR HANDS
 ---------------------
 
-The flamethrower is the user's model, loaded from assets/models/ by a
-loader that reads exactly what Blender exported and nothing more
+The flamethrower is a model of Vaportrash's, loaded from assets/models/
+by a loader that reads exactly what the exporter wrote and nothing more
 (js/glb.js), and drawn in its own little scene in front of the world —
 low and hard right, the body off the bottom of the frame, the barrel
 coming in across the lower right quarter. It is drawn into the same
 low-res buffer as everything else, so the painted diffuse goes chunky
 with the walls and the palette eats it with the floor.
 
-The model arrived with two marker spheres in it saying where the pilot
-light burns and where the flame comes out. tools/prep-model.mjs takes
-them out of the mesh and writes their positions into the file's own
-extras; the pilot is a small flame sprite parked on one, the muzzle
+IT IS THE SECOND ONE. The first was the user's own, built in Blender
+with two marker spheres in it saying where the pilot light burns and
+where the flame comes out, which tools/prep-model.mjs lifted out of the
+mesh and wrote into the file's own extras. The user replaced it with
+this one — a fire extinguisher bottle strapped to a green machine gun,
+which is a better joke than anything the game could have modelled — and
+it arrives with no markers in it at all. So the two points are numbers
+in js/weapon3d.js now, in the model's own units, which is the same
+answer the extinguisher and the bore got and the same rule the van set:
+somebody else's file is not rewritten on the way in.
+
+AND THE NUMBERS WERE FOUND BY LOOKING. A model with no markers has to
+be measured, and the measuring was done with pictures: the gun drawn
+flat from its left, from above and straight down the barrel, over a
+grid ruled in its own units, with a crosshair on the two candidate
+points that was moved until it sat where it belonged. The nozzle is the
+middle of the bore inside the C-shaped muzzle bracket; the pilot is the
+lip of the little gold igniter pipe that runs under the barrel and
+turns up in front of it — below the nozzle and further forward, which
+is how the old gun had it too and is what a pilot light is for. Neither
+could have been read off a bounding box: the box's centre is inside the
+metal and the pipe is a different part from the barrel.
+
+The pilot is a small flame sprite parked on one anchor, the muzzle
 flame grows out of the other along the barrel, and the stream that
 flies into the world is born at that same nozzle — projected as a ray
 out of the gun's scene and back into the world's, so it always leaves
 the end of the gun you can see, whatever the two fields of view are.
-The same tool drops the maps an unlit renderer cannot use, which was a
-third of the download.
+
+WHAT THE PREP TOOL TAKES OFF IT, on the way in, is two thirds of the
+file: 6.8 megabytes to 3.3. The maps an unlit renderer cannot use (a
+normal map and a metal-rough map, a megabyte and a half between them);
+the vertex attributes it cannot bind, which on a Sketchfab export is a
+TANGENT for the normal map that has just gone and four sets of UVs for
+light maps this game does not have; and then — the part that actually
+saves the bytes — a repack that gives every accessor a tight buffer
+view of its own. A bufferView is a RANGE, and an exporter is free to
+park twenty accessors in one, so deleting the attributes saved nothing
+at all until the geometry was copied out element by element at the
+source's own stride. Every float accessor that came with a min and a
+max is measured again out of the bytes that were written, and a
+mismatch throws, because a repack that bends the model quietly is worse
+than no repack.
 
 
 THE ROAD, AND WHO COMES DOWN IT
@@ -2568,7 +2604,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-908 checks. Every one of them earns its place by having caught something
+913 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -2953,6 +2989,30 @@ that had already reached a screenshot:
     middles were near enough. So the trooper fell, lay down, knelt up
     again and lay down. That band is cut COLUMNS FIRST now, and the
     order the cut returns is the order the frames play in
+  A MEASURING TOOL THAT LIED, for four of its own panels. The new
+    flamethrower has no marker spheres, so its nozzle and pilot had to
+    be measured off pictures, and the tool drawn to do it took the
+    screen's right-hand and up axes as ARGUMENTS: name the camera and
+    name what is across the screen. Two of the four views got the
+    handedness backwards — a camera looking from +x with +y up has -z
+    across the screen, not +z — so the rulers under those panels
+    counted the wrong way and the muzzle appeared to be at the tail of
+    the gun. The fix is not a better argument: the axes come off the
+    camera's own matrix now, so a view cannot disagree with its own
+    ruler. Everything a picture is measured against has to be derived
+    from the same thing the picture is
+  A FLAME THAT WAS NEVER DRAWN, and the gun was blamed for it. The first
+    look at the new flamethrower firing showed no plume at the muzzle,
+    which read as the bottle on top of the barrel hiding it, and an hour
+    went into holding the gun further out, higher and rolled over to get
+    round a problem that did not exist. main.js draws the gun with
+    weapon3d.update(player, player.firing, ...) and `firing` is
+    fireIndex >= 0 — a thing that is true only DURING the fire cycle. The
+    probe ticked the world eight times with the trigger down and then
+    took the screenshot, by which time the cycle had ended and the muzzle
+    quad was hidden, correctly. Parking the cycle open before the shutter
+    opens shows the plume exactly where it should be. A screenshot of a
+    paused game is a screenshot of whatever state the pause caught
   A LAUNCHER THAT LEFT THE PICTURE. The bore was asked to be a third
     smaller and a third farther off, and the first version of "farther
     off" scaled the gun's whole position along the line from the eye —
@@ -3188,8 +3248,16 @@ WHAT IS NOT DONE
   nothing follows you into the wood, and the wood's fire and the
     store's do not cross the car park to each other; the flamethrower is
     the bridge
-  the trees are 128 and 256 pixels, the sky 1024, the gun's paint 1024,
-    the van's sheet 512x256, the police van's 1024: art that came from outside
-    was left as it came, and the 64-pixel rule stands for everything the
-    game draws itself
+  the trees are 128 and 256 pixels, the sky 1024, all three guns' paint
+    1024, the van's sheet 512x256, the police van's 1024: art that came
+    from outside was left as it came, and the 64-pixel rule stands for
+    everything the game draws itself
+  three of the five models are Vaportrash's, off Sketchfab. The fire
+    extinguisher rifle and the cerebral bore are CC-BY-4.0 and want the
+    credit above kept wherever the game goes; the flamethrower's own
+    extras say COPYRIGHT TO VAPORTRASH and nothing else, which is not a
+    licence to ship. Whoever publishes this owes that one either a
+    licence from its author or a replacement — the anchors and the prep
+    are a table and a tool, so a different model is two numbers and a
+    re-run
   no save

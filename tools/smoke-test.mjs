@@ -2198,8 +2198,18 @@ section('the cold');
       E.pilot === null);
     check('and its muzzle is desaturated first, so a tint can make it cold',
       E.cold === true && E.tint[2] > E.tint[0]);
-    check('the flamethrower is untouched: its own frame, its own anchors',
-      !w3.GUNS.FLAMER.fit && !w3.GUNS.FLAMER.nozzle && !w3.GUNS.FLAMER.cold);
+    /* EVERY GUN IN THE GAME IS SOMEBODY ELSE'S NOW. The flamethrower
+       the user built in Blender — the one model that carried its own
+       marker spheres — was replaced at the user's request by a
+       Sketchfab model that carries nothing, so all three are fitted and
+       anchored by this table rather than by editing the file, which is
+       the rule the van set. */
+    check('all three guns are fitted to the game\'s length and say where they point',
+      Object.values(w3.GUNS).every(d => d.fit && Array.isArray(d.nozzle) && d.nozzle.length === 3));
+    check('and the flamethrower is the only one with a pilot light, being the only one that burns',
+      Array.isArray(w3.GUNS.FLAMER.pilot) && E.pilot === null && w3.GUNS.BORE.pilot === null);
+    check('and it is the only one whose muzzle is fire as painted',
+      !w3.GUNS.FLAMER.cold && w3.GUNS.FLAMER.tint.every(v => v === 1));
 
     /* --- AND THE PILOT LIGHT IS ON THE NOZZLE -----------------------
        Reported by the user as misaligned, and it was: 0.537m off on a
@@ -2256,19 +2266,44 @@ section('the cold');
       !/multiplyScalar\(G\.def\.out/.test(gunSrc));
     check('and its exhaust is scaled with it, being in metres and not in the model',
       Math.abs(B.muzzle.len - 0.14 * 0.67) < 0.002 && Math.abs(B.muzzle.wid - 0.10 * 0.67) < 0.002);
-    /* AND THE FILE IS WHAT SAYS WHERE. Both anchors come out of the
-       flamethrower's own asset.extras, and the pilot sits just under
-       the barrel tip — a few centimetres, not a third of the gun. */
+    /* AND THE TWO NUMBERS ARE AT THE BUSINESS END OF THE MODEL.
+       They were found by drawing the gun flat over a grid ruled in its
+       own units and moving a crosshair until it sat in the bore and on
+       the lip of the igniter pipe — there is no picture in a smoke
+       test, so what is pinned here is everything a picture would have
+       made obvious: that both anchors are inside the model's own box,
+       at the far +z end of it, on the centre line, and that the pilot
+       is the lower of the two and reaches further forward, which is the
+       arrangement that makes a flamethrower look like one. An anchor at
+       the wrong end, or on the wrong axis, fails here. */
     const glb = fs3.readFileSync('assets/models/flamethrower.glb');
     const jlen = glb.readUInt32LE(12);
     const meta = JSON.parse(glb.subarray(20, 20 + jlen).toString('utf8'));
-    const anc = meta.asset?.extras?.anchors || {};
-    const apart = Math.hypot(...[0, 1, 2].map(i => anc.pilot[i] - anc.nozzle[i]));
-    note('pilot to nozzle', `${(apart * 100).toFixed(1)}cm apart in the model`);
-    check('the flamethrower carries both anchors itself',
-      Array.isArray(anc.pilot) && Array.isArray(anc.nozzle));
-    check('and the pilot sits a few centimetres off the nozzle',
-      apart > 0.01 && apart < 0.2, `${apart.toFixed(3)} model units`);
+    const posAcc = new Set();
+    for (const m of meta.meshes) for (const q of m.primitives) posAcc.add(q.attributes.POSITION);
+    const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    for (const i of posAcc) {
+      const a = meta.accessors[i];
+      for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], a.min[k]); hi[k] = Math.max(hi[k], a.max[k]); }
+    }
+    const F = w3.GUNS.FLAMER, span = [0, 1, 2].map(k => hi[k] - lo[k]);
+    note('the flamethrower', `${span.map(v => v.toFixed(1)).join(' x ')} model units, nozzle ${F.nozzle.join(', ')}, pilot ${F.pilot.join(', ')}`);
+    check('the model is longest along z, which is the axis the scene turns to face the camera',
+      span[2] > span[0] && span[2] > span[1]);
+    const inBox = p => p.every((v, k) => v >= lo[k] - 1 && v <= hi[k] + 1);
+    check('both anchors are on the model rather than floating off it', inBox(F.nozzle) && inBox(F.pilot));
+    check('both are at the muzzle end, in the last tenth of its length',
+      F.nozzle[2] > hi[2] - span[2] * 0.1 && F.pilot[2] > hi[2] - span[2] * 0.1,
+      `${F.nozzle[2]} and ${F.pilot[2]} against a barrel that ends at ${hi[2].toFixed(1)}`);
+    check('and on the centre line, which is where a barrel is',
+      Math.abs(F.nozzle[0]) < span[0] * 0.1 && Math.abs(F.pilot[0]) < span[0] * 0.1);
+    check('the pilot burns below the nozzle and a little ahead of it, on the igniter pipe',
+      F.pilot[1] < F.nozzle[1] && F.pilot[2] > F.nozzle[2]);
+    const scale = w3.GUN_LENGTH / Math.max(...span);
+    const apart = Math.hypot(...[0, 1, 2].map(i => (F.pilot[i] - F.nozzle[i]) * scale));
+    note('pilot to nozzle', `${(apart * 100).toFixed(1)}cm apart on a ${w3.GUN_LENGTH}m gun`);
+    check('and it is a few centimetres off, not a third of the gun',
+      apart > 0.01 && apart < 0.2, `${apart.toFixed(3)}m`);
   }
 }
 
@@ -4686,17 +4721,44 @@ section('the gun');
   const buf = fs.readFileSync(new URL('../assets/models/flamethrower.glb', import.meta.url));
   const { json, bin } = G.parseGLB(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
   const names = json.nodes.map(n => n.name);
-  note('model', `${json.nodes.length} nodes, ${json.images.length} image, ${(buf.length / 1024 / 1024).toFixed(1)} MB`);
-  check('the marker spheres are gone', !names.some(n => /CLAUDE/i.test(n)), names.join());
-  check('the gun and its readout remain', names.includes('flame_thrower') && names.includes('FT_hud'));
-  const a = json.asset.extras?.anchors;
-  check('their positions are kept as anchors', !!a && a.pilot.length === 3 && a.nozzle.length === 3);
-  check('the nozzle is at the end of the barrel, the pilot just under it',
-    a.nozzle[2] > 0.6 && a.pilot[2] > 0.6 && a.pilot[1] < a.nozzle[1]);
-  check('only the diffuse survives', json.images.length === 1 && json.materials.length === 1 && !json.materials[0].normalTexture);
-  const pos = G.readAccessor(json, bin, json.meshes[0].primitives[0].attributes.POSITION);
-  check('the mesh is intact', pos.array.length === 11689 * 3 && pos.itemSize === 3, `${pos.array.length / 3} vertices`);
-  check('every buffer view is used', json.bufferViews.every((bv, i) => json.accessors.some(x => x.bufferView === i) || json.images.some(im => im.bufferView === i)));
+  note('model', `${json.nodes.length} nodes, ${json.meshes.length} meshes, ${json.images.length} image, ${(buf.length / 1024 / 1024).toFixed(1)} MB`);
+  note('where it came from', [json.asset.extras?.title, json.asset.extras?.author].filter(Boolean).join(' — ') || 'unsaid');
+  /* WHAT tools/prep-model.mjs IS FOR, checked on its output. The model
+     arrives with three 1024 maps and seven vertex attributes; an unlit
+     renderer that reads four of them and one map would carry the other
+     six megabytes to the player for nothing. */
+  check('only the diffuse survives',
+    json.images.length === 1 && json.materials.length === 1 &&
+    !json.materials[0].normalTexture && !json.materials[0].pbrMetallicRoughness?.metallicRoughnessTexture);
+  const attrs = new Set();
+  for (const m of json.meshes) for (const p of m.primitives) for (const k of Object.keys(p.attributes)) attrs.add(k);
+  check('and only the attributes js/glb.js binds: no tangents, no second set of UVs',
+    [...attrs].every(k => ['POSITION', 'NORMAL', 'TEXCOORD_0', 'COLOR_0'].includes(k)), [...attrs].join());
+  /* ONE TIGHT VIEW PER ACCESSOR is what makes dropping them worth
+     anything — a shared bufferView survives as long as one accessor
+     points into it, so this is the check that the dead bytes actually
+     left. */
+  check('every buffer view is used, by exactly one accessor or one image',
+    json.bufferViews.every((bv, i) =>
+      json.accessors.filter(x => x.bufferView === i).length + json.images.filter(im => im.bufferView === i).length === 1));
+  check('and no accessor is interleaved or offset into somebody else\'s range',
+    json.accessors.every(a => !a.byteOffset) && json.bufferViews.every(bv => !bv.byteStride));
+  /* and the geometry came through the repack unbent: the bounds the
+     file declares are the bounds of the bytes it now holds */
+  let checked = 0, worst = 0;
+  for (const m of json.meshes) for (const p of m.primitives) {
+    const a = json.accessors[p.attributes.POSITION];
+    const { array } = G.readAccessor(json, bin, p.attributes.POSITION);
+    for (let k = 0; k < 3; k++) {
+      let mn = Infinity, mx = -Infinity;
+      for (let i = k; i < array.length; i += 3) { if (array[i] < mn) mn = array[i]; if (array[i] > mx) mx = array[i]; }
+      worst = Math.max(worst, Math.abs(mn - a.min[k]), Math.abs(mx - a.max[k]));
+    }
+    checked += a.count;
+  }
+  check('and every vertex is where the file says it is', worst < 1e-4, `${checked} vertices, worst ${worst.toExponential(1)}`);
+  check('no marker spheres are left in any model this tool has touched',
+    !names.some(n => /CLAUDE/i.test(n)), names.join());
 }
 
 /* ---------- the site ---------- */

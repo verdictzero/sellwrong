@@ -18,8 +18,17 @@
    is real but there is no lighting model here to consume it. Between
    them that is a third of the download for nothing on screen. The
    diffuse — the one texture that IS the gun — is copied through
-   byte-for-byte, and so is every vertex: the asset is stripped, never
-   resampled.
+   byte-for-byte, and so is every vertex it keeps: the asset is
+   stripped, never resampled.
+
+   AND THE VERTEX ATTRIBUTES THE SAME RENDERER CANNOT USE, which is the
+   other half of the same saving and was found on the second
+   flamethrower: a Sketchfab export carries a TANGENT (for the normal
+   map that has just been dropped) and four sets of UVs (for the light
+   maps and the ambient occlusion of a renderer that is not this one).
+   js/glb.js reads POSITION, NORMAL, TEXCOORD_0 and COLOR_0 and silently
+   ignores the rest, so on that model the file was carrying forty
+   bytes a vertex — 1.6 megabytes — that nothing would ever bind.
 
    Nothing else is understood or needed: one buffer, no animations, no
    skins, no extensions. Anything fancier throws rather than guessing.
@@ -112,7 +121,17 @@ const imgMap = new Map(), images = [];
 json.images.forEach((im, i) => { if (usedImg.has(i)) { imgMap.set(i, images.length); images.push({ ...im }); } });
 for (const t of textures) t.source = imgMap.get(t.source);
 
-/* Accessors: everything a kept primitive names. */
+/* Attributes: the four js/glb.js knows how to bind, and no others. */
+const KEEP_ATTR = new Set(['POSITION', 'NORMAL', 'TEXCOORD_0', 'COLOR_0']);
+const dropped = new Map();
+for (const m of meshes) for (const p of m.primitives)
+  for (const k of Object.keys(p.attributes)) {
+    if (KEEP_ATTR.has(k)) continue;
+    dropped.set(k, (dropped.get(k) || 0) + (json.accessors[p.attributes[k]]?.count || 0));
+    delete p.attributes[k];
+  }
+
+/* Accessors: everything a kept primitive still names. */
 const usedAcc = new Set();
 for (const m of meshes) for (const p of m.primitives) {
   for (const a of Object.values(p.attributes)) usedAcc.add(a);
@@ -127,26 +146,68 @@ for (const m of meshes) for (const p of m.primitives) {
 }
 for (const a of accessors) if (a.sparse) throw new Error('sparse accessors are not handled');
 
-/* ---- repack the binary --------------------------------------------- */
-const usedBV = new Set([...accessors.map(a => a.bufferView), ...images.map(im => im.bufferView)]);
-const bvMap = new Map(), bufferViews = [], parts = [];
+/* ---- repack the binary ---------------------------------------------
+   ONE TIGHT VIEW PER ACCESSOR, and this is where dropping an attribute
+   turns into bytes off the file. A bufferView is a RANGE, and an
+   exporter is free to park twenty accessors in one of them — which
+   Sketchfab does — so a view survives as long as ANY accessor still
+   points into it, and deleting three sets of UVs above saved nothing
+   but the JSON that named them. Copying each accessor's own elements
+   into a view of its own is what actually leaves the dead bytes
+   behind: on the second flamethrower, 2.8 megabytes of geometry to
+   1.6.
+
+   Element by element, at the source's own stride, so the values are
+   the file's own — this is a repack and not a resample, and the check
+   below proves it: every accessor that came with a min and a max is
+   measured again out of the bytes that were written, and a mismatch
+   throws rather than shipping a model that is quietly bent. */
+const CBYTES = { 5120: 1, 5121: 1, 5122: 2, 5123: 2, 5125: 4, 5126: 4 };
+const ITEMS = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16 };
+const bufferViews = [], parts = [];
 let cursor = 0;
-json.bufferViews.forEach((bv, i) => {
-  if (!usedBV.has(i)) return;
-  const start = bv.byteOffset || 0;
-  const bytes = bin.subarray(start, start + bv.byteLength);
+const place = bytes => {
   const pad = (4 - (cursor % 4)) % 4;
   if (pad) { parts.push(Buffer.alloc(pad)); cursor += pad; }
-  const out = { buffer: 0, byteOffset: cursor, byteLength: bv.byteLength };
-  if (bv.byteStride) out.byteStride = bv.byteStride;
-  if (bv.target) out.target = bv.target;
-  bvMap.set(i, bufferViews.length);
-  bufferViews.push(out);
+  const at = cursor;
   parts.push(bytes);
-  cursor += bv.byteLength;
-});
-for (const a of accessors) a.bufferView = bvMap.get(a.bufferView);
-for (const im of images) im.bufferView = bvMap.get(im.bufferView);
+  cursor += bytes.length;
+  return at;
+};
+for (const a of accessors) {
+  const bv = json.bufferViews[a.bufferView];
+  const n = ITEMS[a.type], cb = CBYTES[a.componentType];
+  if (!n || !cb) throw new Error(`accessor: unsupported ${a.type}/${a.componentType}`);
+  const elem = n * cb, stride = bv.byteStride || elem;
+  const from = (bv.byteOffset || 0) + (a.byteOffset || 0);
+  const out = Buffer.alloc(a.count * elem);
+  for (let i = 0; i < a.count; i++) bin.copy(out, i * elem, from + i * stride, from + i * stride + elem);
+  const view = { buffer: 0, byteOffset: place(out), byteLength: out.length };
+  if (bv.target) view.target = bv.target;
+  a.bufferView = bufferViews.length;
+  delete a.byteOffset;
+  delete a.byteStride;
+  bufferViews.push(view);
+  /* and out again, to prove the copy */
+  if (a.min && a.componentType === 5126) {
+    for (let k = 0; k < n; k++) {
+      let lo = Infinity, hi = -Infinity;
+      for (let i = 0; i < a.count; i++) {
+        const v = out.readFloatLE(i * elem + k * cb);
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
+      }
+      const off = Math.max(Math.abs(lo - a.min[k]), Math.abs(hi - a.max[k]));
+      if (off > 1e-4) throw new Error(`repacked accessor is not the accessor: component ${k} now ${lo}..${hi}, the file says ${a.min[k]}..${a.max[k]}`);
+    }
+  }
+}
+for (const im of images) {
+  const bv = json.bufferViews[im.bufferView];
+  const start = bv.byteOffset || 0;
+  im.bufferView = bufferViews.length;
+  bufferViews.push({ buffer: 0, byteOffset: place(bin.subarray(start, start + bv.byteLength)), byteLength: bv.byteLength });
+}
 const binOut = Buffer.concat(parts);
 
 const out = {
@@ -176,4 +237,5 @@ fs.writeFileSync(outFile, Buffer.concat([header, ch(jsonBuf.length, 'JSON'), jso
 const kb = n => (n / 1024).toFixed(0) + 'K';
 console.log(`${outFile}: ${kb(buf.length)} -> ${kb(fs.statSync(outFile).size)}`);
 console.log(`  nodes ${json.nodes.length} -> ${nodes.length}, meshes ${json.meshes.length} -> ${meshes.length}, images ${json.images.length} -> ${images.length}`);
+if (dropped.size) console.log(`  attributes nothing binds: ${[...dropped].map(([k, n]) => `${k} (${n} vertices)`).join(', ')}`);
 if (anchors.pilot) console.log(`  anchors: pilot ${anchors.pilot.join(', ')}  nozzle ${anchors.nozzle.join(', ')}`);

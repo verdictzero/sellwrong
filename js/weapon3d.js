@@ -2,14 +2,16 @@
    GROCERY STORE SIMULATOR — the thing in your hands
    =====================================================================
 
-   TWO MODELS NOW, and this file used to be certain there was one. The
-   flamethrower is the one the user built; the extinguisher is somebody
-   else's, dropped in as it stands. Both are .glb, both are drawn in the
-   same little scene in front of the world, and that scene has its own
-   perspective camera sitting at the origin looking down -z with the gun
-   parked in front of it in metres — so "where the gun is on screen" is
-   the handful of numbers in VIEW below, and nothing about the level or
-   the player's position enters into it.
+   THREE MODELS NOW, and this file used to be certain there was one.
+   All three are somebody else's, dropped in as they stand: the
+   flamethrower the user built was replaced by one of Vaportrash's, at
+   the user's request, and the extinguisher and the cerebral bore came
+   from there too. All are .glb, all are drawn in the same little scene
+   in front of the world, and that scene has its own perspective camera
+   sitting at the origin looking down -z with the gun parked in front of
+   it in metres — so "where the gun is on screen" is the handful of
+   numbers in VIEW below, and nothing about the level or the player's
+   position enters into it.
 
    BOTH ARE LOADED AT START AND ONE IS VISIBLE. Swapping weapons hides a
    group and shows another, which costs nothing; loading on the switch
@@ -29,14 +31,28 @@
    is on screen is the end that matters: the nozzle, whatever is burning
    under it, and what comes out.
 
-   WHERE THE NOZZLE IS, TWO WAYS. The flamethrower's came in the model as
-   marker spheres and was baked into the file's extras by
-   tools/prep-model.mjs, which is a tool that only ever ran on a model
-   the user made. The extinguisher arrived finished, from somebody else,
-   and the standing rule since the van is that a file like that is not
-   rewritten on the way in — so its anchor is a number in GUNS below,
-   in the MODEL'S own units, which is the game saying where it intends
-   to point rather than the game editing the asset.
+   WHERE THE NOZZLE IS, AND HOW IT WAS FOUND. It used to be two ways:
+   the old flamethrower carried marker spheres, put there in Blender by
+   the user and baked into the file's extras by tools/prep-model.mjs,
+   and everything else said so in GUNS below. There is only the second
+   way now, because there is no longer a model in the game that the
+   user made: the standing rule since the van is that somebody else's
+   file is not rewritten on the way in, so the anchors are numbers in
+   GUNS, in the MODEL'S own units — the game saying where it intends to
+   point rather than the game editing the asset. The reader they are
+   read back through (asset.extras.anchors) is kept, because a model
+   that does carry markers is still handled.
+
+   AND THE NUMBERS WERE MEASURED OFF PICTURES. A gun with no markers has
+   to be looked at: the new flamethrower was drawn flat from its left,
+   from above and straight down the barrel, over a grid ruled in the
+   model's own units, with candidate points crossed on it and moved
+   until they sat where they belong. That is how [0, 3.9, 24.3] and
+   [0, 3.0, 25.7] below came to be — the centre of the bore inside the
+   C-shaped muzzle bracket, and the lip of the little gold igniter pipe
+   that runs under the barrel and turns up in front of it. Reading the
+   bounding box of a part would have put the first of them inside the
+   metal and the second on the wrong tube.
 
    AND ONE OF THEM HAD TO BE RESIZED, which is the other thing a file
    somebody else made will do to you. The flamethrower is 1.4 units nose
@@ -110,8 +126,22 @@ export const GUNS = {
     tint: [1.6, 0.30, 0.22],
     muzzle: { len: 0.094, wid: 0.067 },
   },
+  /* THE FLAMETHROWER, the user's second: a Sketchfab model of
+     Vaportrash's, in place of the one the user built, at the user's
+     request. Seventeen meshes on one painted sheet, forty-six units
+     nose to tail with the barrel along +z, and no markers in it — see
+     the note above for how its two anchors were found. */
   FLAMER: {
     url: 'assets/models/flamethrower.glb',
+    fit: GUN_LENGTH,
+    /* the centre of the bore, a little past the front of the muzzle
+       bracket, so the stream is born outside the metal */
+    nozzle: [0, 3.9, 24.3],
+    /* and the lip of the igniter pipe below it, which reaches further
+       forward than the barrel does — the same arrangement the old gun
+       had, and the reason a flamethrower has a small flame burning on
+       it when the trigger is up */
+    pilot: [0, 3.0, 25.7],
     tint: [1, 1, 1],
     muzzle: { len: 0.34, wid: 0.14 },
   },
@@ -362,8 +392,18 @@ export class Weapon3D {
     group.add(inner);
     this.scene.add(group);
 
+    /* ONE ENTRY PER MATERIAL, not per mesh. loadGLB builds a material
+       once per glTF material and hands the same instance to every
+       primitive that names it, and the new flamethrower is seventeen
+       meshes sharing one — so without the set, update() would write the
+       same three uniforms seventeen times a frame. */
     const gunMaterials = [];
-    root.traverse(o => { if (o.isMesh && o.material.uniforms?.glow) gunMaterials.push(o.material); });
+    const seen = new Set();
+    root.traverse(o => {
+      if (!o.isMesh || !o.material.uniforms?.glow || seen.has(o.material)) return;
+      seen.add(o.material);
+      gunMaterials.push(o.material);
+    });
 
     const g = {
       def, group, inner, anchors: { nozzle: place(nozzle), pilot: pilot ? place(pilot) : null },
