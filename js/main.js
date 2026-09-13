@@ -53,8 +53,8 @@ const status = (text, pct) => {
    pixel filter below is what decides how chunky the picture looks now
    and this one is free to be about detail. It is still the frame rate
    control; halving it quarters the pixels being shaded. */
-const DETAIL = [120, 150, 200, 240, 300, 400, 480, 600];
-const DEFAULT_DETAIL = 7;
+const DETAIL = [120, 150, 200, 240, 300, 400, 480, 600, 720];
+const DEFAULT_DETAIL = 8;              // 720, the top of the ladder
 
 /* AND HOW BIG A PIXEL IS, which is a different question and used to be
    the same one. This is the grid the finished frame is filtered down
@@ -66,12 +66,13 @@ const DEFAULT_DETAIL = 7;
 
    OFF is last because it is the finest setting there is — the grid
    becomes the buffer, which is exactly what this game did before the two
-   were pulled apart. It is not the default: the default is 300 rows of
-   5:6 pixels off a 600-row render, chosen by the user off the screenshot
-   of it, which is the setting the whole thing was built for. */
+   were pulled apart. It is not the default: the default is 200 rows of
+   5:6 pixels off a 720-row render, at the user's request, which is
+   320x200 at the shape Doom was drawn at, off a render fine enough that
+   every one of those chunky pixels is the average of a dozen. */
 const PIXELS = [120, 150, 200, 240, 300, 400, 480, 600, 0];
 const PIXELS_OFF = PIXELS.length - 1;
-const DEFAULT_PIXELS = 4;              // 300, which is 5:6 and about 727 across
+const DEFAULT_PIXELS = 2;              // 200, which is 5:6 and about 485 across
 
 /* THE SHAPE OF ONE, width over height as displayed. 320x200 filling a
    4:3 monitor is not a square-pixel mode and never was: each pixel stood

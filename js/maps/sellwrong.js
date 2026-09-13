@@ -1603,11 +1603,19 @@ export function buildSellWrong() {
        centred on the fire lane's own middle stood half in it */
     const FIRE_MID = (FIRELANE_Y + PORCH_Y) / 2;
     const DOORS_X = (PORCH_X0 + PORCH_X1) / 2;
+    /* THE WAY IN, as far as the ring and no further. It used to run on
+       up the leg to the frontage lane, because the only place a van
+       ever went was the doors; now that a van drives to wherever the
+       player is (see js/responders.js), the rest of the journey is a
+       walk round the LOOP and the loop is published for it. Four
+       corners, anticlockwise from the north-west, closed. */
+    level.swatRing = [
+      { x: WEST_LEG, y: FRONT_MID }, { x: EAST_LEG, y: FRONT_MID },
+      { x: EAST_LEG, y: THRU_MID }, { x: WEST_LEG, y: THRU_MID },
+    ];
     level.swatRoutes = {
-      west: [{ x: level.roadEnds[0].x, y: THRU_MID }, { x: WEST_LEG, y: THRU_MID },
-             { x: WEST_LEG, y: FRONT_MID }],
-      east: [{ x: level.roadEnds[1].x, y: THRU_MID }, { x: EAST_LEG, y: THRU_MID },
-             { x: EAST_LEG, y: FRONT_MID }],
+      west: [{ x: level.roadEnds[0].x, y: THRU_MID }, { x: WEST_LEG, y: THRU_MID }],
+      east: [{ x: level.roadEnds[1].x, y: THRU_MID }, { x: EAST_LEG, y: THRU_MID }],
     };
     level.swatBays = [0, -1, 1, -2, 2, -3, 3, -4, 4].map(k => ({
       x: DOORS_X + k * 560, y: FIRE_MID, approach: { y: FRONT_MID },

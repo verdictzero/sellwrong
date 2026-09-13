@@ -12,12 +12,27 @@
 
    WHAT CALLS THEM IS A KILL. Not the fire — a supermarket alight is the
    fire brigade's business — but the moment somebody is dead by your
-   hand the night has changed, and the first van is on the road. From
-   then on they keep coming, each one pulling up across the fire lane
-   in front of the doors and unloading its crew one at a time onto the
-   footway; and when the crew is out it does not stop, it trickles, for
-   as long as it stands there, which is for ever, because a squad van
-   is fireproof (see SwatVan) and nothing in the game ends one.
+   hand the night has changed, and the first vans are on the road. THREE
+   AT A TIME, at the user's request: where one van used to be sent,
+   three are, nose to tail from the same end of the road, and the budget
+   is three times what it was so that the second and third are not
+   simply refused. They unload their crews one at a time and, when the
+   crew is out, keep trickling for as long as they stand there, which is
+   for ever, because a squad van is fireproof (see SwatVan) and nothing
+   in the game ends one.
+
+   AND THEY COME TO WHEREVER YOU ARE. Inside the building they pull up
+   across the fire lane in front of the doors, which is what the fire
+   lane is for and what the map's bays say. Anywhere else — the car
+   park, the verge, the trees, round the back of the shop — the
+   destination is YOU: the nearest point on the perimeter road to
+   wherever you are standing, reached by walking the ring the short way
+   round from the junction they came in at, and then off the road
+   toward you for as far as the tarmac holds. In the middle of the lot
+   that is a van pulling up two car lengths away with its side door
+   facing you. Behind the building, where no road goes, it is a van on
+   the frontage lane and a crew already walking. Hiding moves the fight;
+   it does not end it.
 
    AND IT RAMPS EXPONENTIALLY, at the user's request, and the ramp is
    ONE NUMBER: the PRESSURE, 1 at the call and doubling every so many
@@ -103,16 +118,33 @@ export const SWAT = {
   after: 1,                              // kills before anybody is called
   firstDelay: 16 * TICRATE,              // the first van's drive
   doubling: 60 * TICRATE,                // how often the pressure doubles, from the call
-  every: 55 * TICRATE,                   // the gap between vans, at pressure 1, give or take a fifth
+  every: 55 * TICRATE,                   // the gap between sends, at pressure 1, give or take a fifth
   minEvery: 6 * TICRATE,                 // and the least it can ever be
-  vans: 2,                               // on the road or standing at once, at pressure 1
+  /* THREE AT A TIME, at the user's request: where one van used to come,
+     three come. The gap between sends is untouched, and so is every
+     other clock — what tripled is the size of a send and, with it, the
+     budget, or the first two of the three would have been the whole of
+     it. */
+  convoy: 3,                             // vans per send
+  vans: 6,                               // on the road or standing at once, at pressure 1
+  maxVans: 27,                           // and the most the engine is asked to carry
   troopers: 6,                           // on their feet at once, at pressure 1
   maxTroopers: 80,                       // and the most the engine is asked to carry
   crew: 6,                               // what a van carries
   unloadEvery: 50,                       // tics between one and the next
   trickle: 9 * TICRATE,                  // and after the crew is out, for ever, at pressure 1
   minTrickle: 2 * TICRATE,               // and the least that can be
-  bays: 9,                               // spaces along the fire lane
+  bays: 9,                               // spaces along the fire lane, for the doors
+  /* WHERE A VAN STOPS WHEN IT IS COMING FOR YOU rather than for the
+     doors. `stand` is how far apart two of them park along the ring,
+     `push` is how far off the road one will drive to reach you, `stop`
+     is how close it parks, and `convoyGap` is how far back down the
+     road the second and third of a send start, so they arrive as a
+     line rather than inside one another. */
+  stand: 560,
+  push: 1400,
+  stop: 260,
+  convoyGap: 460,
 };
 
 /** The curve, as a pure function: how many times harder the night is
@@ -152,9 +184,8 @@ export class Responders {
   /** How hard the night is pressing now: 0 before the call, 1 at it,
    *  and doubling every SWAT.doubling tics from then on. */
   get pressure() { return this.called ? pressureAfter(this.tics - this.calledAt) : 0; }
-  /** Vans allowed on the road or standing at once, now. The bays are
-   *  the ceiling: a van with nowhere to stop is not sent. */
-  get vanCap() { return Math.min(SWAT.bays, Math.floor(SWAT.vans * this.pressure)); }
+  /** Vans allowed on the road or standing at once, now. */
+  get vanCap() { return Math.min(SWAT.maxVans, Math.floor(SWAT.vans * this.pressure)); }
   /** Troopers allowed on their feet at once, now, across every van. */
   get trooperCap() { return Math.min(SWAT.maxTroopers, Math.floor(SWAT.troopers * this.pressure)); }
   /** The gap to the next van, now: the starting gap over the pressure,
@@ -253,7 +284,7 @@ export class Responders {
        itself climbs past the vans standing, the next is sent the tic
        it does, because the gap has long since run out */
     if (this.tics >= this.nextVanAt && this.liveVans.length < this.vanCap && g.police) {
-      this.sendVan();
+      this.sendConvoy();
       this.gap = this.gapNow();
       this.nextVanAt = this.tics + Math.round(this.gap);
     }
@@ -282,23 +313,150 @@ export class Responders {
     g.onResponders?.('called');
   }
 
-  /** The route for the next van: in from one end of the road, alternating,
-   *  along the frontage lane to the first free bay, and into it. */
-  routeFor(bay, side) {
-    const lv = this.game.level;
-    const routes = lv.swatRoutes;
-    if (!routes) return null;
-    const way = (routes[side] || Object.values(routes)[0]).map(p => ({ x: p.x, y: p.y }));
-    const last = way[way.length - 1];
-    /* which way along the front it is coming: from the west, +x */
-    const dir = bay.x >= last.x ? 1 : -1;
-    const ay = bay.approach?.y ?? last.y;
-    way.push({ x: bay.x - dir * 420, y: ay });
-    way.push({ x: bay.x - dir * 120, y: bay.y });
-    way.push({ x: bay.x, y: bay.y });
-    /* squared up along the front once it stops, facing the way it came */
-    way[way.length - 1].angle = dir > 0 ? 0 : Math.PI;
-    return way;
+  /* ------------------------------------------------------------------
+     THE RING, AS ONE NUMBER
+
+     The perimeter road is a closed loop (level.swatRing, four corners)
+     and every question about where a van goes turns into a distance
+     round it. A van enters at whichever junction the through road meets
+     and walks the loop the short way to its stand, which is how it can
+     now be sent to any side of the lot rather than only to the doors.
+     ------------------------------------------------------------------ */
+  get ring() {
+    const pts = this.game.level.swatRing;
+    if (!pts || pts.length < 3) return null;
+    if (this._ring && this._ring.pts === pts) return this._ring;
+    const segs = [];
+    let total = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length];
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      segs.push({ a, b, len, start: total, dx: (b.x - a.x) / len, dy: (b.y - a.y) / len });
+      total += len;
+    }
+    return (this._ring = { pts, segs, total });
+  }
+
+  /** A distance round the loop, as a point and the way you are facing. */
+  ringAt(t) {
+    const R = this.ring;
+    const u = ((t % R.total) + R.total) % R.total;
+    const s = R.segs.find(q => u >= q.start && u <= q.start + q.len) || R.segs[R.segs.length - 1];
+    const d = u - s.start;
+    return { x: s.a.x + s.dx * d, y: s.a.y + s.dy * d, dx: s.dx, dy: s.dy };
+  }
+
+  /** How far round the loop the point nearest (x, y) is. */
+  ringNearest(x, y) {
+    const R = this.ring;
+    let best = 0, bd = Infinity;
+    for (const s of R.segs) {
+      const d = Math.max(0, Math.min(s.len, (x - s.a.x) * s.dx + (y - s.a.y) * s.dy));
+      const px = s.a.x + s.dx * d, py = s.a.y + s.dy * d;
+      const q = (px - x) ** 2 + (py - y) ** 2;
+      if (q < bd) { bd = q; best = s.start + d; }
+    }
+    return best;
+  }
+
+  /** The corners strictly between two points on the loop, the short way
+   *  round, in the order they are driven through. */
+  ringPath(t0, t1) {
+    const R = this.ring;
+    const fwd = ((t1 - t0) % R.total + R.total) % R.total;
+    const dir = fwd <= R.total - fwd ? 1 : -1;
+    const dist = dir > 0 ? fwd : R.total - fwd;
+    const out = [];
+    for (const s of R.segs) {
+      const d = dir > 0 ? ((s.start - t0) % R.total + R.total) % R.total
+                        : ((t0 - s.start) % R.total + R.total) % R.total;
+      if (d > 1 && d < dist - 1) out.push({ d, x: s.a.x, y: s.a.y });
+    }
+    return out.sort((p, q) => p.d - q.d).map(p => ({ x: p.x, y: p.y }));
+  }
+
+  /** Tarmac a van will drive on: outdoors, and not the wood, the
+   *  covered walkway or the sign it stands on. */
+  drivable(x, y) {
+    const s = this.game.level.sectorAt(x, y);
+    return !!s && !!s.outdoor && !/wood|canopy|sign/i.test(s.name || '');
+  }
+
+  /* ------------------------------------------------------------------
+     WHERE THIS ONE IS GOING
+
+     Inside the building, they come to the doors, which is what the fire
+     lane is for and what the map's bays say. ANYWHERE ELSE — the car
+     park, the verge, the trees, round the back — they come to YOU, at
+     the user's request: the nearest point on the ring to wherever you
+     are standing, and then off the road toward you for as far as the
+     tarmac holds. Behind the building the tarmac holds for no distance
+     at all, so what arrives is a van on the frontage lane with its
+     crew already walking; in the middle of the lot it is a van pulling
+     up two car lengths away.
+     ------------------------------------------------------------------ */
+  /** Is the player somewhere a van should come to, rather than the doors? */
+  get chasing() {
+    const p = this.game.player;
+    return !!p && !p.dead && !!p.sector && !!p.sector.outdoor;
+  }
+
+  /** A stand at the doors: one of the map's bays, squared up along the
+   *  front, with the lead in off the frontage lane. */
+  bayStand(bay) {
+    const t = this.ringNearest(bay.x, bay.approach?.y ?? bay.y);
+    const on = this.ringAt(t);
+    return {
+      x: bay.x, y: bay.y, bay,
+      angle: on.dx >= 0 ? 0 : Math.PI,
+      ring: t,
+      lead: [{ x: bay.x, y: on.y }, { x: bay.x, y: bay.y }],
+    };
+  }
+
+  /** A stand beside the player: `slot` steps along the ring from the
+   *  point nearest them, then in off the road as far as it goes. */
+  chaseStand(p, slot) {
+    const t = this.ringNearest(p.x, p.y) + slot * SWAT.stand;
+    const on = this.ringAt(t);
+    const dx = p.x - on.x, dy = p.y - on.y;
+    const d = Math.hypot(dx, dy) || 1;
+    const ux = dx / d, uy = dy / d;
+    const reach = Math.min(SWAT.push, Math.max(0, d - SWAT.stop));
+    let gone = 0, x = on.x, y = on.y;
+    const STEP = 70;
+    while (gone + STEP <= reach) {
+      const nx = x + ux * STEP, ny = y + uy * STEP;
+      if (!this.drivable(nx, ny)) break;
+      x = nx; y = ny; gone += STEP;
+    }
+    return {
+      x, y, ring: ((t % this.ring.total) + this.ring.total) % this.ring.total,
+      angle: gone > 0 ? Math.atan2(uy, ux) : Math.atan2(on.dy, on.dx),
+      lead: gone > 0 ? [{ x, y }] : [],
+    };
+  }
+
+  /** Nothing already standing there. */
+  standClear(s) {
+    const r = SWAT.stand * 0.7;
+    return !this.liveVans.some(v => v.stand && (v.stand.x - s.x) ** 2 + (v.stand.y - s.y) ** 2 < r * r);
+  }
+
+  /** The next place a van should go, or null if every one is taken. */
+  freeStand() {
+    if (!this.ring) return null;
+    if (!this.chasing) {
+      const bay = this.freeBay();
+      return bay ? this.bayStand(bay) : null;
+    }
+    const p = this.game.player;
+    for (let k = 0; k <= 12; k++) {
+      const slot = k === 0 ? 0 : (k & 1 ? (k + 1) >> 1 : -(k >> 1));
+      const s = this.chaseStand(p, slot);
+      if (this.standClear(s)) return s;
+    }
+    return null;
   }
 
   /** A bay nobody is standing in. The middle one first, then either
@@ -310,16 +468,56 @@ export class Responders {
     return bays.slice(0, SWAT.bays).find(b => !taken.has(b)) || null;
   }
 
-  sendVan() {
-    const g = this.game;
-    const bay = this.freeBay();
-    if (!bay) return null;
+  /** In from one end of the road, round the ring the short way, and in
+   *  to the stand. `back` starts it that far further down the road, so
+   *  a convoy arrives as a line rather than as one van. */
+  routeTo(stand, side, back = 0) {
+    const lv = this.game.level;
+    const routes = lv.swatRoutes;
+    if (!routes || !this.ring) return null;
+    const way = (routes[side] || Object.values(routes)[0]).map(p => ({ x: p.x, y: p.y }));
+    if (back > 0 && way.length >= 2) {
+      const a = way[0], b = way[1];
+      const d = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      a.x -= (b.x - a.x) / d * back;
+      a.y -= (b.y - a.y) / d * back;
+    }
+    const join = way[way.length - 1];
+    way.push(...this.ringPath(this.ringNearest(join.x, join.y), stand.ring));
+    const on = this.ringAt(stand.ring);
+    way.push({ x: on.x, y: on.y });
+    for (const q of stand.lead) way.push({ x: q.x, y: q.y });
+    const end = way[way.length - 1];
+    end.angle = stand.angle;
+    /* two points in the same place make a zero-length leg, which the
+       driving reads as arrival */
+    return way.filter((q, i) => i === 0 || Math.hypot(q.x - way[i - 1].x, q.y - way[i - 1].y) > 1);
+  }
+
+  /** THREE OF THEM, at the user's request, nose to tail from the same
+   *  end of the road — as many as the budget still has room for. */
+  sendConvoy() {
+    const room = this.vanCap - this.liveVans.length;
     const side = this.side++ % 2 ? 'east' : 'west';
-    const route = this.routeFor(bay, side);
+    const sent = [];
+    for (let k = 0; k < Math.min(SWAT.convoy, room); k++) {
+      const v = this.sendVan(side, k * SWAT.convoyGap);
+      if (!v) break;
+      sent.push(v);
+    }
+    return sent;
+  }
+
+  sendVan(side = (this.side++ % 2 ? 'east' : 'west'), back = 0) {
+    const g = this.game;
+    const stand = this.freeStand();
+    if (!stand) return null;
+    const route = this.routeTo(stand, side, back);
     if (!route) return null;
     const v = new SwatVan(g.vehicles, g.police.def, g.police.texture, route);
     v.parkAngle = route[route.length - 1].angle;
-    v.bay = bay;
+    v.stand = stand;
+    v.bay = stand.bay || null;
     v.side = side;
     g.vehicles.addVehicle(v);
     this.vans.push(v);
@@ -331,7 +529,13 @@ export class Responders {
    *  the five places along the flank before giving up for this tic. */
   unload(v) {
     const g = this.game, lv = g.level;
-    const toward = { x: v.x, y: v.y + 1000 };            // the shop is north of the fire lane
+    /* THE DOOR THEY USE IS THE ONE FACING YOU. It used to be the one
+       facing the shop, which was the same thing while the only place a
+       van ever stood was across the fire lane; a van that has driven
+       out into the lot to reach you would otherwise unload its crew
+       out of the far side. */
+    const p = g.player;
+    const toward = p && !p.dead ? { x: p.x, y: p.y } : { x: v.x, y: v.y + 1000 };
     for (let k = 0; k < 5; k++) {
       const d = v.door(k, toward);
       const sec = lv.sectorAt(d.x, d.y);

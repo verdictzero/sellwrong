@@ -83,7 +83,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         915 checks, no install and no browser
+  the smoke test         952 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -1440,8 +1440,33 @@ stop for anybody. A crowd running from the fire is a crowd in the road, and
 a squad van at speed goes through it; the player is shoved and hurt, which
 with a bullet is the only thing that gets through the fireproofing.
 
+THREE AT A TIME, at the user's request. Where one van used to be sent,
+three are: a convoy, nose to tail from the same end of the road, each
+going to its own place. The budget went up by the same factor — six on
+the road at once at the start instead of two, twenty-seven at the
+ceiling instead of nine — because sending three into a budget of two is
+sending two.
+
+AND THEY COME TO WHEREVER YOU ARE, which is the other half of the same
+request. Inside the building they pull up across the fire lane in front
+of the doors, which is what the fire lane is for and what the map's bays
+say. ANYWHERE ELSE the destination is YOU: the nearest point on the
+perimeter road to wherever you are standing, reached by entering at the
+junction and walking the ring the short way round, and then off the road
+toward you for as far as the tarmac holds — up to fourteen hundred units
+of it, stopping two car lengths short. Stand in the middle of the car
+park and a van leaves the road, drives between the rows and parks beside
+you with its side door facing you. Stand in the trees and it stops at
+the kerb nearest you. Stand behind the building, where no road goes at
+all, and it gets as far as the frontage lane and the crew walks the
+rest. The loop is published by the map as four corners (level.swatRing)
+and every question about where a van goes is a distance round it; see
+js/responders.js, which is where the ring arithmetic lives.
+
 THEN THE CREW. Parked, it unloads a trooper every second and a half onto
-the footway, six of them, and when the crew is out it does not stop: it
+the ground, six of them, out of the side facing YOU — which used to be
+the side facing the shop and was the same thing only while every van
+stood across the fire lane. When the crew is out it does not stop: it
 trickles, one every nine seconds to begin with, for as long as it stands
 there — which is for ever, because the van is FIREPROOF (below) and
 nothing in the game ends one.
@@ -1449,19 +1474,21 @@ nothing in the game ends one.
 AND IT RAMPS EXPONENTIALLY, at the user's request, and the ramp is one
 number: the PRESSURE, 1 at the call and doubling every minute from then
 on, without limit. Everything that says how much police there is — how
-many vans may be on the road or standing at once (two, to begin with), how
+many vans may be on the road or standing at once (six, to begin with), how
 many troopers may be on their feet across every van (six), how long
-between vans (fifty-five seconds, give or take a fifth), how long between
+between sends (fifty-five seconds, give or take a fifth), how long between
 one trooper and the next out of a standing van (nine) — is that starting
 value times the pressure, read off the curve at the moment the question
 is asked rather than fixed at the call. So a minute after the first kill
 the vans come twice as often and twice as many are allowed out; two
 minutes, four times; three, eight; and the same minute of the night is
 the same everywhere, because it is one curve read four ways. The floors
-(a van every six seconds, a trooper every two) and the ceiling (eighty on
-their feet) are what the engine is asked to carry, not the design, and
-the bays are the map's nine; the curve reaches all of them inside four
-minutes and then holds the lot there. It is js/responders.js, top to
+(a send every six seconds, a trooper every two) and the ceilings
+(twenty-seven vans, eighty troopers on their feet) are what the engine is
+asked to carry, not the design; the curve reaches all of them inside four
+minutes and then holds the lot there. At the doors the map's nine bays
+are the real limit and vans stop coming when they are full, which is the
+one place hiding indoors buys you anything. It is js/responders.js, top to
 bottom, and pressureAfter() is the curve as a pure function for the test
 to pin: equal steps in time multiply by the same amount, which is what
 exponential means. There is no goal in this game and this is the nearest
@@ -1754,17 +1781,20 @@ setting at which the store was legible AND the picture was made of visible
 squares, which is the look. So there are two now, both steppers in the
 pause menu:
 
-  RENDER    the buffer's height, 120 to 600, on [ and ]. How much the
+  RENDER    the buffer's height, 120 to 720, on [ and ]. How much the
             world is drawn with, and where the frame rate goes
   PIXELS    the height of the grid it is filtered onto, 120 to 600 or
             OFF, on shift-[ and shift-]. How big a pixel is, and it
             costs almost nothing
 
-It ships at 600 and 300 with 5:6 pixels, which the user picked off a
-screenshot of it: a full-detail render filtered down onto a grid about
-727 by 300 of tall pixels. That is the setting the whole thing was built
-for — the store legible and the picture made of visible squares, which
-is the pair the one control could never give you.
+IT SHIPS AT 720 AND 200 with 5:6 pixels, at the user's request: the
+finest render on the ladder filtered down onto the coarsest picture the
+game has shipped — about 384 by 200 of tall pixels off an 1152 by 720
+buffer, which is a 320x200-shaped picture with every chunky pixel the
+average of roughly twenty rasterised ones. It was 600 and 300 before,
+and the pair moved in opposite directions on purpose: the grid is the
+LOOK and the buffer is the DETAIL BEHIND IT, so making the look coarser
+is a reason to draw more behind it, not less.
 
 The widths follow the window's shape either way, so a wider monitor shows
 MORE STORE rather than the same store stretched, and the menu prints both
@@ -1847,7 +1877,7 @@ runs once per chunky pixel, which at 320x200 is sixty-four thousand.
 WHAT TO SPEND THE FRAME ON. Four settings, and they are in the order of
 what they are worth, measured:
 
-  RENDER    the buffer's height. Halving it quarters the pixels, and on
+  RENDER    the buffer's height, now up to 720. Halving it quarters the pixels, and on
             anything with a weak fill rate that is the whole answer.
             PIXELS is not on this list: it is a look, not a cost, and
             turning it down does not make the world any cheaper to draw
@@ -2627,7 +2657,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-915 checks. Every one of them earns its place by having caught something
+952 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

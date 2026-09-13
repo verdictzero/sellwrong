@@ -2766,7 +2766,25 @@ await (async () => {
       !!l && l.every((e, i) => i === 0 || e.v < l[i - 1].v));
   }
   check('the render ladder goes from a phone to a desktop',
-    /const DETAIL = \[120,/.test(main) && /600\]/.test(main));
+    /const DETAIL = \[120,/.test(main) && /720\]/.test(main));
+  /* WHAT THE GAME OPENS AT, which is two numbers and the user picked
+     both: 200 rows of chunky pixels off a 720-row render. The grid is
+     the picture and the render is how much is behind each square of it,
+     so the default is the coarsest picture this game has ever shipped
+     drawn off the finest buffer it has ever had. */
+  {
+    const det = [...(main.match(/const DETAIL = \[([^\]]*)\]/) || ['', ''])[1].split(',').map(v => +v)];
+    const pix = [...(main.match(/const PIXELS = \[([^\]]*)\]/) || ['', ''])[1].split(',').map(v => +v)];
+    const dDef = +(main.match(/const DEFAULT_DETAIL = (\d+)/) || [])[1];
+    const pDef = +(main.match(/const DEFAULT_PIXELS = (\d+)/) || [])[1];
+    note('what it opens at', `${pix[pDef]} rows of pixels off a ${det[dDef]}-row render`);
+    check('the game opens at 200P pixels off a 720P render',
+      pix[pDef] === 200 && det[dDef] === 720);
+    check('and the render default is the top of its ladder',
+      dDef === det.length - 1 && det.every((v, i) => i === 0 || v > det[i - 1]));
+    check('and the pixel grid is never finer than the buffer behind it',
+      pix[pDef] < det[dDef]);
+  }
 
   /* --- THE TWO SIZES, WHICH WERE ONE SIZE -------------------------
      RENDER says how much the world is drawn with; PIXELS says how big
@@ -4355,15 +4373,38 @@ section('the van');
     /* --- the map's part ------------------------------------------- */
     const onTarmac = p => { const s2 = level.sectorAt(p.x, p.y); return !!s2 && /road|junction/i.test(s2.name); };
     check('the map publishes a way in from each end of the road',
-      !!level.swatRoutes?.west && !!level.swatRoutes?.east && level.swatRoutes.west.length >= 3);
+      !!level.swatRoutes?.west && !!level.swatRoutes?.east && level.swatRoutes.west.length >= 2);
     check('and every point on both of them is on the road',
       [...level.swatRoutes.west, ...level.swatRoutes.east].every(onTarmac),
       [...level.swatRoutes.west, ...level.swatRoutes.east].filter(q => !onTarmac(q)).map(q => level.sectorAt(q.x, q.y)?.name || 'off the map').join('; '));
     check('and the bays are in the fire lane, where nobody parks',
       level.swatBays.length >= S.bays && level.swatBays.every(b => /fire lane/.test(level.sectorAt(b.x, b.y)?.name || '')));
+    /* AND THE LOOP THEY DRIVE ROUND to reach anywhere else. Four
+       corners, every one of them on tarmac, and the two ways in meet
+       it at a junction. */
+    check('the map publishes the perimeter road as a closed loop',
+      Array.isArray(level.swatRing) && level.swatRing.length === 4 && level.swatRing.every(onTarmac),
+      (level.swatRing || []).map(q => level.sectorAt(q.x, q.y)?.name || 'off the map').join('; '));
+    check('and each way in ends on that loop',
+      [level.swatRoutes.west, level.swatRoutes.east].every(r => {
+        const e = r[r.length - 1];
+        return level.swatRing.some(c => Math.hypot(c.x - e.x, c.y - e.y) < 1);
+      }));
 
     /* --- the call -------------------------------------------------- */
     const p = gs.player;
+    /* INSIDE, for this first part: where a van goes depends on where
+       you are (see `chasing` in js/responders.js), and the doors are
+       the answer to being in the building. The chase is measured
+       further down. */
+    const stand = (x, y) => {
+      p.x = x; p.y = y; p.sector = level.sectorAt(x, y); p.z = p.sector.floor; p.viewZ = p.z + 41;
+      p.momx = p.momy = 0;
+    };
+    const home = { x: p.x, y: p.y };
+    const inShop = gs.actors.find(a => a.type === 'SHOPPER' && a.sector && !a.sector.outdoor);
+    stand(inShop.x, inShop.y);
+    check('the player is in the building, so the doors are where a van goes', !p.sector.outdoor && !R.chasing);
     check('nobody has been called before a kill', !R.called && R.vans.length === 0 && p.kills === 0);
     const who = gs.actors.find(a => a.type === 'SHOPPER' && !a.dead && !a.removed);
     who.damage(100, p);
@@ -4373,6 +4414,14 @@ section('the van');
     for (let i = 0; i < S.firstDelay + 2 && !R.vans.length; i++) gs.tic();
     const v = R.vans[0];
     check('a van is on the road after the drive from the station', !!v && v.state === 'driving');
+    /* THREE OF THEM, at the user's request, from the same end of the
+       road and strung out along it rather than stacked on the spot. */
+    check('and three of them, not one', R.vans.length === S.convoy, `${R.vans.length}`);
+    check('all from the same end, nose to tail down the road',
+      R.vans.every(q => q.side === v.side) &&
+      new Set(R.vans.map(q => Math.round(q.x))).size === R.vans.length,
+      R.vans.map(q => q.x.toFixed(0)).join(', '));
+    check('and each going to a different place', new Set(R.vans.map(q => q.bay)).size === R.vans.length);
     if (v) {
       const end = level.roadEnds.find(e => e.side === v.side);
       check('it started where the road leaves the map', Math.hypot(v.x - end.x, v.y - end.y) < 1);
@@ -4390,7 +4439,7 @@ section('the van');
       note('the drive', `${t} tics, ${v.driven.toFixed(0)} units`);
       check('it arrives and parks', v.state === 'parked', v.state);
       check('in its bay, in the fire lane',
-        Math.hypot(v.x - v.bay.x, v.y - v.bay.y) < 1 && /fire lane/.test(level.sectorAt(v.x, v.y)?.name || ''),
+        !!v.bay && Math.hypot(v.x - v.bay.x, v.y - v.bay.y) < 1 && /fire lane/.test(level.sectorAt(v.x, v.y)?.name || ''),
         `${v.x.toFixed(0)}, ${v.y.toFixed(0)} in ${level.sectorAt(v.x, v.y)?.name}`);
       check('squared up along the front', Math.abs(Math.sin(v.yaw)) < 1e-9, `${v.yaw.toFixed(3)}`);
       check('and in the way there', p.thingInWay(v.x, v.y));
@@ -4408,6 +4457,11 @@ section('the van');
           first.target === p && /^SWAT_(RUN|ATK)/.test(first.state.name), first.state.name);
         check('and turns: not a standee', !first.flat && first.info.team === 'swat');
       }
+      /* BACK OUT INTO THE LOT for the rest of this. The doors were the
+         point of the block above; what follows is about troopers, and a
+         trooper standing among the shelves with the player on the far
+         side of one is a fight the geometry decides. */
+      stand(home.x, home.y);
       for (let i = 0; i < S.unloadEvery * S.crew + 5; i++) gs.tic();
       note('the crew', `${R.troopers} on their feet, ${R.spawned} ever`);
       check('the whole crew is out inside the time', R.spawned >= S.crew, `${R.spawned} of ${S.crew}`);
@@ -4534,6 +4588,89 @@ section('the van');
       check('and still unloading', v.unloaded > out, `${v.unloaded} after ${out}`);
     }
 
+    /* --- AND WHEREVER YOU ARE, THEY COME TO YOU --------------------
+       At the user's request. Inside the building the answer is the
+       doors; anywhere else it is the nearest point on the perimeter
+       road to where you are standing, and then off the road toward you
+       for as far as the tarmac holds. These are measured off the pure
+       part — freeStand and routeTo — because driving a van the length
+       of the ring is two thousand tics a go, and then one of them is
+       actually driven to prove the route is drivable. */
+    {
+      const doors = level.swatBays[0];
+      const ringT = q => R.ringNearest(q.x, q.y);
+      const spots = [
+        ['out in the car park', 2140, -1400],
+        ['at the west end of the lot', -2000, -1200],
+        ['in the trees, west', -6500, -1200],
+        ['round the back, in the service yard', 2140, 3700],
+      ];
+      for (const [where, x, y] of spots) {
+        stand(x, y);
+        check(`standing ${where}, a van comes to you rather than to the doors`, R.chasing);
+        const st = R.freeStand();
+        const near = Math.hypot(st.x - p.x, st.y - p.y);
+        const on = R.ringAt(st.ring);
+        const fromRing = Math.hypot(on.x - p.x, on.y - p.y);
+        const fromDoors = Math.hypot(doors.x - p.x, doors.y - p.y);
+        note(`${where}`, `the van stands ${near.toFixed(0)} units off; the road is ${fromRing.toFixed(0)} and the doors ${fromDoors.toFixed(0)}`);
+        check('and it stands on ground a van can drive on', R.drivable(st.x, st.y),
+          level.sectorAt(st.x, st.y)?.name);
+        /* LEAVING THE ROAD NEVER MAKES IT WORSE. Where the tarmac runs
+           out at the kerb the van stands on the ring and that is the
+           closest anything on wheels gets — which is the honest answer
+           behind the building, where no road goes. */
+        check('and pulling in off the road only ever gets it closer', near <= fromRing + 1,
+          `${near.toFixed(0)} against ${fromRing.toFixed(0)} on the road`);
+        if (/car park|west end/.test(where))
+          check('and out in the lot that is much closer than the doors', near < fromDoors * 0.5,
+            `${near.toFixed(0)} against ${fromDoors.toFixed(0)}`);
+        /* the route: on the road the whole way, and it ends at the stand */
+        const route = R.routeTo(st, 'west');
+        const end = route[route.length - 1];
+        check('the route ends where the van is to stand',
+          Math.hypot(end.x - st.x, end.y - st.y) < 1 && route.length >= 3);
+        check('and every corner of it is on tarmac',
+          route.every(q => R.drivable(q.x, q.y)),
+          route.filter(q => !R.drivable(q.x, q.y)).map(q => level.sectorAt(q.x, q.y)?.name || 'off the map').join('; '));
+      }
+      /* THE ONE THAT IS ACTUALLY DRIVEN: out in the lot, where the van
+         leaves the road and pulls up beside you. */
+      stand(2140, -1400);
+      const before = R.vans.length;
+      R.nextVanAt = R.tics;
+      R.sendConvoy();
+      const chase = R.vans[before];
+      check('a convoy is sent to you out in the lot', R.vans.length === before + S.convoy && !!chase);
+      let n = 0;
+      /* ALIVE THE WHOLE WAY. The crew already on the ground is shooting
+         throughout, and a dead player is a player the squad stops
+         coming for (see squadTic) — which is correct, and would quietly
+         turn everything below this into a measurement of nothing. */
+      for (; n < 6000 && chase.state === 'driving'; n++) { p.health = 100; gs.tic(); }
+      check('and you are alive to be driven at', !p.dead);
+      note('the drive to you', `${n} tics, ${chase.driven.toFixed(0)} units`);
+      check('and it arrives, off the road, beside you', chase.state === 'parked' &&
+        Math.hypot(chase.x - 2140, chase.y + 1400) < S.push, `${Math.hypot(chase.x - 2140, chase.y + 1400).toFixed(0)} units off`);
+      check('and it left the ring to do it', Math.abs(chase.y - R.ringAt(chase.stand.ring).y) > 100,
+        `${(chase.y - R.ringAt(chase.stand.ring).y).toFixed(0)} units in off the road`);
+      /* AND THE DOOR THEY USE IS THE ONE FACING YOU, which used to be
+         the one facing the shop and was the same thing only while every
+         van stood across the fire lane. Measured off the van's own door
+         geometry rather than off a spawn, because whether a trooper is
+         actually let out is the budget's business and this is not. */
+      const doorsOut = [0, 1, 2, 3, 4].map(k => chase.door(k, { x: p.x, y: p.y }));
+      /* WHICH SIDE, not which distance: the doors run along the van's
+         length, so the one at the far end of a van parked broadside is
+         further from you than its middle and still on the right side. */
+      const lx = -Math.sin(chase.yaw), ly = Math.cos(chase.yaw);
+      const want = Math.sign((p.x - chase.x) * lx + (p.y - chase.y) * ly);
+      check('and its crew steps out of the side facing you',
+        want !== 0 && doorsOut.every(d => Math.sign((d.x - chase.x) * lx + (d.y - chase.y) * ly) === want),
+        doorsOut.map(d => ((d.x - chase.x) * lx + (d.y - chase.y) * ly).toFixed(0)).join(', ') + ` want ${want}`);
+      stand(home.x, home.y);
+    }
+
     /* --- THE CURVE ----------------------------------------------------
        Exponential, at the user's request: equal steps in time multiply
        the presence by the same amount. The pure function first, then
@@ -4544,19 +4681,34 @@ section('the van');
     check('and a doubling is a doubling wherever on the curve it starts — which is what exponential means',
       [0, 500, 1234, 4000, 9999].every(t0 => Math.abs(pressureAfter(t0 + S.doubling) / pressureAfter(t0) - 2) < 1e-9));
     check('the caps, the gap and the trickle are all the same number read four ways',
-      Math.min(S.bays, Math.floor(S.vans * 4)) === (() => { const save = R.calledAt; R.calledAt = R.tics - 2 * S.doubling; const c = R.vanCap; R.calledAt = save; return c; })() &&
+      Math.min(S.maxVans, Math.floor(S.vans * 4)) === (() => { const save = R.calledAt; R.calledAt = R.tics - 2 * S.doubling; const c = R.vanCap; R.calledAt = save; return c; })() &&
       (() => { const save = R.calledAt; R.calledAt = R.tics - 2 * S.doubling; const ok = R.trooperCap === Math.min(S.maxTroopers, S.troopers * 4) && Math.abs(R.trickleNow() - Math.max(S.minTrickle, S.trickle / 4)) < 1e-9; R.calledAt = save; return ok; })());
     check('and every gap has a floor, so the curve asks nothing the road cannot do',
-      (() => { const save = R.calledAt; R.calledAt = R.tics - 40 * S.doubling; const ok = R.gapNow() === S.minEvery && R.trickleNow() === S.minTrickle && R.trooperCap === S.maxTroopers && R.vanCap === S.bays; R.calledAt = save; return ok; })());
+      (() => { const save = R.calledAt; R.calledAt = R.tics - 40 * S.doubling; const ok = R.gapNow() === S.minEvery && R.trickleNow() === S.minTrickle && R.trooperCap === S.maxTroopers && R.vanCap === S.maxVans; R.calledAt = save; return ok; })());
+    check('and the budget is three times what it was, because a send is',
+      S.convoy === 3 && S.vans === 6 && S.maxVans === 27);
     /* THE LONG NIGHT: the caps only ever climb, and the lot fills */
-    const capsBefore = { troopers: R.trooperCap, vans: R.vanCap, ever: R.spawned };
-    for (let i = 0; i < 1400; i++) { p.health = 100; gs.tic(); }
-    note('the night so far', `${((R.tics - R.calledAt) / 35).toFixed(0)}s since the call, pressure ${R.pressure.toFixed(1)}: ${R.vans.length} vans, ${R.troopers} troopers up of ${R.trooperCap} allowed, ${R.spawned} ever, ${R.defeatedCount} down`);
+    const capsBefore = { troopers: R.trooperCap, vans: R.vanCap, ever: R.spawned, sent: R.vans.length };
+    /* LONG ENOUGH FOR A VAN TO GET HERE. A convoy sent to the far side
+       of the lot drives most of the ring to reach it, which at fifteen
+       units a tic is well over a thousand of them — measure the night
+       over a window shorter than that and what is measured is the
+       traffic, not the escalation. */
+    for (let i = 0; i < 3400; i++) { p.health = 100; gs.tic(); }
+    {
+      const by = {};
+      for (const v of R.vans) by[v.state] = (by[v.state] || 0) + 1;
+      note('the night so far', `${((R.tics - R.calledAt) / 35).toFixed(0)}s since the call, pressure ${R.pressure.toFixed(1)}: ` +
+        `${R.vans.length} vans (${Object.entries(by).map(([k, n]) => `${n} ${k}`).join(', ')}), ` +
+        `${R.troopers} troopers up of ${R.trooperCap} allowed, ${R.spawned} ever, ${R.defeatedCount} down`);
+    }
     check('there are never more troopers on their feet than the curve allows', R.troopers <= R.trooperCap);
     check('and never more vans on the road or standing than it allows', R.liveVans.length <= R.vanCap);
     check('and forty seconds on, more of both are allowed than were',
-      R.trooperCap > capsBefore.troopers && R.vanCap >= capsBefore.vans && R.spawned > capsBefore.ever);
-    check('three minutes in, the whole fire lane is spoken for', R.vanCap === S.bays && R.vans.length >= 4, `${R.vans.length} vans`);
+      R.trooperCap > capsBefore.troopers && R.vanCap >= capsBefore.vans && R.spawned > capsBefore.ever,
+      `troopers ${capsBefore.troopers} -> ${R.trooperCap}, vans ${capsBefore.vans} -> ${R.vanCap}, ever ${capsBefore.ever} -> ${R.spawned}`);
+    check('three minutes in, there are vans everywhere the curve allows',
+      R.vanCap >= S.bays && R.vans.length >= 6, `${R.vans.length} vans, cap ${R.vanCap}`);
     check('and the troopers allowed have doubled at least twice since the call', R.trooperCap >= 4 * S.troopers, `${R.trooperCap}`);
 
     /* the corner grows a third bar the moment something hurts you */
