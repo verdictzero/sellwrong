@@ -2258,12 +2258,29 @@ section('the cold');
        picture. Pushed straight back it recedes toward the middle and
        stays in its corner, which is what farther off looks like. */
     const B = w3.GUNS.BORE;
-    check('the bore is held a third smaller than the other two, and a third farther off',
-      Math.abs(B.fit - w3.GUN_LENGTH * 0.67) < 1e-9 && B.out === 1.33 &&
-      E.out === undefined && w3.GUNS.FLAMER.out === undefined && E.fit === w3.GUN_LENGTH);
+    check('the bore is drawn a third smaller than the other two',
+      Math.abs(B.fit - w3.GUN_LENGTH * 0.67) < 1e-9 &&
+      E.fit === w3.GUN_LENGTH && w3.GUNS.FLAMER.fit === w3.GUN_LENGTH);
+    /* AND EVERY GUN SAYS HOW FAR OUT IT IS HELD, which is how much of
+       its length is on screen. The two streams are held about three
+       times as far out as a gun used to be, at the user's request: at 1
+       a quarter of a gun is behind the eye and the rest is too close to
+       read. */
+    check('and all three say how far out they are held, the two streams at about three',
+      B.out === 1.33 && w3.GUNS.FLAMER.out === 3.0 && E.out === 2.8);
     check('and farther off is a push straight back along the view, z alone, not the whole position scaled',
       /\(VIEW\.pos\[2\] \+ this\.kick \* 0\.025\) \* \(G\.def\.out \?\? 1\)/.test(gunSrc) &&
       !/multiplyScalar\(G\.def\.out/.test(gunSrc));
+    /* HOW FAR A GUN IS DRAWN IS NOT HOW FAR ITS FIRE STARTS. The world
+       takes the nozzle as a RAY out of the eye, and the point on it was
+       whatever the drawn nozzle's distance came to — so holding a gun
+       three times further out would have moved the birth of the stream
+       from forty-two units in front of the player to seventy, which is
+       the far side of a shelf you are standing against. Capped. */
+    check('the stream is born no further into the level than a gun can reach',
+      w3.NOZZLE_REACH >= 40 && w3.NOZZLE_REACH <= 60 &&
+      /Math\.min\(nv\.length\(\) \* UNITS_PER_METRE, NOZZLE_REACH\)/.test(gunSrc),
+      `${w3.NOZZLE_REACH} units`);
     check('and its exhaust is scaled with it, being in metres and not in the model',
       Math.abs(B.muzzle.len - 0.14 * 0.67) < 0.002 && Math.abs(B.muzzle.wid - 0.10 * 0.67) < 0.002);
     /* AND THE TWO NUMBERS ARE AT THE BUSINESS END OF THE MODEL.

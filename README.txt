@@ -83,7 +83,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         913 checks, no install and no browser
+  the smoke test         915 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -1335,6 +1335,29 @@ flame grows out of the other along the barrel, and the stream that
 flies into the world is born at that same nozzle — projected as a ray
 out of the gun's scene and back into the world's, so it always leaves
 the end of the gun you can see, whatever the two fields of view are.
+
+BOTH STREAM WEAPONS ARE HELD AT ARM'S LENGTH AND THEN SOME, at the
+user's request: the flamethrower three times as far from the eye as a
+gun used to be, the extinguisher rifle nearly the same. It is one
+number each (`out` in the GUNS table, a multiple of how far in front of
+the eye the scene parks a gun) and it buys the LENGTH of them. At one,
+a quarter of a gun is behind your eye and the rest is too close to
+read: what you saw of the flamethrower was a red bottle and a corner of
+green. At three the whole weapon is in front of you — muzzle, bottles,
+receiver, grip — the bottle is a third of what it was, and the
+extinguisher is finally a fire extinguisher with a stock on it rather
+than a red cylinder. The cerebral bore keeps its own 1.33, being a
+different request: smaller, not longer.
+
+AND THAT IS WHERE THE GUN IS DRAWN, NOT WHERE ITS FIRE STARTS, which
+had to be split the moment the guns moved. The world takes the nozzle
+as a RAY out of the eye and puts the birth of the stream somewhere
+along it; the distance used to be the drawn nozzle's own, forty-two
+units, which is a little past arm's reach. Holding the gun three times
+further out would have carried that to seventy — the far side of a
+shelf you are standing against — so the distance is capped at
+NOZZLE_REACH, forty-six, which is what the longest-reaching gun
+measured before any of this. The picture moved; the level did not.
 
 WHAT THE PREP TOOL TAKES OFF IT, on the way in, is two thirds of the
 file: 6.8 megabytes to 3.3. The maps an unlit renderer cannot use (a
@@ -2604,7 +2627,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-913 checks. Every one of them earns its place by having caught something
+915 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

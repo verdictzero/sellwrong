@@ -79,7 +79,11 @@ export const GUN_LENGTH = 1.4;
              true of exactly one of them and only because it was made for
              it
      out     how far in front of the eye it is held, as a multiple of
-             VIEW.pos's z. Absent means 1: where the flamethrower is
+             VIEW.pos's z, which is how much of the gun's LENGTH is on
+             screen: at 1 the back quarter of a gun is behind the eye and
+             what you see is the front half, filling the corner; at 3 the
+             whole thing is in front of you and reads end to end. Absent
+             means 1
      nozzle  where the business end is, in the MODEL'S own units. Absent
              means the file says so itself, in asset.extras.anchors
      pilot   a small flame that is always alight, on the same terms.
@@ -130,10 +134,19 @@ export const GUNS = {
      Vaportrash's, in place of the one the user built, at the user's
      request. Seventeen meshes on one painted sheet, forty-six units
      nose to tail with the barrel along +z, and no markers in it — see
-     the note above for how its two anchors were found. */
+     the note above for how its two anchors were found.
+
+     HELD THREE TIMES AS FAR OUT as the old one was, at the user's
+     request, because this gun is worth looking at and at arm's length
+     you saw a red bottle and nothing else: a quarter of its length was
+     behind the eye and the rest was too close to read. At three the
+     whole weapon is in front of you — muzzle, bottles, receiver, grip —
+     and the bottle that used to fill the corner is a third of what it
+     was. */
   FLAMER: {
     url: 'assets/models/flamethrower.glb',
     fit: GUN_LENGTH,
+    out: 3.0,
     /* the centre of the bore, a little past the front of the muzzle
        bracket, so the stream is born outside the metal */
     nozzle: [0, 3.9, 24.3],
@@ -145,9 +158,13 @@ export const GUNS = {
     tint: [1, 1, 1],
     muzzle: { len: 0.34, wid: 0.14 },
   },
+  /* AND THE EXTINGUISHER RIFLE, held nearly as far out and for the same
+     reason: it is a fire extinguisher with a stock on it and the joke
+     only lands if you can see the whole of it. */
   EXTINGUISHER: {
     url: 'assets/models/extinguisher.glb',
     fit: GUN_LENGTH,
+    out: 2.8,
     /* the tip of the barrel, measured off the model's own vertices: the
        forty furthest along +z average to (0, 0.76, 2.16) and this is a
        little past them, so the plume starts outside the metal */
@@ -176,6 +193,19 @@ export const VIEW = {
    eye the stream is born, and forty puts it a little past arm's reach
    and clear of the near plane. */
 export const UNITS_PER_METRE = 40;
+
+/* AND THE FURTHEST INTO THE WORLD THAT POINT MAY EVER BE, which is a
+   cap and not a distance. A gun held further out (see `out`) is drawn
+   further from the eye, so its nozzle is further along the ray, so the
+   stream would be born deeper into the level — and at three times out
+   that is seventy units in front of a player whose own radius is
+   sixteen, which is the far side of a shelf you are standing against.
+   How far a gun is DRAWN is a question about the picture; where its
+   fire starts is a question about the level, and the two stopped being
+   the same question the moment the guns moved. Forty-six is what the
+   longest-reaching of them measured before any of this, so nothing
+   about the world changed on the day the picture did. */
+export const NOZZLE_REACH = 46;
 
 const GUN_VERT = /* glsl */`
 varying vec2 vUv;
@@ -531,7 +561,7 @@ export class Weapon3D {
     if (!G) return null;
     const nv = this._tmp2.copy(G.anchors.nozzle);
     G.inner.localToWorld(nv);
-    const dist = nv.length() * UNITS_PER_METRE;
+    const dist = Math.min(nv.length() * UNITS_PER_METRE, NOZZLE_REACH);
     const ndc = this._ndc.copy(nv).project(this.camera);
     ndc.z = 0.5;
     const wp = ndc.unproject(worldCamera);
