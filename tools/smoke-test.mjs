@@ -5796,8 +5796,8 @@ section('the minigun, the jump and the van');
     check('a pad fades the thumb controls and a finger brings them back',
       /#touch\.pad \.tb/.test(css) && /setPadHeld\(true\)/.test(inSrc) && /pointerType !== 'mouse'\) this\.setPadHeld\(false\)/.test(inSrc) &&
       /input\.onPadChange = on => touch\.setPadHeld\(on\)/.test(mainSrc));
-    check('the pad is laid out as asked: left stick looks, right stick moves, R2 fires, L2 jumps, bumpers cycle',
-      /mx \+= dead\(pad\.axes\[2\]\); my -= dead\(pad\.axes\[3\]\)/.test(inSrc) && /lx \+= dead\(pad\.axes\[0\]\)/.test(inSrc) &&
+    check('the pad is laid out the standard way: left stick moves, right stick looks, R2 fires, L2 jumps, bumpers cycle',
+      /mx \+= dead\(pad\.axes\[0\]\); my -= dead\(pad\.axes\[1\]\)/.test(inSrc) && /lx \+= dead\(pad\.axes\[2\]\)/.test(inSrc) &&
       /btn\(7\)/.test(inSrc) && /padEdge\(6\)/.test(inSrc) && /padEdge\(4\)\) this\.weaponCycle = -1/.test(inSrc) && /padEdge\(5\)\) this\.weaponCycle = 1/.test(inSrc));
     check('space jumps, F uses, 4 is the minigun', /Space: 'jump'/.test(inSrc) && /KeyF: 'use'/.test(inSrc) && /Digit4: 'weapon4'/.test(inSrc));
     check('the readout names what you are holding, top right, and steps past the pause button on a phone',

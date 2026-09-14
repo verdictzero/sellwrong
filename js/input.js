@@ -176,11 +176,11 @@ export class Input {
   sample(dt) {
     const pad = this._gamepad();
 
-    /* THE PAD, AS THE USER LAID IT OUT: the RIGHT stick moves and the
-       LEFT stick looks — the other way round from the usual, and the
-       user's call. The triggers are the trigger: R2 fires, L2 jumps;
-       the bumpers cycle the weapons, L1 back and R1 forward; A is use
-       and either stick pressed in is run. */
+    /* THE PAD, THE WAY EVERY SHOOTER LAYS IT OUT, at the user's request:
+       the LEFT stick moves and the RIGHT stick looks. The triggers are
+       the trigger: R2 fires, L2 jumps; the bumpers cycle the weapons,
+       L1 back and R1 forward; A is use and either stick pressed in is
+       run. */
     const btn = i => !!(pad && pad.buttons[i]?.pressed);
     const padEdge = i => { const now = btn(i), was = !!this._padPrev[i]; this._padPrev[i] = now; return now && !was; };
 
@@ -189,7 +189,7 @@ export class Input {
     if (this.down('left')) mx -= 1;
     if (this.down('forward')) my += 1;
     if (this.down('back')) my -= 1;
-    if (pad) { mx += dead(pad.axes[2]); my -= dead(pad.axes[3]); }
+    if (pad) { mx += dead(pad.axes[0]); my -= dead(pad.axes[1]); }
     mx += this.touch.move.x; my += this.touch.move.y;
 
     const mag = Math.hypot(mx, my);
@@ -206,8 +206,8 @@ export class Input {
     if (this.down('turnLeft')) lx -= turn;
     if (this.down('turnRight')) lx += turn;
     if (pad) {
-      lx += dead(pad.axes[0]) * 3.2 * dt;
-      ly += dead(pad.axes[1]) * 2.2 * dt;
+      lx += dead(pad.axes[2]) * 3.2 * dt;
+      ly += dead(pad.axes[3]) * 2.2 * dt;
     }
     lx += this.touch.look.x; ly += this.touch.look.y;
     this.touch.look.x = 0; this.touch.look.y = 0;

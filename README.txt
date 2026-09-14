@@ -142,10 +142,11 @@ the three layers of you — see AND YOU CAN BE HURT NOW.
   N             palette on / off          ESC       pause
   `             the frame-rate readout, off by default
 
-GAMEPAD, laid out the way the user asked for it, which is not the way
-most games do it and is the whole point of a preference:
+GAMEPAD, laid out the way every shooter lays it out, at the user's
+request — it was briefly the other way round, and the user asked for
+the standard:
 
-  LEFT STICK    look            RIGHT STICK  move
+  LEFT STICK    move            RIGHT STICK  look
   R2            fire            L2           jump
   L1 / R1       previous / next weapon
   A             use             L3 / R3      run
