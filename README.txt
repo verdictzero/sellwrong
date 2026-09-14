@@ -49,6 +49,8 @@ somewhere else: the people, the trees, the sky, and the gun.
                           metal-rough off a renderer that has no lighting
                           model to spend them on
   assets/fonts/         Michroma (SIL OFL), the title face
+  assets/music/         the user's three E1M1 remixes, mixed on the beat
+                          by js/music.js
   tools/bake-art.mjs    node tools/bake-art.mjs — turns art/ into source
   tools/prep-people.mjs the crowd's art, crunched down from galvarius
   tools/prep-troops.mjs a troops sheet — the SWAT's or the army's — found
@@ -151,6 +153,26 @@ most games do it and is the whole point of a preference:
 And a pad in use takes the phone's thumb controls off the picture — see
 ON A PHONE. Mouse look needs a click to grab the pointer. On a phone
 none of the keyboard applies and the next section is the one that does.
+
+THERE IS MUSIC, at the user's request: the user's three E1M1 remixes
+(assets/music/, four files arrived and two were the same file byte
+for byte), one into the next into the next and round again for ever,
+each fading into the one after it ON THE BEAT. Nothing is analysed
+while the game runs: each track was measured once, offline, in the
+same decoder the browser uses — tempo to a hundredth, the downbeat at
+the head, a downbeat in the last forty seconds to hand over on — and
+the answers are a table at the top of js/music.js. On the outgoing
+track's handover downbeat the incoming's first downbeat lands, both
+gains ramp LINEARLY over eight bars, one up and one down, and the
+outgoing stops. And the incoming arrives at the OUTGOING'S TEMPO —
+the three are 145.8, 140.3 and 142.3, and a fade between grids four
+per cent apart flams by a quarter of a beat before it is half done —
+with its playback rate set to the ratio, so its bars are the other's
+bars for as long as both can be heard, and then eased back to one
+over eight more bars, which is a DJ's pitch fader going home. All of
+it is Web Audio's own clock, sample accurate. A MUSIC fader is in the
+pause menu and remembered; the music has its own context, so the
+switch below does not take it.
 
 AND THE SOUND IS OFF, all of it, for now, at the user's request: MUTED
 at the top of js/audio.js is one switch, and with it on resume() never

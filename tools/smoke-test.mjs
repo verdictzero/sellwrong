@@ -5809,6 +5809,66 @@ section('the minigun, the jump and the van');
   }
 }
 
+/* ---------- the music ---------- */
+section('the music');
+{
+  const fs = await import('node:fs');
+  const mu = await import('../js/music.js');
+  const T = mu.TRACKS;
+  note('the tracks', T.map(t => `${t.url.split('/').pop()} ${t.bpm} bpm, out at ${t.out} of ${t.seconds}`).join('; '));
+  check('three tracks, and all three files are there', T.length === 3 && T.every(t => fs.existsSync(t.url)));
+  check('and no two of them are the same file',
+    new Set(T.map(t => fs.readFileSync(t.url).length)).size === T.length);
+  /* THE TABLE HAS TO BE PLAYABLE: every handover point is a downbeat
+     late in its track with room for the fade before the file ends, and
+     the first downbeat is where a track starts, not a minute in */
+  check('every handover is late in its track, and the fade fits before the end',
+    T.every(t => t.out > t.seconds * 0.8 && t.out + mu.FADE_BARS * mu.barOf(t) <= t.seconds));
+  check('and every first downbeat is at the head of the file', T.every(t => t.bar0 >= 0 && t.bar0 < 2));
+  check('and the tempos are all E1M1\'s, near enough', T.every(t => t.bpm > 135 && t.bpm < 150));
+  /* --- one handover, as arithmetic --------------------------------- */
+  const a = T[0], b = T[1];
+  const outAt = 1000;
+  const plan = mu.arrange(a, b, outAt);
+  check('the incoming starts so its first downbeat lands on the outgoing\'s handover',
+    Math.abs(plan.start + b.bar0 / plan.rate - outAt) < 1e-9, `${plan.start} + ${b.bar0}/${plan.rate}`);
+  check('and it arrives at the outgoing\'s tempo, so the bars line up for the whole fade',
+    Math.abs(plan.rate - a.bpm / b.bpm) < 1e-12 && Math.abs(mu.barOf(b) / plan.rate - mu.barOf(a)) < 1e-9);
+  check('the fade is eight bars of the outgoing tempo, linear, and the outgoing stops at the end of it',
+    Math.abs(plan.fadeEnd - outAt - 8 * 240 / a.bpm) < 1e-9 &&
+    /linearRampToValueAtTime\(0, plan\.fadeEnd\)/.test(fs.readFileSync('js/music.js', 'utf8')) &&
+    /out\.src\.stop\(plan\.fadeEnd/.test(fs.readFileSync('js/music.js', 'utf8')));
+  check('and the incoming eases back to its own tempo over eight more bars, after the fade',
+    plan.rateEnd > plan.fadeEnd && Math.abs(plan.rateEnd - plan.fadeEnd - 8 * 240 / a.bpm) < 1e-9);
+  /* --- and where the incoming's own handover then falls ------------- */
+  const w = p => mu.wallTimeFor(plan, p);
+  check('file time maps to wall time at the rate during the fade',
+    Math.abs(w(b.bar0) - outAt) < 1e-9 && Math.abs(w(plan.rate * (plan.fadeEnd - plan.start)) - plan.fadeEnd) < 1e-9);
+  const D = plan.rateEnd - plan.fadeEnd, p1 = plan.rate * (plan.fadeEnd - plan.start), p2 = D * (1 + plan.rate) / 2;
+  check('through the ramp, where the ramp covers the mean rate times its length',
+    Math.abs(w(p1 + p2) - plan.rateEnd) < 1e-6 && w(p1 + p2 / 2) > plan.fadeEnd && w(p1 + p2 / 2) < plan.rateEnd);
+  check('and at one thereafter, so the next handover is exactly where the table says',
+    Math.abs(w(b.out) - (plan.rateEnd + (b.out - p1 - p2))) < 1e-9 && w(b.out) > plan.rateEnd);
+  /* a whole lap: each handover is later than the last by about a track */
+  let at = 0, i = 0, laps = 0;
+  for (let k = 0; k < 9; k++) {
+    const j = (i + 1) % T.length;
+    const pl = mu.arrange(T[i], T[j], at);
+    const next = mu.wallTimeFor(pl, T[j].out);
+    if (next - at < 180 || next - at > 260) laps = -99;
+    at = next; i = j; if (i === 0) laps++;
+  }
+  check('and round the three of them for ever, one every four minutes or so', laps === 3, `${laps} laps`);
+  /* --- the page ------------------------------------------------------ */
+  const html = fs.readFileSync('index.html', 'utf8'), mainSrc = fs.readFileSync('js/main.js', 'utf8');
+  check('there is a music fader in the menu and it is wired',
+    html.includes('id="opt-music"') && /music\.setVolume\(prefs\.music\)/.test(mainSrc) && /'opt-music'/.test(mainSrc));
+  check('the music starts on the start tap and is ticked every frame',
+    /musicP\.then\(\(\) => music\.start\(\)\)/.test(mainSrc) && /music\.tick\(\);/.test(mainSrc));
+  check('and it has its own context, so the muted effects do not take it with them',
+    /new AC\(\)/.test(fs.readFileSync('js/music.js', 'utf8')) && !/audio\.ctx/.test(fs.readFileSync('js/music.js', 'utf8')));
+}
+
 section('the gun');
 {
   const fs = await import('node:fs');

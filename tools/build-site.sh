@@ -40,7 +40,8 @@ cp -r css js vendor "$OUT/"
 # page loads reads it — it has moved to art/vehicles-atlas.png, beside
 # the other source art, and waits there for the responders' riot van and
 # APC. Half a megabyte nobody downloads until they turn up.
-cp -r assets/forest assets/people assets/sky assets/models assets/fonts "$OUT/assets/"
+# and the music: the user's three tracks, played in a loop by js/music.js
+cp -r assets/forest assets/people assets/sky assets/models assets/fonts assets/music "$OUT/assets/"
 
 printf 'built %s: ' "$OUT"
 find "$OUT" -type f | wc -l | tr -d ' '

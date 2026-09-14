@@ -38,6 +38,7 @@ import { atlasTexture, imageTexture } from './particles.js';
 import { bakeEffectAtlases } from './effects.js';
 import { Weapon3D } from './weapon3d.js';
 import { KINDS } from './forest.js';
+import { Music } from './music.js';
 
 const $ = id => document.getElementById(id);
 /* THE LOADING SCREEN SAYS ONE THING, at the user's request, and it is
@@ -132,7 +133,9 @@ const DEFAULT_PREFS = { v: PREF_VERSION, sens: 1, invert: false, lefty: false, h
                         crowd: 0, fx: 0, wood: 0, fps: false, debug: false, godmode: false,
                         /* the three picture dials, at the user's request — see
                            LofiPipeline.setPicture; 1 is the picture as drawn */
-                        bright: 1, contrast: 1, gamma: 1 };
+                        bright: 1, contrast: 1, gamma: 1,
+                        /* and the music's fader — see js/music.js */
+                        music: 0.5 };
 function loadPrefs() {
   try {
     const saved = JSON.parse(localStorage.getItem(PREF_KEY) || '{}');
@@ -249,6 +252,11 @@ async function boot() {
      the right height under every letter. */
   const troopsP = Promise.all(['swat', 'army'].map(k => loadImage(`assets/people/${k}.png`)))
     .catch(e => { console.warn('no troop art, using the stand-ins:', e.message); return null; });
+  /* and the music, fetched now and decoded on the start tap, which is
+     the first moment a browser lets a page open a speaker — see
+     js/music.js. Sixteen megabytes, behind everything else. */
+  const music = new Music();
+  const musicP = music.load();
 
   status('BAKING TEXTURES', 0.05); await breathe();
   const textures = bakeTextures();
@@ -397,6 +405,7 @@ async function boot() {
 
   /* ---- the settings ------------------------------------------------ */
   const sensEl = $('opt-sens'), sensV = $('opt-sens-v');
+  const musicEl = $('opt-music'), musicV = $('opt-music-v');
   /* the three picture dials: pref key, the slider, and its readout */
   const PICTURE = [['bright', 'opt-bright', 'opt-bright-v'], ['contrast', 'opt-contrast', 'opt-contrast-v'],
                    ['gamma', 'opt-gamma', 'opt-gamma-v']];
@@ -404,6 +413,8 @@ async function boot() {
   function syncMenu() {
     sensEl.value = prefs.sens;
     sensV.textContent = prefs.sens.toFixed(1) + 'X';
+    musicEl.value = prefs.music;
+    musicV.textContent = Math.round(prefs.music * 100) + '%';
     for (const [key, id, vid] of PICTURE) { $(id).value = prefs[key]; $(vid).textContent = prefs[key].toFixed(2); }
     setTog('opt-invert', prefs.invert);
     setTog('opt-lefty', prefs.lefty);
@@ -438,6 +449,7 @@ async function boot() {
     input.invertY = !!prefs.invert;
     touch.applyPrefs();
     pipeline.setPicture({ brightness: prefs.bright, contrast: prefs.contrast, gamma: prefs.gamma });
+    music.setVolume(prefs.music);
     /* the three dials, straight onto the game — see game.quality */
     game.quality.crowd = CROWD[prefs.crowd].v;
     game.quality.effects = FX[prefs.fx].v;
@@ -452,6 +464,7 @@ async function boot() {
   }
   applyPrefs();
   sensEl.addEventListener('input', () => { prefs.sens = parseFloat(sensEl.value) || 1; applyPrefs(); });
+  musicEl.addEventListener('input', () => { prefs.music = Math.max(0, Math.min(1, parseFloat(musicEl.value) || 0)); applyPrefs(); });
   for (const [key, id] of PICTURE)
     $(id).addEventListener('input', () => { prefs[key] = parseFloat($(id).value) || 1; applyPrefs(); });
   const toggle = (id, key) => $(id).addEventListener('click', () => { prefs[key] = !prefs[key]; applyPrefs(); });
@@ -532,6 +545,9 @@ async function boot() {
     title.classList.add('gone');
     audio.resume();
     audio.startAmbience();
+    /* the music starts on the tap, which is the gesture the browser
+       wants; if the files are still arriving it starts when they have */
+    musicP.then(() => music.start());
     if (input.mode === 'touch') { enterFullscreen(); touch.setEnabled(true); }
     else input.requestLock();
     input.keys.clear();
@@ -584,6 +600,7 @@ async function boot() {
     last = now;
 
     if (started) game.update(dt);
+    music.tick();
     game.render(now);
     const p = game.player;
     if (started) weapon3d.update(p, p.firing, game.tics, dt);
@@ -617,7 +634,7 @@ async function boot() {
   requestAnimationFrame(frame);
 
   /* let the console poke at it */
-  window.SELLWRONG = { game, pipeline, renderer, scene, camera, textures, sprites, world, level, input, touch, weapon3d,
+  window.SELLWRONG = { game, pipeline, renderer, scene, camera, textures, sprites, world, level, input, touch, weapon3d, music,
                        responders: game.responders, giblets: game.giblets };
 }
 
