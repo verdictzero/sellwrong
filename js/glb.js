@@ -16,9 +16,9 @@
    business — js/weapon3d.js wants the gun lit its own way — so the
    loader hands each primitive's material definition and decoded
    textures to a callback and uses whatever comes back. Textures are
-   decoded by the browser (createImageBitmap on the embedded PNG) with
-   the sampler's own filters, which for the flamethrower means NEAREST:
-   the diffuse is pixel art and would be mush any other way.
+   decoded by the browser (createImageBitmap on the embedded PNG) and
+   then POINT SAMPLED, whatever the file says — see pointSample below,
+   which is the one rule for every model this game imports.
    ===================================================================== */
 
 import * as THREE from 'three';
@@ -28,14 +28,58 @@ const COMPONENT = {
   5120: Int8Array, 5121: Uint8Array, 5122: Int16Array, 5123: Uint16Array, 5125: Uint32Array, 5126: Float32Array,
 };
 const ITEMS = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16 };
-/* The sampler tables, exported because js/car.js loads a model's texture
-   its own way and still wants the file's own filters. */
-export const GL_FILTER = {
-  9728: THREE.NearestFilter, 9729: THREE.LinearFilter,
-  9984: THREE.NearestMipmapNearestFilter, 9985: THREE.LinearMipmapNearestFilter,
-  9986: THREE.NearestMipmapLinearFilter, 9987: THREE.LinearMipmapLinearFilter,
-};
+/* The wrap table, exported because js/car.js loads a model's texture its
+   own way and still wants the file's own wrapping. There is no filter
+   table any more: see pointSample. */
 export const GL_WRAP = { 33071: THREE.ClampToEdgeWrapping, 33648: THREE.MirroredRepeatWrapping, 10497: THREE.RepeatWrapping };
+
+/* ---------------------------------------------------------------------
+   HOW AN IMPORTED MODEL'S TEXTURE IS SAMPLED, AND IT IS NOT WHAT THE
+   FILE SAYS
+
+   At the user's request, and it is the right request: this renderer
+   point-samples EVERYTHING. The walls and floors do (js/textures.js),
+   the sprites do, the sky does, the fire does, the HUD does — Doom
+   point-sampled everything and the whole look of the game is downstream
+   of that. A model that arrives asking for LINEAR is a model that was
+   exported by somebody rendering it a different way, and honouring that
+   ask put five of the six models in this game — every one but the van —
+   through a bilinear filter that softened them against a world that is
+   not soft. The gun in your hands is the worst of it, because it is the
+   thing on screen at the largest magnification: a 1024-square diffuse
+   blown up to fill a third of the frame is where a smoothed texel is a
+   centimetre wide.
+
+   So the file's filters are ignored and this is used instead, which is
+   exactly what js/textures.js does to the world:
+
+     NEAREST magnified          a texel is a square, and stays one
+     NEAREST_MIPMAP_NEAREST     point-sampled at every distance too, and
+       minified, mipped         it drops a whole level rather than
+                                blending two — a van at the far end of
+                                the lot picks one mip and samples it
+                                sharp
+
+   Mipmaps ON is the one part that is not simply "nearest". Without them
+   a minified surface aliases into boiling noise as it moves, which is a
+   different artefact from the one Doom had and not a better one; with
+   them a distant van is crisp and quiet. The sprites get NO mipmaps for
+   a reason of their own (a mipped sprite loses its cut-out edge — see
+   js/sprites.js), and a model is not a cut-out.
+
+   WHAT IS STILL THE FILE'S is the WRAPPING, because that is not a
+   question about how the game looks, it is a question about what the
+   UVs mean: a model unwrapped to tile across a seam needs REPEAT and one
+   unwrapped into an atlas needs CLAMP, and only the file knows which.
+   Where a glTF leaves it out the spec's own answer is REPEAT, which is
+   not this renderer's habit and is not ours to pick.
+   ------------------------------------------------------------------- */
+export function pointSample(tex) {
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestMipmapNearestFilter;
+  tex.generateMipmaps = true;
+  return tex;
+}
 
 /** Split a .glb into its JSON and its binary payload. Pure, so the
  *  smoke test can check a prepared model without a browser. */
@@ -113,13 +157,10 @@ export async function loadGLB(url, opts = {}) {
     const bv = json.bufferViews[im.bufferView];
     const bytes = bin.subarray(bv.byteOffset || 0, (bv.byteOffset || 0) + bv.byteLength);
     const bitmap = await createImageBitmap(new Blob([bytes], { type: im.mimeType }), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
-    const tex = new THREE.Texture(bitmap);
+    const tex = pointSample(new THREE.Texture(bitmap));
     const s = json.samplers?.[t.sampler] || {};
-    tex.magFilter = GL_FILTER[s.magFilter] ?? THREE.LinearFilter;
-    tex.minFilter = GL_FILTER[s.minFilter] ?? THREE.LinearMipmapLinearFilter;
-    tex.wrapS = GL_WRAP[s.wrapS] ?? THREE.RepeatWrapping;
+    tex.wrapS = GL_WRAP[s.wrapS] ?? THREE.RepeatWrapping;      // glTF's own default
     tex.wrapT = GL_WRAP[s.wrapT] ?? THREE.RepeatWrapping;
-    tex.generateMipmaps = tex.minFilter !== THREE.NearestFilter && tex.minFilter !== THREE.LinearFilter;
     tex.flipY = false;                    // glTF's uv origin is the top-left
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.needsUpdate = true;

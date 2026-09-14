@@ -24,10 +24,18 @@
 
    Neither is here. The file is loaded as it stands and drawn as it is
    authored: its own nodes, its own triangles, its own UVs, its own
-   texture at its own size, its own sampler, its own material colours.
+   texture at its own size, its own wrapping, its own material colours.
    Anything this cannot honour throws at load rather than quietly
    rendering something else, which is the same promise js/glb.js makes
    about the gun.
+
+   WITH ONE THING OVERRULED, at the user's request: HOW THE TEXTURE IS
+   FILTERED. Every model in this game is point sampled whatever its file
+   says, because every other surface in this game is — see pointSample in
+   js/glb.js for the whole of it. A modelling program writes LINEAR by
+   default and five of the six models here duly asked for it; a bilinear
+   van in a world of point-sampled walls is the one place the file's
+   opinion was not worth honouring.
 
    WHAT THE FILE DOES NOT SAY, and what is decided here instead:
 
@@ -101,7 +109,7 @@
 
 import * as THREE from 'three';
 import { createWallMaterial } from './material.js';
-import { parseGLB, readAccessor, GL_FILTER, GL_WRAP } from './glb.js';
+import { parseGLB, readAccessor, GL_WRAP, pointSample } from './glb.js';
 
 const ROOF_LIT = 1.12;      // the roof faces the floodlights
 const UNDER_LIT = 0.40;     // and the underside faces the tarmac
@@ -146,17 +154,23 @@ export const carWidth = v => v.length * v.box.half * 2;
 export const carHeight = v => v.length * v.box.height;
 
 /**
- * The sheet out of the model, sampled the way the model asks to be
- * sampled — its own sampler, straight out of the file. Which for this
- * van is NEAREST magnified and nearest-mipmap-nearest minified, so it is
- * point-sampled at every distance and drops a level when it gets small,
- * and that is close enough to what the rest of the game does: Doom
- * point-sampled everything, and the shimmer that gives a distant surface
- * is not an artefact here, it is the look. A file that asked for
- * something else would get it. Where the file says nothing the glTF
- * spec's own default is used — REPEAT, not this renderer's habit — with
- * the one exception of the filters, which the spec leaves to the client
- * and this client answers with Doom's.
+ * The sheet out of the model, POINT SAMPLED whatever the file asks for —
+ * see pointSample in js/glb.js, which is the one rule for every model
+ * this game imports and the whole of the reasoning. NEAREST magnified,
+ * nearest-mipmap-nearest minified: a texel is a square at every
+ * distance, and a van at the far end of the lot drops a whole mip level
+ * rather than blending two.
+ *
+ * It used to be the file's own sampler, on the grounds that a model is a
+ * self-describing thing and its author had an opinion. The van agreed
+ * with the game — it is exported NEAREST — so for a long while there was
+ * nothing to notice; every model since has asked for LINEAR, which is
+ * what a modelling program writes by default, and got it, and came out
+ * softened against a world that is not soft.
+ *
+ * Where the file says nothing about WRAPPING the glTF spec's own default
+ * is used — REPEAT, not this renderer's habit — because wrapping is a
+ * question about what the UVs mean and only the file knows the answer.
  *
  * AND THE IMAGE GOES UP THE WAY IT IS STORED. glTF puts v's origin at
  * the TOP-LEFT of the image and GL puts t's at the bottom, so somebody
@@ -170,12 +184,9 @@ export const carHeight = v => v.length * v.box.height;
  * note on the v flip in modelVehicle.
  */
 export function carTexture(img, sampler = {}) {
-  const t = new THREE.Texture(img);
-  t.magFilter = GL_FILTER[sampler.magFilter] ?? THREE.NearestFilter;
-  t.minFilter = GL_FILTER[sampler.minFilter] ?? THREE.NearestFilter;
+  const t = pointSample(new THREE.Texture(img));
   t.wrapS = GL_WRAP[sampler.wrapS] ?? THREE.RepeatWrapping;      // glTF's own default
   t.wrapT = GL_WRAP[sampler.wrapT] ?? THREE.RepeatWrapping;
-  t.generateMipmaps = t.minFilter !== THREE.NearestFilter && t.minFilter !== THREE.LinearFilter;
   t.flipY = false;                      // glTF's uv origin is the top-left
   t.colorSpace = THREE.SRGBColorSpace;
   t.needsUpdate = true;

@@ -2659,14 +2659,47 @@ asserted at load is that the model IS longest along +Z, because a van
 that is not is a van exported facing some other way, and the honest time
 to find that out is the moment it is read.
 
-AND THE TEXTURE IS THE FILE'S OWN, at its own size, sampled with its own
-sampler. It is a 512x256 four-view turnaround — front, rear, side and
-plan on a flat grey field — and it is used as it is: point-sampled when
-magnified and nearest-mipmap-nearest when it shrinks, which is what this
-file asks for and close enough to what every other texture in this game
-does. Where the file says nothing the glTF spec's own default is taken
-and not this renderer's habit, which is how wrapping ends up REPEAT. The
-model is 198K, of which 158K is that PNG, and it is downloaded once.
+AND THE TEXTURE IS THE FILE'S OWN, at its own size. It is a 512x256
+four-view turnaround — front, rear, side and plan on a flat grey field —
+used as it is. The model is 198K, of which 158K is that PNG, and it is
+downloaded once.
+
+BUT IT IS POINT SAMPLED WHETHER IT ASKS TO BE OR NOT, at the user's
+request, and so is every other model this game imports: NEAREST
+magnified, NEAREST_MIPMAP_NEAREST minified, which is exactly what
+js/textures.js does to the walls and floors. This renderer point-samples
+everything — the walls, the sprites, the sky, the fire, the HUD — and the
+whole look of the game is downstream of that.
+
+It used to be the file's own sampler, on the grounds that a model is a
+self-describing thing and its author had an opinion. The van agreed with
+the game, because it is exported NEAREST, so for a long while there was
+nothing to notice. Every model since has asked for LINEAR — which is
+simply what a modelling program writes by default — and got it: five of
+the six, the gun in your hands among them, were going through a bilinear
+filter that softened them against a world that is not soft. Held side by
+side at full resolution with one property flipped, the lettering down the
+flank of a police van goes from feathered to hard-edged and the frame
+carries fourteen per cent more edge.
+
+Mipmaps stay ON, which is the one part that is not simply "nearest".
+Without them a minified surface boils into aliasing noise as it moves,
+which is a different artefact from the one Doom had and not a better one;
+with them a van at the far end of the lot picks one mip level and samples
+it sharp. The sprites get no mipmaps for a reason of their own — a mipped
+sprite loses its cut-out edge — and a model is not a cut-out.
+
+WHAT IS STILL THE FILE'S IS THE WRAPPING, because that is not a question
+about how the game looks, it is a question about what the UVs mean: a
+model unwrapped to tile across a seam needs REPEAT and one unwrapped into
+an atlas needs CLAMP, and only the file knows which. Where a glTF says
+nothing the spec's own default is taken and not this renderer's habit,
+which is how wrapping ends up REPEAT.
+
+It is one function — pointSample in js/glb.js — called from both places a
+model's texture is built, because the vehicles come through js/car.js and
+the guns through js/glb.js and a rule that only half the models obey is
+not a rule. There is no filter table in either file any more.
 
 
 

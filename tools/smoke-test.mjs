@@ -3707,15 +3707,59 @@ section('the van');
       }
       check('and the model\'s own v reaches the triangles untouched',
         off === 0, `${off} of ${v.model.tris.length * 3} corners moved`);
-      /* AND THE SAMPLER IS THE FILE'S, down to what it does not say:
-         where a glTF leaves wrapping out the spec's answer is REPEAT,
+      /* AND IT IS POINT SAMPLED WHATEVER THE FILE ASKS FOR, at the
+         user's request. Every other surface in this game is — the walls,
+         the sprites, the sky, the fire, the HUD — and a model that
+         arrives asking for LINEAR is a model exported by somebody
+         rendering it a different way. The van happens to ask for
+         NEAREST, so the only honest way to pin this is to hand the
+         loader a sampler that asks for the opposite. */
+      const asked = { magFilter: 9729, minFilter: 9987, wrapS: 33071, wrapT: 33071 };  // LINEAR, LINEAR_MIPMAP_LINEAR, CLAMP
+      const forced = car.carTexture({}, asked);
+      check('a model asking for LINEAR is point sampled anyway',
+        forced.magFilter === THREEc2.NearestFilter &&
+        forced.minFilter === THREEc2.NearestMipmapNearestFilter && forced.generateMipmaps === true,
+        `mag ${forced.magFilter}, min ${forced.minFilter}, mips ${forced.generateMipmaps}`);
+      /* BUT THE WRAPPING IS STILL THE FILE'S, because that is a question
+         about what the UVs MEAN rather than about how the game looks —
+         and where a glTF leaves it out the spec's answer is REPEAT,
          which is not this renderer's habit and is not ours to pick. */
+      check('but its wrapping is still its own',
+        forced.wrapS === THREEc2.ClampToEdgeWrapping && forced.wrapT === THREEc2.ClampToEdgeWrapping);
       const s2 = car.carTexture({}, json.samplers[0]);
-      check('the sampler is the file\'s own, and its silences are glTF\'s',
-        s2.magFilter === THREEc2.NearestFilter &&
-        s2.minFilter === THREEc2.NearestMipmapNearestFilter &&
-        s2.wrapS === THREEc2.RepeatWrapping && s2.wrapT === THREEc2.RepeatWrapping,
-        'nearest, nearest-mipmap-nearest, repeat');
+      check('and a file that says nothing about wrapping gets glTF\'s own default, repeat',
+        t.wrapS === THREEc2.RepeatWrapping && t.wrapT === THREEc2.RepeatWrapping &&
+        s2.magFilter === THREEc2.NearestFilter);
+      /* AND THE OTHER LOADER AGREES, because there are two of them: the
+         vehicles come through js/car.js and the guns through js/glb.js,
+         and one rule that only half the models obey is not a rule.
+         Checked at the source, since building a gun texture needs a
+         browser to decode the PNG. */
+      {
+        const glbSrc = fs.readFileSync('js/glb.js', 'utf8');
+        const carSrc = fs.readFileSync('js/car.js', 'utf8');
+        check('both loaders point-sample through the one function, and neither reads a filter out of the file',
+          /export function pointSample/.test(glbSrc) &&
+          /pointSample\(new THREE\.Texture\(bitmap\)\)/.test(glbSrc) &&
+          /pointSample\(new THREE\.Texture\(img\)\)/.test(carSrc) &&
+          !/GL_FILTER/.test(glbSrc) && !/GL_FILTER/.test(carSrc));
+      }
+      /* AND EVERY MODEL ON DISK IS ONE THIS MATTERS FOR. Five of the six
+         ask for LINEAR — which is what a modelling program writes by
+         default — so this is not a rule waiting for a file to break it,
+         it is a rule five files were already breaking. */
+      {
+        const asks = [];
+        for (const f of fs.readdirSync('assets/models')) {
+          const b = fs.readFileSync('assets/models/' + f);
+          let o = 12, j = null;
+          while (o < b.length) { const L = b.readUInt32LE(o), ty = b.toString('ascii', o + 4, o + 8);
+            if (ty === 'JSON') j = JSON.parse(b.subarray(o + 8, o + 8 + L).toString('utf8')); o += 8 + L; }
+          for (const sm of (j.samplers || [])) if (sm.magFilter !== 9728) asks.push(f);
+        }
+        note('models asking to be smoothed', asks.length ? asks.join(', ') : 'none');
+        check('and the models on disk are the reason: most of them ask for LINEAR', asks.length >= 4);
+      }
     }
 
     /* THE UNWRAP IS ORDINARY, which is the claim that was got wrong.
