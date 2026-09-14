@@ -884,16 +884,31 @@ class Chunk {
    to come apart, and the player is shoved and hurt, which is the one
    thing other than a rifle that gets through their fireproofing.
    ===================================================================== */
-/* AT THE USER'S REQUEST THEY SPEED IN. It was fifteen units a tic —
-   twice a running shopper — and the drive in from the end of the road is
-   fifteen thousand units, so the first van arrived half a minute after
-   it was called. Half a minute is an interval, not a response. Thirty is
-   about seventy miles an hour in this game's units, which is what a van
-   with its lights on does on an empty road at two in the morning, and it
-   is still slow enough that the heading (DRIVE_TURN below) keeps up with
-   the corners. */
-const DRIVE_SPEED = 30;          // units a tic
-const DRIVE_TURN = 0.09;         // radians a tic the heading may change
+/* AT THE USER'S REQUEST THEY SPEED IN, and this is the third number it
+   has been. Fifteen units a tic — twice a running shopper — put the
+   first van in front of you half a minute after it was called, which is
+   an interval rather than a response. Thirty was a van with its lights
+   on at two in the morning, and took fourteen seconds, and the user
+   said it was still too slow.
+
+   SIXTY IS NOT A VAN ANY MORE and is not meant to be: it is two
+   thousand units a second, which against a running shopper's four is
+   something arriving rather than something driving. What the number
+   actually buys is the OUTSIDE case — see `runIn` and `stop` in
+   js/responders.js, which are the other two thirds of the same request:
+   step out of the building and the first convoy is at the junction
+   within a second, across the lot in three, and stopped a van's nose
+   from you rather than a van's length.
+
+   AND THE HEADING KEEPS UP, which is the one thing the speed can break.
+   The POSITION rides the polyline exactly whatever the speed is; it is
+   the drawn yaw that eases, and at thirty units a tic 0.09 a tic was
+   enough to be square through a corner. At sixty it is not — a van
+   would be sideways down the whole of the frontage lane — so the turn
+   rate goes up with it, and what is left is a slide through the
+   junction, which is the right amount of wrong. */
+const DRIVE_SPEED = 60;          // units a tic
+const DRIVE_TURN = 0.17;         // radians a tic the heading may change
 const RUNOVER_DMG = 220;         // what the front of a van does to a person
 const RUNOVER_PLAYER = 28;       // and to you
 const SIREN_EVERY = 19;          // tics between the two notes

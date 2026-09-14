@@ -1450,13 +1450,38 @@ somebody on its own after you have stopped firing — but in practice you
 fire first, because firing is how anything in this game begins.)
 
 AND THEY SPEED IN. From the shot to a van standing in front of you is
-fourteen seconds, and two things make it that rather than the thirty-five
-it was. They come in at whichever END OF THE ROAD is the shorter drive to
-where they are going — the two are nine thousand units out from the ring
-on either side, so guessing wrong was half a minute of tarmac. And the
-van does thirty units a tic rather than fifteen, which is about seventy
-miles an hour in this game's units and what a van with its lights on does
-on an empty road at two in the morning.
+THREE AND A HALF SECONDS if you are outside, at the user's request, and
+this is the third time that number has come down: thirty-five, then
+fourteen, now this. Four things make it.
+
+They come in at whichever END OF THE ROAD is the shorter drive to where
+they are going — the two are nine thousand units out from the ring on
+either side, so guessing wrong was half a minute of tarmac.
+
+The van does SIXTY units a tic. It was fifteen, which was twice a running
+shopper; then thirty, which was a van with its lights on at two in the
+morning; sixty is two thousand units a second and is not a van any more
+and is not meant to be. It is something arriving rather than something
+driving.
+
+AND IF THEY ARE COMING FOR YOU THEY SKIP THE ROAD. The map's way in
+starts where the road leaves the world, and crossing it was five of those
+fourteen seconds — five seconds of a van driving down a road that nobody
+standing in the car park can see. So when the destination is YOU rather
+than the doors, they enter at the junction with fifteen hundred units of
+run-in behind them: far enough back to be a vehicle arriving, not far
+enough to be a wait. Inside the building nothing changed — you are not
+watching the road, and a van that has come the whole length of it is the
+same van. The route is built the same way either way and the two are held
+against each other in the test: eleven thousand units coming for you
+against eighteen and a half thousand coming for the doors.
+
+AND THE HEADING KEEPS UP WITH THE SPEED, which is the one thing a number
+like that can break. The POSITION rides the polyline exactly whatever the
+speed is; it is the drawn yaw that eases toward it, and at thirty units a
+tic 0.09 radians a tic was enough to be square through a corner. At sixty
+it is not, so the turn rate went up with it, and what is left is a slide
+through the junction, which is the right amount of wrong.
 
 It is the user's police van, an armoured assault truck loaded the same way
 the customers' van is (see THE ART) and drawn as its own mesh on its own
@@ -1480,21 +1505,44 @@ the road at once at the start instead of two, twenty-seven at the
 ceiling instead of nine — because sending three into a budget of two is
 sending two.
 
-AND THEY COME TO WHEREVER YOU ARE, which is the other half of the same
-request. Inside the building they pull up across the fire lane in front
-of the doors, which is what the fire lane is for and what the map's bays
-say. ANYWHERE ELSE the destination is YOU: the nearest point on the
-perimeter road to wherever you are standing, reached by entering at the
-junction and walking the ring the short way round, and then off the road
-toward you for as far as the tarmac holds — up to fourteen hundred units
-of it, stopping two car lengths short. Stand in the middle of the car
-park and a van leaves the road, drives between the rows and parks beside
-you with its side door facing you. Stand in the trees and it stops at
-the kerb nearest you. Stand behind the building, where no road goes at
-all, and it gets as far as the frontage lane and the crew walks the
-rest. The loop is published by the map as four corners (level.swatRing)
-and every question about where a van goes is a distance round it; see
-js/responders.js, which is where the ring arithmetic lives.
+AND THEY COME TO WHEREVER YOU ARE, AND THEY NEARLY HIT YOU. Inside the
+building they pull up across the fire lane in front of the doors, which
+is what the fire lane is for and what the map's bays say. ANYWHERE ELSE
+the destination is YOU: a point on the perimeter road, reached by
+entering at the junction and walking the ring the short way round, and
+then off the road toward you for as far as the tarmac holds — up to
+twenty-six hundred units of it, stopping a HUNDRED AND TWENTY short.
+
+A hundred and twenty is to the MIDDLE of a van two hundred and fourteen
+long, so its nose ends up a couple of dozen units off you. It was two
+hundred and sixty, a van's length of daylight, and the user called it too
+far away. They do not pull up beside you now, they nearly hit you and
+stop — and if you stand still while one arrives, the last tic of its
+approach runs you down, which is the correct thing to happen to somebody
+who stood still.
+
+AND IT IS THE BEST POINT ON THE RING, NOT THE NEAREST ONE. Taking the
+nearest is right whenever the ground between the road and you is open,
+and wrong the moment something is in the way: stand in the trees and the
+nearest point has a wood between it and you, so the van gives up at the
+kerb — while a point further round, with the tarmac of the lot in front
+of it, would have got most of the way. So every free place along the ring
+is walked and the one that ENDS nearest you wins, and the search stops
+the moment one lands within a step of the stop distance, which out in the
+car park is the first one it tries.
+
+Stand in the middle of the lot and a van leaves the road, drives between
+the rows and stops with its nose forty units off you and its side door
+facing you, three to five seconds after you fired. Stand in the trees and
+it stops at the treeline — a van is not going into a pine wood, and the
+crew that gets out of it will walk in, because THEY respect the trunks
+(see Forest.blocks). Stand behind the building and it gets as far as the
+frontage lane and the crew walks the rest: the service yard is drivable
+ground with no drivable ground connecting it to the lot, which is a fact
+about the map rather than a shortcoming of the driving. The loop is
+published by the map as four corners (level.swatRing) and every question
+about where a van goes is a distance round it; see js/responders.js,
+which is where the ring arithmetic lives.
 
 THEN THE CREW. Parked, it unloads a trooper every second and a half onto
 the ground, six of them, out of the side facing YOU — which used to be

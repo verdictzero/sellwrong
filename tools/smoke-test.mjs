@@ -4790,9 +4790,19 @@ section('the van');
            behind the building, where no road goes. */
         check('and pulling in off the road only ever gets it closer', near <= fromRing + 1,
           `${near.toFixed(0)} against ${fromRing.toFixed(0)} on the road`);
-        if (/car park|west end/.test(where))
+        if (/car park|west end/.test(where)) {
           check('and out in the lot that is much closer than the doors', near < fromDoors * 0.5,
             `${near.toFixed(0)} against ${fromDoors.toFixed(0)}`);
+          /* AND IT NEARLY HITS YOU, at the user's request. `stop` is to
+             the MIDDLE of a van, and the walk toward you gives up one
+             step short of it, so the closest the arithmetic can come is
+             stop + STEP — and the nose is another half length past
+             that, which is what you actually see stop in front of you. */
+          const nose = near - car.carLength(police) / 2;
+          note(`${where}, the nose`, `${nose.toFixed(0)} units off you`);
+          check('and it stops a nose off you rather than a length',
+            near <= S.stop + 36 && nose < 60, `${near.toFixed(0)} to the middle, ${nose.toFixed(0)} to the nose`);
+        }
         /* the route: on the road the whole way, and it ends at the stand */
         const route = R.routeTo(st, 'west');
         const end = route[route.length - 1];
@@ -4801,6 +4811,25 @@ section('the van');
         check('and every corner of it is on tarmac',
           route.every(q => R.drivable(q.x, q.y)),
           route.filter(q => !R.drivable(q.x, q.y)).map(q => level.sectorAt(q.x, q.y)?.name || 'off the map').join('; '));
+        /* AND IT DOES NOT COME FROM THE END OF THE WORLD, at the user's
+           request. The map's way in starts where the road leaves the
+           map, nine thousand units out, which is five seconds of a van
+           driving down a road nobody in the car park can see. Coming
+           FOR you it starts at the junction with a run-in behind it —
+           the same road, the same direction, a much shorter piece of
+           it. Both routes are built here and held against each other,
+           because the long one is still right for a night watched from
+           inside the shop. */
+        const len = r => r.reduce((n, q, i) => i ? n + Math.hypot(q.x - r[i - 1].x, q.y - r[i - 1].y) : 0, 0);
+        const far = R.routeTo(st, 'west', 0, false);
+        if (where === 'out in the car park')
+          note('the two ways in', `${len(route).toFixed(0)} units coming for you, ${len(far).toFixed(0)} coming for the doors`);
+        check('coming for you they start at the junction, not at the end of the road',
+          len(route) < len(far) - 6000 && Math.abs(len(route) - len(far)) > 0,
+          `${len(route).toFixed(0)} against ${len(far).toFixed(0)}`);
+        check('and the run-in behind the junction is the length it says it is',
+          Math.abs(Math.hypot(route[1].x - route[0].x, route[1].y - route[0].y) - S.runIn) < 1,
+          `${Math.hypot(route[1].x - route[0].x, route[1].y - route[0].y).toFixed(0)} of ${S.runIn}`);
       }
       /* THE ONE THAT IS ACTUALLY DRIVEN: out in the lot, where the van
          leaves the road and pulls up beside you. */
@@ -4898,7 +4927,14 @@ section('the van');
       let t2 = 1;
       for (; t2 < 4000 && !fresh.responders.vans.some(q => q.state === 'parked'); t2++) { fp.health = 100; fresh.tic(); }
       note('trigger to tyres', `${t2} tics, ${(t2 / 35).toFixed(1)}s from the shot to a van standing`);
-      check('and a van is standing within twenty seconds of the shot', t2 < 20 * 35, `${(t2 / 35).toFixed(1)}s`);
+      /* SIX SECONDS, at the user's request, where it was twenty and
+         then fourteen. Three things bought it and all three are in
+         js/responders.js and js/vehicles.js: sixty units a tic instead
+         of thirty, a run-in at the junction instead of nine thousand
+         units of through road, and a stop a nose short instead of a
+         length. This fixture starts where the player starts, which is
+         out on the verge — the case the user was complaining about. */
+      check('and a van is standing within six seconds of the shot', t2 < 6 * 35, `${(t2 / 35).toFixed(1)}s`);
       check('and it came from the nearer end of the road',
         fresh.responders.vans[0].side === fresh.responders.sideFor(fresh.responders.vans[0].stand.ring));
     }
@@ -4981,17 +5017,34 @@ section('the van');
          in this game that moves when nothing is happening, so it is
          measured as a range over a whole breath rather than as a value:
          a number that is always 34 is a number, and a number that goes
-         between 29 and 39 is a vehicle being held up by something. */
+         between 29 and 39 is a vehicle being held up by something.
+         Sampled first over the drive, and then over a breath standing,
+         because those are two different code paths — see ArmyApc.tic,
+         which is the only thing in the file that sets cz every tic. */
       const one = apcs()[0];
+      const body = car.carHeight(apc) / 2;
+      const air = seen => [Math.min(...seen) - body, Math.max(...seen) - body];
+      let n = 0;
+      {
+        const seen = [];
+        for (; n < 6000 && !apcs().some(v => v.state === 'parked'); n++) { ga.tic(); seen.push(one.cz - one.ground); }
+        const [lo, hi] = air(seen);
+        const parked0 = apcs().find(v => v.state === 'parked');
+        note('the APC', `${n} tics to a standing carrier, ${parked0 ? parked0.driven.toFixed(0) : '-'} units driven, ` +
+          `${lo.toFixed(1)} to ${hi.toFixed(1)} units of air under it on the way`);
+        check('it rides off the tarmac on the road rather than driving on it',
+          lo > veh.ArmyApc.HOVER * 0.7, `${lo.toFixed(1)} units of air`);
+      }
+      const parked = apcs().find(v => v.state === 'parked');
+      check('an APC arrives and stands', !!parked);
+      check('and it is on ground a vehicle can be on', Ra.drivable(parked.x, parked.y),
+        ga.level.sectorAt(parked.x, parked.y)?.name);
       {
         const seen = [];
         for (let i = 0; i < 150; i++) { ga.tic(); seen.push(one.cz - one.ground); }
-        const lo = Math.min(...seen), hi = Math.max(...seen);
-        const body = car.carHeight(apc) / 2;
-        note('the hover', `${(lo - body).toFixed(1)} to ${(hi - body).toFixed(1)} units of air under it, ` +
-          `breathing ${(hi - lo).toFixed(1)}`);
-        check('it rides off the tarmac rather than standing on it',
-          lo - body > veh.ArmyApc.HOVER * 0.7, `${(lo - body).toFixed(1)} units of air`);
+        const [lo, hi] = air(seen);
+        note('standing still', `${lo.toFixed(1)} to ${hi.toFixed(1)} units of air, breathing ${(hi - lo).toFixed(1)}`);
+        check('and it is still hovering now that it has stopped', lo > veh.ArmyApc.HOVER * 0.7);
         check('and it breathes, which is the only thing in this game that moves while it is still',
           hi - lo > 4 && hi - lo < 14, `${(hi - lo).toFixed(1)} units of travel`);
         check('and the van beside it does not', Ra.vans.some(v => v.force === Ra.swat && v.hover === 0));
@@ -5006,17 +5059,6 @@ section('the van');
         check('and it is as tall as the gap under it plus the hull of it',
           b.every(q => q.height > car.carHeight(apc)), `${b[0].height} against a hull of ${car.carHeight(apc).toFixed(0)}`);
       }
-
-      /* --- and it gets here ------------------------------------------ */
-      let n = 0;
-      for (; n < 6000 && !apcs().some(v => v.state === 'parked'); n++) ga.tic();
-      const parked = apcs().find(v => v.state === 'parked');
-      note('the APC', `${n} tics to a standing carrier, ${parked ? parked.driven.toFixed(0) : '-'} units driven`);
-      check('an APC arrives and stands', !!parked);
-      check('and it is on ground a vehicle can be on', Ra.drivable(parked.x, parked.y),
-        ga.level.sectorAt(parked.x, parked.y)?.name);
-      check('and it is still hovering now that it has stopped',
-        parked.cz - parked.ground - car.carHeight(apc) / 2 > veh.ArmyApc.HOVER * 0.7);
 
       /* --- and soldiers get out of it -------------------------------- */
       for (let i = 0; i < A.unloadEvery * 3 + 60 && !ga.actors.some(a => a.type === 'ARMY'); i++) ga.tic();

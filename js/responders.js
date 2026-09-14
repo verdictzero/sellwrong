@@ -173,11 +173,43 @@ export const SWAT = {
      `push` is how far off the road one will drive to reach you, `stop`
      is how close it parks, and `convoyGap` is how far back down the
      road the second and third of a send start, so they arrive as a
-     line rather than inside one another. */
+     line rather than inside one another.
+
+     AND `stop` IS A HUNDRED AND TWENTY, at the user's request, which is
+     the distance to the MIDDLE of a van two hundred and fourteen long.
+     Its nose therefore ends up thirteen units off you: they do not pull
+     up beside you, they nearly hit you and stop. Stand still while one
+     arrives and the last tic of its approach runs you down (see runOver
+     in js/vehicles.js), which is the correct thing to happen to
+     somebody who stood still. It was two hundred and sixty — a van's
+     length of daylight, which the user called too far away.
+
+     AND `push` IS TWENTY-SIX HUNDRED, so that reaching you means
+     crossing the lot rather than leaving the kerb. What stops one is
+     the tarmac running out, not the budget: the walk toward you gives
+     up the moment the ground is not drivable, so the number only ever
+     buys distance over ground a van could really cross. */
   stand: 560,
-  push: 1400,
-  stop: 260,
+  push: 2600,
+  stop: 120,
   convoyGap: 460,
+  /* AND WHERE THEY COME FROM WHEN YOU ARE OUTSIDE, which is the other
+     half of "as rapidly as possible". The map's ways in start at the
+     END of the through road, nine thousand units out, because that is
+     where the road leaves the world and because a van appearing at the
+     junction out of nothing is a van that was never anywhere. That is
+     the right answer for a night you are watching from inside the
+     shop and the wrong one for a night you are standing in the middle
+     of: five of the fourteen seconds were a van driving down a road
+     nobody can see.
+
+     So when they are coming FOR you they enter at the junction with
+     this much road behind them — fifteen hundred units, twenty-five
+     tics at sixty, far enough back to be a vehicle arriving and not
+     far enough to be a wait. Inside the building nothing changes:
+     they come the whole length of the road, because you are not
+     watching it. */
+  runIn: 1500,
 };
 
 /* ---------------------------------------------------------------------
@@ -218,7 +250,11 @@ export const ARMY = {
   troopers: 4, maxTroopers: 40,
   crew: 8, unloadEvery: 40, trickle: 11 * TICRATE, minTrickle: 3 * TICRATE,
   bays: 9,
-  stand: 700, push: 1400, stop: 300, convoyGap: 620,
+  /* the same three as the SWAT's, read against a carrier a fifth longer
+     and half again as wide: they stand further apart, they stop a
+     little further out because there is more of them to stop, and they
+     come in off the same short run at the junction. */
+  stand: 700, push: 2600, stop: 150, convoyGap: 620, runIn: 1500,
 };
 
 /* ---------------------------------------------------------------------
@@ -579,7 +615,11 @@ export class Responders {
     const ux = dx / d, uy = dy / d;
     const reach = Math.min(N.push, Math.max(0, d - N.stop));
     let gone = 0, x = on.x, y = on.y;
-    const STEP = 70;
+    /* THIRTY-FIVE, not seventy. The walk gives up a whole step short of
+       the reach, so the step is the slack in how close one gets — at
+       seventy that was most of the hundred and twenty it is aiming for,
+       and a van meant to stop a nose from you stopped two. */
+    const STEP = 35;
     while (gone + STEP <= reach) {
       const nx = x + ux * STEP, ny = y + uy * STEP;
       if (!this.drivable(nx, ny)) break;
@@ -619,15 +659,38 @@ export class Responders {
       at = this.doorsPoint() || at;
     }
     if (!at) return null;
-    /* Thirty-three places along the ring, which is what the ceiling on
-       vehicles (maxVans) needs to be reachable rather than a number the
-       search quietly stops short of. */
+    /* THE BEST OF THEM, NOT THE FIRST OF THEM, at the user's request.
+       Thirty-three places along the ring, working outward from the one
+       nearest you — which is also what the ceiling on vehicles
+       (maxVans) needs to be reachable rather than a number the search
+       quietly stops short of.
+
+       It used to take the first place that was free, which is right
+       whenever the ground between the road and you is open: the nearest
+       point on the ring drives straight at you and stops a nose short.
+       It is wrong the moment something is IN THE WAY. Stand in the
+       trees and the nearest point on the ring has a wood between it and
+       you, so the van gives up at the kerb fifteen hundred units off —
+       while a point further round, with the tarmac of the lot in front
+       of it, would have got most of the way. Same behind the building,
+       where the nearest point has the shop in the way.
+
+       So every free slot is walked and the one that ENDS nearest you
+       wins. The walk is what costs — a few hundred sector lookups — so
+       it stops the moment one of them lands within a step of `stop`,
+       which in the car park is the first slot it tries and no cost at
+       all. It is only the awkward places that pay, and they are the
+       places it is for. */
+    let best = null, bd = Infinity;
     for (let k = 0; k <= 16; k++) {
       const slot = k === 0 ? 0 : (k & 1 ? (k + 1) >> 1 : -(k >> 1));
       const s = this.chaseStand(at, slot, N);
-      if (this.standClear(s, N)) return s;
+      if (!this.standClear(s, N)) continue;
+      const d = Math.hypot(s.x - at.x, s.y - at.y);
+      if (d < bd) { bd = d; best = s; }
+      if (bd <= N.stop + 36) break;          // as close as the walk can get
     }
-    return null;
+    return best;
   }
 
   /** The front of the shop: the middle bay, which is the first one the
@@ -650,13 +713,33 @@ export class Responders {
 
   /** In from one end of the road, round the ring the short way, and in
    *  to the stand. `back` starts it that far further down the road, so
-   *  a convoy arrives as a line rather than as one van. */
-  routeTo(stand, side, back = 0) {
+   *  a convoy arrives as a line rather than as one van.
+   *
+   *  AND IF THEY ARE COMING FOR YOU they skip the road, at the user's
+   *  request: the way in starts `runIn` short of the junction rather
+   *  than nine thousand units out at the end of the world, because
+   *  those nine thousand units are five seconds of a van driving down a
+   *  road that nobody standing in the car park can see. Inside the
+   *  building it is unchanged — you are not watching the road, and a
+   *  van that has come the whole length of it is the same van.
+   *
+   *  `sprint` defaults to whether they are chasing, and is an argument
+   *  so the two routes can be held against each other. */
+  routeTo(stand, side, back = 0, sprint = this.chasing) {
     const lv = this.game.level;
     const routes = lv.swatRoutes;
     if (!routes || !this.ring) return null;
-    const way = (routes[side] || Object.values(routes)[0]).map(p => ({ x: p.x, y: p.y }));
-    if (back > 0 && way.length >= 2) {
+    const N = (this.forces.find(f => f.def.key === 'swat') || { num: SWAT }).num;
+    const full = (routes[side] || Object.values(routes)[0]).map(p => ({ x: p.x, y: p.y }));
+    let way = full;
+    if (sprint && full.length >= 2) {
+      /* the last leg of the way in, walked backwards from the junction:
+         the same road, the same direction, a much shorter piece of it */
+      const a = full[full.length - 2], b = full[full.length - 1];
+      const d = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      const run = Math.min((N.runIn || 0) + back, d);
+      way = [{ x: b.x - (b.x - a.x) / d * run, y: b.y - (b.y - a.y) / d * run }, { x: b.x, y: b.y }];
+    } else if (back > 0 && way.length >= 2) {
       const a = way[0], b = way[1];
       const d = Math.hypot(b.x - a.x, b.y - a.y) || 1;
       a.x -= (b.x - a.x) / d * back;
