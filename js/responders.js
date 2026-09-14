@@ -208,14 +208,16 @@ export const SWAT = {
      road the second and third of a send start, so they arrive as a
      line rather than inside one another.
 
-     AND `stop` IS A HUNDRED AND TWENTY, at the user's request, which is
-     the distance to the MIDDLE of a van two hundred and fourteen long.
-     Its nose therefore ends up thirteen units off you: they do not pull
-     up beside you, they nearly hit you and stop. Stand still while one
-     arrives and the last tic of its approach runs you down (see runOver
-     in js/vehicles.js), which is the correct thing to happen to
-     somebody who stood still. It was two hundred and sixty — a van's
-     length of daylight, which the user called too far away.
+     AND `stop` IS THREE HUNDRED, which is the third number it has been
+     and the user's second thought about it. Two hundred and sixty was
+     called too far away; a hundred and twenty put the nose thirteen
+     units off your face, which is what "almost run into" asks for and
+     turned out to be too much of it. Three hundred is to the MIDDLE of
+     a van two hundred and fourteen long, so the nose stops about two
+     hundred off — half a van, near enough to be in your way and far
+     enough to be a van rather than a wall. Braking into it rather than
+     stopping dead is the other half of why it reads differently now;
+     see DRIVE_BRAKE in js/vehicles.js.
 
      AND `push` IS TWENTY-SIX HUNDRED, so that reaching you means
      crossing the lot rather than leaving the kerb. What stops one is
@@ -224,7 +226,7 @@ export const SWAT = {
      buys distance over ground a van could really cross. */
   stand: 560,
   push: 2600,
-  stop: 120,
+  stop: 300,
   convoyGap: 460,
   /* AND WHERE THEY COME FROM WHEN YOU ARE OUTSIDE, which is the other
      half of "as rapidly as possible". The map's ways in start at the
@@ -236,13 +238,28 @@ export const SWAT = {
      of: five of the fourteen seconds were a van driving down a road
      nobody can see.
 
-     So when they are coming FOR you they enter at the junction with
-     this much road behind them — fifteen hundred units, twenty-five
-     tics at sixty, far enough back to be a vehicle arriving and not
-     far enough to be a wait. Inside the building nothing changes:
-     they come the whole length of the road, because you are not
-     watching it. */
-  runIn: 1500,
+     So when they are coming FOR you they do not drive the road at all.
+     They come into being ON IT, `runIn` back from wherever they leave
+     it — eleven hundred units, about two seconds once the braking and
+     the standing start are paid for — which is the "closer" half of the
+     user's request.
+
+     AND OUT OF SIGHT, which is the other half and the reason this is a
+     search rather than a number. Eleven hundred units is four van
+     lengths: near enough to see one appear if you happen to be looking
+     that way. So the point is walked further back, half a thousand at a
+     time, for as long as it is inside your view — see trimEntry and
+     canSee. Face the road and they come from further off; face the shop
+     and they are on you in two seconds from somewhere behind your
+     shoulder. Neither case ever shows you a vehicle arriving out of
+     nothing, which is the only thing that actually had to be true.
+
+     Inside the building nothing changes: they come the whole length of
+     the road from the end of the world, because you are not watching
+     it. */
+  runIn: 1100,
+  runInStep: 500,                        // and how much further back if you are looking
+  runInTries: 8,                         // before it gives up and comes anyway
 };
 
 /* ---------------------------------------------------------------------
@@ -287,7 +304,7 @@ export const ARMY = {
      and half again as wide: they stand further apart, they stop a
      little further out because there is more of them to stop, and they
      come in off the same short run at the junction. */
-  stand: 700, push: 2600, stop: 150, convoyGap: 620, runIn: 1500,
+  stand: 700, push: 2600, stop: 360, convoyGap: 620, runIn: 1100,
 };
 
 /* ---------------------------------------------------------------------
@@ -320,6 +337,12 @@ export function pressureAfter(tics) {
 }
 
 const rnd = () => pRandom() / 255;
+
+/* HOW WIDE "YOU ARE LOOKING AT IT" IS. The camera is seventy-two degrees
+   vertical on a frame about 1.6 wide, which is a hundred across, so half
+   of it is fifty; this is a little over, because a vehicle appearing at
+   the very edge of the frame is still a vehicle appearing. See canSee. */
+const SEE_HALF = 1.05;                   // radians, about sixty degrees
 
 export class Responders {
   constructor(game) {
@@ -740,21 +763,74 @@ export class Responders {
   freeBay(f = this.swat) {
     const bays = this.game.level.swatBays;
     if (!bays || !bays.length) return null;
-    const taken = new Set(this.vans.map(v => v.bay));
+    /* AND A WRECK DOES NOT HOLD ONE. It never came up while they were
+       fireproof and nothing ever ended one; now that the stream does,
+       burning a van out of the fire lane has to give the lane back or
+       the bay is held for ever by a thing that is not there. */
+    const taken = new Set(this.liveVans.map(v => v.bay));
     return bays.slice(0, f.num.bays).find(b => !taken.has(b)) || null;
+  }
+
+  /** Can the player see this point? The camera is seventy-two degrees
+   *  vertical on a wide frame, which is a hundred across; this asks a
+   *  degree or two wider than that, because a vehicle appearing at the
+   *  very edge of the frame is a vehicle appearing. No wall check —
+   *  what is being avoided is the POP, and a van that materialises
+   *  behind a wall you are facing is not one. */
+  canSee(x, y) {
+    const p = this.game.player;
+    if (!p || p.dead) return false;
+    const a = Math.atan2(y - p.y, x - p.x) - p.angle;
+    return Math.abs(Math.atan2(Math.sin(a), Math.cos(a))) < SEE_HALF;
+  }
+
+  /** A point `dist` back along a polyline from its end, and the index of
+   *  the vertex before it. Pure arithmetic, for the test. */
+  static backAlong(way, dist) {
+    let d = dist;
+    for (let i = way.length - 1; i > 0; i--) {
+      const a = way[i - 1], b = way[i];
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      if (d <= len) {
+        const f = len ? d / len : 0;
+        return { i: i - 1, x: b.x + (a.x - b.x) * f, y: b.y + (a.y - b.y) * f };
+      }
+      d -= len;
+    }
+    return { i: 0, x: way[0].x, y: way[0].y };
+  }
+
+  /** Where on this road a vehicle coming for you should come into being:
+   *  `dist` back from the end of it, and further back while that is
+   *  somewhere you are looking. Returns the road, cut short. */
+  trimEntry(way, dist, N) {
+    if (way.length < 2) return way;
+    let want = dist, e = Responders.backAlong(way, want);
+    for (let k = 0; k < (N.runInTries || 0) && this.canSee(e.x, e.y); k++) {
+      want += N.runInStep || 400;
+      const next = Responders.backAlong(way, want);
+      if (next.i === e.i && next.x === e.x && next.y === e.y) break;   // the road has run out
+      e = next;
+    }
+    return [{ x: e.x, y: e.y }, ...way.slice(e.i + 1)];
   }
 
   /** In from one end of the road, round the ring the short way, and in
    *  to the stand. `back` starts it that far further down the road, so
    *  a convoy arrives as a line rather than as one van.
    *
-   *  AND IF THEY ARE COMING FOR YOU they skip the road, at the user's
-   *  request: the way in starts `runIn` short of the junction rather
-   *  than nine thousand units out at the end of the world, because
-   *  those nine thousand units are five seconds of a van driving down a
-   *  road that nobody standing in the car park can see. Inside the
-   *  building it is unchanged — you are not watching the road, and a
-   *  van that has come the whole length of it is the same van.
+   *  AND IF THEY ARE COMING FOR YOU they do not drive the road at all,
+   *  at the user's request. The whole way in is built as it always was
+   *  and then CUT SHORT from its far end: they come into being on the
+   *  road `runIn` back from wherever they leave it, and further back
+   *  than that for as long as the spot is inside your view. The nine
+   *  thousand units out to where the road leaves the world are five
+   *  seconds of a van nobody can see; inside the building it is
+   *  unchanged, because there you are not watching.
+   *
+   *  THE CUT ONLY EVER TOUCHES THE ROAD. The lead — the last leg, off
+   *  the tarmac and in toward you — is appended afterwards and is never
+   *  trimmed, or a van would come into being in the middle of the lot.
    *
    *  `sprint` defaults to whether they are chasing, and is an argument
    *  so the two routes can be held against each other. */
@@ -763,16 +839,8 @@ export class Responders {
     const routes = lv.swatRoutes;
     if (!routes || !this.ring) return null;
     const N = (this.forces.find(f => f.def.key === 'swat') || { num: SWAT }).num;
-    const full = (routes[side] || Object.values(routes)[0]).map(p => ({ x: p.x, y: p.y }));
-    let way = full;
-    if (sprint && full.length >= 2) {
-      /* the last leg of the way in, walked backwards from the junction:
-         the same road, the same direction, a much shorter piece of it */
-      const a = full[full.length - 2], b = full[full.length - 1];
-      const d = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-      const run = Math.min((N.runIn || 0) + back, d);
-      way = [{ x: b.x - (b.x - a.x) / d * run, y: b.y - (b.y - a.y) / d * run }, { x: b.x, y: b.y }];
-    } else if (back > 0 && way.length >= 2) {
+    let way = (routes[side] || Object.values(routes)[0]).map(p => ({ x: p.x, y: p.y }));
+    if (!sprint && back > 0 && way.length >= 2) {
       const a = way[0], b = way[1];
       const d = Math.hypot(b.x - a.x, b.y - a.y) || 1;
       a.x -= (b.x - a.x) / d * back;
@@ -782,6 +850,8 @@ export class Responders {
     way.push(...this.ringPath(this.ringNearest(join.x, join.y), stand.ring));
     const on = this.ringAt(stand.ring);
     way.push({ x: on.x, y: on.y });
+    /* everything so far is road; this is where it is cut short */
+    if (sprint) way = this.trimEntry(way, (N.runIn || 0) + back, N);
     for (const q of stand.lead) way.push({ x: q.x, y: q.y });
     const end = way[way.length - 1];
     end.angle = stand.angle;

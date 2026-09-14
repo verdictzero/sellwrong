@@ -278,12 +278,34 @@ class Vehicle {
        a wreck. `own` says so. */
     this.texture = opts.texture || fleet.texture;
     this.own = !!opts.own;
-    /* FIREPROOF, which for a vehicle is invulnerable: fire is the only
-       thing that ends one — shot to death is a char, and a char is a
-       fire — so a vehicle that fire does nothing to is one nothing does
-       anything to. The police van wears it, at the user's request; see
-       damage, ignite, startChar and blowUp, which all ask. */
-    this.fireproof = !!opts.fireproof;
+    /* HOW WELL IT TAKES A FIRE, in two numbers, both 1 for a car in the
+       lot and both much larger for anything the police arrive in.
+
+       The responders' vehicles used to be FIREPROOF — one flag, asked
+       in damage, ignite, startChar and blowUp, and for a vehicle that
+       is invulnerable, since fire is the only thing that ends one. At
+       the user's request they are not any more: they catch, they char
+       and they go up exactly like the customers' vans, MUCH more slowly.
+       Which is the better answer, because "you cannot" and "you can, at
+       a price" are different games and this one was always the second.
+
+         fireArmour   what fire's damage is divided by on the way in.
+                      Eight for a squad van: a hundred and fifty of
+                      health at a point and a half every ten tics is
+                      most of a minute of standing in flame
+
+         charFuse     what the blackening is multiplied by once the
+                      health is gone. Four for a squad van, so the part
+                      you watch — the coals crawling over it, the paint
+                      going, the light coming off the bay — is twenty
+                      seconds rather than five
+
+       Nine seconds for a hatchback against most of a minute for a van
+       with a crest on it. The TROOPERS are still fireproof and that has
+       not moved: the flamethrower is not the answer to a man in armour,
+       and it is now a slow answer to the thing he arrived in. */
+    this.fireArmour = Math.max(1, opts.fireArmour || 1);
+    this.charFuse = Math.max(1, opts.charFuse || 1);
     /* HOW HIGH IT RIDES OFF THE TARMAC, and zero for everything with
        wheels. The army's APC is a hover carrier and floats (see ArmyApc),
        which in here is one number and three consequences: the mesh is
@@ -368,8 +390,15 @@ class Vehicle {
    *  past hurting. */
   get whole() { return this.state === 'parked' || this.state === 'driving' || this.state === 'charring'; }
 
-  damage(n) {
-    if (!this.whole || this.fireproof) return;
+  /** `source` and `opts` are what Actor.damage hands a vehicle through
+   *  its blockers, and were thrown away here until the armour needed to
+   *  know whether what arrived was fire. */
+  damage(n, source = null, opts = {}) {
+    if (!this.whole) return;
+    /* THE ARMOUR IS ONLY AGAINST FIRE. A bullet, a bang and a van are
+       the same to a squad van as to a hatchback; what it is built to
+       stand in is the burning. */
+    if (opts.fire) n /= this.fireArmour;
     /* MORE DAMAGE TO ONE ALREADY CHARRING HURRIES IT: two tics off the
        fuse per point, so a car that has just started to blacken and is
        then hit by the bang next door goes early, and a chain reaction
@@ -380,7 +409,7 @@ class Vehicle {
   }
 
   ignite(tics = CATCH_TICS) {
-    if (!this.whole || this.fireproof) return;
+    if (!this.whole) return;
     const first = this.burning <= 0;
     this.burning = Math.max(this.burning, tics);
     if (first) this.catch();
@@ -415,7 +444,7 @@ class Vehicle {
     if (++this.burnTick < BURN_EVERY) return;
     this.burnTick = 0;
     this.fleet.game.fire?.ignite(this.x, this.y, 40);
-    this.damage(BURN_DAMAGE);
+    this.damage(BURN_DAMAGE, null, { fire: true });
   }
 
   /* ------------------------------------------------------------------
@@ -438,12 +467,15 @@ class Vehicle {
      goes, so the bay around a car about to go is lit like a hearth.
      ------------------------------------------------------------------ */
   startChar() {
-    if (this.state === 'charring' || !this.whole || this.fireproof) return;
+    if (this.state === 'charring' || !this.whole) return;
     const g = this.fleet.game;
     this.state = 'charring';
     this.char = 0;
     this.charTick = 0;
-    this.charTics = Math.round(between(CHAR_TICS));
+    /* AND IT TAKES `charFuse` TIMES AS LONG on anything armoured, which
+       is the half of the slowness you actually watch: five seconds of a
+       hatchback going black, twenty of a squad van. */
+    this.charTics = Math.round(between(CHAR_TICS) * this.charFuse);
     if (this.burning <= 0) { this.burning = this.charTics + 40; this.catch(); }
     /* out of the slab and into a mesh of its own */
     if (this.slab) { this.slab = null; this.fleet.dirty = true; }
@@ -498,7 +530,7 @@ class Vehicle {
      as it arrives; see the note at the top of the file.
      ------------------------------------------------------------------ */
   blowUp() {
-    if (!this.whole || this.fireproof) return;
+    if (!this.whole) return;
     const g = this.fleet.game, d = this.def;
     this.state = 'air';
     this.burning = 0;
@@ -862,21 +894,39 @@ class Chunk {
    map hands out (see level.swatRoutes), at a speed, with its three
    blockers carried along under it.
 
-   AND IT IS FIREPROOF, at the user's request, which for a vehicle is
-   invulnerable (see the flag in Vehicle): it does not catch, it does
-   not char, it does not go up, and a car going up in the next bay does
-   not touch it. It used to burn like the customers' vans and going up
-   was what stopped it unloading; nothing stops it now. The squad is
-   dealt with one trooper at a time, and the van is the road's end of a
-   pipe.
+   AND IT BURNS, at the user's request, which it did not for a while:
+   it was FIREPROOF, which for a vehicle is invulnerable, and the reason
+   was that going up was what used to stop it unloading. It is now
+   ARMOURED instead — fireArmour and charFuse in Vehicle — so the stream
+   ends one in most of a minute where it ends a hatchback in nine
+   seconds. Hold it on one and you get the bay back; wave it past and
+   you have wasted your tank. The crew that is already out does not care
+   either way, and the troopers themselves are still fireproof.
 
-   IT IS NOT A CAR PHYSICS EITHER. The position rides the polyline
-   exactly and the heading eases toward each segment's direction at a
-   fixed rate, which is enough: a van pulling round a T-junction at a
-   walking pace reads as a van pulling round a T-junction, and nothing
-   about how it got there is ever looked at twice. It stops where the
-   route ends, squares up along the front, and is a parked van from then
-   on — the responders decide what comes out of it.
+   AND IT IS A LITTLE BIT OF A CAR PHYSICS NOW, at the user's request.
+   The position still rides the polyline exactly — there is no grip, no
+   slip and no mass — but the SPEED along it is integrated rather than
+   assumed, and the body is hung off it:
+
+     it builds up to speed from a standing start, and it brakes for the
+     END of the route rather than for the next corner, on the oldest
+     trick in the book: the fastest it may be going is the speed from
+     which it could still stop in the distance it has left. So it comes
+     off the road already slowing and rolls the last two lengths into
+     its place rather than arriving at speed and switching off
+
+     and the body DIPS when it does that. A damped spring on the pitch,
+     driven by the acceleration, so the nose goes down under braking,
+     the tail squats under power, and when it stops the whole thing
+     rocks back once and settles. A second spring on the roll, driven by
+     how hard it is turning, leans it out of a corner. Neither of them
+     is simulated from a suspension: they are the acceleration, read
+     twice, through a spring that overshoots. It costs four numbers and
+     it is the difference between a model sliding along a line and a van
+     pulling up.
+
+   It stops where the route ends, squares up along the front, and is a
+   parked van from then on — the responders decide what comes out of it.
 
    AND IT DOES NOT STOP FOR ANYBODY. The lot is full of people running
    from a fire, and a squad van coming up the frontage lane at speed
@@ -903,15 +953,50 @@ class Chunk {
    AND THE HEADING KEEPS UP, which is the one thing the speed can break.
    The POSITION rides the polyline exactly whatever the speed is; it is
    the drawn yaw that eases, and at thirty units a tic 0.09 a tic was
-   enough to be square through a corner. At sixty it is not — a van
-   would be sideways down the whole of the frontage lane — so the turn
-   rate goes up with it, and what is left is a slide through the
-   junction, which is the right amount of wrong. */
-const DRIVE_SPEED = 60;          // units a tic
-const DRIVE_TURN = 0.17;         // radians a tic the heading may change
+   enough to be square through a corner.
+
+   AND THEN THE USER SAID SLOWER, which is the fourth number and this
+   one: THIRTY-SIX, and it is a top speed now rather than a constant, so
+   the average over an approach is well under it. What pays for the
+   slowness is the distance — they come into being just out of sight
+   rather than at the junction (see `runIn` in js/responders.js) — so
+   the clock from the trigger barely moves and what you see is a vehicle
+   driving rather than a vehicle teleporting.
+   -------------------------------------------------------------------- */
+/* exported for the test, which holds the drive it measures against the
+   numbers rather than against a remembered figure */
+export const DRIVE_SPEED = 36;   // the fastest it will go, units a tic
+export const DRIVE_ACCEL = 0.75; // and how quickly it gets there
+export const DRIVE_BRAKE = 0.85; // and how hard it can stop, units a tic a tic
+const DRIVE_TURN = 0.12;         // radians a tic the heading may change
 const RUNOVER_DMG = 220;         // what the front of a van does to a person
 const RUNOVER_PLAYER = 28;       // and to you
 const SIREN_EVERY = 19;          // tics between the two notes
+
+/* THE BODY ON TWO SPRINGS, which is the whole of the weight shift and
+   is not a suspension: it is the acceleration, read twice, through
+   something that overshoots.
+
+   `PITCH_PER_G` turns acceleration into a target angle — negative when
+   braking, which is nose down, because the mesh's own +Z rotation
+   raises the nose (see carMesh, which orders the Euler YXZ so that
+   pitch and roll are in the vehicle's own frame). `ROLL_PER_G` does the
+   same for how hard it is turning, and leans the body OUT of the bend
+   the way a real one does, because it is the outside springs that
+   compress.
+
+   SPRING and DAMP are what make it read as weight rather than as a
+   tilt. Undamped it wobbles for ever; critically damped it slides into
+   place with no character at all; at these numbers it overshoots once
+   and settles in about a second, which is what a van on its springs
+   does when it stops. */
+const PITCH_PER_G = 0.085;       // radians per unit-a-tic-a-tic
+const ROLL_PER_G = 0.020;
+const PITCH_MAX = 0.11;          // and the most it will ever lean, either way
+const ROLL_MAX = 0.09;
+const SPRING = 0.075;
+const DAMP = 0.21;
+const ASLEEP = 1e-4;             // below this it has stopped moving and is left alone
 
 export class SwatVan extends Vehicle {
   /**
@@ -929,19 +1014,38 @@ export class SwatVan extends Vehicle {
       x: start.x, y: start.y, z: sec ? sec.floor : 0,
       angle: Math.atan2(next.y - start.y, next.x - start.x),
       light: sec ? sec.light : 0.74, sky: sec ? (sec.sky ?? (sec.outdoor ? 1 : 0)) : 1,
-      paint: [1, 1, 1], texture, own: true, fireproof: true, state: 'driving',
+      paint: [1, 1, 1], texture, own: true, state: 'driving',
+      /* IT BURNS, JUST SLOWLY — see fireArmour in Vehicle. Eight times
+         the fire to get through it and four times as long turning
+         black: most of a minute against a hatchback's nine seconds. */
+      fireArmour: 8, charFuse: 4,
     });
     this.route = route.slice(1);
+    /* HOW FAR IT STILL HAS TO GO FROM EACH POINT ON, worked out once so
+       the braking can aim at the END of the route rather than at the
+       next corner — which is the difference between a van that slows
+       into its place and a van that slows at every bend. */
+    this.tail = [];
+    let acc = 0;
+    for (let i = this.route.length - 1; i >= 0; i--) {
+      this.tail[i] = acc;
+      if (i > 0) acc += Math.hypot(this.route[i].x - this.route[i - 1].x, this.route[i].y - this.route[i - 1].y);
+    }
     this.driven = 0;
+    this.speed = 0;                  // units a tic, integrated
+    this.pitchV = 0; this.rollV = 0; // and the two springs the body hangs on
     this.sirenTick = 0;
     this.sirenNote = 0;
     this.arrivedTic = -1;
-    /* WHAT IT SOUNDS LIKE COMING, and how hard it hits, both on the
-       instance rather than in a constant, because the APC behind it is
-       the same drive with a turbine instead of a siren and half a ton
-       more of it. See ArmyApc. */
+    /* WHAT IT SOUNDS LIKE COMING, how fast it goes and how hard it hits,
+       all on the instance rather than in a constant, because the APC
+       behind it is the same drive with a turbine instead of a siren and
+       half a ton more of it. See ArmyApc. */
     this.notes = ['siren', 'siren2'];
     this.noteEvery = SIREN_EVERY;
+    this.topSpeed = DRIVE_SPEED;
+    this.accel = DRIVE_ACCEL;
+    this.brake = DRIVE_BRAKE;
     this.runoverDmg = RUNOVER_DMG;
     this.runoverPlayer = RUNOVER_PLAYER;
   }
@@ -949,12 +1053,40 @@ export class SwatVan extends Vehicle {
   tic() {
     if (this.state === 'driving') { this.drive(); return; }
     super.tic();
+    /* AND THE BODY GOES ON ROCKING after it has stopped, because that is
+       where the whole thing is spent: a van brakes, the nose goes down,
+       it stands still and the springs push it back. Runs until the
+       spring is asleep and then never again. */
+    if (this.whole && (Math.abs(this.pitchV) > ASLEEP || Math.abs(this.rollV) > ASLEEP ||
+                       Math.abs(this.rz) > ASLEEP || Math.abs(this.rx) > ASLEEP)) {
+      this.suspension(0, 0);
+      this.place();
+    }
   }
 
   /** How far it is, in whole units, from the next point on its route. */
   get toNext() {
     const p = this.route[0];
     return p ? Math.hypot(p.x - this.x, p.y - this.y) : 0;
+  }
+
+  /** And how far from the end of it, which is what it brakes for. */
+  get toEnd() { return this.toNext + (this.tail[0] || 0); }
+
+  /**
+   * THE BODY, off two numbers and two springs. `accel` is what it did to
+   * its speed this tic and `turn` is what it did to its heading; between
+   * them they are every force a vehicle on a polyline can be said to
+   * feel. The target angles come straight off them and the springs are
+   * what make arriving at those angles look like weight.
+   */
+  suspension(accel, turn) {
+    const wantPitch = Math.max(-PITCH_MAX, Math.min(PITCH_MAX, accel * PITCH_PER_G));
+    const wantRoll = Math.max(-ROLL_MAX, Math.min(ROLL_MAX, turn * this.speed * ROLL_PER_G));
+    this.pitchV += (wantPitch - this.rz) * SPRING - this.pitchV * DAMP;
+    this.rollV += (wantRoll - this.rx) * SPRING - this.rollV * DAMP;
+    this.rz += this.pitchV;
+    this.rx += this.rollV;
   }
 
   drive() {
@@ -964,12 +1096,26 @@ export class SwatVan extends Vehicle {
     /* the heading, eased; the position, exact */
     const want = Math.atan2(p.y - this.y, p.x - this.x);
     const d = angleDiff(want, this.yaw);
-    this.yaw = angleNorm(this.yaw + Math.max(-DRIVE_TURN, Math.min(DRIVE_TURN, d)));
+    const turn = Math.max(-DRIVE_TURN, Math.min(DRIVE_TURN, d));
+    this.yaw = angleNorm(this.yaw + turn);
+    /* THE SPEED, AND WHAT IT IS ALLOWED TO BE. The fastest it may go is
+       whichever is smaller: its own top speed, or the speed it could
+       still stop from in the distance it has left to the END of the
+       route. That second one is the whole of the braking — v = sqrt(2 a
+       s), the oldest trick there is — and it means the van comes off the
+       ring already slowing and rolls the last two lengths into its
+       place. Below a crawl it is held at a crawl, or the last unit of
+       the approach takes a second and a half. */
+    const was = this.speed;
+    const stopping = Math.sqrt(2 * this.brake * Math.max(0, this.toEnd));
+    this.speed = Math.min(this.topSpeed, stopping, this.speed + this.accel);
+    this.speed = Math.max(this.speed, Math.min(1.2, this.toEnd));
     const left = this.toNext;
-    const step = Math.min(DRIVE_SPEED, left);
+    const step = Math.min(this.speed, left);
     this.x += Math.cos(want) * step; this.y += Math.sin(want) * step;
     this.driven += step;
-    if (left - step < 0.5) this.route.shift();
+    if (left - step < 0.5) { this.route.shift(); this.tail.shift(); }
+    this.suspension(this.speed - was, turn);
     if ((g.tics & 3) === 0) { this.updateSector(); this.cz = this.ridingHeight; }
     this.place();
     this.carryBlockers();
@@ -980,9 +1126,9 @@ export class SwatVan extends Vehicle {
       g.sound?.play(this.notes[this.sirenNote], this);
       this.sirenNote ^= 1;
     }
-    /* embers off the flash of the lights would be a lie, so nothing —
-       and nothing burns either, being fireproof; the line stands for a
-       vehicle that is not */
+    /* and it burns while it drives, which it could not while it was
+       fireproof: a van lit in the fire lane and sent on its way arrives
+       alight and goes up where it stands */
     if (this.burning > 0) this.burnTic();
   }
 
@@ -1024,7 +1170,12 @@ export class SwatVan extends Vehicle {
    *  from here on. */
   park() {
     this.state = 'parked';
+    this.speed = 0;
     if (this.parkAngle !== undefined) this.yaw = this.parkAngle;
+    /* THE NOSE IS STILL DOWN when it gets here and is left that way on
+       purpose: the springs in tic() take it from here, and what you see
+       is a van that has stopped and then settles, rather than one that
+       stopped and was level about it. */
     this.updateSector();
     this.cz = this.ridingHeight;
     this.place();
@@ -1103,6 +1254,21 @@ export class ArmyApc extends SwatVan {
     this.runoverPlayer = APC_RUNOVER_PLAYER;
     this.bobT = pRandom();          // no two of them breathe together
     this.hover = HOVER;
+    /* ARMOUR, AND MORE OF IT THAN THE VAN. Fourteen times the fire to
+       get through it and six times as long going black, which against a
+       hatchback's nine seconds is nearly two minutes of holding the
+       stream on one. It is still not fireproof — at the user's request
+       nothing on wheels or skirts is any more — it is simply the last
+       thing in the lot you would choose to spend a tank on. */
+    this.fireArmour = 14;
+    this.charFuse = 6;
+    /* AND IT IS HEAVIER TO DRIVE. Slower to wind up, slower to shed it,
+       and a lower top speed: a carrier is not a squad car, and the
+       weight shift reads harder for it because the springs are being
+       driven by a longer, flatter acceleration. */
+    this.topSpeed = DRIVE_SPEED * 0.82;
+    this.accel = DRIVE_ACCEL * 0.62;
+    this.brake = DRIVE_BRAKE * 0.70;
     this.cz = this.ridingHeight;
     /* it was built standing on the tarmac; stand it up and make the
        thing you cannot walk through as tall as it now is */

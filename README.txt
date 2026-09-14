@@ -1458,30 +1458,43 @@ They come in at whichever END OF THE ROAD is the shorter drive to where
 they are going — the two are nine thousand units out from the ring on
 either side, so guessing wrong was half a minute of tarmac.
 
-The van does SIXTY units a tic. It was fifteen, which was twice a running
-shopper; then thirty, which was a van with its lights on at two in the
-morning; sixty is two thousand units a second and is not a van any more
-and is not meant to be. It is something arriving rather than something
-driving.
+The van does THIRTY-SIX units a tic, and it is a top speed now rather
+than a constant. Fifteen was twice a running shopper; thirty was a van
+with its lights on at two in the morning; sixty was not a van at all, and
+the user said so. Thirty-six with a standing start and a braking stop
+averages well under itself, which is why the clock kept getting shorter
+while the driving got slower.
 
-AND IF THEY ARE COMING FOR YOU THEY SKIP THE ROAD. The map's way in
-starts where the road leaves the world, and crossing it was five of those
-fourteen seconds — five seconds of a van driving down a road that nobody
-standing in the car park can see. So when the destination is YOU rather
-than the doors, they enter at the junction with fifteen hundred units of
-run-in behind them: far enough back to be a vehicle arriving, not far
-enough to be a wait. Inside the building nothing changed — you are not
-watching the road, and a van that has come the whole length of it is the
-same van. The route is built the same way either way and the two are held
-against each other in the test: eleven thousand units coming for you
-against eighteen and a half thousand coming for the doors.
+AND IF THEY ARE COMING FOR YOU THEY DO NOT DRIVE THE ROAD AT ALL. The
+map's way in starts where the road leaves the world, and crossing it was
+five of those fourteen seconds — five seconds of a van driving down a
+road that nobody standing in the car park can see. So the whole way in is
+built as it always was and then CUT SHORT from its far end: they come
+into being on the road eleven hundred units back from wherever they leave
+it, which is about two seconds once the standing start and the braking
+are paid for.
 
-AND THE HEADING KEEPS UP WITH THE SPEED, which is the one thing a number
-like that can break. The POSITION rides the polyline exactly whatever the
-speed is; it is the drawn yaw that eases toward it, and at thirty units a
-tic 0.09 radians a tic was enough to be square through a corner. At sixty
-it is not, so the turn rate went up with it, and what is left is a slide
-through the junction, which is the right amount of wrong.
+AND NEVER SOMEWHERE YOU ARE LOOKING. Eleven hundred units is four van
+lengths — near enough to watch one appear, if you happen to be facing
+that way. So the spot is walked further back, five hundred at a time, for
+as long as it is inside your view: face the road and they come from
+further off, face the shop and they are on you in two seconds from behind
+your shoulder. It is a view cone and a walk down a polyline, both pinned
+on their own in the test, and the invariant the route is held to is the
+honest one — the place it comes into being is out of sight, OR the search
+spent every try it had. The second half has to be in it, because walking
+back along a RING can bring a point round the other side of the lot and
+into view again.
+
+THE CUT ONLY EVER TOUCHES THE ROAD. The lead — the last leg, off the
+tarmac and in toward you — is appended afterwards and never trimmed, or a
+van would come into being in the middle of the car park.
+
+Inside the building nothing changed: you are not watching the road, and a
+van that has come the whole length of it is the same van. Both routes are
+built the same way and the test holds them against each other: two and a
+half thousand units coming for you against eighteen thousand coming for
+the doors.
 
 It is the user's police van, an armoured assault truck loaded the same way
 the customers' van is (see THE ART) and drawn as its own mesh on its own
@@ -1490,13 +1503,39 @@ them, it MOVES: in along the through road from whichever end it was sent
 to, round the perimeter loop the short way, and off it toward you. The
 route is the map's (level.swatRing, level.swatRoutes, level.swatBays; the
 lot's own numbers are in scope there and nowhere else), the driving is
-SwatVan in js/vehicles.js, and it is not a car physics: the position rides
-the polyline exactly and the heading eases toward it at a fixed rate,
-which at a van's pace round a T-junction is all anybody looks at. It does
-not stop for anybody. A crowd running from the fire is a crowd in the
-road, and a squad van at speed goes through it; the player is shoved and
-hurt, which with a bullet is the only thing that gets through the
-fireproofing.
+SwatVan in js/vehicles.js. It does not stop for anybody: a crowd running
+from the fire is a crowd in the road, and a squad van at speed goes
+through it; the player is shoved and hurt.
+
+AND IT IS A LITTLE BIT OF A CAR PHYSICS NOW, at the user's request. The
+position still rides the polyline exactly — there is no grip, no slip and
+no mass — but the SPEED along it is integrated rather than assumed, and
+the body is hung off it.
+
+IT BRAKES FOR THE END OF THE ROUTE, not for the next corner, on the
+oldest trick in the book: the fastest it is allowed to be going is the
+speed from which it could still stop in the distance it has left. So it
+comes off the ring already slowing and rolls the last two lengths into
+its place, instead of arriving at speed and switching off. It leaves from
+a standing start for the same reason. The test records the speed and the
+distance remaining on every tic of a real drive and checks that the first
+never exceeds what the second allows.
+
+AND THE BODY SHIFTS ITS WEIGHT. Two damped springs, one on the pitch and
+one on the roll, driven by what the drive just did to its speed and its
+heading. The nose goes DOWN under braking — measured, not asserted: at
+two and a half degrees of pitch the nose sits nine units below the tail
+in world space — the tail squats under power, and it leans OUT of a bend
+the way a real one does, because it is the outside springs that compress.
+When it stops it rocks back through level and settles. Five degrees of
+dive, four and a half of squat, five of lean, and about a second to stop
+moving.
+
+Neither spring is simulated from a suspension: they are the acceleration,
+read twice, through something that overshoots. SPRING and DAMP are the
+whole of the character — undamped it wobbles for ever, critically damped
+it slides into place with nothing to say. It costs four numbers and it is
+the difference between a model sliding along a line and a van pulling up.
 
 THREE AT A TIME, at the user's request. Where one van used to be sent,
 three are: a convoy, nose to tail from the same end of the road, each
@@ -1513,13 +1552,14 @@ entering at the junction and walking the ring the short way round, and
 then off the road toward you for as far as the tarmac holds — up to
 twenty-six hundred units of it, stopping a HUNDRED AND TWENTY short.
 
-A hundred and twenty is to the MIDDLE of a van two hundred and fourteen
-long, so its nose ends up a couple of dozen units off you. It was two
-hundred and sixty, a van's length of daylight, and the user called it too
-far away. They do not pull up beside you now, they nearly hit you and
-stop — and if you stand still while one arrives, the last tic of its
-approach runs you down, which is the correct thing to happen to somebody
-who stood still.
+Three hundred is to the MIDDLE of a van two hundred and fourteen long, so
+its nose ends up about two hundred units off — half a van of daylight.
+This is the third number it has been and the user's second thought about
+it: two hundred and sixty was called too far away, a hundred and twenty
+put the nose thirteen units from your face, and three hundred is near
+enough to be in your way and far enough to be a van rather than a wall.
+Braking into it rather than stopping dead is the other half of why it
+reads differently; see below.
 
 AND IT IS THE BEST POINT ON THE RING, NOT THE NEAREST ONE. Taking the
 nearest is right whenever the ground between the road and you is open,
@@ -1621,22 +1661,42 @@ still cover and a crowd of them is not a crowd of clear shots; and
 anything that is not a round still lands, including their own van running
 them down. They come out already after you.
 
-THE POLICE ARE FIREPROOF, at the user's request — the troopers and the
-van both — and it is one flag on each (`fireproof` on the actor type in
-js/states.js, `fireproof` on the Vehicle) asked in the handful of places
-fire arrives: Actor.damage refuses anything flagged `fire`, which is the
-stream, the burning floor, a blast and a torch running past; Actor.ignite
-refuses to light one because a fireproof thing is not a flammable thing;
-the floor fire does not bother asking; and the van's damage, ignite,
-startChar and blowUp all return at the door, which for a vehicle is
-invulnerable, since fire is the only thing that ends one. The stream
-splashes off the armour and heats the tarmac under it. A car going up in
-the next bay does nothing to the van. Nothing eats a trooper to ash; the
-two ash states are gone with the flag that reached them. What still gets
-through: YOUR bullet, a van (his own, if he is standing in the lane when
-the next one comes), and the bore — which is the answer to them, and is
-rationed, which is the point. The flamethrower is not the answer to the
-SWAT any more than it is to a bullet.
+THE TROOPERS ARE FIREPROOF, at the user's request, and it is one flag
+(`fireproof` on the actor type in js/states.js) asked in the handful of
+places fire arrives: Actor.damage refuses anything flagged `fire`, which
+is the stream, the burning floor, a blast and a torch running past;
+Actor.ignite refuses to light one because a fireproof thing is not a
+flammable thing; and the floor fire does not bother asking. The stream
+splashes off the armour and heats the tarmac under it. Nothing eats a
+trooper to ash; the two ash states are gone with the flag that reached
+them. What still gets through: YOUR bullet, a van (his own, if he is
+standing in the lane when the next one comes), and the bore — which is
+the answer to them, and is rationed, which is the point. The flamethrower
+is not the answer to a man in armour any more than it is to a bullet.
+
+THEIR VEHICLES ARE NOT, ANY MORE. They were — the same flag on the
+Vehicle, which for a vehicle means invulnerable, since fire is the only
+thing that ends one — and at the user's second request they are ARMOURED
+instead: they catch, they char and they go up exactly like the customers'
+vans, MUCH more slowly. Which is the better answer, because "you cannot"
+and "you can, at a price" are different games and this one was always the
+second.
+
+Two numbers, both 1 for a car in the lot: `fireArmour` is what fire's
+damage is divided by on the way in, and `charFuse` is what the blackening
+is multiplied by once the health has gone. Eight and four for a squad
+van, fourteen and six for the APC. Measured in the browser by holding a
+fire on one of each:
+
+  a hatchback in the lot        9.7 seconds, flame to wreck
+  a squad van                  44.6
+  an APC                       about ninety
+
+The armour is only against FIRE. A bullet, a bang and a van are the same
+to a squad van as to a hatchback; what it is built to stand in is the
+burning. And burning one out of the fire lane gives the bay back, which
+never came up while nothing could end one — a wreck that still held its
+place would close that bay for the rest of the night.
 
 THE COLD STILL WORKS. A trooper freezes like anybody else, on his own
 drawing, and a block of ice with a rifle in it is the best joke the two
@@ -1706,9 +1766,11 @@ one flinch in eight instead of one in five, nineteen hundred of rifle
 range instead of fifteen, and a TWO-ROUND BURST off one frame at four to
 twenty a round with the scatter halved — two and a half times the damage
 out of one squeeze at half the spread, which across a car park is the
-difference between being shot at and being hit. They are fireproof on the
-same flag the SWAT wear and they freeze on the same one; the bore is
-still the answer and it is still rationed.
+difference between being shot at and being hit. The soldiers are
+fireproof on the same flag the SWAT wear and they freeze on the same one;
+the carrier is not, and is the most fire-resistant thing in the game —
+fourteen times the armour of a hatchback and six times as long turning
+black. The bore is still the answer to the men and it is still rationed.
 
 AND THE CARRIER HOVERS, which is the first vehicle in this game that does
 not touch the road. The model says nothing about it — a GLB has no
@@ -3505,11 +3567,10 @@ WHAT IS NOT DONE
     burning car park without noticing it, being fireproof. Nothing you
     can pour stops one; the bore is five kills a minute and the curve
     is more than that inside three
-  the police van cannot be ended by anything in the game. It was made
-    fireproof, and for a vehicle fireproof is invulnerable, since being
-    shot to death is a char and a char is a fire; so a stray bullet
-    from its own crew bounces off it too. Nine of them stand in the fire
-    lane for the rest of the night, unloading
+  a squad van standing in a fire takes forty-five seconds to go and an
+    APC about ninety, which is deliberate and is still a long time to
+    stand watching one. What it costs you is a tank; what it buys is a
+    bay back. Whether that is a trade anybody makes is not yet known
   the touch controls were proven on an emulated phone — real touch
     events through Chromium, both thumbs at once — and not yet on glass;
     the look speed, the dead zone and the button sizes want a real thumb

@@ -4779,25 +4779,64 @@ section('the van');
         check('and enough of it lets him out, running', !fp.frozen && !fp.dead && !fp.removed && fp.state.name === 'SWAT_RUN1', fp.state.name);
       }
 
-      /* --- and the van cannot be dealt with ------------------------- */
-      check('the police van is fireproof', v.fireproof);
-      const vh = v.health, vs = v.state;
-      v.ignite();
-      check('it does not catch', v.burning === 0 && v.state === vs && v.flames.length === 0);
-      v.damage(1000);
-      check('nor char when shot to death', v.state === vs && v.health === vh, `${v.state}, ${v.health}`);
-      gs.explode({ x: v.x + 40, y: v.y, z: v.ground }, { radius: 400, damage: 900, heat: 255 });
-      v.startChar(); v.blowUp();
-      check('nor go up for a bang beside it, nor when told to', v.state === vs && v.health === vh && v.burning === 0);
-      const out = v.unloaded;
-      /* ROOM UNDER THE BUDGET FIRST. Whether this van puts anybody out
-         is the trooper cap's business and the cap is saturated by now —
-         what is being measured here is that a van nothing can destroy
-         never stops, so clear the ground and watch it. */
-      for (const a of gs.actors) if (a.type === 'SWAT') a.remove();
-      for (let i = 0; i < 900; i++) { p.health = 100; gs.tic(); }
-      check('nine hundred tics later it is where it was, standing', v.state === 'parked' && R.liveVans.includes(v));
-      check('and still unloading', v.unloaded > out, `${v.unloaded} after ${out}`);
+      /* --- AND THE VAN BURNS, JUST SLOWLY -------------------------
+         At the user's request, and it did not for a while: it was
+         fireproof, which for a vehicle is invulnerable. It is ARMOURED
+         now — fire's damage divided on the way in, the blackening
+         multiplied on the way out — so the stream ends one, and takes
+         most of a minute doing it where a hatchback takes nine seconds.
+         Measured as a RATIO against the van in the next bay rather than
+         as a wall-clock number, because what the user asked for is
+         "much much slower than vans" and that is a comparison. */
+      {
+        check('the police van is not fireproof any more, it is armoured',
+          !v.fireproof && v.fireArmour > 4 && v.charFuse > 2,
+          `armour ${v.fireArmour}, fuse ${v.charFuse}`);
+        /* ONE TIC OF FIRE, ON EACH, from the same full health */
+        const lot = V.all.find(q => q.state === 'parked' && q.fireArmour === 1);
+        const h0 = v.health, l0 = lot.health;
+        v.damage(24, null, { fire: true });
+        lot.damage(24, null, { fire: true });
+        const took = h0 - v.health, tookLot = l0 - lot.health;
+        note('the same lick of flame', `${tookLot} off a hatchback, ${took.toFixed(1)} off a squad van`);
+        check('the same fire does a fraction of the damage to it',
+          took > 0 && took * 4 < tookLot, `${took.toFixed(1)} against ${tookLot}`);
+        /* and a bullet is a bullet to both, because the armour is only
+           against fire */
+        const h1 = v.health, l1 = lot.health;
+        v.damage(24, null, { shot: true });
+        lot.damage(24, null, { shot: true });
+        check('but a bullet is a bullet to both', h1 - v.health === l1 - lot.health, `${h1 - v.health} and ${l1 - lot.health}`);
+        lot.health = l0;
+        /* IT CATCHES. It could not before. */
+        v.ignite();
+        check('it catches now', v.burning > 0 && v.flames.length === 2);
+        /* AND HOW LONG IT TAKES, held against the same van unarmoured.
+           Counted off the arithmetic rather than by ticking a whole
+           minute of game: the burn is BURN_DAMAGE every BURN_EVERY tics
+           divided by the armour, and the char is its own roll times the
+           fuse. */
+        const VH = 150, BURN = 12, EVERY = 10, CHAR = 6 * 35;   // js/vehicles.js
+        const secs = q => (Math.ceil(VH / (BURN / q.fireArmour)) * EVERY + CHAR * q.charFuse) / 35;
+        const anApc = { fireArmour: 14, charFuse: 6 };
+        note('flame to wreck', `${secs(lot).toFixed(0)}s for a hatchback, ` +
+          `${secs(v).toFixed(0)}s for a squad van, ${secs(anApc).toFixed(0)}s for an APC`);
+        check('and it is many times slower than a van in the lot', secs(v) > secs(lot) * 4,
+          `${secs(v).toFixed(0)}s against ${secs(lot).toFixed(0)}s`);
+        check('and the APC is slower again than the van', secs(anApc) > secs(v));
+        /* AND IT DOES GO. Forced along rather than waited out — the
+           point is that the end of the road exists, not how long it is. */
+        v.damage(100000, null, { shot: true });
+        check('and enough of anything still ends it', v.state === 'charring', v.state);
+        v.charTics = 1; v.charTic();
+        check('and then it goes up like any other vehicle', !v.whole && !R.liveVans.includes(v), v.state);
+        /* AND IT GIVES THE BAY BACK, which never came up while nothing
+           could end one: a wreck that still held its place in the fire
+           lane would close that bay for the rest of the night. */
+        const bay = v.bay;
+        check('and the fire lane gets its bay back', !!bay && R.freeBay() !== null &&
+          !R.liveVans.some(q => q.bay === bay));
+      }
     }
 
     /* --- AND WHEREVER YOU ARE, THEY COME TO YOU --------------------
@@ -4837,15 +4876,20 @@ section('the van');
         if (/car park|west end/.test(where)) {
           check('and out in the lot that is much closer than the doors', near < fromDoors * 0.5,
             `${near.toFixed(0)} against ${fromDoors.toFixed(0)}`);
-          /* AND IT NEARLY HITS YOU, at the user's request. `stop` is to
-             the MIDDLE of a van, and the walk toward you gives up one
-             step short of it, so the closest the arithmetic can come is
-             stop + STEP — and the nose is another half length past
-             that, which is what you actually see stop in front of you. */
+          /* AND IT STOPS IN FRONT OF YOU, at the user's request and on
+             the user's second thought about it. `stop` is to the MIDDLE
+             of a van and the walk toward you gives up one step short of
+             it, so the closest the arithmetic can come is stop + STEP;
+             the nose is another half length past that, which is what
+             you actually see stop in front of you. A hundred and twenty
+             put that nose thirteen units off your face and the user
+             called it too close; three hundred is about two hundred,
+             which is half a van of daylight. */
           const nose = near - car.carLength(police) / 2;
           note(`${where}, the nose`, `${nose.toFixed(0)} units off you`);
-          check('and it stops a nose off you rather than a length',
-            near <= S.stop + 36 && nose < 60, `${near.toFixed(0)} to the middle, ${nose.toFixed(0)} to the nose`);
+          check('and it stops half a van in front of you, not against you',
+            near <= S.stop + 36 && nose > 120 && nose < 240,
+            `${near.toFixed(0)} to the middle, ${nose.toFixed(0)} to the nose`);
         }
         /* the route: on the road the whole way, and it ends at the stand */
         const route = R.routeTo(st, 'west');
@@ -4871,9 +4915,51 @@ section('the van');
         check('coming for you they start at the junction, not at the end of the road',
           len(route) < len(far) - 6000 && Math.abs(len(route) - len(far)) > 0,
           `${len(route).toFixed(0)} against ${len(far).toFixed(0)}`);
-        check('and the run-in behind the junction is the length it says it is',
-          Math.abs(Math.hypot(route[1].x - route[0].x, route[1].y - route[0].y) - S.runIn) < 1,
-          `${Math.hypot(route[1].x - route[0].x, route[1].y - route[0].y).toFixed(0)} of ${S.runIn}`);
+        /* AND THEY COME INTO BEING ON THE ROAD, NOT AT THE JUNCTION, at
+           the user's request: the whole way in is built and then cut
+           short from its far end. What has to be true is that there is
+           a real drive left — at least the run-in — and that it is a
+           small fraction of the road they used to come down. */
+        check('and what is left is a short drive rather than a long one',
+          len(route) >= S.runIn && len(route) < len(far) * 0.4,
+          `${len(route).toFixed(0)} against ${len(far).toFixed(0)}`);
+        /* AND NEVER SOMEWHERE YOU ARE LOOKING, which is the "off screen"
+           half. The point is walked further back for as long as it is
+           inside your view, so what has to hold is one of two things:
+           the place it comes into being is out of sight, or the search
+           spent every try it has and came anyway. Stated that way it is
+           true wherever you stand and whichever way you face — and the
+           second half has to be in it, because walking back along a
+           RING can bring a point round the other side of the lot and
+           into view again. */
+        /* AND THE TWO PIECES OF IT, ON THEIR OWN. canSee is the view
+           cone and backAlong is the walk down the polyline; both are
+           arithmetic and both are easier to believe pinned directly
+           than inferred from a route. */
+        {
+          const ahead = { x: p.x + Math.cos(p.angle) * 900, y: p.y + Math.sin(p.angle) * 900 };
+          const behind = { x: p.x - Math.cos(p.angle) * 900, y: p.y - Math.sin(p.angle) * 900 };
+          const beside = { x: p.x + Math.cos(p.angle + Math.PI / 2) * 900, y: p.y + Math.sin(p.angle + Math.PI / 2) * 900 };
+          check('what is in front of you is in view, and what is behind or beside you is not',
+            R.canSee(ahead.x, ahead.y) && !R.canSee(behind.x, behind.y) && !R.canSee(beside.x, beside.y));
+          const RR = Object.getPrototypeOf(R).constructor;
+          const line = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }];
+          const b1 = RR.backAlong(line, 50);
+          check('and a point fifty back from the end of a line is where it should be',
+            b1.i === 1 && Math.abs(b1.x - 100) < 1e-9 && Math.abs(b1.y - 50) < 1e-9,
+            `${b1.x}, ${b1.y} after ${b1.i}`);
+          const b2 = RR.backAlong(line, 150);
+          check('and a hundred and fifty back is round the corner',
+            b2.i === 0 && Math.abs(b2.x - 50) < 1e-9 && Math.abs(b2.y) < 1e-9, `${b2.x}, ${b2.y}`);
+          const b3 = RR.backAlong(line, 9999);
+          check('and asking for more road than there is gives the start of it',
+            b3.i === 0 && b3.x === 0 && b3.y === 0);
+        }
+        const entry = route[0];
+        const spent = S.runIn + S.runInStep * S.runInTries;
+        check('and where it comes into being is not somewhere you are looking',
+          !R.canSee(entry.x, entry.y) || len(route) >= spent,
+          `${R.canSee(entry.x, entry.y) ? 'in view' : 'out of view'} at ${len(route).toFixed(0)} units`);
       }
       /* THE ONE THAT IS ACTUALLY DRIVEN: out in the lot, where the van
          leaves the road and pulls up beside you. */
@@ -4888,9 +4974,68 @@ section('the van');
          throughout, and a dead player is a player the squad stops
          coming for (see squadTic) — which is correct, and would quietly
          turn everything below this into a measurement of nothing. */
-      for (; n < 6000 && chase.state === 'driving'; n++) { p.health = 100; gs.tic(); }
+      const trace = [];
+      for (; n < 6000 && chase.state === 'driving'; n++) {
+        const left = chase.toEnd;                  // before the step, not after
+        p.health = 100; gs.tic();
+        trace.push({ v: chase.speed, left, pitch: chase.rz, roll: chase.rx });
+      }
       check('and you are alive to be driven at', !p.dead);
       note('the drive to you', `${n} tics, ${chase.driven.toFixed(0)} units`);
+      /* --- HOW IT DROVE, which is the user's request and the whole of
+         the difference between a model sliding along a line and a van
+         pulling up. It leaves from a standing start, it never exceeds
+         its own top speed, and it is SLOWEST AT THE END rather than
+         switching off at speed. */
+      {
+        const top = Math.max(...trace.map(q => q.v));
+        const first = trace[0].v, last = trace[trace.length - 1].v;
+        note('the speed', `off the mark at ${first.toFixed(1)}, up to ${top.toFixed(1)}, ` +
+          `over the line at ${last.toFixed(1)} units a tic`);
+        check('it pulls away from a standing start rather than appearing at speed',
+          first <= veh.DRIVE_SPEED * 0.1 && top > veh.DRIVE_SPEED * 0.5,
+          `${first.toFixed(1)} then ${top.toFixed(1)}`);
+        check('and never goes faster than it is allowed to', top <= veh.DRIVE_SPEED + 1e-6);
+        check('and brakes into its place instead of switching off at speed',
+          last < top * 0.25, `${last.toFixed(1)} against a top of ${top.toFixed(1)}`);
+        /* THE BRAKING IS FOR THE END OF THE ROUTE, not for the next
+           corner: the speed it is doing never exceeds the speed it could
+           still stop from in the distance it has left. */
+        const B = veh.DRIVE_BRAKE;
+        /* the 1.25 is the crawl floor in drive(): the last unit of the
+           approach is held at a walking pace rather than integrated down
+           to nothing, which would take a second and a half */
+        const over = trace.filter(q => q.v > Math.sqrt(2 * B * Math.max(0, q.left)) + 1.25);
+        check('and it is never going faster than it could stop from', over.length === 0,
+          `${over.length} tics over the line`);
+        /* --- AND THE BODY SHIFTS ITS WEIGHT. The nose goes DOWN under
+           braking (a negative pitch — see carMesh, which puts pitch in
+           the vehicle's own frame) and UP under power, and it leans
+           through the corners. */
+        const dip = Math.min(...trace.map(q => q.pitch));
+        const rise = Math.max(...trace.map(q => q.pitch));
+        const lean = Math.max(...trace.map(q => Math.abs(q.roll)));
+        note('the body', `${(dip * 180 / Math.PI).toFixed(1)}° of dive, ` +
+          `${(rise * 180 / Math.PI).toFixed(1)}° of squat, ${(lean * 180 / Math.PI).toFixed(1)}° of lean`);
+        check('the nose dips under braking and lifts under power',
+          dip < -0.01 && rise > 0.01, `${dip.toFixed(3)} to ${rise.toFixed(3)}`);
+        check('and it leans through a corner', lean > 0.01, `${lean.toFixed(3)}`);
+        check('and none of it is more than a few degrees',
+          -dip < 0.2 && rise < 0.2 && lean < 0.2);
+        /* AND IT ROCKS BACK AND SETTLES. Parked, the springs go on
+           running until they are asleep: the pitch crosses zero at
+           least once on the way — that is the rock — and then stops. */
+        let crossings = 0, was = chase.rz;
+        for (let i = 0; i < 200; i++) {
+          gs.tic();
+          if ((was < 0) !== (chase.rz < 0)) crossings++;
+          was = chase.rz;
+        }
+        note('settling', `${crossings} times through level, resting at ${(chase.rz * 180 / Math.PI).toFixed(2)}°`);
+        check('and once it has stopped it rocks back and settles level',
+          crossings >= 1 && Math.abs(chase.rz) < 0.004 && Math.abs(chase.rx) < 0.004,
+          `${crossings} crossings, ${chase.rz.toFixed(4)} rad`);
+      }
       check('and it arrives, off the road, beside you', chase.state === 'parked' &&
         Math.hypot(chase.x - 2140, chase.y + 1400) < S.push, `${Math.hypot(chase.x - 2140, chase.y + 1400).toFixed(0)} units off`);
       check('and it left the ring to do it', Math.abs(chase.y - R.ringAt(chase.stand.ring).y) > 100,
