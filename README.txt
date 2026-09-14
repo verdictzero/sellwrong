@@ -518,6 +518,52 @@ went to bars. Four weapons that all cycle off one button on a phone is
 one too many to keep track of by the shape of the barrel.
 
 
+WHAT THE WEAPONS LEAVE ON THE WALLS
+-----------------------------------
+
+THREE KINDS OF DECAL, at the user's request, and they are one system,
+js/decals.js:
+
+  HOLES    where a round lands on a wall, a floor or a ceiling: a dark
+           core inside a ragged pale lip — the chipped plaster, which
+           is what you actually see, because the shop is dark at night
+           and a dark spot on a dark wall is nothing — a hand across,
+           turned at random, and it stays. Eight hundred of them in a
+           ring, so a thousand rounds into one wall are still one pool
+           and the oldest hole is the next one overwritten. The
+           troopers' rifles leave them too.
+  HEAT     SPOT HEATING for the flamethrower: where the stream lands,
+           the surface itself glows, and the longer the stream is held
+           on one spot the hotter the spot — dull red, orange, the
+           yellow-white the minigun's barrels go, on the same ramp —
+           and when the stream moves on it cools over six seconds and
+           leaves a SCORCH, a dark blot the size of the glow, for good.
+           Additive, its own light.
+  FROST    SPOT COOLING for the extinguisher: where the jet lands, the
+           surface rimes over, whiter the longer the jet stays, and
+           thaws over ten seconds when it moves on. It leaves nothing.
+
+A landing within twenty-six units of a spot of its own kind feeds that
+spot rather than starting another, which is what makes a held stream a
+spot that HEATS rather than a trail of separate glows. AND THE TWO
+ARGUE: gas landing within forty-four units of a hot spot takes a tenth
+of the heat out of it, and flame landing that near rime melts a tenth
+of it, so the extinguisher cools a glowing wall and the flamethrower
+clears the frost off one — the same pair of verbs the two weapons
+already have for people and for fires, on the shop itself.
+
+EACH KIND IS ONE DRAW CALL, a pool of quads in one geometry: positions
+written when a decal is placed, an intensity written every tic as it
+cools or thaws, and a slot that has faded to nothing is free again. A
+decal sits a hair off its surface along the surface's normal and is
+drawn with a polygon offset, which between them keep it from fighting
+the wall for the pixel; the normal is the wall's own line turned to
+face the side the shot came from, or up for a floor, or down for a
+ceiling, and the quad is laid across it. Holes and frost take the
+wall's own light and fog, so a hole in a dark corner is not a black
+square glowing in it; heat ignores both.
+
+
 THE JUMP, AND BEING HIT BY A VAN
 --------------------------------
 

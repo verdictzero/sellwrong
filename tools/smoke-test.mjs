@@ -5809,6 +5809,98 @@ section('the minigun, the jump and the van');
   }
 }
 
+/* ---------- the decals ---------- */
+section('the decals');
+{
+  const fs = await import('node:fs');
+  const D = await import('../js/decals.js');
+  const { Game } = await import('../js/game.js');
+  const MAPD = await import('../js/maps/sellwrong.js');
+  const THREED = await import('three');
+  const mk = () => new Game({
+    level: MAPD.buildSellWrong(), scene: new THREED.Scene(), camera: {},
+    textures: tex.bakeTextures(), sprites: spr.bakeSprites(),
+    hud: { message() {}, ticMessages() {} }, audio: null,
+    input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
+             attack: false, use: false, run: false, jump: false, sample() {}, sensitivity: 0 },
+  });
+  /* --- the arithmetic --------------------------------------------- */
+  const line = { x1: 0, y1: 0, x2: 100, y2: 0 };
+  const nA = D.wallNormal(line, 50, 40), nB = D.wallNormal(line, 50, -40);
+  check('a wall\'s normal is unit length, across the line, and faces the shooter',
+    Math.abs(Math.hypot(nA.nx, nA.ny) - 1) < 1e-9 && nA.nx === 0 && nA.ny > 0 && nB.ny < 0 && nA.nz === 0);
+  const bw = D.surfaceBasis(nA), bf = D.surfaceBasis(D.UP);
+  check('and a quad is laid across it: along and up for a wall, x and y for a floor',
+    Math.abs(bw.ux * nA.nx + bw.uy * nA.ny) < 1e-9 && bw.vz === 1 && bf.ux === 1 && bf.vy === 1);
+  /* --- holes --------------------------------------------------------- */
+  const g = mk();
+  const q = g.player;
+  check('the game has decals, headless, with nothing to draw them on', !!g.decals && g.decals.liveCount === 0);
+  const wall = g.level.rayHitWall(q.x, q.y, q.eyeZ, q.x + Math.cos(q.angle) * 4000, q.y + Math.sin(q.angle) * 4000, q.eyeZ);
+  if (wall) {
+    g.hitscan(q, q.angle, 4000, 10, { shot: true });
+    const H = g.decals.pools.hole;
+    check('a round into a wall leaves a hole on it, facing back the way it came',
+      g.decals.holes === 1 && Math.abs(H.x[0] - wall.x) < 1e-6 &&
+      (H.nx[0] * (q.x - wall.x) + H.ny[0] * (q.y - wall.y)) > 0 && H.nz[0] === 0 && H.strength[0] > 0.5);
+    check('and it is a hand across, not a plate', H.size[0] >= D.HOLE_SIZE[0] && H.size[0] <= D.HOLE_SIZE[1]);
+  } else check('a wall to shoot at', false);
+  g.hitscan(q, q.angle, 4000, 10, { shot: true, pitch: -0.8 });
+  check('and one into the floor leaves one on the floor, facing up',
+    g.decals.holes === 2 && g.decals.pools.hole.nz[1] === 1);
+  /* THE RING: a thousand rounds into one wall are still one pool */
+  for (let k = 0; k < D.POOLS.hole + 50; k++) g.decals.hole(q.x, q.y, 0, D.UP);
+  check('the holes are a ring, so the pool never overflows', g.decals.pools.hole.count === D.POOLS.hole && g.decals.holes === D.POOLS.hole + 52);
+  /* --- heat ---------------------------------------------------------- */
+  const g2 = mk();
+  const d = g2.decals, x = g2.player.x, y = g2.player.y, z = g2.player.z;
+  for (let k = 0; k < 20; k++) d.heat(x, y, z, D.UP);
+  const HP = d.pools.heat;
+  check('the stream held on one spot heats it, and one landing is a little',
+    HP.count === 1 && Math.abs(HP.strength[0] - Math.min(1, 20 * D.HEAT_PER_LANDING)) < 1e-5);
+  d.heat(x + 10, y + 8, z, D.UP);
+  check('a landing near a hot spot feeds it rather than starting another', HP.count === 1);
+  d.heat(x + 80, y, z, D.UP);
+  check('and one a way off starts another', HP.count === 2);
+  for (let k = 0; k < 40; k++) d.heat(x, y, z, D.UP);
+  check('and it tops out white', HP.strength[0] === 1);
+  for (let t = 0; t < 6 * 35 + 2; t++) d.tic();
+  check('left alone it cools over six seconds', HP.count === 0 && HP.strength[0] === 0);
+  check('and a spot that got hot leaves a scorch behind, for good',
+    d.scorches >= 1 && d.pools.hole.count >= 1 && d.pools.hole.frame[0] === 1 && d.pools.hole.size[0] > D.HOLE_SIZE[1]);
+  /* --- frost, and the argument --------------------------------------- */
+  const g3 = mk();
+  const d3 = g3.decals, x3 = g3.player.x, y3 = g3.player.y, z3 = g3.player.z;
+  for (let k = 0; k < 10; k++) d3.frost(x3, y3, z3, D.UP);
+  const FP = d3.pools.frost;
+  check('the jet held on one spot rimes it', FP.count === 1 && Math.abs(FP.strength[0] - Math.min(1, 10 * D.FROST_PER_LANDING)) < 1e-5);
+  for (let t = 0; t < 10 * 35 + 2; t++) d3.tic();
+  check('and it thaws over ten seconds and leaves nothing', FP.count === 0 && d3.pools.hole.count === 0);
+  for (let k = 0; k < 20; k++) d3.heat(x3, y3, z3, D.UP);
+  const before = d3.pools.heat.strength[0];
+  d3.frost(x3 + 20, y3, z3, D.UP);
+  check('gas landing near a hot spot takes the heat out of it', d3.pools.heat.strength[0] < before - 0.05);
+  const fi = FP.nearest(x3 + 20, y3, z3, D.UP, 5), fb = FP.strength[fi];
+  d3.heat(x3 + 30, y3, z3, D.UP);
+  check('and flame landing near rime melts it', fi >= 0 && FP.strength[fi] < fb);
+  check('but a wall\'s heat and a floor\'s rime do not argue: different surfaces',
+    (() => { const g4 = mk(); const dd = g4.decals; const p = g4.player; for (let k = 0; k < 20; k++) dd.heat(p.x, p.y, p.z, D.UP); const b = dd.pools.heat.strength[0]; dd.frost(p.x, p.y, p.z, { nx: 1, ny: 0, nz: 0 }); return dd.pools.heat.strength[0] === b; })());
+  /* --- and the streams actually feed it --------------------------------- */
+  const g5 = mk();
+  const p5 = g5.player;
+  /* a few tics: long enough for the particles to land, short enough
+     that six landings' worth has not cooled away again */
+  g5.flame.fire({ x: p5.x, y: p5.y, z: p5.eyeZ }, p5.angle, -1.1);
+  for (let t = 0; t < 8; t++) { g5.flame.tic(); g5.decals.tic(); }
+  check('the flamethrower held at the floor heats the floor', g5.decals.pools.heat.count > 0 && g5.decals.pools.heat.nz[0] === 1 && g5.flame._hits > 0);
+  g5.frost.fire({ x: p5.x, y: p5.y, z: p5.eyeZ }, p5.angle, -1.1);
+  for (let t = 0; t < 8; t++) { g5.frost.tic(); g5.decals.tic(); }
+  check('and the extinguisher held at the floor rimes it', g5.decals.pools.frost.count > 0);
+  const gsrc = fs.readFileSync('js/game.js', 'utf8');
+  check('the decals are ticked, drawn, and attached only where there are pictures',
+    /this\.decals\.tic\(\)/.test(gsrc) && /this\.decals\.render\(\)/.test(gsrc) && /if \(fxAtlases\) this\.decals\.attach\(scene\)/.test(gsrc));
+}
+
 /* ---------- the music ---------- */
 section('the music');
 {

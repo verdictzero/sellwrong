@@ -35,6 +35,7 @@
 
 import { Particles } from './particles.js';
 import { pRandom, dist2 } from './util.js';
+import { wallNormal, UP, DOWN } from './decals.js';
 
 export const JET = {
   perTic: 7,          // particles a tic while the trigger is down
@@ -127,11 +128,11 @@ export class FrostStream {
       /* walls first, for the same reason the flame checks them: a jet
          that reaches through a wall is not a weapon, it is a cheat */
       const wall = lv.rayHitWall(x, y, z, nx, ny, nz);
-      if (wall) { this._land(wall.x, wall.y, wall.z); return true; }
+      if (wall) { this._land(wall.x, wall.y, wall.z, wallNormal(wall.line, x, y)); return true; }
       const sec = lv.sectorAt(nx, ny);
       const floor = sec ? sec.floor : 0;
-      if (nz <= floor + 4) { this._land(nx, ny, floor); return true; }
-      if (sec && sec.ceilTex !== 'SKY' && nz >= sec.ceil - 4) { this._land(nx, ny, sec.ceil - 4); return true; }
+      if (nz <= floor + 4) { this._land(nx, ny, floor, UP); return true; }
+      if (sec && sec.ceilTex !== 'SKY' && nz >= sec.ceil - 4) { this._land(nx, ny, sec.ceil, DOWN); return true; }
       /* A PERSON DOES NOT STOP IT, which is the other place this differs
          from the flame. A burning particle is spent on whoever it hits;
          a jet of gas washes over them and carries on to the shelf behind
@@ -151,12 +152,15 @@ export class FrostStream {
 
   /** A particle has arrived somewhere: the heat comes out of whatever is
    *  there, the store's grid and the forest's both. */
-  _land(x, y, z) {
+  _land(x, y, z, surface = null) {
     const g = this.game;
     this._hits++;
     this.doused += g.fire?.douse(x, y, JET.cool, JET.coolRadius) || 0;
     g.forest?.douse(x, y, JET.treeRadius);
     g.fx?.chillSplash(x, y, z);
+    /* and the surface rimes over where the jet is held on it — see
+       js/decals.js, SPOT COOLING */
+    if (surface) g.decals?.frost(x, y, z, surface);
   }
 
   get liveCount() { return this.particles.count; }

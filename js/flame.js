@@ -29,6 +29,7 @@
 
 import { Particles } from './particles.js';
 import { pRandom, dist2 } from './util.js';
+import { wallNormal, UP, DOWN } from './decals.js';
 
 export const STREAM = {
   perTic: 6,          // particles a tic while the trigger is down, staggered along the tic
@@ -124,11 +125,11 @@ export class FlameStream {
       /* Walls first: a flame that reaches through the frozen aisle into
          the stockroom is not a weapon, it is a cheat code. */
       const wall = lv.rayHitWall(x, y, z, nx, ny, nz);
-      if (wall) { this._land(wall.x, wall.y, wall.z); return true; }
+      if (wall) { this._land(wall.x, wall.y, wall.z, wallNormal(wall.line, x, y)); return true; }
       const sec = lv.sectorAt(nx, ny);
       const floor = sec ? sec.floor : 0;
-      if (nz <= floor + 4) { this._land(nx, ny, floor); return true; }
-      if (sec && sec.ceilTex !== 'SKY' && nz >= sec.ceil - 4) { this._land(nx, ny, sec.ceil - 4); return true; }
+      if (nz <= floor + 4) { this._land(nx, ny, floor, UP); return true; }
+      if (sec && sec.ceilTex !== 'SKY' && nz >= sec.ceil - 4) { this._land(nx, ny, sec.ceil, DOWN); return true; }
       for (let k = 0; k < actors.length; k++) {
         const a = actors[k];
         if (a.removed || a.dead || !a.shootable) continue;
@@ -156,12 +157,15 @@ export class FlameStream {
   /** A particle has arrived somewhere. Heat goes into whatever fuel is
    *  there — the store's grid and the forest's both, since only one of
    *  them will have anything at that point. */
-  _land(x, y, z) {
+  _land(x, y, z, surface = null) {
     const g = this.game;
     this._hits++;
     g.fire?.ignite(x, y, STREAM.heat, STREAM.heatRadius);
     g.forest?.ignite(x, y, STREAM.treeRadius);
     g.fx?.splash(x, y, z);
+    /* and the surface itself heats where the stream is held on it —
+       see js/decals.js, SPOT HEATING. A tree is not a surface. */
+    if (surface) g.decals?.heat(x, y, z, surface);
   }
 
   _burnActor(a, x, y, z) {

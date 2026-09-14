@@ -1,0 +1,450 @@
+/* =====================================================================
+   GROCERY STORE SIMULATOR — decals: what a weapon leaves on a surface
+   =====================================================================
+
+   THREE KINDS, at the user's request, and they are one system:
+
+     HOLES   where a round lands on a wall, a floor or a ceiling. A dark
+             ragged spot a hand across, turned at random, and it stays.
+             A minigun puts a hundred and forty of them a second into
+             whatever it is pointed at, so a burst across the parade
+             reads as a burst across the parade rather than a noise
+             that happened. The troopers' rifles leave them too.
+
+     HEAT    SPOT HEATING for the flamethrower: where the stream lands
+             the surface itself starts to glow, and the longer the
+             stream stays on one spot the hotter the spot — dull red,
+             orange, the yellow-white of a thing about to give — and
+             when the stream moves on it cools over a few seconds and
+             leaves a SCORCH, a dark blot the size of the glow, for
+             good. Drawn additively, its own light.
+
+     FROST   SPOT COOLING for the extinguisher: where the jet lands the
+             surface rimes over, whiter the longer the jet stays, and
+             thaws away over ten seconds when it moves on. It leaves
+             nothing; ice does not.
+
+   AND THE TWO ARGUE. Gas landing near a hot spot takes the heat out of
+   it, and flame landing near frost melts it, both at a distance rather
+   than only on a direct hit — so the extinguisher can be used to cool
+   a glowing wall, and the flamethrower to clear the rime off one,
+   which is the same pair of verbs the two weapons already have for
+   people and fires, here on the shop itself.
+
+   EACH KIND IS ONE DRAW CALL: a pool of quads in a single geometry,
+   positions written when a decal is placed and an intensity written
+   every tic as it cools or thaws, and a slot that has faded to nothing
+   is free again. The holes are a ring: when the pool is full the
+   oldest hole is the next one overwritten, which is how a thousand
+   rounds into one wall stay a thousand rounds into one wall without
+   the frame ever paying for more than the pool.
+
+   A DECAL SITS ON ITS SURFACE: it is placed a hair off the wall along
+   the wall's normal and drawn with a polygon offset, which between
+   them keep it from fighting the wall for the pixel. The normal comes
+   from whatever was hit — a wall's own line, turned to face the side
+   the shot came from; a floor's is up; a ceiling's is down — and the
+   quad is laid in the two directions across that normal.
+
+   The arithmetic — the normals, the merging, the cooling — is plain
+   data with no three in it, so it runs headless and the smoke test can
+   put a stream on a wall and watch it glow and cool.
+   ===================================================================== */
+
+import * as THREE from 'three';
+import { Pix } from './pixel.js';
+import { WORLD_UNIFORMS_GLSL, WORLD_SHADE_GLSL, worldUniforms } from './material.js';
+import { pRandom, TICRATE } from './util.js';
+
+/* the pools, and the numbers that make each kind what it is */
+export const POOLS = { hole: 800, heat: 240, frost: 240 };
+export const HOLE_SIZE = [5, 9];              // world units across, min..max
+export const SCORCH_SIZE = 46;                // the blot a hot spot leaves
+export const HEAT_SIZE = 38;
+export const FROST_SIZE = 44;
+export const HEAT_PER_LANDING = 0.028;        // one flame particle's worth
+export const FROST_PER_LANDING = 0.040;       // one puff of gas's worth
+export const HEAT_COOL = 1 / (6 * TICRATE);   // a white-hot spot is cold in six seconds
+export const FROST_THAW = 1 / (10 * TICRATE); // and rime is gone in ten
+export const MERGE_RADIUS = 26;               // a landing this near an existing spot feeds it
+export const ARGUE_RADIUS = 44;               // and this near the other kind fights it
+export const ARGUE_AMOUNT = 0.10;
+export const LIFT = 0.6;                      // how far off the surface a decal sits
+
+/** The normal of a wall line, unit length, facing the side (fx, fy) is
+ *  on — the side the shot came from. Pure. */
+export function wallNormal(line, fx, fy) {
+  const dx = line.x2 - line.x1, dy = line.y2 - line.y1;
+  const len = Math.hypot(dx, dy) || 1;
+  let nx = dy / len, ny = -dx / len;
+  /* which side of the line the shooter is: flip if the normal points away */
+  const mx = (line.x1 + line.x2) / 2, my = (line.y1 + line.y2) / 2;
+  if (nx * (fx - mx) + ny * (fy - my) < 0) { nx = -nx; ny = -ny; }
+  return { nx, ny, nz: 0 };
+}
+export const UP = Object.freeze({ nx: 0, ny: 0, nz: 1 });
+export const DOWN = Object.freeze({ nx: 0, ny: 0, nz: -1 });
+
+/** Two unit directions across a normal, for laying a quad on it: along
+ *  the wall and up for a wall, x and y for a floor. Pure. */
+export function surfaceBasis(n) {
+  if (Math.abs(n.nz) > 0.5) return { ux: 1, uy: 0, uz: 0, vx: 0, vy: 1, vz: 0 };
+  return { ux: -n.ny, uy: n.nx, uz: 0, vx: 0, vy: 0, vz: 1 };
+}
+
+/* ---- one pool: the data, and (once attached) the geometry ---------- */
+class Pool {
+  constructor(kind, max) {
+    this.kind = kind;
+    this.max = max;
+    this.n = 0;                       // slots ever used, up to max
+    this.x = new Float32Array(max); this.y = new Float32Array(max); this.z = new Float32Array(max);
+    this.nx = new Float32Array(max); this.ny = new Float32Array(max); this.nz = new Float32Array(max);
+    this.size = new Float32Array(max);
+    this.rot = new Float32Array(max);
+    this.strength = new Float32Array(max);   // 0 = free
+    this.peak = new Float32Array(max);       // the most it has ever been
+    this.light = new Float32Array(max);
+    this.sky = new Float32Array(max);
+    this.frame = new Uint8Array(max);        // which picture in the pool's strip
+    this.next = 0;                           // ring cursor, for the holes
+    this.count = 0;
+    this.dirtyPos = true; this.dirtyStrength = true;
+    this.mesh = null;
+  }
+
+  /** A free slot, or — for a ring — the oldest one. */
+  alloc(ring) {
+    if (ring) {
+      const i = this.next;
+      this.next = (this.next + 1) % this.max;
+      if (this.strength[i] <= 0) this.count++;
+      return i;
+    }
+    for (let i = 0; i < this.max; i++) if (this.strength[i] <= 0) { this.count++; return i; }
+    return -1;
+  }
+
+  /** The nearest live decal on the same surface within r, or -1. */
+  nearest(x, y, z, n, r) {
+    let best = -1, bd = r * r;
+    for (let i = 0; i < this.max; i++) {
+      if (this.strength[i] <= 0) continue;
+      if (this.nx[i] * n.nx + this.ny[i] * n.ny + this.nz[i] * n.nz < 0.9) continue;
+      const dx = this.x[i] - x, dy = this.y[i] - y, dz = this.z[i] - z;
+      const d = dx * dx + dy * dy + dz * dz;
+      if (d < bd) { bd = d; best = i; }
+    }
+    return best;
+  }
+
+  place(i, x, y, z, n, size, rot, strength, light, sky, frame) {
+    this.x[i] = x; this.y[i] = y; this.z[i] = z;
+    this.nx[i] = n.nx; this.ny[i] = n.ny; this.nz[i] = n.nz;
+    this.size[i] = size; this.rot[i] = rot;
+    this.strength[i] = strength; this.peak[i] = strength;
+    this.light[i] = light; this.sky[i] = sky; this.frame[i] = frame;
+    this.dirtyPos = true; this.dirtyStrength = true;
+  }
+}
+
+/* ---- the pictures: drawn here, like everything else ---------------- */
+function holeStrip() {
+  /* two frames: the hole, and the scorch */
+  const S = 32;
+  const pix = new Pix(S * 2, S, 1, false);
+  const cx = S / 2, cy = S / 2;
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const dx = x - cx + 0.5, dy = y - cy + 0.5;
+    const d = Math.hypot(dx, dy) / (S / 2);
+    const ang = Math.atan2(dy, dx);
+    /* THE HOLE: a dark core inside a ragged PALE lip — the chipped
+       plaster round a bullet hole, and the reason one reads at all.
+       The shop is dark at night and a dark spot on a dark wall is
+       nothing; the lip is what you see, and the core is what you see
+       it round. */
+    const rag = 0.80 + 0.16 * Math.sin(ang * 5 + 1.3) * Math.cos(ang * 3 - 0.4);
+    if (d < rag) {
+      const core = d < rag * 0.5;
+      const f = (d - rag * 0.5) / (rag * 0.5);          // 0 at the core's edge, 1 at the rim
+      const grain = ((x * 7 + y * 13) % 5) * 9;
+      const a = core ? 240 : Math.round(215 * (1 - f * f));
+      const v = core ? 8 : 120 + grain + Math.round(60 * (1 - f));
+      pix.set(x, y, v, v - 4, v - 8, a);
+    }
+    /* the scorch: soft, dark, thinning to the edge, mottled */
+    const rag2 = 0.86 + 0.12 * Math.sin(ang * 3 + 0.7) * Math.cos(ang * 7 + 2.1);
+    if (d < rag2) {
+      const f = 1 - d / rag2;
+      const m = 0.75 + 0.25 * Math.sin(x * 1.7 + y * 2.3) * Math.cos(x * 0.9 - y * 1.1);
+      const a = Math.round(210 * f * f * m);
+      pix.set(S + x, y, 14, 12, 11, a);
+    }
+  }
+  return pix;
+}
+
+function glowStrip() {
+  /* one frame: a soft radial patch with a mottled edge, used by both
+     the heat and the frost, coloured by the shader */
+  const S = 32;
+  const pix = new Pix(S, S, 1, false);
+  const cx = S / 2, cy = S / 2;
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const dx = x - cx + 0.5, dy = y - cy + 0.5;
+    const d = Math.hypot(dx, dy) / (S / 2);
+    const ang = Math.atan2(dy, dx);
+    const rag = 0.88 + 0.12 * Math.sin(ang * 4 + 0.3) * Math.cos(ang * 6 - 1.9);
+    if (d >= rag) continue;
+    const f = 1 - d / rag;
+    const m = 0.8 + 0.2 * Math.sin(x * 2.1 + y * 1.3) * Math.cos(x * 1.1 - y * 2.7);
+    pix.set(x, y, 255, 255, 255, Math.round(255 * Math.min(1, f * f * 1.6) * m));
+  }
+  return pix;
+}
+
+function makeTex(pix) {
+  const t = new THREE.CanvasTexture(pix.toCanvas());
+  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter;
+  t.generateMipmaps = false; t.colorSpace = THREE.SRGBColorSpace; t.needsUpdate = true;
+  return t;
+}
+
+const VERT = /* glsl */`
+attribute float aStrength;
+attribute float aLight;
+attribute float aSky;
+varying vec2  vUv;
+varying float vStrength;
+varying float vLight;
+varying float vSky;
+varying float vDepth;
+varying vec3  vWorld;
+void main() {
+  vUv = uv;
+  vStrength = aStrength;
+  vLight = aLight;
+  vSky = aSky;
+  vWorld = position;
+  vec4 mv = viewMatrix * vec4(position, 1.0);
+  vDepth = -mv.z;
+  gl_Position = projectionMatrix * mv;
+}
+`;
+
+/* KIND is 0 for a hole or a scorch, 1 for heat, 2 for frost. A hole is
+   a dark thing that takes the wall's own light and fog, so a hole in a
+   dark corner is not a black square glowing in it; heat is its own
+   light and ignores both; frost is a pale thing on the surface, lit
+   like the surface. */
+const FRAG = /* glsl */`
+uniform sampler2D map;
+uniform float kind;
+${WORLD_UNIFORMS_GLSL}
+varying vec2  vUv;
+varying float vStrength;
+varying float vLight;
+varying float vSky;
+varying float vDepth;
+varying vec3  vWorld;
+${WORLD_SHADE_GLSL}
+void main() {
+  vec4 t = texture2D(map, vUv);
+  if (t.a < 0.02) discard;
+  vec3 c; float a;
+  if (kind < 0.5) {
+    float l = worldBand(vLight, vDepth, vSky, 0.0);
+    c = worldShade(t.rgb, l, vDepth, vWorld, 0.0);
+    a = t.a * vStrength;
+  } else if (kind < 1.5) {
+    /* heat: the same ramp the minigun's barrels use, dull red to
+       orange to yellow-white, banded, and additive */
+    float h = vStrength;
+    vec3 hot = h < 0.5 ? mix(vec3(0.55, 0.03, 0.0), vec3(1.0, 0.36, 0.05), h * 2.0)
+                       : mix(vec3(1.0, 0.36, 0.05), vec3(1.0, 0.92, 0.62), (h - 0.5) * 2.0);
+    float g = floor(t.a * h * 8.0 + 0.5) / 8.0;
+    c = hot; a = g * 0.95;
+  } else {
+    float l = worldBand(vLight, vDepth, vSky, 0.0);
+    c = worldShade(vec3(0.80, 0.90, 1.0), l + 0.15, vDepth, vWorld, 0.0);
+    a = t.a * vStrength * 0.85;
+  }
+  if (a < 0.01) discard;
+  gl_FragColor = vec4(c, a);
+}
+`;
+
+export class Decals {
+  constructor(game) {
+    this.game = game;
+    this.pools = { hole: new Pool('hole', POOLS.hole), heat: new Pool('heat', POOLS.heat), frost: new Pool('frost', POOLS.frost) };
+    this.tics = 0;
+    this.holes = 0; this.scorches = 0;      // counts, for the readout and the test
+    this._n = { nx: 0, ny: 0, nz: 0 };
+  }
+
+  /* ---- placing ------------------------------------------------------ */
+  _surface(x, y) {
+    const sec = this.game.level?.sectorAt?.(x, y);
+    return { light: sec ? (sec.light ?? 0.75) : 0.75, sky: sec && sec.outdoor ? 1 : 0 };
+  }
+
+  /** A round has landed on a surface. */
+  hole(x, y, z, n) {
+    const P = this.pools.hole;
+    const i = P.alloc(true);
+    const s = HOLE_SIZE[0] + (pRandom() / 255) * (HOLE_SIZE[1] - HOLE_SIZE[0]);
+    const { light, sky } = this._surface(x, y);
+    P.place(i, x, y, z, n, s, (pRandom() / 255) * Math.PI * 2, 0.92, light, sky, 0);
+    this.holes++;
+  }
+
+  /** A flame has landed: the spot heats. Nearby frost melts. */
+  heat(x, y, z, n, amount = HEAT_PER_LANDING) {
+    this._feed(this.pools.heat, x, y, z, n, amount, HEAT_SIZE);
+    this._argue(this.pools.frost, x, y, z, n);
+  }
+
+  /** A puff of gas has landed: the spot rimes. Nearby heat cools. */
+  frost(x, y, z, n, amount = FROST_PER_LANDING) {
+    this._feed(this.pools.frost, x, y, z, n, amount, FROST_SIZE);
+    this._argue(this.pools.heat, x, y, z, n);
+  }
+
+  _feed(P, x, y, z, n, amount, size) {
+    let i = P.nearest(x, y, z, n, MERGE_RADIUS);
+    if (i < 0) {
+      i = P.alloc(false);
+      if (i < 0) return;
+      const { light, sky } = this._surface(x, y);
+      P.place(i, x, y, z, n, size, (pRandom() / 255) * Math.PI * 2, 0, light, sky, 0);
+    }
+    P.strength[i] = Math.min(1, P.strength[i] + amount);
+    P.peak[i] = Math.max(P.peak[i], P.strength[i]);
+    P.dirtyStrength = true;
+  }
+
+  /** The other kind, within reach, loses some of itself. */
+  _argue(P, x, y, z, n) {
+    const r2 = ARGUE_RADIUS * ARGUE_RADIUS;
+    for (let i = 0; i < P.max; i++) {
+      if (P.strength[i] <= 0) continue;
+      if (P.nx[i] * n.nx + P.ny[i] * n.ny + P.nz[i] * n.nz < 0.9) continue;
+      const dx = P.x[i] - x, dy = P.y[i] - y, dz = P.z[i] - z;
+      if (dx * dx + dy * dy + dz * dz > r2) continue;
+      P.strength[i] = Math.max(0, P.strength[i] - ARGUE_AMOUNT);
+      P.dirtyStrength = true;
+      if (P.strength[i] <= 0) this._expire(P, i);
+    }
+  }
+
+  /** A heat spot that has gone cold leaves its scorch behind, sized
+   *  and darkened by how hot it got; nothing else leaves anything. */
+  _expire(P, i) {
+    P.count--;
+    if (P.kind === 'heat' && P.peak[i] > 0.25) {
+      const H = this.pools.hole;
+      const j = H.alloc(true);
+      H.place(j, P.x[i], P.y[i], P.z[i], { nx: P.nx[i], ny: P.ny[i], nz: P.nz[i] },
+        SCORCH_SIZE * (0.7 + 0.5 * P.peak[i]), P.rot[i], Math.min(0.9, 0.35 + 0.6 * P.peak[i]), P.light[i], P.sky[i], 1);
+      this.scorches++;
+    }
+    P.peak[i] = 0;
+  }
+
+  /* ---- time --------------------------------------------------------- */
+  tic() {
+    this.tics++;
+    for (const [P, rate] of [[this.pools.heat, HEAT_COOL], [this.pools.frost, FROST_THAW]]) {
+      if (!P.count) continue;
+      for (let i = 0; i < P.max; i++) {
+        if (P.strength[i] <= 0) continue;
+        P.strength[i] -= rate;
+        if (P.strength[i] <= 0) { P.strength[i] = 0; this._expire(P, i); }
+      }
+      P.dirtyStrength = true;
+    }
+  }
+
+  /* ---- drawing ------------------------------------------------------ */
+  attach(scene) {
+    const holes = makeTex(holeStrip()), glow = makeTex(glowStrip());
+    const mk = (P, tex, kindNo, blend, order, frames) => {
+      const N = P.max;
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 12), 3));
+      g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(N * 8), 2));
+      g.setAttribute('aStrength', new THREE.BufferAttribute(new Float32Array(N * 4), 1));
+      g.setAttribute('aLight', new THREE.BufferAttribute(new Float32Array(N * 4), 1));
+      g.setAttribute('aSky', new THREE.BufferAttribute(new Float32Array(N * 4), 1));
+      const idx = new Uint32Array(N * 6);
+      for (let i = 0; i < N; i++) { const v = i * 4, k = i * 6; idx[k] = v; idx[k + 1] = v + 1; idx[k + 2] = v + 2; idx[k + 3] = v; idx[k + 4] = v + 2; idx[k + 5] = v + 3; }
+      g.setIndex(new THREE.BufferAttribute(idx, 1));
+      g.setDrawRange(0, 0);
+      const mat = new THREE.ShaderMaterial({
+        uniforms: { map: { value: tex }, kind: { value: kindNo }, ...worldUniforms() },
+        vertexShader: VERT, fragmentShader: FRAG,
+        transparent: true, depthWrite: false, depthTest: true,
+        blending: blend === 'add' ? THREE.AdditiveBlending : THREE.NormalBlending,
+        polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+        side: THREE.DoubleSide, fog: false, toneMapped: false,
+      });
+      const mesh = new THREE.Mesh(g, mat);
+      mesh.frustumCulled = false;
+      mesh.renderOrder = order;
+      mesh.name = 'decals-' + P.kind;
+      scene.add(mesh);
+      P.mesh = mesh; P.frames = frames;
+      P.dirtyPos = P.dirtyStrength = true;
+    };
+    mk(this.pools.hole, holes, 0, 'normal', 4, 2);
+    mk(this.pools.frost, glow, 2, 'normal', 5, 1);
+    mk(this.pools.heat, glow, 1, 'add', 6, 1);
+  }
+
+  render() {
+    for (const P of Object.values(this.pools)) {
+      if (!P.mesh) continue;
+      const g = P.mesh.geometry;
+      if (P.dirtyPos) {
+        const pos = g.attributes.position.array, uv = g.attributes.uv.array;
+        const lt = g.attributes.aLight.array, sk = g.attributes.aSky.array;
+        let used = 0;
+        for (let i = 0; i < P.max; i++) {
+          if (P.strength[i] <= 0 && P.kind !== 'hole') continue;
+          used = i + 1;
+          const n = { nx: P.nx[i], ny: P.ny[i], nz: P.nz[i] };
+          const b = surfaceBasis(n);
+          const c = Math.cos(P.rot[i]), s = Math.sin(P.rot[i]), h = P.size[i] / 2;
+          /* the quad's two axes, turned by rot about the normal */
+          const ax = (b.ux * c + b.vx * s) * h, ay = (b.uy * c + b.vy * s) * h, az = (b.uz * c + b.vz * s) * h;
+          const bx = (b.vx * c - b.ux * s) * h, by = (b.vy * c - b.uy * s) * h, bz = (b.vz * c - b.uz * s) * h;
+          const cx = P.x[i] + n.nx * LIFT, cy = P.y[i] + n.ny * LIFT, cz = P.z[i] + n.nz * LIFT;
+          const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+          const f0 = P.frame[i] / P.frames, f1 = (P.frame[i] + 1) / P.frames;
+          for (let k = 0; k < 4; k++) {
+            const [u, v] = corners[k];
+            const wx = cx + ax * u + bx * v, wy = cy + ay * u + by * v, wz = cz + az * u + bz * v;
+            const o = (i * 4 + k) * 3;
+            /* game (x, y, z) to three (x, z, -y) */
+            pos[o] = wx; pos[o + 1] = wz; pos[o + 2] = -wy;
+            uv[(i * 4 + k) * 2] = u < 0 ? f0 : f1; uv[(i * 4 + k) * 2 + 1] = v < 0 ? 0 : 1;
+            lt[i * 4 + k] = P.light[i]; sk[i * 4 + k] = P.sky[i];
+          }
+        }
+        g.setDrawRange(0, used * 6);
+        g.attributes.position.needsUpdate = true; g.attributes.uv.needsUpdate = true;
+        g.attributes.aLight.needsUpdate = true; g.attributes.aSky.needsUpdate = true;
+        P.dirtyPos = false;
+      }
+      if (P.dirtyStrength) {
+        const st = g.attributes.aStrength.array;
+        for (let i = 0; i < P.max; i++) { const v = P.strength[i]; st[i * 4] = v; st[i * 4 + 1] = v; st[i * 4 + 2] = v; st[i * 4 + 3] = v; }
+        g.attributes.aStrength.needsUpdate = true;
+        P.dirtyStrength = false;
+      }
+    }
+  }
+
+  get liveCount() { return this.pools.hole.count + this.pools.heat.count + this.pools.frost.count; }
+}

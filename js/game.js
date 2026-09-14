@@ -35,6 +35,7 @@ import { buildSlideDoors } from './slidedoor.js';
 import { buildSky, followSky } from './sky.js';
 import { Forest } from './forest.js';
 import { FlameStream } from './flame.js';
+import { Decals, wallNormal, UP, DOWN } from './decals.js';
 import { FrostStream } from './frost.js';
 import { Effects, SMOKE_PUFFS } from './effects.js';
 import { Giblets } from './people.js';
@@ -129,6 +130,10 @@ export class Game {
     this.fx = new Effects(this, fxAtlases || null, bodyAtlas || null);
     /* and what comes off a person: the pieces and the fire on them */
     this.giblets = new Giblets(this, gibAtlases || null);
+    /* and what the weapons leave on the walls: holes, hot spots, rime.
+       Data always; pictures only where there are pictures. */
+    this.decals = new Decals(this);
+    if (fxAtlases) this.decals.attach(scene);
     if (flameAtlas) this.flame.attach(scene);
     if (fxAtlases) { this.frost.attach(scene); this.fx.attach(scene); }
     if (gibAtlases) this.giblets.attach(scene);
@@ -401,6 +406,7 @@ export class Game {
     this.frost.tic();
     this.fx.tic();
     this.giblets.tic();
+    this.decals.tic();
     this.applyChar();
     this.ticBurnGrid();
 
@@ -647,10 +653,13 @@ export class Game {
     if (wall && (!pitch || wall.t <= maxT + 1e-9)) {
       this.spawnPuff(wall.x, wall.y, wall.z);
       if (opts.spark) this.spawnSparks(wall.x, wall.y, wall.z, 2 + (pRandom() & 1));
+      /* and the hole it leaves, facing the side it came from */
+      if (opts.shot) this.decals.hole(wall.x, wall.y, wall.z, wallNormal(wall.line, ox, oy));
     } else if (floorHit !== null) {
       const hx = ox + dx * maxT, hy = oy + dy * maxT;
       this.spawnPuff(hx, hy, floorHit);
       if (opts.spark) this.spawnSparks(hx, hy, floorHit, 2 + (pRandom() & 1));
+      if (opts.shot) this.decals.hole(hx, hy, floorHit, tz < z ? UP : DOWN);
     }
     return null;
   }
@@ -1075,6 +1084,7 @@ export class Game {
     this.frost.render(billboardRot);
     this.fx.render(billboardRot);
     this.giblets.render(billboardRot);
+    this.decals.render();
     this.renderProjectiles(billboardRot);
     this.bore.render(billboardRot);
 
