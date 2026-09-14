@@ -1553,28 +1553,52 @@ there — which is for ever, because the van is FIREPROOF (below) and
 nothing in the game ends one.
 
 AND IT RAMPS EXPONENTIALLY, at the user's request, and the ramp is one
-number: the PRESSURE, 1 at the call and doubling every minute from then
-on, without limit. Everything that says how much police there is — how
-many vans may be on the road or standing at once (six, to begin with), how
-many troopers may be on their feet across every van (six), how long
-between sends (fifty-five seconds, give or take a fifth), how long between
-one trooper and the next out of a standing van (nine) — is that starting
-value times the pressure, read off the curve at the moment the question
-is asked rather than fixed at the call. So a minute after the first kill
-the vans come twice as often and twice as many are allowed out; two
-minutes, four times; three, eight; and the same minute of the night is
-the same everywhere, because it is one curve read four ways. The floors
-(a send every six seconds, a trooper every two) and the ceilings
-(twenty-seven vans, eighty troopers on their feet) are what the engine is
-asked to carry, not the design; the curve reaches all of them inside four
-minutes and then holds the lot there. At the doors the map's nine bays
-are the real limit and vans stop coming when they are full, which is the
-one place hiding indoors buys you anything. It is js/responders.js, top to
-bottom, and pressureAfter() is the curve as a pure function for the test
-to pin: equal steps in time multiply by the same amount, which is what
-exponential means. There is no goal in this game and this is the nearest
-thing to an ending it has: the night gets worse at a rate that does not
-care how well you are doing.
+number: the PRESSURE, 1 at the call and doubling every seventy seconds
+from then on, without limit. Everything that says how much police there
+is — how many vans may be on the road or standing at once (five, to begin
+with), how many troopers may be on their feet across every van (five),
+how long between sends (sixty seconds, give or take a fifth), how long
+between one trooper and the next out of a standing van (ten) — is that
+starting value times the pressure, read off the curve at the moment the
+question is asked rather than fixed at the call. So a minute and ten
+seconds after the first shot the vans come twice as often and twice as
+many are allowed out; two and a half minutes, four times; and the same
+minute of the night is the same everywhere, because it is one curve read
+four ways. The floors (a send every seven seconds, a trooper every three)
+and the ceilings (twenty vans, sixty troopers on their feet) are what the
+engine is asked to carry, not the design; the curve reaches all of them
+inside five minutes and then holds the lot there. At the doors the map's
+nine bays used to be the real limit and are not any more — when they are
+full the next one stands along the ring by the doors instead of not
+coming. It is js/responders.js, top to bottom, and pressureAfter() is the
+curve as a pure function for the test to pin: equal steps in time
+multiply by the same amount, which is what exponential means. There is no
+goal in this game and this is the nearest thing to an ending it has: the
+night gets worse at a rate that does not care how well you are doing.
+
+A SMIDGE LESS OF ALL OF IT, at the user's request, and the second pass
+over these numbers. The doubling went from sixty seconds to seventy, the
+four starting values each lost one, and the two ceilings came down a
+quarter. Nothing about WHEN the first convoy arrives moved — that is the
+run-in and the speed above, which the user asked for and which stay — and
+neither did the size of a send. Standing still in the middle of the lot
+and never firing again, so nobody dies and the count is what the budget
+allows rather than what you let live:
+
+              was                 now
+  1 min       11 troopers          9
+  2 min       23                  16
+  3 min       47                  29
+  4 min       80, the ceiling     53
+  5 min       80 + 15 army        60, the ceiling, + 9
+  6 min       80 + 31 army        60 + 17
+
+The army's own numbers are untouched — it is the newest thing here and
+there is not much of it — but it starts later anyway, because its trigger
+is a PRESSURE on this curve rather than a time, and this curve now takes
+three and a half minutes to reach it rather than three. That is the whole
+argument for writing a threshold in the units of the thing it is a
+threshold on.
 
 A TROOPER IS THE ZOMBIEMAN with the numbers looked at again, and he walks
 on the chase this file has described for a year with nobody in it —

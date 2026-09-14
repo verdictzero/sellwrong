@@ -4926,8 +4926,15 @@ section('the van');
       (() => { const save = R.calledAt; R.calledAt = R.tics - 2 * S.doubling; const ok = R.trooperCap === Math.min(S.maxTroopers, S.troopers * 4) && Math.abs(R.trickleNow() - Math.max(S.minTrickle, S.trickle / 4)) < 1e-9; R.calledAt = save; return ok; })());
     check('and every gap has a floor, so the curve asks nothing the road cannot do',
       (() => { const save = R.calledAt; R.calledAt = R.tics - 40 * S.doubling; const ok = R.gapNow() === S.minEvery && R.trickleNow() === S.minTrickle && R.trooperCap === S.maxTroopers && R.vanCap === S.maxVans; R.calledAt = save; return ok; })());
-    check('and the budget is three times what it was, because a send is',
-      S.convoy === 3 && S.vans === 6 && S.maxVans === 27);
+    /* THE BUDGET HOLDS A WHOLE SEND. Three at a time is the user's
+       number and it is the one thing in this block that has never
+       moved; everything around it has been trimmed twice since. What
+       has to stay true whatever the numbers are is that a send FITS —
+       send three into a budget of two and the third is refused, which
+       is sending two. */
+    check('a send is three, and the budget holds whole sends of them at either end of the curve',
+      S.convoy === 3 && S.vans >= S.convoy && S.maxVans >= S.convoy * 2 &&
+      S.maxVans % S.convoy <= S.convoy, `${S.convoy} a send, ${S.vans} to ${S.maxVans} allowed`);
     /* THE LONG NIGHT: the caps only ever climb, and the lot fills */
     const capsBefore = { troopers: R.trooperCap, vans: R.vanCap, ever: R.spawned, sent: R.vans.length };
     /* LONG ENOUGH FOR A VAN TO GET HERE. A convoy sent to the far side

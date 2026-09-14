@@ -150,23 +150,56 @@ export const SWAT = {
      read as the game letting you start. */
   after: 1,                              // shots fired before anybody is called
   firstDelay: 0,                         // and they are dispatched on that tic
-  doubling: 60 * TICRATE,                // how often the pressure doubles, from the call
-  every: 55 * TICRATE,                   // the gap between sends, at pressure 1, give or take a fifth
-  minEvery: 6 * TICRATE,                 // and the least it can ever be
+  /* A SMIDGE LESS OF ALL OF IT, at the user's request, and the whole of
+     the reduction is in this block and the four numbers below. It is a
+     trim rather than a rewrite: nothing about WHEN the first convoy
+     arrives has moved — that is the run-in and the speed, and the user
+     asked for those and they stay — and neither has the size of a send.
+     What has come down is how fast the night builds on top of it and
+     how much of it the lot ever holds.
+
+     The doubling is seventy seconds rather than sixty, so every step of
+     the curve takes a sixth longer: two minutes in the night is
+     pressing three and a third rather than four, three minutes six
+     rather than eight. The ceilings come down a quarter. And the four
+     starting values each lose one, which is the part that is felt in
+     the first minute, when the curve has not multiplied anything yet.
+
+     Measured standing still in the middle of the lot, never firing
+     again, so nobody dies and the count is what the budget allows
+     rather than what you let live:
+
+                 was                    now
+       1 min     11 troopers            9
+       2 min     23                     16
+       3 min     47                     29
+       4 min     80, the ceiling        53
+       5 min     80 + 15 army           60, the ceiling, + 9
+       6 min     80 + 31 army           60 + 17
+
+     The ceiling is sixty rather than eighty and arrives at five minutes
+     rather than four. The army is untouched — it is the user's newest
+     thing and there is not much of it — but it starts later anyway,
+     because its trigger is a pressure on this curve and this curve now
+     takes longer to get there: three and a half minutes rather than
+     three. */
+  doubling: 70 * TICRATE,                // how often the pressure doubles, from the call
+  every: 60 * TICRATE,                   // the gap between sends, at pressure 1, give or take a fifth
+  minEvery: 7 * TICRATE,                 // and the least it can ever be
   /* THREE AT A TIME, at the user's request: where one van used to come,
      three come. The gap between sends is untouched, and so is every
      other clock — what tripled is the size of a send and, with it, the
      budget, or the first two of the three would have been the whole of
      it. */
-  convoy: 3,                             // vans per send
-  vans: 6,                               // on the road or standing at once, at pressure 1
-  maxVans: 27,                           // and the most the engine is asked to carry
-  troopers: 6,                           // on their feet at once, at pressure 1
-  maxTroopers: 80,                       // and the most the engine is asked to carry
-  crew: 6,                               // what a van carries
-  unloadEvery: 50,                       // tics between one and the next
-  trickle: 9 * TICRATE,                  // and after the crew is out, for ever, at pressure 1
-  minTrickle: 2 * TICRATE,               // and the least that can be
+  convoy: 3,                             // vans per send — the user's number, untouched
+  vans: 5,                               // on the road or standing at once, at pressure 1
+  maxVans: 20,                           // and the most the engine is asked to carry
+  troopers: 5,                           // on their feet at once, at pressure 1
+  maxTroopers: 60,                       // and the most the engine is asked to carry
+  crew: 5,                               // what a van carries
+  unloadEvery: 52,                       // tics between one and the next
+  trickle: 10 * TICRATE,                 // and after the crew is out, for ever, at pressure 1
+  minTrickle: 3 * TICRATE,               // and the least that can be
   bays: 9,                               // spaces along the fire lane, for the doors
   /* WHERE A VAN STOPS WHEN IT IS COMING FOR YOU rather than for the
      doors. `stand` is how far apart two of them park along the ring,
