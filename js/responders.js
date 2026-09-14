@@ -52,15 +52,40 @@
    troopers are what the engine can carry, not the design; the design
    is the curve, and the curve does not stop.
 
+   AND THEN THE ARMY COMES, at the user's request and in the order the
+   user set: the SWAT, then the army, then a super army after them. The
+   army is not a harder SWAT van, it is a SECOND FORCE — its own clock,
+   its own budget, its own curve starting at 1 the moment it is called,
+   its own carrier (the APC, which hovers; see ArmyApc in
+   js/vehicles.js) and its own soldier (see ACTORS.ARMY). It is called
+   at a PRESSURE rather than at a time — when the night is pressing
+   eight times what it was at the first shot, which on the SWAT's own
+   doubling clock is three minutes in — so the threshold is written in
+   the same units as the escalation it is part of, and retuning the
+   doubling moves the army with it rather than leaving it behind.
+
+   WHAT THE TWO FORCES SHARE is everything about the MAP: the ring, the
+   ways in, the bays, where a stand is and how a route reaches it. What
+   they do not share is anything about themselves. So FORCES below is a
+   row per force and the machinery underneath takes one as an argument;
+   the super army is a third row and a sheet, and nothing else.
+
+   AND THE FIRE LANE HAS NINE BAYS, which the curve asks past inside
+   four minutes. When they are all full the next one stands along the
+   ring by the doors instead of not coming, which is the same answer
+   this file already gives for a player out in the car park — the ring
+   is a place to stand anywhere on it, and running out of bays was the
+   one way the escalation used to quietly stop.
+
    WHERE THEY GO is the map's business. level.swatRoutes is the way in
    from each end of the road and level.swatBays is where a van may stop,
    both worked out where the lot's own numbers are; this file joins one
-   to the other and drives nothing itself. See SwatVan in js/vehicles.js
-   for the driving and js/states.js for the trooper.
+   to the other and drives nothing itself. See SwatVan and ArmyApc in
+   js/vehicles.js for the driving and js/states.js for the troops.
    ===================================================================== */
 
 import { TICRATE, pRandom } from './util.js';
-import { SwatVan } from './vehicles.js';
+import { SwatVan, ArmyApc } from './vehicles.js';
 
 /* Who, at what alarm, and how long they take to get here. Delays are in
    tics. `count` and `note` describe the wave that will arrive when there
@@ -155,6 +180,68 @@ export const SWAT = {
   convoyGap: 460,
 };
 
+/* ---------------------------------------------------------------------
+   AND THE ARMY, IN THE SAME NUMBERS
+
+   Read against the SWAT above, which is the only way to read them.
+   FEWER AND HEAVIER is the whole design: two carriers a send against
+   three vans, two on the road at pressure 1 against six, four soldiers
+   on their feet against six — and each of those soldiers is two and a
+   third of a trooper with a burst rifle (see ACTORS.ARMY). The ceiling
+   is a third of the SWAT's because forty soldiers is already more than
+   the sixteen hundred of you can walk through, and because an APC is
+   two and a half times a van on the screen: the same ground holds
+   fewer of them and reads as fuller.
+
+   THE CLOCKS ARE SLOWER AND THE DOORS ARE FASTER. Seventy seconds
+   between sends against fifty-five, because a carrier is not a squad
+   car; forty tics between one soldier and the next against fifty,
+   because a ramp is not a side door; and eight in the back against six.
+
+   AND THEY STAND FURTHER APART: seven hundred along the ring against
+   five hundred and sixty, which is what a vehicle a fifth longer and
+   half again wider needs to not be parked inside the last one.
+
+   `at` is the one number that is not about the army at all. It is the
+   SWAT's pressure at the moment the army is called — eight, which is
+   three doublings, which is three minutes after your first shot — and
+   from that tic the army has a curve of its own starting at 1. So the
+   army arrives small while the police are already eightfold, and then
+   doubles on the same clock underneath them. Nobody leaves.
+   ------------------------------------------------------------------- */
+export const ARMY = {
+  at: 8,                                 // the SWAT's pressure when they are called
+  firstDelay: 0,                         // and then they come at once, like everybody
+  doubling: 60 * TICRATE,
+  every: 70 * TICRATE, minEvery: 9 * TICRATE,
+  convoy: 2, vans: 2, maxVans: 10,
+  troopers: 4, maxTroopers: 40,
+  crew: 8, unloadEvery: 40, trickle: 11 * TICRATE, minTrickle: 3 * TICRATE,
+  bays: 9,
+  stand: 700, push: 1400, stop: 300, convoyGap: 620,
+};
+
+/* ---------------------------------------------------------------------
+   WHO IS ON THE ROAD, IN ORDER
+
+   One row a force, and the order of the rows is the order of the night.
+   `troop` is the actor that gets out, `model` is the field on the Game
+   that holds the vehicle it gets out of — see js/main.js, which loads
+   them — and `Van` is the class that drives it. `num` is the block of
+   numbers above.
+
+   The super army is a fourth entry in js/people.js, a third here, a
+   third call to troopStates in js/states.js and a third kit in
+   js/sprites.js. That is the whole of it, and it is the reason all four
+   of those are tables.
+   ------------------------------------------------------------------- */
+export const FORCES = [
+  { key: 'swat', name: 'the SWAT', troop: 'SWAT', model: 'police', Van: SwatVan, num: SWAT,
+    message: 'SIRENS' },
+  { key: 'army', name: 'the army', troop: 'ARMY', model: 'apc', Van: ArmyApc, num: ARMY,
+    message: 'THE ARMY IS ON THE ROAD' },
+];
+
 /** The curve, as a pure function: how many times harder the night is
  *  pressing `tics` after the call. 1 at the call, 2 a doubling later,
  *  4 after two, and so on — equal steps in time multiply by the same
@@ -176,32 +263,60 @@ export class Responders {
     this.waves = [];                 // what spawn() was asked for, for anyone watching
     this.tics = 0;
 
-    /* the squad */
-    this.called = false;             // somebody has died by your hand
-    this.calledAt = -1;
-    this.nextVanAt = -1;
-    this.gap = 0;                    // the gap the last van set, in tics
-    this.vans = [];                  // every SwatVan that has come
+    /* THE FORCES, one state block each and in the order of the night:
+       when it was called, when its next send is due, and how many it
+       has put on the ground. Everything else about one is in its row of
+       FORCES and in the block of numbers that row points at. */
+    this.forces = FORCES.map(def => ({ def, num: def.num, called: false, calledAt: -1, nextVanAt: -1, gap: 0, spawned: 0 }));
+    this.swat = this.forces[0];
+    this.army = this.forces[1];
+    this.vans = [];                  // every vehicle that has come, of either force
     this.side = 0;                   // which end of the road the next one uses
-    this.spawned = 0;                // troopers put on the ground, ever
   }
+
+  /** The force with this key, for anyone outside asking about one. */
+  forceOf(key) { return this.forces.find(f => f.def.key === key) || null; }
+
+  /* WHAT THE SQUAD USED TO BE, when it was the only one. Every one of
+     these is now the SWAT's own, spelled the way it has always been
+     spelled, so the rest of the game and every test written against a
+     night with one force in it still asks the same questions. The two
+     that are SET as well as read — the call and the next send — are
+     accessors for that reason. */
+  get called() { return this.swat.called; }
+  set called(v) { this.swat.called = !!v; }
+  get calledAt() { return this.swat.calledAt; }
+  set calledAt(v) { this.swat.calledAt = v; }
+  get nextVanAt() { return this.swat.nextVanAt; }
+  set nextVanAt(v) { this.swat.nextVanAt = v; }
+  get gap() { return this.swat.gap; }
+  /** Troopers put on the ground by anybody, ever. */
+  get spawned() { return this.forces.reduce((n, f) => n + f.spawned, 0); }
 
   /* ------------------------------------------------------------------
      THE CURVE, read off the clock
      ------------------------------------------------------------------ */
-  /** How hard the night is pressing now: 0 before the call, 1 at it,
-   *  and doubling every SWAT.doubling tics from then on. */
-  get pressure() { return this.called ? pressureAfter(this.tics - this.calledAt) : 0; }
-  /** Vans allowed on the road or standing at once, now. */
-  get vanCap() { return Math.min(SWAT.maxVans, Math.floor(SWAT.vans * this.pressure)); }
-  /** Troopers allowed on their feet at once, now, across every van. */
-  get trooperCap() { return Math.min(SWAT.maxTroopers, Math.floor(SWAT.troopers * this.pressure)); }
-  /** The gap to the next van, now: the starting gap over the pressure,
-   *  give or take a fifth so two nights are not the same night. */
-  gapNow() { return Math.max(SWAT.minEvery, SWAT.every * (0.8 + 0.4 * rnd()) / this.pressure); }
-  /** The gap between one trooper and the next out of a standing van
+  /** How hard one force is pressing now: 0 before it is called, 1 at
+   *  the call, and doubling every `doubling` tics from then on. Every
+   *  force has its own, off its own call, so the army arriving at 1
+   *  under a police force already at 8 is exactly what it looks like. */
+  pressureOf(f) { return f.called ? pressureAfter(this.tics - f.calledAt) : 0; }
+  /** Vehicles of one force allowed on the road or standing at once. */
+  vanCapOf(f) { return Math.min(f.num.maxVans, Math.floor(f.num.vans * this.pressureOf(f))); }
+  /** And its troops allowed on their feet at once, across all of them. */
+  trooperCapOf(f) { return Math.min(f.num.maxTroopers, Math.floor(f.num.troopers * this.pressureOf(f))); }
+  /** The gap to one force's next send: its starting gap over its
+   *  pressure, give or take a fifth so two nights are not the same
+   *  night. */
+  gapNow(f = this.swat) { return Math.max(f.num.minEvery, f.num.every * (0.8 + 0.4 * rnd()) / this.pressureOf(f)); }
+  /** The gap between one trooper and the next out of a standing vehicle
    *  whose crew is already out, now. */
-  trickleNow() { return Math.max(SWAT.minTrickle, SWAT.trickle / this.pressure); }
+  trickleNow(f = this.swat) { return Math.max(f.num.minTrickle, f.num.trickle / this.pressureOf(f)); }
+
+  /* and the same four as the SWAT's own, which is what they used to be */
+  get pressure() { return this.pressureOf(this.swat); }
+  get vanCap() { return this.vanCapOf(this.swat); }
+  get trooperCap() { return this.trooperCapOf(this.swat); }
 
   get tier() { return Math.max(0, ...this.arrived); }
   get nextTier() { return TIERS.find(t => !this.dispatched.has(t.tier)) || null; }
@@ -266,19 +381,29 @@ export class Responders {
   /* ------------------------------------------------------------------
      THE SQUAD
      ------------------------------------------------------------------ */
-  /** Vans that are still a van: on the road, standing, or charring. A
-   *  wreck is not one, and neither is one in the air — which since the
-   *  van became fireproof is every van that has ever come, but the
-   *  count is kept honest against the day something else ends one. */
+  /** Vehicles that are still a vehicle: on the road, standing, or
+   *  charring. A wreck is not one, and neither is one in the air —
+   *  which since they became fireproof is every one that has ever come,
+   *  but the count is kept honest against the day something ends one. */
   get liveVans() { return this.vans.filter(v => v.whole); }
+  liveVansOf(f) { return this.vans.filter(v => v.force === f && v.whole); }
 
-  /** Troopers on their feet, anywhere. Counted, not kept, for the same
-   *  reason Game.peopleLeft is. */
-  get troopers() {
+  /** Troops of one force on their feet, anywhere. Counted, not kept,
+   *  for the same reason Game.peopleLeft is. */
+  troopersOf(f) {
     let n = 0;
-    for (const a of this.game.actors) if (a.type === 'SWAT' && !a.dead && !a.removed) n++;
+    const t = f.def.troop;
+    for (const a of this.game.actors) if (a.type === t && !a.dead && !a.removed) n++;
     return n;
   }
+
+  /** And everybody's, which is what the HUD would ask if it asked. */
+  get troopers() { return this.forces.reduce((n, f) => n + this.troopersOf(f), 0); }
+
+  /** The model one force arrives in, or null if it never loaded — see
+   *  js/main.js. A force with no vehicle simply does not come, which is
+   *  the same bargain every other asset in this game makes. */
+  modelFor(f) { return this.game[f.def.model] || null; }
 
   squadTic() {
     const g = this.game, p = g.player;
@@ -289,39 +414,56 @@ export class Responders {
        it is going. */
     if (!this.called && (p.shotsFired >= SWAT.after || p.kills > 0)) this.call();
     if (!this.called || p.dead) return;
-    /* the next van, if the curve allows another on the road. The gap is
-       read off the curve as each van leaves, not set at the call, so
-       the fourth van comes on the fourth van's terms; and when the cap
-       itself climbs past the vans standing, the next is sent the tic
-       it does, because the gap has long since run out */
-    if (this.tics >= this.nextVanAt && this.liveVans.length < this.vanCap && g.police) {
-      this.sendConvoy();
-      this.gap = this.gapNow();
-      this.nextVanAt = this.tics + Math.round(this.gap);
+    /* AND THEN EVERYBODY WHO IS ALREADY COMING, plus anybody the curve
+       has just reached. A force waiting its turn is called the tic the
+       SWAT's pressure passes its threshold and starts its own curve at
+       1 from there; the ones ahead of it do not stop. */
+    for (const f of this.forces) {
+      if (!f.called) {
+        if (!(f.num.at > 0) || this.pressure < f.num.at) continue;
+        this.call(f);
+      }
+      this.forceTic(f);
     }
-    /* and what comes out of the ones that are here */
-    const cap = this.trooperCap;
+  }
+
+  /** One force's turn: the next send if its curve allows another on the
+   *  road, and then whatever comes out of the ones that are here. */
+  forceTic(f) {
+    const N = f.num;
+    /* the next send, if the curve allows another on the road. The gap
+       is read off the curve as each one leaves, not set at the call, so
+       the fourth comes on the fourth's terms; and when the cap itself
+       climbs past what is standing, the next goes the tic it does,
+       because the gap has long since run out */
+    if (this.tics >= f.nextVanAt && this.liveVansOf(f).length < this.vanCapOf(f) && this.modelFor(f)) {
+      this.sendConvoy(f);
+      f.gap = this.gapNow(f);
+      f.nextVanAt = this.tics + Math.round(f.gap);
+    }
+    const cap = this.trooperCapOf(f);
     for (const v of this.vans) {
+      if (v.force !== f) continue;
       if (v.state !== 'parked' && v.state !== 'charring') continue;
-      if (v.unloadAt === undefined) v.unloadAt = this.tics + SWAT.unloadEvery;
+      if (v.unloadAt === undefined) v.unloadAt = this.tics + N.unloadEvery;
       if (this.tics < v.unloadAt) continue;
-      if (this.troopers >= cap) { v.unloadAt = this.tics + TICRATE; continue; }
-      if (this.unload(v)) {
+      if (this.troopersOf(f) >= cap) { v.unloadAt = this.tics + TICRATE; continue; }
+      if (this.unload(v, f)) {
         v.unloaded = (v.unloaded || 0) + 1;
-        v.unloadAt = this.tics + (v.unloaded < SWAT.crew ? SWAT.unloadEvery : Math.round(this.trickleNow()));
+        v.unloadAt = this.tics + (v.unloaded < N.crew ? N.unloadEvery : Math.round(this.trickleNow(f)));
       } else v.unloadAt = this.tics + 12;          // the door is blocked; try again shortly
     }
   }
 
-  call() {
-    this.called = true;
-    this.calledAt = this.tics;
-    this.nextVanAt = this.tics + SWAT.firstDelay;
-    this.gap = 0;
+  call(f = this.swat) {
+    f.called = true;
+    f.calledAt = this.tics;
+    f.nextVanAt = this.tics + (f.num.firstDelay || 0);
+    f.gap = 0;
     const g = this.game;
-    g.setBigMessage?.('SIRENS', 3 * TICRATE);
-    g.sound?.play('siren', null);
-    g.onResponders?.('called');
+    g.setBigMessage?.(f.def.message, 3 * TICRATE);
+    g.sound?.play(f === this.swat ? 'siren' : 'hover', null);
+    g.onResponders?.('called', f.def);
   }
 
   /* ------------------------------------------------------------------
@@ -425,15 +567,17 @@ export class Responders {
     };
   }
 
-  /** A stand beside the player: `slot` steps along the ring from the
-   *  point nearest them, then in off the road as far as it goes. */
-  chaseStand(p, slot) {
-    const t = this.ringNearest(p.x, p.y) + slot * SWAT.stand;
+  /** A stand beside a point: `slot` steps along the ring from the point
+   *  on it nearest, then in off the road toward it as far as the tarmac
+   *  goes. `N` is the force's numbers, because how far apart two of
+   *  them park and how close they get is about how big they are. */
+  chaseStand(p, slot, N = SWAT) {
+    const t = this.ringNearest(p.x, p.y) + slot * N.stand;
     const on = this.ringAt(t);
     const dx = p.x - on.x, dy = p.y - on.y;
     const d = Math.hypot(dx, dy) || 1;
     const ux = dx / d, uy = dy / d;
-    const reach = Math.min(SWAT.push, Math.max(0, d - SWAT.stop));
+    const reach = Math.min(N.push, Math.max(0, d - N.stop));
     let gone = 0, x = on.x, y = on.y;
     const STEP = 70;
     while (gone + STEP <= reach) {
@@ -448,35 +592,60 @@ export class Responders {
     };
   }
 
-  /** Nothing already standing there. */
-  standClear(s) {
-    const r = SWAT.stand * 0.7;
+  /** Nothing already standing there — anybody's, since the fire lane
+   *  does not care which force is blocking it. The room asked for is
+   *  the asker's own, so an APC demands more of it than a van. */
+  standClear(s, N = SWAT) {
+    const r = N.stand * 0.7;
     return !this.liveVans.some(v => v.stand && (v.stand.x - s.x) ** 2 + (v.stand.y - s.y) ** 2 < r * r);
   }
 
-  /** The next place a van should go, or null if every one is taken. */
-  freeStand() {
+  /** The next place one of `f`'s vehicles should go, or null if there
+   *  is nowhere left at all.
+   *
+   *  Inside the building that is a bay in the fire lane. WHEN THE BAYS
+   *  ARE GONE it is a stand along the ring by the doors instead of
+   *  nothing: nine bays against a curve that asks for twenty-seven
+   *  inside four minutes used to mean the escalation stopped at nine
+   *  and said nothing about it, which is the one place the design's own
+   *  "the curve does not stop" was not true. */
+  freeStand(f = this.swat) {
     if (!this.ring) return null;
+    const N = f.num;
+    let at = this.game.player;
     if (!this.chasing) {
-      const bay = this.freeBay();
-      return bay ? this.bayStand(bay) : null;
+      const bay = this.freeBay(f);
+      if (bay) return this.bayStand(bay);
+      at = this.doorsPoint() || at;
     }
-    const p = this.game.player;
-    for (let k = 0; k <= 12; k++) {
+    if (!at) return null;
+    /* Thirty-three places along the ring, which is what the ceiling on
+       vehicles (maxVans) needs to be reachable rather than a number the
+       search quietly stops short of. */
+    for (let k = 0; k <= 16; k++) {
       const slot = k === 0 ? 0 : (k & 1 ? (k + 1) >> 1 : -(k >> 1));
-      const s = this.chaseStand(p, slot);
-      if (this.standClear(s)) return s;
+      const s = this.chaseStand(at, slot, N);
+      if (this.standClear(s, N)) return s;
     }
     return null;
   }
 
+  /** The front of the shop: the middle bay, which is the first one the
+   *  map lists. What everybody queues along when the lane is full. */
+  doorsPoint() {
+    const bays = this.game.level.swatBays;
+    return bays && bays.length ? bays[0] : null;
+  }
+
   /** A bay nobody is standing in. The middle one first, then either
-   *  side of it, working outward; a van never leaves one. */
-  freeBay() {
+   *  side of it, working outward; a van never leaves one. Taken is
+   *  taken whoever took it — an APC in the fire lane is in the fire
+   *  lane. */
+  freeBay(f = this.swat) {
     const bays = this.game.level.swatBays;
     if (!bays || !bays.length) return null;
     const taken = new Set(this.vans.map(v => v.bay));
-    return bays.slice(0, SWAT.bays).find(b => !taken.has(b)) || null;
+    return bays.slice(0, f.num.bays).find(b => !taken.has(b)) || null;
   }
 
   /** In from one end of the road, round the ring the short way, and in
@@ -522,34 +691,38 @@ export class Responders {
     return best;
   }
 
-  /** THREE OF THEM, at the user's request, nose to tail from the same
-   *  end of the road — as many as the budget still has room for. */
-  sendConvoy() {
-    const room = this.vanCap - this.liveVans.length;
-    const first = this.freeStand();
+  /** A SEND, nose to tail from the same end of the road — three vans at
+   *  the user's request, two APCs because they are half again as wide,
+   *  and in both cases as many as the budget still has room for. */
+  sendConvoy(f = this.swat) {
+    const room = this.vanCapOf(f) - this.liveVansOf(f).length;
+    const first = this.freeStand(f);
     if (!first) return [];
     const side = this.sideFor(first.ring);
     this.side++;
     const sent = [];
-    for (let k = 0; k < Math.min(SWAT.convoy, room); k++) {
-      const v = this.sendVan(side, k * SWAT.convoyGap);
+    for (let k = 0; k < Math.min(f.num.convoy, room); k++) {
+      const v = this.sendVan(f, side, k * f.num.convoyGap);
       if (!v) break;
       sent.push(v);
     }
     return sent;
   }
 
-  sendVan(side = (this.side++ % 2 ? 'east' : 'west'), back = 0) {
+  sendVan(f = this.swat, side = (this.side++ % 2 ? 'east' : 'west'), back = 0) {
     const g = this.game;
-    const stand = this.freeStand();
+    const model = this.modelFor(f);
+    if (!model) return null;
+    const stand = this.freeStand(f);
     if (!stand) return null;
     const route = this.routeTo(stand, side, back);
     if (!route) return null;
-    const v = new SwatVan(g.vehicles, g.police.def, g.police.texture, route);
+    const v = new f.def.Van(g.vehicles, model.def, model.texture, route);
     v.parkAngle = route[route.length - 1].angle;
     v.stand = stand;
     v.bay = stand.bay || null;
     v.side = side;
+    v.force = f;
     g.vehicles.addVehicle(v);
     this.vans.push(v);
     g.onResponders?.('van', v);
@@ -558,7 +731,7 @@ export class Responders {
 
   /** One trooper out of the side door, if there is room to stand. Tries
    *  the five places along the flank before giving up for this tic. */
-  unload(v) {
+  unload(v, f = v.force || this.swat) {
     const g = this.game, lv = g.level;
     /* THE DOOR THEY USE IS THE ONE FACING YOU. It used to be the one
        facing the shop, which was the same thing while the only place a
@@ -572,14 +745,15 @@ export class Responders {
       const sec = lv.sectorAt(d.x, d.y);
       if (!sec) continue;
       if (!this.roomAt(d.x, d.y, 20)) continue;
-      const a = g.spawn('SWAT', d.x, d.y, undefined, { angle: d.angle });
+      const a = g.spawn(f.def.troop, d.x, d.y, undefined, { angle: d.angle });
       /* they know why they are here: the player, from the first step */
       a.target = g.player;
       a.threshold = 0;
       a.setState(a.info.see);
       a.van = v;
-      this.spawned++;
-      g.sound?.play('swatsee', a);
+      a.force = f;
+      f.spawned++;
+      g.sound?.play(a.info.seeSound, a);
       return a;
     }
     return null;

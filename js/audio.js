@@ -55,6 +55,19 @@ const DEFS = {
   swatsee:   { kind: 'sweep', dur: 0.16, f0: 420,  f1: 300,  gain: 0.24, wave: 'triangle' },
   swatpain:  { kind: 'sweep', dur: 0.14, f0: 360,  f1: 220,  gain: 0.24, wave: 'triangle' },
   swatdie:   { kind: 'sweep', dur: 0.50, f0: 380,  f1: 90,   gain: 0.30, wave: 'triangle' },
+  /* AND THE ARMY BEHIND THEM, which is the same five sounds a few
+     semitones down and a little longer. A heavier rifle is a lower
+     crack with more of it, the turbine under the APC is a sawtooth that
+     rises and falls where the siren is a square wave that wails — the
+     difference between a thing with an engine and a thing with a
+     warning — and the three voices are the SWAT's with bigger men in
+     them. */
+  rifle:     { kind: 'noise', dur: 0.17, f0: 2400, f1: 380,  gain: 0.46 },
+  hover:     { kind: 'sweep', dur: 0.85, f0: 96,   f1: 142,  gain: 0.18, wave: 'sawtooth' },
+  hover2:    { kind: 'sweep', dur: 0.85, f0: 142,  f1: 96,   gain: 0.18, wave: 'sawtooth' },
+  armysee:   { kind: 'sweep', dur: 0.19, f0: 300,  f1: 200,  gain: 0.26, wave: 'triangle' },
+  armypain:  { kind: 'sweep', dur: 0.16, f0: 260,  f1: 150,  gain: 0.26, wave: 'triangle' },
+  armydie:   { kind: 'sweep', dur: 0.58, f0: 270,  f1: 62,   gain: 0.32, wave: 'triangle' },
   /* the bang a vehicle ends on now, which is four of the old one: the
      same boom, longer and lower, with the master gain it needs to be
      the loudest thing in the game */

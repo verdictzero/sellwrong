@@ -33,16 +33,18 @@ somewhere else: the people, the trees, the sky, and the gun.
                           drew them
   assets/people/        the crowd, and what is left of one: seventeen
                           shoppers, eleven pieces, three splats, a fireball;
-                          the squad, fifty-one cells of SWAT; and the army
-                          trooper, fifty-one cells cut the same way and
-                          not yet in the game
+                          the squad, fifty-one cells of SWAT; and the army,
+                          fifty-one cells cut the same way
   assets/forest/        the wood: ten plants with their burn maps, two grounds
   assets/sky/night.png  the night, baked from a Polyhaven panorama
   assets/models/        the flamethrower, the fire extinguisher rifle and
                           the cerebral bore, all three Vaportrash's and all
                           three stripped by tools/prep-model.mjs; the van,
-                          which is the user's .glb, and the police van,
-                          which is the user's other one
+                          the police van and the army's hover APC, which
+                          are the user's three — the APC stripped by the
+                          same tool, two megabytes of normal and
+                          metal-rough off a renderer that has no lighting
+                          model to spend them on
   assets/fonts/         Michroma (SIL OFL), the title face
   tools/bake-art.mjs    node tools/bake-art.mjs — turns art/ into source
   tools/prep-people.mjs the crowd's art, crunched down from galvarius
@@ -1534,9 +1536,18 @@ can see, face-fire-face on Doom's own ten-eight-eight, three to fifteen
 off whatever the shot meets first with the Zombieman's five and a half
 degrees of spread either way, which at point blank never misses and across
 the car park mostly does; one hit in five makes him flinch. They are a
-TEAM: a trooper shot in the back by the man behind him does not turn round
-to deal with it, because Doom's infighting is the best thing in Doom and
-the wrong thing for a squad. They come out of the van already after you.
+TEAM, and since the army came the team is everybody who turned up: a
+round from one of them does NOTHING to another of them, and neither of
+them turns round about it. Doom's infighting is the best thing in Doom
+and the wrong thing for a squad, and the damage half of it is worse than
+the grudge half once there are two forces on the same ground — a hundred
+and forty of soldier that crosses a fire lane with twenty-six troopers
+firing down it arrives at twenty, and an army tier that turns up already
+shot to pieces by the tier below it is not an escalation. A round is
+still STOPPED by whoever it meets, though, so the man in front of you is
+still cover and a crowd of them is not a crowd of clear shots; and
+anything that is not a round still lands, including their own van running
+them down. They come out already after you.
 
 THE POLICE ARE FIREPROOF, at the user's request — the troopers and the
 van both — and it is one flag on each (`fireproof` on the actor type in
@@ -1550,10 +1561,10 @@ invulnerable, since fire is the only thing that ends one. The stream
 splashes off the armour and heats the tarmac under it. A car going up in
 the next bay does nothing to the van. Nothing eats a trooper to ash; the
 two ash states are gone with the flag that reached them. What still gets
-through: a bullet (the man behind him), a van (his own, if he is standing
-in the lane when the next one comes), and the bore — which is the answer
-to them, and is rationed, which is the point. The flamethrower is not the
-answer to the SWAT any more than it is to a bullet.
+through: YOUR bullet, a van (his own, if he is standing in the lane when
+the next one comes), and the bore — which is the answer to them, and is
+rationed, which is the point. The flamethrower is not the answer to the
+SWAT any more than it is to a bullet.
 
 THE COLD STILL WORKS. A trooper freezes like anybody else, on his own
 drawing, and a block of ice with a rifle in it is the best joke the two
@@ -1586,13 +1597,87 @@ keeps for bruises, then the old bone-amber-red one that ends the night in
 aisle five like the card always said. It is js/player.js: three fields, a
 loop over two of them in damage(), and nothing else in the game knows.
 
+AND THEN THE ARMY COMES
+-----------------------
+
+At the user's request, and in the order the user set the day the sheet
+arrived: the SWAT, then the army, then a super army after them whose
+drawings are still to come. The army sat cut and unused in assets/people/
+for a while because the piece that was missing was not the soldier, it
+was the thing that brings him up the road; the user's HOVER APC is that
+piece, and the army was built the day it arrived.
+
+IT IS A SECOND FORCE, NOT A HARDER VAN. That is the whole of the design
+in js/responders.js: FORCES is a row per force — which troop gets out,
+which model it gets out of, which class drives it, and a block of numbers
+— and everything under it takes a force as an argument. Both forces are
+on the road at once and neither stops. The super army is a third row
+there, a third entry in js/people.js, a third call to troopStates in
+js/states.js and a third kit in js/sprites.js. Four tables and a sheet.
+
+THEY ARE CALLED AT A PRESSURE, NOT AT A TIME: when the night is pressing
+EIGHT times what it was at your first shot, which on the police's own
+doubling clock is three minutes in. Writing the threshold in the units of
+the escalation rather than in seconds means retuning the doubling moves
+the army with it instead of leaving it stranded. From that tic the army
+has a curve of its own STARTING AT 1 — so it arrives small underneath a
+police force already eightfold, and then doubles on the same clock. Both
+curves run to the end of the night.
+
+FEWER AND HEAVIER is the difference in every number. Two carriers a send
+against three vans; two on the road at the start against six, ten at the
+ceiling against twenty-seven; four soldiers on their feet against six,
+forty at the ceiling against eighty. But eight in the back of one against
+six, a soldier out of the ramp every forty tics against fifty, and a
+soldier who is two and a third of a trooper: a hundred and forty health,
+one flinch in eight instead of one in five, nineteen hundred of rifle
+range instead of fifteen, and a TWO-ROUND BURST off one frame at four to
+twenty a round with the scatter halved — two and a half times the damage
+out of one squeeze at half the spread, which across a car park is the
+difference between being shot at and being hit. They are fireproof on the
+same flag the SWAT wear and they freeze on the same one; the bore is
+still the answer and it is still rationed.
+
+AND THE CARRIER HOVERS, which is the first vehicle in this game that does
+not touch the road. The model says nothing about it — a GLB has no
+opinion — so it is three numbers in ArmyApc (js/vehicles.js) and three
+consequences. It rides thirty-four units off the tarmac and BREATHES five
+either way on a four-second cycle, which matters more than it sounds:
+nothing else in this game moves while it is standing still, so a thing
+that does reads as held up rather than parked. It throws GRIT: a puff
+under the skirts every three tics while it is moving and every thirteen
+while it stands, which is what sells the hover at a distance where five
+units of bob is nothing. And you do not get to walk under it — the three
+cylinders you cannot walk through stand on the ground the way every other
+vehicle's do, and are as tall as the gap plus the hull. A wreck loses the
+hover, because nothing that has stopped working floats.
+
+It is two hundred and sixty units nose to tail against the assault van's
+two hundred and fourteen, and a hundred and thirty-three across against
+its eighty-nine: an APC is not a longer van, it is a WIDER one. A hundred
+and thirty-three is what fits a fire lane a hundred and sixty deep with
+thirteen units of tarmac either side, which is the right amount — it fits,
+and it looks like it only just does. It has no siren: two notes still, on
+the same clock, but a low sawtooth that rises and falls instead of a
+square wave that wails, which is the difference between a thing with an
+engine and a thing with a warning.
+
+AND THE FIRE LANE HOLDS NINE, which the curve asks past inside four
+minutes. It used to mean the escalation quietly stopped at nine whenever
+you were indoors — the one place the design's own "the curve does not
+stop" was not true. When every bay is taken the next one now stands along
+the perimeter road by the doors instead of not coming, which is the same
+answer this file already gave for a player out in the car park. Three
+minutes into a night spent inside: twenty-seven vehicles, fifty troopers
+on their feet, a hundred and sixteen put on the ground so far.
+
 THE REST OF js/responders.js is still the shape it was: one number, the
 ALARM, climbing with how much of the store and the wood has gone and how
 long anything has been alight, and six tiers — night manager, security,
 the police, the fire brigade, riot police, the helicopter — each with an
 alarm they are dispatched at and a delay before they would arrive. That
 escalation is written and tested and still records a wave and returns;
-the squad has a trigger of its own and does not wait for it.
+the forces have a trigger of their own and do not wait for it.
 
 
 THE SKY AND THE NAME

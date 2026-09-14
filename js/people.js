@@ -112,14 +112,16 @@ export const BLASTS   = 26;
    navy, and gets a quarter of the lift, enough to open the shadows in
    the olive without turning the uniform pale.
 
-   THE ARMY TROOPER IS PREPARED AND NOT IN THE GAME. The sheet is cut,
-   the strip is in assets/people/, and this table and addTroops read it
-   back, which the smoke test proves; there is no actor, no state and
-   nothing that loads it, at the user's request — cut now, built later.
-   The order of the night is decided, though: the SWAT, then the army
-   after them, then a super army after the army, whose sheet is still
-   to come and will be a third entry here. See THE SWAT in js/states.js
-   for what the letters will mean when there is one.
+   AND THE ARMY IS IN THE GAME NOW. The sheet was cut and left sitting
+   here for a while at the user's request — cut now, built later — and
+   what built it was the APC arriving: a hover carrier to bring them up
+   the road, which is the piece that was missing. One entry here is all
+   the table knows about either of them; the states are stamped out of
+   one generator (see THE TROOPS in js/states.js), the stand-ins out of
+   one drawing (js/sprites.js), and the force that drives them up the
+   road out of one row (FORCES in js/responders.js). The super army is a
+   third entry in each of those four places and nothing else, which is
+   the whole reason any of them are tables.
    ------------------------------------------------------------------- */
 export const TROOPS = {
   SWAT: {

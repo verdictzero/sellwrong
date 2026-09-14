@@ -121,6 +121,16 @@ export const VAN_LENGTH = 174;
    Transit, and not a tank's length, because the fire lane it parks
    across is a hundred and sixty deep. */
 export const POLICE_LENGTH = 214;
+/* AND HOW LONG THE ARMY'S APC IS. The third model up the road and the
+   first that does not touch it: a hover carrier, drawn at thirteen and
+   a half metres of its own units against the assault van's eleven, and
+   set here at a fifth again the van's length and half again its width.
+   Which is the shape it IS rather than the shape of the file: an APC is
+   not a longer van, it is a WIDER one, and at 260 it comes out 133
+   across, in a fire lane 160 deep. Thirteen units of tarmac either side
+   of it is the right amount: it fits, and it looks like it only just
+   does. */
+export const APC_LENGTH = 260;
 
 /* glTF's own axes: +Y is up and the front of an asset faces +Z, so the
    left flank is +X. (Spec, "Coordinate System and Units".) The game's

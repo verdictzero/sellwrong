@@ -24,7 +24,7 @@ import { LofiPipeline } from './lofi.js';
 import { bakeTextures } from './textures.js';
 import { bakeSprites, bakeWeapons } from './sprites.js';
 import { fireFrames } from './fireart.js';
-import { loadVehicleModel, POLICE_LENGTH } from './car.js';
+import { loadVehicleModel, POLICE_LENGTH, APC_LENGTH } from './car.js';
 import { addStrip, imageData } from './spriteload.js';
 import { CELLS, GIBLETS, BLAST_SPRITE, addStandees, addSplats, addTroops } from './people.js';
 import { buildSellWrong } from './maps/sellwrong.js';
@@ -229,11 +229,20 @@ async function boot() {
   const policeP = loadVehicleModel('assets/models/police_assault.glb',
       { length: POLICE_LENGTH, id: 'police', name: 'Assault van', use: 'police' })
     .catch(e => { console.warn('no police van, nobody comes:', e.message); return null; });
-  /* and the SWAT themselves: the user's sheet, cut by tools/prep-troops.mjs.
-     (The army trooper's strip sits beside it, cut the same way, and is
-     not loaded: nothing spawns one yet. See TROOPS in js/people.js.) */
-  const swatP = loadImage('assets/people/swat.png')
-    .catch(e => { console.warn('no SWAT art, using the stand-ins:', e.message); return null; });
+  /* and the ARMY'S CARRIER, which is the third vehicle and the first
+     that does not touch the road: a hover APC, loaded exactly like the
+     other two and floated by ArmyApc in js/vehicles.js. Without it the
+     army never arrives and the SWAT are the whole night, which is the
+     same bargain as above. */
+  const apcP = loadVehicleModel('assets/models/apc.glb',
+      { length: APC_LENGTH, id: 'apc', name: 'Hover APC', use: 'army' })
+    .catch(e => { console.warn('no APC, the army stays home:', e.message); return null; });
+  /* and the troops themselves: the user's two sheets, cut by
+     tools/prep-troops.mjs. Either one missing costs that force its
+     faces and nothing else — js/sprites.js has already baked a body of
+     the right height under every letter. */
+  const troopsP = Promise.all(['swat', 'army'].map(k => loadImage(`assets/people/${k}.png`)))
+    .catch(e => { console.warn('no troop art, using the stand-ins:', e.message); return null; });
 
   status('BAKING TEXTURES', 0.05); await breathe();
   const textures = bakeTextures();
@@ -269,8 +278,9 @@ async function boot() {
     console.log(`the crowd: ${people} shoppers, ${splats} splats, ${blast} frames of fireball`);
   }
   {
-    const swatImg = await swatP;
+    const [swatImg, armyImg] = (await troopsP) || [];
     if (swatImg) console.log(`the squad: ${addTroops(sprites, imageData(swatImg), 'SWAT')} cells of SWAT`);
+    if (armyImg) console.log(`and behind them: ${addTroops(sprites, imageData(armyImg), 'ARMY')} cells of army`);
   }
 
   /* THE FIRE ON THE TREES AND ON THE GUN. The store's three fire sets
@@ -293,6 +303,7 @@ async function boot() {
   const level = buildSellWrong();
   const fleet = await fleetP;
   const police = await policeP;
+  const apc = await apcP;
 
   status('THE FLAMETHROWER', 0.78);
   const hud = new Hud(null);
@@ -300,7 +311,7 @@ async function boot() {
   const input = new Input(renderer.domElement);
   const game = new Game({ level, scene, camera, textures, sprites, hud, audio, input, sky: skyImage,
                          flameAtlas: streamAtlas, bodyAtlas: flameAtlas, fxAtlases, gibAtlases,
-                         fleet, police });
+                         fleet, police, apc });
   hud.game = game;
   const touch = new TouchControls(input, { root: $('touch'), prefs, onPause: () => pause(true) });
 

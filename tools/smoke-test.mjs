@@ -4153,6 +4153,40 @@ section('the van');
     return v;
   })();
 
+  /* --- AND THE ARMY'S CARRIER, which is the user's third model --------
+     A hover APC, and the first vehicle in the game that does not touch
+     the road. Loaded exactly like the other two — the model says
+     nothing about hovering, which is a fact about the GAME and lives in
+     ArmyApc — and measured against the police van beside it, because
+     "an APC" is a shape rather than a size: not much longer, half again
+     as wide, and still inside the fire lane. */
+  const apc = await (async () => {
+    const glb = await import('../js/glb.js');
+    const bytes = fs.readFileSync('assets/models/apc.glb');
+    const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    const { json, bin } = glb.parseGLB(ab);
+    note('the APC', `${json.meshes.length} mesh, ${json.materials.length} material, ${json.images.length} image, ` +
+      `${(bytes.length / 1024 / 1024).toFixed(1)} MB`);
+    /* tools/prep-model.mjs took the normal map and the metal-rough off
+       it on the way in — two megabytes for a renderer with no lighting
+       model to spend them on. What is left is the one picture that IS
+       the vehicle. */
+    check('the maps an unlit renderer cannot use are off it: one image left, and it is the colour',
+      json.images.length === 1 && /diffuse/i.test(json.images[0].name || ''),
+      json.images.map(i => i.name).join(', '));
+    check('and the game prepared it rather than the artist',
+      /prep-model/.test(json.asset.generator || ''), json.asset.generator);
+    const v = car.modelVehicle(json, bin, { length: car.APC_LENGTH, id: 'apc', name: 'Hover APC', use: 'army' });
+    check('it is an APC: a fifth longer than the assault van and half again as wide',
+      car.carLength(v) > car.carLength(police) && car.carWidth(v) > car.carWidth(police) * 1.4,
+      `${car.carLength(v)} long, ${car.carWidth(v).toFixed(0)} wide, ${car.carHeight(v).toFixed(0)} tall, ` +
+      `against ${car.carLength(police)} by ${car.carWidth(police).toFixed(0)}`);
+    check('and it still fits across the fire lane, which is what stopped it being bigger',
+      car.carWidth(v) < 160, `${car.carWidth(v).toFixed(0)} wide of 160`);
+    check('and every triangle of it is on the sheet', v.model.tris.every(t => !t.ink));
+    return v;
+  })();
+
   /* --- and seventy-seven of them, parked ---------------------------- */
   const { Game } = await import('../js/game.js');
   const THREE2 = await import('three');
@@ -4165,6 +4199,7 @@ section('the van');
              attack: false, use: false, run: false, sample() {}, sensitivity: 0 },
     fleet: { texture: {}, def: van },                // it never draws in here
     police: { texture: {}, def: police },
+    apc: { texture: {}, def: apc },
   });
   const V = gm.vehicles;
   note('the car park', `${V.count} vehicles in ${(level.carSlots || []).length} bays`);
@@ -4392,6 +4427,7 @@ section('the van');
                attack: false, use: false, run: false, sample() {}, sensitivity: 0 },
       fleet: { texture: {}, def: van },
       police: { texture: {}, def: police },
+      apc: { texture: {}, def: apc },
     });
     const R = gs.responders;
 
@@ -4448,10 +4484,43 @@ section('the van');
       note('how orange the firing frame is', `SWAT ${(glow(sf) * 100).toFixed(0)}% against ${(glow(sa) * 100).toFixed(0)}% walking; army ${(glow(af) * 100).toFixed(0)}% against ${(glow(aa) * 100).toFixed(0)}%`);
       check('the firing frame is the lit one on both sheets', glow(sf) > glow(sa) * 2 && glow(af) > glow(aa) * 2);
     }
-    /* AND THAT IS ALL THE ARMY IS, for now */
-    check('the army trooper is prepared and not implemented: no actor, no states, nothing loads it',
-      !st.ACTORS.ARMY && !st.STATES?.ARMY_STAND && !/army\.png/.test(fs.readFileSync('js/main.js', 'utf8')) &&
-      !/ARMY/.test(fs.readFileSync('js/states.js', 'utf8')) && !/ARMY/.test(fs.readFileSync('js/responders.js', 'utf8')));
+    /* AND THE ARMY IS IN THE GAME NOW, which is what the APC bought:
+       the sheet was cut and left sitting here at the user's request
+       until there was something to bring them up the road. */
+    check('the army trooper is in the game: an actor, a whole table of states, and the strip loaded',
+      !!st.ACTORS.ARMY && !!st.STATES.ARMY_STAND && !!st.STATES.ARMY_XDIE9 &&
+      /'swat', 'army'/.test(fs.readFileSync('js/main.js', 'utf8')));
+    /* ONE TABLE, TWO TROOPS. Every state the SWAT have, the army have:
+       the same letter, the same tics, the same fullbright on the firing
+       frame, under their own prefix and their own sprite. It is one
+       generator called twice rather than thirty lines written twice,
+       which is the whole reason the super army will be a third line. */
+    {
+      const names = Object.keys(st.STATES).filter(n => n.startsWith('SWAT_')).map(n => n.slice(5));
+      const odd = names.filter(n => {
+        const a = st.STATES['SWAT_' + n], b = st.STATES['ARMY_' + n];
+        return !b || b.frame !== a.frame || b.tics !== a.tics || b.sprite === a.sprite ||
+               !!b.fullbright !== !!a.fullbright;
+      });
+      note('the two tables', `${names.length} states each, ${odd.length} that do not match`);
+      check('every SWAT state has an army state on the same frame for the same tics',
+        names.length >= 30 && odd.length === 0, odd.join(', '));
+      /* and the ONE thing that differs, which is what they do with the
+         rifle: two rounds instead of one, tighter — see A_ArmyFire */
+      check('and the only thing that differs is the action on the firing frame',
+        st.STATES.SWAT_ATK2.action === 'A_SwatFire' && st.STATES.ARMY_ATK2.action === 'A_ArmyFire' &&
+        names.every(n => n === 'ATK2' || st.STATES['SWAT_' + n].action === st.STATES['ARMY_' + n].action));
+      /* AND BOTH HAVE A STAND-IN UNDER THEM, so a sheet that fails to
+         load costs that force its faces and nothing else — and the two
+         stand-ins are not the same drawing, because the day one sheet
+         loads and the other does not is the day you need to know which
+         one is shooting at you. */
+      const bank = gs.sprites;
+      const pix = k => bank.frames.get(ppl.TROOPS[k].sprite + 'A').views[0];
+      check('and both troops have a stand-in under every letter their table names',
+        Object.values(ppl.TROOPS).every(t => [...t.turn, ...t.flat].every(L => !!bank.frames.get(t.sprite + L))));
+      check('and the two stand-ins are told apart, not the same body twice', !same(pix('SWAT'), pix('ARMY')));
+    }
 
     /* --- the map's part ------------------------------------------- */
     const onTarmac = p => { const s2 = level.sectorAt(p.x, p.y); return !!s2 && /road|junction/i.test(s2.name); };
@@ -4545,7 +4614,7 @@ section('the van');
           `${(first.y - v.y).toFixed(0)} off the van's line, ${level.sectorAt(first.x, first.y)?.name}`);
         check('and is after you from the first step',
           first.target === p && /^SWAT_(RUN|ATK)/.test(first.state.name), first.state.name);
-        check('and turns: not a standee', !first.flat && first.info.team === 'swat');
+        check('and turns: not a standee', !first.flat && first.info.team === 'law');
       }
       /* BACK OUT INTO THE LOT for the rest of this. The doors were the
          point of the block above; what follows is about troopers, and a
@@ -4820,6 +4889,7 @@ section('the van');
         input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
                  attack: false, use: false, run: false, sample() {}, sensitivity: 0 },
         fleet: { texture: {}, def: van }, police: { texture: {}, def: police },
+        apc: { texture: {}, def: apc },
       });
       const fp = fresh.player;
       fp.startFire();
@@ -4831,6 +4901,209 @@ section('the van');
       check('and a van is standing within twenty seconds of the shot', t2 < 20 * 35, `${(t2 / 35).toFixed(1)}s`);
       check('and it came from the nearer end of the road',
         fresh.responders.vans[0].side === fresh.responders.sideFor(fresh.responders.vans[0].stand.ring));
+    }
+
+    /* ==================================================================
+       AND THE ARMY BEHIND THEM
+
+       The user's order, set down the day the sheet arrived and built the
+       day the carrier did: the SWAT, then the army, then a super army.
+       The army is not a harder van — it is a SECOND FORCE, with its own
+       clock, its own budget, its own curve and its own vehicle, running
+       underneath a police force that does not stop.
+
+       WHAT IS MEASURED HERE is the join: that they are called at the
+       right moment and not before, that what arrives is an APC and not
+       a van, that it hovers, that what gets out of it is a soldier and
+       not a trooper, and that the two forces share the fire lane rather
+       than parking inside one another.
+
+       The clock is wound rather than waited out: three doublings is six
+       thousand three hundred tics and driving those is three minutes of
+       test for one boolean. What is NOT wound is the drive itself,
+       which is real, on the real map, to a real stand.
+       ================================================================== */
+    {
+      const { ARMY: A, FORCES, pressureAfter: pa } = await import('../js/responders.js');
+      const veh = await import('../js/vehicles.js');
+
+      check('the night is a list of forces, in the order the user set',
+        FORCES.map(f => f.key).join(',') === 'swat,army' &&
+        FORCES[0].troop === 'SWAT' && FORCES[1].troop === 'ARMY' &&
+        FORCES[0].Van === veh.SwatVan && FORCES[1].Van === veh.ArmyApc);
+      check('and the army is called at a PRESSURE, so it moves when the escalation is retuned',
+        A.at === 8 && pa(3 * S.doubling) === A.at, `${A.at} is ${Math.log2(A.at)} doublings`);
+      check('and there is less of them and it is heavier',
+        A.convoy < S.convoy && A.vans < S.vans && A.maxTroopers < S.maxTroopers &&
+        A.crew > S.crew && A.stand > S.stand,
+        `${A.convoy} a send of ${A.maxVans}, ${A.crew} in the back, ${A.stand} apart`);
+
+      /* --- a night of its own ---------------------------------------- */
+      const ga = new Game({
+        level: MAP.buildSellWrong(), scene: new THREE2.Scene(), camera: {},
+        textures: gm.textures, sprites: spr.bakeSprites(),
+        hud: { message() {}, ticMessages() {} }, audio: null,
+        input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
+                 attack: false, use: false, run: false, sample() {}, sensitivity: 0 },
+        fleet: { texture: {}, def: van },
+        police: { texture: {}, def: police },
+        apc: { texture: {}, def: apc },
+      });
+      const Ra = ga.responders, pa2 = ga.player;
+      /* the drive takes a couple of thousand tics with a squad already
+         on the ground shooting the whole way; what is being measured is
+         the army arriving, not whether you survive to see it */
+      pa2.invincible = true;
+      pa2.startFire();
+      ga.tic();
+      check('the first shot calls the SWAT and only the SWAT',
+        Ra.swat.called && !Ra.army.called && Ra.vans.length === S.convoy &&
+        Ra.vans.every(v => v.force === Ra.swat));
+
+      /* WIND THE NIGHT ON three doublings, which is where the army is */
+      Ra.swat.calledAt = Ra.tics - 3 * S.doubling;
+      ga.tic();
+      check('three doublings in, the army is called', Ra.army.called,
+        `SWAT pressure ${Ra.pressure.toFixed(1)}`);
+      check('and its own curve starts at 1 under a police force already at eight',
+        Math.abs(Ra.pressureOf(Ra.army) - 1) < 0.02 && Ra.pressure >= A.at,
+        `army ${Ra.pressureOf(Ra.army).toFixed(2)}, police ${Ra.pressure.toFixed(1)}`);
+      check('and the SWAT do not stop when it does', Ra.swat.called && Ra.vanCap > S.vans);
+
+      /* --- what comes up the road ------------------------------------ */
+      const apcs = () => Ra.vans.filter(v => v.force === Ra.army);
+      check('APCs are on the road, and they are APCs',
+        apcs().length === A.convoy && apcs().every(v => v instanceof veh.ArmyApc && v.def.id === 'apc'),
+        `${apcs().length} of them`);
+      check('and they are not sent in threes like the vans', A.convoy === 2 && apcs().length === 2);
+
+      /* IT HOVERS, ON THE ROAD AND STANDING. The hover is the one thing
+         in this game that moves when nothing is happening, so it is
+         measured as a range over a whole breath rather than as a value:
+         a number that is always 34 is a number, and a number that goes
+         between 29 and 39 is a vehicle being held up by something. */
+      const one = apcs()[0];
+      {
+        const seen = [];
+        for (let i = 0; i < 150; i++) { ga.tic(); seen.push(one.cz - one.ground); }
+        const lo = Math.min(...seen), hi = Math.max(...seen);
+        const body = car.carHeight(apc) / 2;
+        note('the hover', `${(lo - body).toFixed(1)} to ${(hi - body).toFixed(1)} units of air under it, ` +
+          `breathing ${(hi - lo).toFixed(1)}`);
+        check('it rides off the tarmac rather than standing on it',
+          lo - body > veh.ArmyApc.HOVER * 0.7, `${(lo - body).toFixed(1)} units of air`);
+        check('and it breathes, which is the only thing in this game that moves while it is still',
+          hi - lo > 4 && hi - lo < 14, `${(hi - lo).toFixed(1)} units of travel`);
+        check('and the van beside it does not', Ra.vans.some(v => v.force === Ra.swat && v.hover === 0));
+      }
+      /* AND YOU DO NOT GET TO WALK UNDER IT. The three cylinders stand
+         on the ground the way every other vehicle's do; what changes is
+         that they are as tall as the gap plus the hull. */
+      {
+        const b = one.blockers;
+        check('the thing you cannot walk through still stands on the tarmac',
+          b.length === 3 && b.every(q => Math.abs(q.z - one.ground) < 1e-6));
+        check('and it is as tall as the gap under it plus the hull of it',
+          b.every(q => q.height > car.carHeight(apc)), `${b[0].height} against a hull of ${car.carHeight(apc).toFixed(0)}`);
+      }
+
+      /* --- and it gets here ------------------------------------------ */
+      let n = 0;
+      for (; n < 6000 && !apcs().some(v => v.state === 'parked'); n++) ga.tic();
+      const parked = apcs().find(v => v.state === 'parked');
+      note('the APC', `${n} tics to a standing carrier, ${parked ? parked.driven.toFixed(0) : '-'} units driven`);
+      check('an APC arrives and stands', !!parked);
+      check('and it is on ground a vehicle can be on', Ra.drivable(parked.x, parked.y),
+        ga.level.sectorAt(parked.x, parked.y)?.name);
+      check('and it is still hovering now that it has stopped',
+        parked.cz - parked.ground - car.carHeight(apc) / 2 > veh.ArmyApc.HOVER * 0.7);
+
+      /* --- and soldiers get out of it -------------------------------- */
+      for (let i = 0; i < A.unloadEvery * 3 + 60 && !ga.actors.some(a => a.type === 'ARMY'); i++) ga.tic();
+      const sold = ga.actors.filter(a => a.type === 'ARMY' && !a.dead);
+      check('and what gets out is a soldier, not a trooper', sold.length > 0 && sold.every(a => a.van === parked || a.force === Ra.army));
+      check('and they know why they are here from the first step',
+        sold.every(a => a.target === pa2 && /^ARMY_(RUN|ATK)/.test(a.state.name)), sold[0]?.state.name);
+      check('and they are counted against their own budget, not the police one',
+        Ra.troopersOf(Ra.army) === sold.length && Ra.troopersOf(Ra.swat) !== sold.length &&
+        Ra.army.spawned > 0 && Ra.spawned === Ra.swat.spawned + Ra.army.spawned);
+
+      /* --- how much of one there is ---------------------------------- */
+      {
+        const a = ga.spawn('ARMY', pa2.x + 300, pa2.y, undefined, {});
+        check('a soldier is two and a third of a trooper and flinches half as often',
+          a.info.health > st.ACTORS.SWAT.health * 2 && a.info.painchance < st.ACTORS.SWAT.painchance,
+          `${a.info.health} health, ${a.info.painchance} painchance`);
+        check('and the fire does nothing to one either, the same as the SWAT',
+          a.fireproof && !a.flammable && a.fuel === 0);
+        /* THE BURST: two rounds off one frame at half the scatter. The
+           rounds are counted rather than the damage, because damage is
+           a die roll and the point is that there are two of them. */
+        const shots = [];
+        const was = ga.hitscan.bind(ga);
+        ga.hitscan = (src, ang, range, dmg, opts) => { shots.push({ ang, dmg }); return was(src, ang, range, dmg, opts); };
+        a.target = pa2;
+        ACTIONS.A_ArmyFire(a);
+        const swatShots = [];
+        const sw = ga.spawn('SWAT', pa2.x + 300, pa2.y + 40, undefined, {});
+        sw.target = pa2;
+        ga.hitscan = (src, ang, range, dmg, opts) => { swatShots.push({ ang, dmg }); return was(src, ang, range, dmg, opts); };
+        ACTIONS.A_SwatFire(sw);
+        ga.hitscan = was;
+        note('the two rifles', `the army puts ${shots.length} rounds out at ${shots.map(q => q.dmg).join('/')}, ` +
+          `the SWAT ${swatShots.length} at ${swatShots.map(q => q.dmg).join('/')}`);
+        check('the army rifle is a two-round burst and the SWAT rifle is one round',
+          shots.length === 2 && swatShots.length === 1);
+        check('and each round of it is worth more', shots.every(q => q.dmg % 4 === 0) && swatShots.every(q => q.dmg % 3 === 0));
+        /* AND THEY ARE ONE SIDE. Two forces on the same ground with
+           different team names is Doom's bestiary rule: a police rifle
+           would chew a soldier crossing the lane in front of it and the
+           soldier would turn round about it, and an army that arrives
+           already shot to pieces by the tier below it is not an
+           escalation. One team name, and a round from it does nothing —
+           though it is still STOPPED by whoever it meets, so a man in
+           front of you is still cover. */
+        check('the SWAT and the army are one side', a.info.team === sw.info.team);
+        const hp0 = a.health;
+        a.damage(60, sw, { shot: true });
+        check('and a police round does nothing to a soldier', a.health === hp0, `${a.health} of ${hp0}`);
+        a.damage(60, sw, { impact: true });
+        check('but their own van running him down still does', a.health === hp0 - 60, `${a.health} of ${hp0}`);
+        a.damage(60, null, { shot: true });
+        check('and so does yours', a.health === hp0 - 120, `${a.health} of ${hp0}`);
+        a.remove(); sw.remove();
+      }
+
+      /* --- THE FIRE LANE HOLDS NINE, AND THE CURVE ASKS FOR MORE ------
+         Which used to mean the escalation stopped at nine and said
+         nothing. Standing indoors with every bay taken, the next one
+         still gets somewhere to stand — along the ring by the doors. */
+      {
+        const bays = ga.level.swatBays.slice(0, S.bays);
+        const held = bays.map((b, i) => ({ bay: b, whole: true, stand: { x: b.x + i * 1e5, y: b.y, ring: 0 }, force: Ra.swat }));
+        const keep = Ra.vans;
+        Ra.vans = held;
+        const st2 = Ra.freeStand(Ra.army);
+        Ra.vans = keep;
+        check('with every bay in the fire lane taken, the next one still has somewhere to go',
+          !!st2 && Ra.drivable(st2.x, st2.y), st2 ? ga.level.sectorAt(st2.x, st2.y)?.name : 'nowhere');
+      }
+      /* AND THE TWO FORCES DO NOT PARK INSIDE ONE ANOTHER. Every stand
+         either of them has taken is its own vehicle's length clear of
+         every other, which for a 260-long APC beside a 214-long van is
+         the number that matters. */
+      {
+        const stands = Ra.liveVans.filter(v => v.stand).map(v => ({ s: v.stand, L: v.def.length }));
+        let worst = Infinity, pair = '';
+        for (let i = 0; i < stands.length; i++) for (let j = i + 1; j < stands.length; j++) {
+          const d = Math.hypot(stands[i].s.x - stands[j].s.x, stands[i].s.y - stands[j].s.y);
+          const want = (stands[i].L + stands[j].L) / 2;
+          if (d - want < worst) { worst = d - want; pair = `${d.toFixed(0)} apart, ${want.toFixed(0)} of vehicle`; }
+        }
+        note('the closest two stands', stands.length > 1 ? pair : 'only one of them out');
+        check('no two of them stand inside one another, whichever force they are',
+          stands.length < 2 || worst > 0, pair);
+      }
     }
 
     /* the corner grows a third bar the moment something hurts you */

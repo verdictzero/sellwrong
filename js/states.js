@@ -39,7 +39,7 @@
    P_NewChaseDir is not something to delete and write again.
    ===================================================================== */
 
-import { SHOPPERS, SPLATS, ASHES, BLASTS, SWAT_SPRITE } from './people.js';
+import { SHOPPERS, SPLATS, ASHES, BLASTS, TROOPS } from './people.js';
 import { FIRE_FRAMES, BLAZE_FRAMES, EMBER_FRAMES } from './fireart.js';
 import { TICRATE } from './util.js';
 
@@ -131,16 +131,26 @@ S('SHOP_ASH2',   'SHOP', 'A', 4, 'A_BurnAway', 'SHOP_ASH1', { fullbright: true }
 S('SHOP_BORE',   'SHOP', 'A', -1, null, 'SHOP_BORE');
 
 /* ---------------------------------------------------------------------
-   THE SWAT
+   THE TROOPS
 
-   The first things in the game that FIGHT, and the first run of states
-   with any length to it since the staff left. It is the Zombieman's
-   table with the numbers looked at again: stand and look, walk in eight
+   The things in the game that FIGHT, and the first run of states with
+   any length to it since the staff left. It is the Zombieman's table
+   with the numbers looked at again: stand and look, walk in eight
    states over four drawings, face and fire and face again, flinch, fall
    in four, lie there, and — if what killed them was enough — come apart
    in nine.
 
-   THEY HAVE EVERY SIDE. The sheet is five views mirrored to eight (see
+   ONE TABLE, TWO TROOPS, AND ROOM FOR A THIRD. The SWAT and the army
+   are the same sheet layout — see TROOPS in js/people.js, where the
+   letters are a contract between the cutting tool and the loader — so
+   they are the same table, written once and stamped out under each
+   troop's own prefix and sprite. SWAT_RUN1 and ARMY_RUN1 are the same
+   state on different paint, which is what they are on the sheets. The
+   super army, when its drawings arrive, is a third call and nothing
+   else. What is NOT shared is the actor: how much of them there is, how
+   hard they hit and how fast they come is per troop, below.
+
+   THEY HAVE EVERY SIDE. The sheets are five views mirrored to eight (see
    TROOP_ROTATIONS in js/people.js), so a trooper walking away from you
    shows you their back, which no shopper can — and which is the whole of
    what makes a thing you can walk round read as a thing rather than a
@@ -148,53 +158,58 @@ S('SHOP_BORE',   'SHOP', 'A', -1, null, 'SHOP_BORE');
    turns it to you before it fires; the rotation is chosen per frame in
    Actor.render off the difference.
 
-   THE FIRING FRAME IS ORANGE ON THE SHEET — the artist drew the muzzle
+   THE FIRING FRAME IS ORANGE ON BOTH SHEETS — the artist drew the muzzle
    flash lighting the whole figure — so it is fullbright, and the state
    table does not need to know how the light on it got there.
 
    THE COLD DOES TO THEM WHAT IT DOES TO EVERYBODY ELSE: they freeze
    into a block that the next blow shatters, on the same state and the
    same shader a shopper does — see SHOP_FROZE. The fire does NOTHING to
-   them, at the user's request: no burn, no ash, and the two ash states
-   that used to sit here are gone with the flag that made them
-   reachable. See the SWAT actor below for the whole of it.
+   either of them, at the user's request: no burn, no ash, and the two
+   ash states that used to sit here are gone with the flag that made
+   them reachable. See the actors below for the whole of it.
    ------------------------------------------------------------------- */
-S('SWAT_STAND',  SWAT_SPRITE, 'G', 10, 'A_Look', 'SWAT_STAND');
-/* three tics a frame, four drawings held twice: a walk a shade quicker
-   than the Zombieman's, because these have come to get you */
-S('SWAT_RUN1',   SWAT_SPRITE, 'A', 3, 'A_Chase', 'SWAT_RUN2');
-S('SWAT_RUN2',   SWAT_SPRITE, 'A', 3, 'A_Chase', 'SWAT_RUN3');
-S('SWAT_RUN3',   SWAT_SPRITE, 'B', 3, 'A_Chase', 'SWAT_RUN4');
-S('SWAT_RUN4',   SWAT_SPRITE, 'B', 3, 'A_Chase', 'SWAT_RUN5');
-S('SWAT_RUN5',   SWAT_SPRITE, 'C', 3, 'A_Chase', 'SWAT_RUN6');
-S('SWAT_RUN6',   SWAT_SPRITE, 'C', 3, 'A_Chase', 'SWAT_RUN7');
-S('SWAT_RUN7',   SWAT_SPRITE, 'D', 3, 'A_Chase', 'SWAT_RUN8');
-S('SWAT_RUN8',   SWAT_SPRITE, 'D', 3, 'A_Chase', 'SWAT_RUN1');
-/* Doom's rifle: face, fire, face — ten, eight, eight — and then a step
-   before the next, which A_Chase's "never twice in a row" guarantees and
-   which is the window you play in */
-S('SWAT_ATK1',   SWAT_SPRITE, 'E', 10, 'A_FaceTarget', 'SWAT_ATK2');
-S('SWAT_ATK2',   SWAT_SPRITE, 'F', 8,  'A_SwatFire',   'SWAT_ATK3', { fullbright: true });
-S('SWAT_ATK3',   SWAT_SPRITE, 'E', 8,  'A_FaceTarget', 'SWAT_RUN1');
-S('SWAT_PAIN',   SWAT_SPRITE, 'G', 3,  null,     'SWAT_PAIN2');
-S('SWAT_PAIN2',  SWAT_SPRITE, 'G', 3,  'A_Pain', 'SWAT_RUN1');
-S('SWAT_DIE1',   SWAT_SPRITE, 'H', 5,  null,       'SWAT_DIE2');
-S('SWAT_DIE2',   SWAT_SPRITE, 'I', 5,  'A_Scream', 'SWAT_DIE3');
-S('SWAT_DIE3',   SWAT_SPRITE, 'J', 5,  'A_Fall',   'SWAT_DIE4');
-S('SWAT_DIE4',   SWAT_SPRITE, 'K', 6,  null,       'SWAT_DIE5');
-S('SWAT_DIE5',   SWAT_SPRITE, 'L', 6,  null,       'SWAT_DIE6');
-S('SWAT_DIE6',   SWAT_SPRITE, 'M', 6,  null,       'SWAT_DEAD');
-S('SWAT_DEAD',   SWAT_SPRITE, 'N', -1, null,       null);
-/* coming apart: nine drawings at five tics, and the last one stays */
-const SWAT_GIB = 'OPQRSTUVW';
-[...SWAT_GIB].forEach((L, i, arr) =>
-  S(`SWAT_XDIE${i + 1}`, SWAT_SPRITE, L, i === arr.length - 1 ? -1 : 5,
-    i === 0 ? 'A_XScream' : i === 1 ? 'A_Fall' : null,
-    i === arr.length - 1 ? null : `SWAT_XDIE${i + 2}`));
-S('SWAT_FROZE',  SWAT_SPRITE, 'G', -1, null, 'SWAT_FROZE');
-S('SWAT_BORE',   SWAT_SPRITE, 'G', -1, null, 'SWAT_BORE');
-/* no SWAT_ASH: a trooper is fireproof and nothing eats one — see the
-   actor below */
+/**
+ * One troop's whole table, under its own prefix, on its own sprite.
+ *
+ * @param key     the prefix — SWAT, ARMY — and the actor's type
+ * @param sprite  the four-letter sprite name its frames are under
+ * @param attack  the action its firing frame calls
+ */
+function troopStates(key, sprite, attack) {
+  const N = n => `${key}_${n}`;
+  S(N('STAND'), sprite, 'G', 10, 'A_Look', N('STAND'));
+  /* three tics a frame, four drawings held twice: a walk a shade
+     quicker than the Zombieman's, because these have come to get you */
+  [...'AABBCCDD'].forEach((f, i) =>
+    S(N(`RUN${i + 1}`), sprite, f, 3, 'A_Chase', N(`RUN${(i + 1) % 8 + 1}`)));
+  /* Doom's rifle: face, fire, face — ten, eight, eight — and then a step
+     before the next, which A_Chase's "never twice in a row" guarantees
+     and which is the window you play in */
+  S(N('ATK1'), sprite, 'E', 10, 'A_FaceTarget', N('ATK2'));
+  S(N('ATK2'), sprite, 'F', 8, attack, N('ATK3'), { fullbright: true });
+  S(N('ATK3'), sprite, 'E', 8, 'A_FaceTarget', N('RUN1'));
+  S(N('PAIN'),  sprite, 'G', 3, null, N('PAIN2'));
+  S(N('PAIN2'), sprite, 'G', 3, 'A_Pain', N('RUN1'));
+  /* down in six and lying in the seventh, which stays */
+  const DOWN = [['H', 5, null], ['I', 5, 'A_Scream'], ['J', 5, 'A_Fall'],
+                ['K', 6, null], ['L', 6, null], ['M', 6, null]];
+  DOWN.forEach(([f, t, a], i) =>
+    S(N(`DIE${i + 1}`), sprite, f, t, a, i === DOWN.length - 1 ? N('DEAD') : N(`DIE${i + 2}`)));
+  S(N('DEAD'), sprite, 'N', -1, null, null);
+  /* coming apart: nine drawings at five tics, and the last one stays */
+  const GIB = 'OPQRSTUVW';
+  [...GIB].forEach((L, i, arr) =>
+    S(N(`XDIE${i + 1}`), sprite, L, i === arr.length - 1 ? -1 : 5,
+      i === 0 ? 'A_XScream' : i === 1 ? 'A_Fall' : null,
+      i === arr.length - 1 ? null : N(`XDIE${i + 2}`)));
+  S(N('FROZE'), sprite, 'G', -1, null, N('FROZE'));
+  S(N('BORE'),  sprite, 'G', -1, null, N('BORE'));
+  /* no ash states: a trooper is fireproof and nothing eats one — see
+     the actors below */
+}
+troopStates('SWAT', TROOPS.SWAT.sprite, 'A_SwatFire');
+troopStates('ARMY', TROOPS.ARMY.sprite, 'A_ArmyFire');
 
 /* ---------------------------------------------------------------------
    Things that are not monsters
@@ -348,10 +363,18 @@ export const ACTORS = {
      of painchance is one hit in five that makes them flinch, so a
      bullet interrupts one sometimes and not always.
 
-     THEY ARE A TEAM. `team` is what stops a trooper who has just been
-     shot in the back by the man behind him turning round to deal with
-     it — Doom's monsters infight and it is the best thing about them,
-     and it is also the wrong thing for a squad. See Actor.damage.
+     THEY ARE A TEAM, and so is everybody else who turns up. `team` is
+     what stops a trooper who has just been shot in the back by the man
+     behind him turning round to deal with it — Doom's monsters infight
+     and it is the best thing about them, and it is also the wrong thing
+     for a squad. It is 'law' rather than 'swat' BECAUSE THE ARMY CAME:
+     two forces on the same ground with different team names is Doom's
+     bestiary rule, which would have a police rifle chew a soldier on
+     the way past and the soldier turn round about it — and an army tier
+     that arrives already shot to pieces by the tier before it is an
+     army tier that is weaker than the one it escalates from. One name,
+     and nobody who came here for you fights anybody but you. See
+     Actor.damage, and `shot` in Game.hitscan for the rest of it.
 
      THEY ARE FIREPROOF, at the user's request, and the flag is the
      whole of it (see Actor.damage, Actor.ignite and Actor.frostTic):
@@ -372,7 +395,7 @@ export const ACTORS = {
     missile: 'SWAT_ATK1', death: 'SWAT_DIE1', xdeath: 'SWAT_XDIE1',
     health: 60, gibHealth: -30, radius: 20, height: 56, mass: 100, painchance: 50,
     speed: 9, reaction: 8, sightRange: 2400, missileRange: 1500,
-    monster: true, team: 'swat', fireproof: true,
+    monster: true, team: 'law', fireproof: true,
     seeSound: 'swatsee', painSound: 'swatpain', deathSound: 'swatdie', attackSound: 'shot',
     freezable: true, frozen: 'SWAT_FROZE', freezeReturn: 'SWAT_RUN1',
     bored: 'SWAT_BORE',
@@ -384,6 +407,49 @@ export const ACTORS = {
     lit: 1.3,
     /* not `flat`: they turn, which is the whole reason the sheet has
        five views on it */
+  },
+
+  /* AND THE ARMY, who come after the SWAT — the user's order, set down
+     the day their sheet arrived and built the day their carrier did.
+     The same table, the same eight sides, the same fireproofing; what
+     is different is every number that says how much of a fight one is.
+
+     TWO AND A THIRD OF A TROOPER. A hundred and forty health against
+     sixty, which against the rifle you have no answer to matters less
+     than it sounds and against the bore matters exactly as much as it
+     sounds: a trooper is one shot and a soldier is one shot, and what
+     the health buys is that everything ELSE takes longer.
+
+     THEY FLINCH LESS AND SEE FURTHER. Thirty-two of painchance against
+     fifty is one hit in eight rather than one in five, so shooting one
+     interrupts him half as often; twenty-eight hundred of sight against
+     twenty-four, and nineteen of range against fifteen, which is most
+     of the car park.
+
+     AND THE RIFLE IS A BURST. A_ArmyFire is two rounds a frame at four
+     to twenty each against the SWAT's one at three to fifteen, with the
+     spread halved — see the action in js/actor.js. That is two and a
+     half times the damage out of one squeeze at half the scatter, which
+     in a car park at fifteen hundred units is the difference between
+     being shot at and being hit.
+
+     They are not faster by much: ten against nine. The army arriving is
+     meant to read as the ground getting heavier rather than quicker,
+     which is what the APC that brings them looks like too. */
+  ARMY: {
+    name: 'Soldier', spawn: 'ARMY_STAND', see: 'ARMY_RUN1', pain: 'ARMY_PAIN',
+    missile: 'ARMY_ATK1', death: 'ARMY_DIE1', xdeath: 'ARMY_XDIE1',
+    health: 140, gibHealth: -70, radius: 22, height: 58, mass: 130, painchance: 32,
+    speed: 10, reaction: 6, sightRange: 2800, missileRange: 1900,
+    monster: true, team: 'law', fireproof: true,
+    seeSound: 'armysee', painSound: 'armypain', deathSound: 'armydie', attackSound: 'rifle',
+    freezable: true, frozen: 'ARMY_FROZE', freezeReturn: 'ARMY_RUN1',
+    bored: 'ARMY_BORE',
+    /* less of a lift than the SWAT get, and for the reason given at
+       `lift` in js/people.js: tan and olive are three and a half times
+       brighter in linear than navy, so the sheet needed a quarter of
+       the tone curve and the light on top of it wants the same. */
+    lit: 1.15,
   },
 
   /* Scenery. Solid, mostly, and most of it burns. */

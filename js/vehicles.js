@@ -284,6 +284,14 @@ class Vehicle {
        anything to. The police van wears it, at the user's request; see
        damage, ignite, startChar and blowUp, which all ask. */
     this.fireproof = !!opts.fireproof;
+    /* HOW HIGH IT RIDES OFF THE TARMAC, and zero for everything with
+       wheels. The army's APC is a hover carrier and floats (see ArmyApc),
+       which in here is one number and three consequences: the mesh is
+       drawn that much higher, the thing you cannot walk through is that
+       much taller — it still stands ON the ground, because the skirts
+       are in the way whether they touch or not — and a wreck loses it,
+       since nothing that has stopped working hovers. */
+    this.hover = opts.hover || 0;
 
     this.state = opts.state || 'parked';
     this.health = HEALTH;
@@ -299,7 +307,7 @@ class Vehicle {
 
     const L = def.length, h = def.box.height;
     this.mid = [0, 0, h / 2];                 // it turns about its middle, not its wheels
-    this.cz = this.ground + h / 2 * L;        // where that middle is
+    this.cz = this.ridingHeight;              // where that middle is
     this.vx = 0; this.vy = 0; this.vz = 0;
     this.corners = carCorners(def).map(p => toMesh(p, this.mid, L));
 
@@ -322,10 +330,16 @@ class Vehicle {
       }), this.yaw, 0, 0, this.x, this.y, this.cz);
     }
 
-    /* and the part you cannot walk through */
+    /* and the part you cannot walk through, which for a hovering one is
+       the gap under it as well: you do not get to walk beneath an APC */
     this.blockers = [];
-    this.block(carHeight(def));
+    this.block(this.hover + carHeight(def));
   }
+
+  /** Where the middle of it sits when it is standing or driving: on the
+   *  tarmac, plus whatever it hovers. One place, because three things
+   *  used to work it out and the hover had to reach all three. */
+  get ridingHeight() { return this.ground + this.hover + this.def.box.height / 2 * this.def.length; }
 
   /** Doom's cylinders, three in a row. They carry a pointer back here,
    *  which is what makes a shot at any third of a van damage the van. */
@@ -622,6 +636,7 @@ class Vehicle {
   crash(low) {
     const g = this.fleet.game;
     this.state = 'settle';
+    this.hover = 0;                   // whatever held it up has stopped
     this.updateSector();
     this.cz = this.ground - low;
     g.sound?.play('bodyfall', this);
@@ -906,6 +921,14 @@ export class SwatVan extends Vehicle {
     this.sirenTick = 0;
     this.sirenNote = 0;
     this.arrivedTic = -1;
+    /* WHAT IT SOUNDS LIKE COMING, and how hard it hits, both on the
+       instance rather than in a constant, because the APC behind it is
+       the same drive with a turbine instead of a siren and half a ton
+       more of it. See ArmyApc. */
+    this.notes = ['siren', 'siren2'];
+    this.noteEvery = SIREN_EVERY;
+    this.runoverDmg = RUNOVER_DMG;
+    this.runoverPlayer = RUNOVER_PLAYER;
   }
 
   tic() {
@@ -932,14 +955,14 @@ export class SwatVan extends Vehicle {
     this.x += Math.cos(want) * step; this.y += Math.sin(want) * step;
     this.driven += step;
     if (left - step < 0.5) this.route.shift();
-    if ((g.tics & 3) === 0) { this.updateSector(); this.cz = this.ground + this.def.box.height / 2 * this.def.length; }
+    if ((g.tics & 3) === 0) { this.updateSector(); this.cz = this.ridingHeight; }
     this.place();
     this.carryBlockers();
     this.runOver();
     /* the siren: two notes, alternating, for as long as it is moving */
-    if (++this.sirenTick >= SIREN_EVERY) {
+    if (++this.sirenTick >= this.noteEvery) {
       this.sirenTick = 0;
-      g.sound?.play(this.sirenNote ? 'siren2' : 'siren', this);
+      g.sound?.play(this.notes[this.sirenNote], this);
       this.sirenNote ^= 1;
     }
     /* embers off the flash of the lights would be a lie, so nothing —
@@ -973,12 +996,12 @@ export class SwatVan extends Vehicle {
       if (a.removed || a.dead || !a.solid || a.vehicle || !a.shootable) continue;
       const rr = r + a.radius;
       if (dist2(nx, ny, a.x, a.y) > rr * rr) continue;
-      a.damage(RUNOVER_DMG, null, { impact: true, dx: c, dy: s, force: 2.5 });
+      a.damage(this.runoverDmg, null, { impact: true, dx: c, dy: s, force: 2.5 });
     }
     const p = g.player;
     if (p && !p.dead) {
       const rr = r + p.radius;
-      if (dist2(nx, ny, p.x, p.y) < rr * rr) p.damage(RUNOVER_PLAYER, this, { impact: true });
+      if (dist2(nx, ny, p.x, p.y) < rr * rr) p.damage(this.runoverPlayer, this, { impact: true });
     }
   }
 
@@ -988,9 +1011,9 @@ export class SwatVan extends Vehicle {
     this.state = 'parked';
     if (this.parkAngle !== undefined) this.yaw = this.parkAngle;
     this.updateSector();
-    this.cz = this.ground + this.def.box.height / 2 * this.def.length;
+    this.cz = this.ridingHeight;
     this.place();
-    this.block(carHeight(this.def));
+    this.block(this.hover + carHeight(this.def));
     this.arrivedTic = this.fleet.game.tics;
     this.fleet.game.sound?.play('doorclose', this);
   }
@@ -1008,6 +1031,99 @@ export class SwatVan extends Vehicle {
     const t = [0, -0.22, 0.22, -0.4, 0.4][k % 5] * L;
     return { x: this.x + c * t + lx * side * out, y: this.y + s * t + ly * side * out,
              angle: Math.atan2(ly * side, lx * side) };
+  }
+}
+
+/* =====================================================================
+   AND ONE THAT DOES NOT TOUCH THE ROAD
+
+   The army's APC, which is the second thing that drives up the road and
+   the first that does not drive on it. It is a SwatVan in every way
+   that is about GETTING somewhere — the same polyline, the same eased
+   heading, the same nose that goes through whatever is in front of it,
+   the same doors — because a hover carrier coming up a frontage lane
+   takes the same corners a van does, and every one of those corners is
+   already measured against this map. What is different is everything
+   about what it IS.
+
+   IT FLOATS. `hover` holds the whole vehicle off the tarmac and BOB
+   breathes it up and down on a four-second cycle, which is the entire
+   trick: nothing else in this game moves when it is standing still, so
+   a thing that does reads as held up by something rather than parked.
+   The gap under it is not a gap you can use — the blockers are as tall
+   as the hover plus the hull and they still stand ON the ground (see
+   Vehicle.block), because an APC's skirts are in the way whether they
+   are touching or not.
+
+   AND IT BLOWS THE CAR PARK ABOUT. Whatever holds it up throws grit
+   down, so there is a puff under the middle of it every few tics — hard
+   and low while it is moving, an idle while it stands. This is the one
+   piece of it that is not free and it is worth what it costs: it is
+   what makes the hover read at a distance, where five units of bob is
+   nothing.
+
+   AND IT WEIGHS MORE. Twice the van's damage to anybody in front of it
+   and half again to you, which for a vehicle this wide is most of the
+   fire lane at once.
+
+   IT DOES NOT HAVE A SIREN. Two notes still, on the same clock, but
+   they are the turbine: a low sawtooth that rises and falls instead of
+   a square wave that wails. See `hover` and `hover2` in js/audio.js.
+   ===================================================================== */
+const HOVER = 34;                // how high the skirts ride, in game units
+const BOB = 5;                   // and how far it breathes, either way
+const BOB_RATE = Math.PI * 2 / 140;   // one whole breath in four seconds
+const WASH_MOVING = 3;           // tics between downwash puffs, driving
+const WASH_STANDING = 13;        // and standing
+const APC_RUNOVER = 440;         // what the front of one does to a person
+const APC_RUNOVER_PLAYER = 42;   // and to you
+const TURBINE_EVERY = 26;        // tics between the two notes
+
+export class ArmyApc extends SwatVan {
+  constructor(fleet, def, texture, route) {
+    super(fleet, def, texture, route);
+    this.notes = ['hover', 'hover2'];
+    this.noteEvery = TURBINE_EVERY;
+    this.runoverDmg = APC_RUNOVER;
+    this.runoverPlayer = APC_RUNOVER_PLAYER;
+    this.bobT = pRandom();          // no two of them breathe together
+    this.hover = HOVER;
+    this.cz = this.ridingHeight;
+    /* it was built standing on the tarmac; stand it up and make the
+       thing you cannot walk through as tall as it now is */
+    this.place();
+    this.block(this.hover + carHeight(this.def));
+  }
+
+  /** The height it rides at with the breath taken out, for anyone
+   *  outside measuring the hover against what it is meant to be. */
+  static get HOVER() { return HOVER; }
+
+  tic() {
+    /* the breath first, so whatever super does with cz does it at the
+       height this tic is actually at */
+    if (this.whole) this.hover = HOVER + Math.sin((this.bobT += 1) * BOB_RATE) * BOB;
+    super.tic();
+    if (!this.whole) return;
+    /* super recomputes cz on its own clock — every fourth tic while it
+       is driving, once on arrival, never while parked — which is fine
+       for a van that only moves when it is driving and is not enough
+       for one that is never still. So it is set here, every tic. */
+    this.cz = this.ridingHeight;
+    this.place();
+    this.wash();
+  }
+
+  /** The grit under it. Low and wide where the skirts are, on a clock
+   *  that is four times faster while it is moving. */
+  wash() {
+    const g = this.fleet.game;
+    const every = this.state === 'driving' ? WASH_MOVING : WASH_STANDING;
+    if ((g.tics + (this.bobT | 0)) % every) return;
+    const c = Math.cos(this.yaw), s = Math.sin(this.yaw);
+    const L = this.def.length, W = carWidth(this.def);
+    const t = ((pRandom() / 255) - 0.5) * 0.7 * L, u = ((pRandom() / 255) - 0.5) * W;
+    g.fx?.puff(this.x + c * t - s * u, this.y + s * t + c * u, this.ground + 6, 30, 120);
   }
 }
 

@@ -56,7 +56,7 @@ const LAMP_RANGE = 340;
 const LAMP_GAIN = 0.30;
 
 export class Game {
-  constructor({ level, scene, camera, textures, sprites, hud, audio, input, sky, flameAtlas, bodyAtlas, fxAtlases, gibAtlases, fleet, police }) {
+  constructor({ level, scene, camera, textures, sprites, hud, audio, input, sky, flameAtlas, bodyAtlas, fxAtlases, gibAtlases, fleet, police, apc }) {
     this.level = level;
     this.scene = scene;
     this.camera = camera;
@@ -133,10 +133,13 @@ export class Game {
     if (fxAtlases) { this.frost.attach(scene); this.fx.attach(scene); }
     if (gibAtlases) this.giblets.attach(scene);
     this.weapon3d = null;
-    /* who the night brings: the SWAT, in the user's van, once you have
-       killed somebody — see js/responders.js. `police` is that van's
-       model and sheet, and without it nobody comes. */
+    /* who the night brings, in the order the user set: the SWAT in the
+       user's van from your first shot, and the army in the user's hover
+       APC three minutes later — see FORCES in js/responders.js, which
+       names these two fields and reads them by name. Each is a model
+       and a sheet, and without one that force never arrives. */
     this.police = police || null;
+    this.apc = apc || null;
     this.responders = new Responders(this);
     this.idle = false;                 // the title: the world stands still and the eye wanders
     this._nozzle = { x: 0, y: 0, z: 0 };

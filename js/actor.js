@@ -539,6 +539,13 @@ export class Actor {
        health lives there, not here, or a van would take three times as
        much punishment as it should and come apart in thirds. */
     if (this.vehicle) { this.vehicle.damage(amount, source, opts); return; }
+    /* A ROUND FROM YOUR OWN SIDE DOES NOTHING — see the note on `team`
+       below, which is where the reasoning is, and which is above the
+       line that used to be the whole of that rule. It has to be HERE
+       rather than down there, because down there the health has already
+       come off. */
+    const friendly = source && source.info && this.info.team && source.info.team === this.info.team;
+    if (friendly && opts.shot) return;
     this.health -= amount;
 
     if (this.health <= 0) { this.die(source, amount, opts); return; }
@@ -552,8 +559,19 @@ export class Actor {
        For a squad it is the wrong thing: a line of troopers coming down
        an aisle at you would turn on itself the first time the rear rank
        fired through the front, and the player would stand and watch.
-       So a hit from a team-mate is a hit and not a grudge. */
-    const friendly = source && source.info && this.info.team && source.info.team === this.info.team;
+       AND SINCE THE ARMY CAME IT IS NOT A HIT EITHER, for a bullet. Two
+       forces on the same ground with the same team name are one side,
+       and one side's rifles landing on one side's backs is not a rule,
+       it is an accident of the ray walking past: a hundred and forty of
+       soldier arriving at twenty because it crossed a fire lane with
+       twenty-six troopers shooting down it makes the army tier WEAKER
+       than the tier it escalates from. So a round from a team-mate does
+       nothing. It is still STOPPED by him — Game.hitscan takes the first
+       thing the ray meets, whoever it is, so the man in front is still
+       cover and a crowd of them is not a crowd of clear shots — which
+       is the half of the old rule that was about the fight rather than
+       about the arithmetic. Anything else from a team-mate still counts:
+       their own van running them down, their own car going up. */
     if (source && source !== this && !friendly && (!this.target || this.threshold <= 0)) {
       this.target = source;
       this.threshold = 100;
@@ -1277,6 +1295,30 @@ export const ACTIONS = {
     const spread = ((pRandom() - pRandom()) / 255) * 0.1;
     const damage = ((pRandom() % 5) + 1) * 3;
     g.hitscan(a, a.angle + spread, 2048, damage, { shot: true });
+    g.fx?.muzzle(a);
+    a.shots = (a.shots || 0) + 1;
+  },
+
+  /* AND THE ARMY'S, WHICH IS THE SAME RIFLE HELD PROPERLY. Two rounds
+     off one frame instead of one, four to twenty each instead of three
+     to fifteen, and the spread halved — under three degrees either way,
+     which across the car park is the difference between being shot at
+     and being hit.
+
+     Both rounds go out on the same tic and down the same eye line with
+     their own scatter, so at any range the pair is a pair rather than a
+     shotgun: at fifty units they both land, at fifteen hundred one of
+     them might. The sound is played once, because a burst is one noise
+     and the state does not fire again for another twenty-six tics. */
+  A_ArmyFire(a) {
+    ACTIONS.A_FaceTarget(a);
+    const g = a.game;
+    g.sound?.play(a.info.attackSound, a);
+    for (let k = 0; k < 2; k++) {
+      const spread = ((pRandom() - pRandom()) / 255) * 0.05;
+      const damage = ((pRandom() % 5) + 1) * 4;
+      g.hitscan(a, a.angle + spread, 2048, damage, { shot: true });
+    }
     g.fx?.muzzle(a);
     a.shots = (a.shots || 0) + 1;
   },

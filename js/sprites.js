@@ -41,7 +41,7 @@ import { ramp, PALETTE } from './palette.js';
 import { WEAPON_TILE, WEAPON_TOP, CLEAR_INDEX } from './art-data.js';
 import { CELLS, ADULT, SHOPPERS, SPLATS, ASHES, BLASTS,
          SHOPPER_SPRITE, SPLAT_SPRITE, ASH_SPRITE, BLAST_SPRITE,
-         SWAT_SPRITE, SWAT_TURN, SWAT_FLAT, SWAT_HEIGHT } from './people.js';
+         TROOPS } from './people.js';
 import { fireFrames, FIRE_FRAMES, BLAZE_FRAMES, EMBER_FRAMES } from './fireart.js';
 
 /* A frame is a letter, and the letters stop at Z. */
@@ -151,41 +151,57 @@ export function bakeSprites() {
     }
   }
 
-  /* --- and the squad, when the squad has not arrived ---------------
-     The same bargain for the SWAT: a navy body of the right height under
-     every letter the state table names, so the chase, the rifle and the
-     deaths all run headless and the user's sheet lands on top under the
-     same names (see addTroops in js/people.js). The standing letters are
-     one figure with a rifle; the falling ones lean over; the lying and
-     the coming-apart ones are a body's length of navy on the floor. */
+  /* --- and the troops, when the troops have not arrived ------------
+     The same bargain for the SWAT and the army: a body of the right
+     height under every letter the state table names, so the chase, the
+     rifle and the deaths all run headless and the user's sheets land on
+     top under the same names (see addTroops in js/people.js). The
+     standing letters are one figure with a rifle; the falling ones lean
+     over; the lying and the coming-apart ones are a body's length on
+     the floor.
+
+     TWO OF THEM, off one drawing and two palettes — navy and grey under
+     a cyan visor for the SWAT, olive and brown under a bare helmet for
+     the army — because two stand-ins that look alike are a stand-in
+     that does not tell you which one is shooting at you, and the day
+     one sheet loads and the other does not is exactly the day it
+     matters. A third troop is a third row in KIT. */
   {
     const H = CELLS.troops.h, W = CELLS.troops.w;
-    const draw = (kind, k) => radial(p => {
-      const cx = W >> 1, foot = H - 1;
-      if (kind === 'up') {
-        const head = H - SWAT_HEIGHT;
-        for (let y = foot - 27; y <= foot; y++)                               // legs
-          for (let x = -5; x <= 5; x++) if (Math.abs(x) > 1) p.ink(cx + x, y, 'blue', 0.22);
-        for (let y = head + 12; y < foot - 26; y++)                          // vest
-          for (let x = -7; x <= 7; x++) p.ink(cx + x, y, 'grey', 0.10 + (x < 0 ? 0.05 : 0));
-        p.hline(cx - 14, cx + 9, head + 22, 'grey', 0.06);                    // the rifle
-        p.hline(cx - 14, cx + 9, head + 23, 'grey', 0.08);
-        p.disc(cx, head + 6, 5.5, 'grey', 0.08);                              // helmet
-        p.hline(cx - 3, cx + 3, head + 7, 'cyan', 0.55);                      // visor
-      } else if (kind === 'down') {
-        const lean = k * 6;
-        for (let y = foot - 40 + lean; y <= foot; y++)
-          for (let x = -7; x <= 7; x++) p.ink(cx + x, y, y < foot - 22 + lean ? 'grey' : 'blue', 0.16);
-        p.disc(cx, foot - 42 + lean, 5.5, 'grey', 0.08);
-      } else {
-        for (let y = foot - 9; y <= foot; y++)
-          for (let x = -28; x <= 28; x++) p.ink(cx + x, y, kind === 'gore' ? 'red' : 'blue', 0.22);
-        if (kind === 'gore') for (let i = 0; i < 12; i++) p.disc(cx - 24 + i * 4, foot - 14 - (i % 3) * 5, 1.5, 'red', 0.4);
-      }
-    }, W, H, 900 + k);
-    [...SWAT_TURN].forEach(L => bank.addFrame(SWAT_SPRITE, L, draw('up', 0)));
-    [...SWAT_FLAT].forEach((L, i) =>
-      bank.addFrame(SWAT_SPRITE, L, draw(i < 4 ? 'down' : i < 7 ? 'flat' : 'gore', i)));
+    const KIT = {
+      SWAT: { legs: 'blue',  vest: 'grey',  hat: 'grey',  visor: 'cyan',  seed: 900 },
+      ARMY: { legs: 'olive', vest: 'brown', hat: 'olive', visor: null,    seed: 960 },
+    };
+    for (const [key, t] of Object.entries(TROOPS)) {
+      const kit = KIT[key] || KIT.SWAT;
+      const draw = (kind, k) => radial(p => {
+        const cx = W >> 1, foot = H - 1;
+        if (kind === 'up') {
+          const head = H - t.height;
+          for (let y = foot - 27; y <= foot; y++)                             // legs
+            for (let x = -5; x <= 5; x++) if (Math.abs(x) > 1) p.ink(cx + x, y, kit.legs, 0.22);
+          for (let y = head + 12; y < foot - 26; y++)                        // vest
+            for (let x = -7; x <= 7; x++) p.ink(cx + x, y, kit.vest, 0.10 + (x < 0 ? 0.05 : 0));
+          p.hline(cx - 14, cx + 9, head + 22, 'grey', 0.06);                  // the rifle
+          p.hline(cx - 14, cx + 9, head + 23, 'grey', 0.08);
+          p.disc(cx, head + 6, 5.5, kit.hat, 0.08);                           // helmet
+          if (kit.visor) p.hline(cx - 3, cx + 3, head + 7, kit.visor, 0.55);
+        } else if (kind === 'down') {
+          const lean = k * 6;
+          for (let y = foot - 40 + lean; y <= foot; y++)
+            for (let x = -7; x <= 7; x++)
+              p.ink(cx + x, y, y < foot - 22 + lean ? kit.vest : kit.legs, 0.16);
+          p.disc(cx, foot - 42 + lean, 5.5, kit.hat, 0.08);
+        } else {
+          for (let y = foot - 9; y <= foot; y++)
+            for (let x = -28; x <= 28; x++) p.ink(cx + x, y, kind === 'gore' ? 'red' : kit.legs, 0.22);
+          if (kind === 'gore') for (let i = 0; i < 12; i++) p.disc(cx - 24 + i * 4, foot - 14 - (i % 3) * 5, 1.5, 'red', 0.4);
+        }
+      }, W, H, kit.seed + k);
+      [...t.turn].forEach(L => bank.addFrame(t.sprite, L, draw('up', 0)));
+      [...t.flat].forEach((L, i) =>
+        bank.addFrame(t.sprite, L, draw(i < 4 ? 'down' : i < 7 ? 'flat' : 'gore', i)));
+    }
   }
 
   /* --- fire, in three sizes -----------------------------------------
