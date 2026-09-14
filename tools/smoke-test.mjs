@@ -2866,8 +2866,8 @@ await (async () => {
     const dDef = +(main.match(/const DEFAULT_DETAIL = (\d+)/) || [])[1];
     const pDef = +(main.match(/const DEFAULT_PIXELS = (\d+)/) || [])[1];
     note('what it opens at', `${pix[pDef]} rows of pixels off a ${det[dDef]}-row render`);
-    check('the game opens at 200P pixels off a 720P render',
-      pix[pDef] === 200 && det[dDef] === 720);
+    check('the game opens at 240P pixels off a 720P render, at the user\'s request',
+      pix[pDef] === 240 && det[dDef] === 720);
     check('and the render default is the top of its ladder',
       dDef === det.length - 1 && det.every((v, i) => i === 0 || v > det[i - 1]));
     check('and the pixel grid is never finer than the buffer behind it',
@@ -2897,6 +2897,12 @@ await (async () => {
     check('and a shape ladder with a square one and a taller one',
       par.length >= 2 && par.some(e => e.v === 1) && par.some(e => Math.abs(e.v - DOOM) < 0.001),
       par.map(e => e.n).join(', '));
+    check('and a one-to-three, three times as tall as it is wide, at the user\'s request',
+      par.some(e => Math.abs(e.v - 1 / 3) < 0.001 && /1:3/.test(e.n)));
+    /* which on a 16:9 window at 240 rows is every column of a 720-row buffer */
+    const tall = at(1920, 1080, { height: 720, pixelHeight: 240, pixelAspect: 1 / 3 });
+    check('which at 240 rows off 720 on 16:9 is 1280 across', tall.gridWidth === 1280 && tall.gridHeight === 240, `${tall.gridWidth}x${tall.gridHeight}`);
+    check('and the picture opens a third brighter than drawn', /bright: 1\.35/.test(main) && /delete saved\.bright/.test(main));
 
     /* THE ONE THAT MATTERS. Two hundred rows of 5:6 pixels filling a
        4:3 window is 320x200, and it is 320x200 because that is what
@@ -4685,8 +4691,20 @@ section('the van');
       /* --- the rifle ------------------------------------------------ */
       const a = gs.actors.find(q => q.type === 'SWAT' && !q.dead);
       const px = p.x, py = p.y;
-      p.x = a.x + 160; p.y = a.y;
-      a.angle = 0;
+      /* A HUNDRED AND SIXTY UNITS OFF, IN A CLEAR DIRECTION. It used to
+         be straight along +x, which happened to be clear on the day it
+         was written and stopped being the day the random sequence
+         moved (anything that draws a random number before this point —
+         a decal's size, say — moves where the trooper is standing).
+         So the direction is found: the first of sixteen with nothing
+         in the way, which is what the test means anyway. */
+      let ang = 0;
+      for (let k = 0; k < 16; k++) {
+        const t = k * Math.PI / 8;
+        if (!gs.trace(a, t, 0, 175).actor) { ang = t; break; }
+      }
+      p.x = a.x + Math.cos(ang) * 160; p.y = a.y + Math.sin(ang) * 160;
+      a.angle = ang;
       check('a trooper can see you at a hundred and sixty', a.canSee(p));
       /* THE PLATES OFF FIRST. What is being measured here is that a
          rifle reaches the player at all; sixteen hundred of armour in
@@ -4806,12 +4824,15 @@ section('the van');
         note('the same lick of flame', `${tookLot} off a hatchback, ${took.toFixed(1)} off a squad van`);
         check('the same fire does a fraction of the damage to it',
           took > 0 && took * 4 < tookLot, `${took.toFixed(1)} against ${tookLot}`);
-        /* and a bullet is a bullet to both, because the armour is only
-           against fire */
+        /* AND A BULLET IS NOT, any more: at the user's request a vehicle
+           takes a lot of the minigun, and a squad van more than a car
+           in the lot — see SHOT_ARMOUR, and `the vans under fire` */
         const h1 = v.health, l1 = lot.health;
         v.damage(24, null, { shot: true });
         lot.damage(24, null, { shot: true });
-        check('but a bullet is a bullet to both', h1 - v.health === l1 - lot.health, `${h1 - v.health} and ${l1 - lot.health}`);
+        check('and a bullet does less to it than to a car in the lot, and little to either',
+          h1 - v.health < l1 - lot.health && Math.abs((l1 - lot.health) - 24 / lot.shotArmour) < 1e-9 &&
+          Math.abs((h1 - v.health) - 24 / v.shotArmour) < 1e-9, `${h1 - v.health} and ${l1 - lot.health}`);
         lot.health = l0;
         /* IT CATCHES. It could not before. */
         v.ignite();
@@ -5772,6 +5793,9 @@ section('the minigun, the jump and the van');
       /uniform float heat;/.test(gunSrc) && /heatMaterial\.uniforms\.heat\.value = player\.heat/.test(gunSrc) &&
       /floor\(h \* 8\.0 \+ 0\.5\) \/ 8\.0/.test(gunSrc));
     check('and the barrels turn at the player\'s spin', /G\.spin\.rotation\.z = G\.spinAngle/.test(gunSrc));
+    check('and it has a muzzle flash that faces you, additive, at the user\'s request',
+      M.flash && M.flash.size > 0.2 && M.muzzle.additive === true &&
+      /new THREE\.PlaneGeometry\(def\.flash\.size, def\.flash\.size\)/.test(gunSrc) && /G\.flash\.rotation\.z = Math\.random/.test(gunSrc));
   }
 
   /* --- the page and the pad ----------------------------------------- */
@@ -5784,8 +5808,36 @@ section('the minigun, the jump and the van');
     const hudSrc = fs.readFileSync('js/hud.js', 'utf8');
     const lofiSrc = fs.readFileSync('js/lofi.js', 'utf8');
     const au = await import('../js/audio.js');
-    check('the sound is off, all of it, for now, by one switch',
-      au.MUTED === true && /if \(MUTED\) \{ this\.enabled = false; return; \}/.test(fs.readFileSync('js/audio.js', 'utf8')));
+    const auSrc = fs.readFileSync('js/audio.js', 'utf8');
+    check('the synthesised sound is off, for now, by one switch, and the ambience with it',
+      au.MUTED === true && /if \(MUTED\) return;/.test(auSrc) && /if \(MUTED \|\| !this\.ctx \|\| this\._amb\) return;/.test(auSrc));
+    /* --- the minigun's recordings, which the switch does not touch --- */
+    check('the minigun has three recordings and all three files are there',
+      Object.keys(au.SAMPLES).length === 3 && Object.values(au.SAMPLES).every(u => fs.existsSync(u)));
+    check('named for the spin-up, the loop and the wind-down',
+      au.SAMPLE_FOR.spinup === 'minigun_start' && au.SAMPLE_FOR.minigunloop === 'minigun_fire' && au.SAMPLE_FOR.spindown === 'minigun_stop');
+    check('and a sample plays whatever the switch says', auSrc.indexOf('if (SAMPLE_FOR[name])') < auSrc.indexOf('if (MUTED) return;'));
+    {
+      /* the loop follows the trigger: a fake sound layer counts */
+      const { Game } = await import('../js/game.js');
+      const pl = await import('../js/player.js');
+      const MAPS = await import('../js/maps/sellwrong.js');
+      const THREES = await import('three');
+      const calls = { play: [], loops: 0, stops: 0 };
+      const gS = new Game({ level: MAPS.buildSellWrong(), scene: new THREES.Scene(), camera: {},
+        textures: tex.bakeTextures(), sprites: spr.bakeSprites(), hud: { message() {}, ticMessages() {} },
+        audio: { play(n) { calls.play.push(n); }, loop(n) { calls.loops++; return { stop() { calls.stops++; } }; }, listener: { x: 0, y: 0 }, setAmbience() {} },
+        input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 }, attack: false, use: false, run: false, jump: false, sample() {}, sensitivity: 0 } });
+      const q = gS.player; q.weapon = 'MINIGUN';
+      const held = { look: { x: 0, y: 0 }, move: { x: 0, y: 0 }, attack: true, use: false, run: false, jump: false, weaponSlot: 0, weaponCycle: 0 };
+      const up = { ...held, attack: false };
+      for (let t = 0; t < pl.SPIN_UP + 6; t++) q.tic(held, 1 / 35);
+      check('the trigger going down plays the spin-up once and starts the loop once the rounds leave',
+        calls.play.filter(n => n === 'spinup').length === 1 && calls.loops === 1 && !!q.gunLoop && !calls.play.includes('minigun'));
+      for (let t = 0; t < 4; t++) q.tic(up, 1 / 35);
+      check('and letting go stops the loop and plays the wind-down',
+        calls.stops === 1 && q.gunLoop === null && calls.play.filter(n => n === 'spindown').length === 1);
+    }
     check('the loading screen says RETICULATING SPLINES and the steps do not talk over it',
       /RETICULATING SPLINES/.test(html) && !/s\.textContent = text/.test(mainSrc.split('const failed')[0]));
     check('nothing is written across the picture when a convoy is called',
@@ -5899,6 +5951,110 @@ section('the decals');
   const gsrc = fs.readFileSync('js/game.js', 'utf8');
   check('the decals are ticked, drawn, and attached only where there are pictures',
     /this\.decals\.tic\(\)/.test(gsrc) && /this\.decals\.render\(\)/.test(gsrc) && /if \(fxAtlases\) this\.decals\.attach\(scene\)/.test(gsrc));
+}
+
+/* ---------- the vans under fire ---------- */
+section('the vans under fire');
+{
+  const fs = await import('node:fs');
+  const { Game } = await import('../js/game.js');
+  const MAPV = await import('../js/maps/sellwrong.js');
+  const THREEV = await import('three');
+  const { Tracers, MAX_TRACERS, TRACER_SPEED } = await import('../js/tracers.js');
+  /* the lot's van, off the user's file, the way `the van` builds it */
+  const carV = await import('../js/car.js');
+  const glbV = await import('../js/glb.js');
+  const vanDef = (() => {
+    const bytes = fs.readFileSync('assets/models/van.glb');
+    const { json, bin } = glbV.parseGLB(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+    return carV.modelVehicle(json, bin);
+  })();
+  const mk = () => new Game({
+    level: MAPV.buildSellWrong(), scene: new THREEV.Scene(), camera: {},
+    textures: tex.bakeTextures(), sprites: spr.bakeSprites(),
+    hud: { message() {}, ticMessages() {} }, audio: null,
+    input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
+             attack: false, use: false, run: false, jump: false, sample() {}, sensitivity: 0 },
+    fleet: { texture: {}, def: vanDef },
+  });
+  const g = mk();
+  const v = g.vehicles.all.find(c => c.whole);
+  check('there is a van in the lot to shoot at', !!v);
+  if (v) {
+    /* --- rounds ------------------------------------------------------- */
+    const hp = v.health;
+    v.damage(36, g.player, { shot: true });
+    check('a round takes a twentieth of what it would off a car in the lot',
+      Math.abs((hp - v.health) - 36 / v.shotArmour) < 1e-9 && v.shotArmour === 20);
+    let rounds = 1;
+    while (v.whole && v.state !== 'charring' && rounds < 1000) { v.damage(36, g.player, { shot: true }); rounds++; }
+    note('a car in the lot', `${rounds} rounds of the minigun before it chars`);
+    check('and it takes a lot of them before it chars, and chars rather than vanishing',
+      rounds > 60 && rounds < 120 && v.state === 'charring');
+    /* --- the stream lights it and that is all --------------------------- */
+    const w = g.vehicles.all.find(c => c.whole && c !== v);
+    const hw = w.health;
+    for (let k = 0; k < 400; k++) w.damage(9, g.player, { fire: true, stream: true });
+    check('four hundred flame particles on a car light it and take nothing off it',
+      w.health === hw && w.burning > 0 && w.state !== 'charring');
+    const hb = w.health;
+    w.damage(30, null, { fire: true });
+    check('but a blast still hurts it', w.health < hb);
+    /* the blocker path: the stream hits a CARBODY, which hands it on */
+    const blocker = w.blockers[0];
+    const hb2 = w.health;
+    blocker.damage(9, g.player, { fire: true, stream: true });
+    check('and through the blockers the same', w.health === hb2);
+    /* --- holes on it ---------------------------------------------------- */
+    const D = g.decals;
+    const L = w.def.length, hw2 = w.def.box.half * L;
+    /* a round from the driver's side, coming across the vehicle */
+    const c = Math.cos(w.yaw), sn = Math.sin(w.yaw);
+    const hx = w.x - sn * 10, hy = w.y + c * 10;          // ten units off the centreline, left
+    D.vehicleHole(w, hx, hy, w.bodyZ + 20, sn, -c, 0);     // travelling toward -local y
+    const P = D.pools.hole, i = P.next === 0 ? P.max - 1 : P.next - 1;
+    check('a round into a van leaves a hole on the flank it came in through',
+      P.owner[i] === w && Math.abs(P.ly[i] - hw2) < 1e-3 && P.lny[i] === 1 && P.lnx[i] === 0 && P.lnz[i] === 0);
+    check('and the hole rides in the van\'s own frame',
+      Math.abs(P.lz[i] - 20) < 1e-3 && Math.abs(P.lx[i]) < L / 2);
+    /* the top: a round coming steeply down */
+    D.vehicleHole(w, w.x, w.y, w.bodyZ + 5, 0.1, 0, -1);
+    const j = P.next === 0 ? P.max - 1 : P.next - 1;
+    check('and one from above lands on the roof', P.lnz[j] === 1 && Math.abs(P.lz[j] - w.def.box.height * L) < 1e-3);
+    /* carried: render() with no mesh still places owned holes where the vehicle is */
+    const ox = w.x; w.x += 100;
+    D._carry();
+    check('and moves when the van does', Math.abs(P.x[i] - (P.x[i] - 0)) < 1e-9 && P.x[i] > ox + 50);
+    w.x = ox;
+    /* --- the hitscan does all of that on its own -------------------------- */
+    const g2 = mk();
+    const q = g2.player, u = g2.vehicles.all.find(c => c.whole);
+    q.x = u.x - Math.cos(u.yaw + Math.PI / 2) * 200; q.y = u.y - Math.sin(u.yaw + Math.PI / 2) * 200;
+    q.sector = g2.level.sectorAt(q.x, q.y); q.z = q.sector ? q.sector.floor : 0; q.viewZ = q.z + 30;
+    q.angle = Math.atan2(u.y - q.y, u.x - q.x);
+    const before = g2.decals.holes, uh = u.health;
+    const hit = g2.hitscan(q, q.angle, 2400, 36, { shot: true, pitch: 0 });
+    check('a shot at a van hits it, hurts it a twentieth, and puts a hole on it',
+      !!hit && hit.vehicle === u && u.health < uh && g2.decals.holes === before + 1 && g2.decals.pools.hole.owned === 1,
+      `${hit ? hit.type : 'miss'} ${g2.decals.holes - before} holes`);
+    check('and says where it stopped, for the tracer',
+      Math.hypot(g2.lastHit.x - u.x, g2.lastHit.y - u.y) < u.def.length);
+  }
+  /* --- the police van and the carrier ------------------------------------- */
+  const vsrc = fs.readFileSync('js/vehicles.js', 'utf8');
+  check('the police van takes fifty times a round and the APC ninety',
+    /shotArmour: 50/.test(vsrc) && /this\.shotArmour = 90/.test(vsrc));
+  /* --- tracers ------------------------------------------------------------ */
+  const T = new Tracers(null);
+  const t0 = T.spawn({ x: 0, y: 0, z: 40 }, { x: 400, y: 0, z: 40 });
+  check('a tracer leaves the muzzle toward the hit', t0 >= 0 && T.count === 1 && T.dx[t0] === 1 && T.left[t0] === 400);
+  T.tic();
+  check('and flies a hundred and fifty a tic', Math.abs(T.x[t0] - TRACER_SPEED) < 1e-6);
+  for (let k = 0; k < 6; k++) T.tic();
+  check('and is gone once it has arrived', T.count === 0);
+  for (let k = 0; k < MAX_TRACERS + 10; k++) T.spawn({ x: 0, y: 0, z: 40 }, { x: 4000, y: 0, z: 40 });
+  check('and a burst past the pool reuses the oldest', T.count === MAX_TRACERS);
+  check('the minigun fires one every other round', /\(i & 1\) === 0 && g\.tracers/.test(fs.readFileSync('js/player.js', 'utf8')));
 }
 
 /* ---------- the music ---------- */

@@ -175,10 +175,18 @@ it is Web Audio's own clock, sample accurate. A MUSIC fader is in the
 pause menu and remembered; the music has its own context, so the
 switch below does not take it.
 
-AND THE SOUND IS OFF, all of it, for now, at the user's request: MUTED
-at the top of js/audio.js is one switch, and with it on resume() never
-opens an AudioContext, so every sound in the game is still asked for
-and none of them is made. Flip it and they are all back.
+AND THE SYNTHESISED SOUND IS OFF, for now, at the user's request:
+MUTED at the top of js/audio.js is one switch, and with it on play()
+refuses every made-up noise and the ambience never starts, so every
+sound in the game is still asked for and none of them is made. Flip it
+and they are all back. WHAT IT DOES NOT SILENCE IS A RECORDING: the
+minigun arrived with three of its own, the user's, in assets/sfx/ —
+the spin-up, a two-second loop of it firing, and the wind-down — and
+they play whatever the switch says. The player asks for 'spinup' the
+way it always did and js/audio.js hands back the recording (see
+SAMPLE_FOR); the firing is one held sound, looped from the first round
+to the last and stopped with a short ramp when the trigger comes up
+or the belt runs dry (see Player.gunLoop).
 
 THE LOADING SCREEN SAYS RETICULATING SPLINES, at the user's request, and
 nothing else, for the whole of the half second; the bar still moves.
@@ -512,6 +520,13 @@ the lower right quarter of the picture, the way the old flamethrower
 did. The other five are the same two numbers (fit, out) plus an offset
 (pos) and a turn (rot), and any of them is a one-line change.
 
+AND IT HAS A MUZZLE FLASH THAT FACES YOU, at the user's request. The
+two crossed tongues every gun wears are seen nearly end-on on a gun
+that points straight down the view, and collapse to nothing; the
+minigun adds a disc across the muzzle — the same fire frames, turned
+to face the eye, additive, spun and breathed every frame so it
+flickers — which is what a minigun's muzzle actually reads as.
+
 THE HUD SAYS WHAT YOU ARE HOLDING, small, top right, at the user's
 request — the one word the readout has grown back since the corner
 went to bars. Four weapons that all cycle off one button on a phone is
@@ -564,6 +579,46 @@ wall's own light and fog, so a hole in a dark corner is not a black
 square glowing in it; heat ignores both.
 
 
+THE VANS UNDER FIRE
+-------------------
+
+A VEHICLE TAKES A LOT OF THE MINIGUN, at the user's request, and shows
+every hit. The minigun does twenty-four to forty-eight a round and a
+car has a hundred and fifty of health, so a hatchback used to be gone
+in a tic and a half; what a round does to a vehicle is now divided by
+its SHOT ARMOUR — twenty for a car in the lot, which is eighty-odd
+rounds, fifty for the police van, ninety for the APC — and when the
+health does go the vehicle chars and goes up exactly the way a burnt
+one does, rather than vanishing. The holes go on regardless: a round
+into a van leaves a hole on whichever face of the van's box it came
+in through, at the point it crossed, and the hole RIDES WITH THE VAN
+— it is kept in the van's own frame, x along, y across, z up off the
+body, and turned into the world every frame — until the van stops
+being a van, when it is dropped, because a wreck on its roof is not
+the box the holes were laid on. See Decals.vehicleHole.
+
+AND THE STREAM LIGHTS A VAN AND THAT IS ALL IT DOES, at the user's
+request. The flamethrower's particles used to land on the blockers as
+damage, six a tic at five to nine each, and a held stream took a car
+apart in a couple of seconds without it ever really burning. A car
+the flame reaches now CATCHES — ignite(), the same thing a blast or a
+burning neighbour does to it — and burns on its own clock: forty
+seconds alight, twelve off its health every ten tics through its fire
+armour, the char, the launch. Holding the stream on it longer changes
+nothing. A blast still hurts, because a blast carries `fire` and the
+stream carries `stream`, and Vehicle.damage reads the second first.
+
+AND THE ROUNDS ARE SEEN: every other one is a TRACER, a streak of
+light sixty units long drawn from the muzzle to wherever the round
+stopped (Game.lastHit, which every hitscan leaves behind), flying at a
+hundred and fifty units a tic and gone when it gets there. A streak is
+a quad that faces you along its length — spread sideways along the
+direction across both the streak and the line to the eye, so it is a
+line of light from wherever you stand and never a sliver seen edge-on
+— bright white at the head, orange at the tail, additive, one draw
+call for the lot. js/tracers.js.
+
+
 THE JUMP, AND BEING HIT BY A VAN
 --------------------------------
 
@@ -607,7 +662,14 @@ a brighter picture should still be made of the same two hundred and
 fifty-six colours, and a lift applied after the snap puts colours on
 the screen the palette does not have. Contrast pivots on mid grey,
 brightness multiplies, gamma is the usual curve, and 1 on all three is
-the picture as drawn. They are remembered with the rest.
+the picture as drawn. THE DEFAULT BRIGHTNESS IS 1.35, at the user's
+request — the picture a third brighter than drawn — and the other two
+sit at 1. They are remembered with the rest.
+
+AND THE DEFAULT PICTURE IS 720P RENDERED, 240P OF PIXELS, at the user's
+request, up from 200, with the pixel aspect ladder grown a fourth rung:
+TALL 1:3, a pixel three times as tall as it is wide, which on a 16:9
+window is every column of the 720-row buffer in 240 rows.
 
 
 ON A PHONE

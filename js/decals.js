@@ -107,6 +107,14 @@ class Pool {
     this.light = new Float32Array(max);
     this.sky = new Float32Array(max);
     this.frame = new Uint8Array(max);        // which picture in the pool's strip
+    /* A HOLE IN A VEHICLE RIDES WITH IT: `owner` is the vehicle and the
+       l* arrays are the hole in the vehicle's own frame — x along its
+       length, y across, z up off the body's floor — turned into world
+       space every frame in render(). Nothing else has an owner. */
+    this.owner = new Array(max).fill(null);
+    this.lx = new Float32Array(max); this.ly = new Float32Array(max); this.lz = new Float32Array(max);
+    this.lnx = new Float32Array(max); this.lny = new Float32Array(max); this.lnz = new Float32Array(max);
+    this.owned = 0;
     this.next = 0;                           // ring cursor, for the holes
     this.count = 0;
     this.dirtyPos = true; this.dirtyStrength = true;
@@ -139,6 +147,7 @@ class Pool {
   }
 
   place(i, x, y, z, n, size, rot, strength, light, sky, frame) {
+    if (this.owner[i]) { this.owner[i] = null; this.owned--; }
     this.x[i] = x; this.y[i] = y; this.z[i] = z;
     this.nx[i] = n.nx; this.ny[i] = n.ny; this.nz[i] = n.nz;
     this.size[i] = size; this.rot[i] = rot;
@@ -299,6 +308,49 @@ export class Decals {
     this.holes++;
   }
 
+  /** A round has landed on a vehicle. `hx, hy, hz` is where the ray
+   *  crossed its blocker and `dx, dy, dz` the way the round was going;
+   *  the hole goes on whichever face of the vehicle's box the round
+   *  came in through, at that point pushed out onto the face, and it
+   *  rides with the vehicle from then on. Pure but for the pool. */
+  vehicleHole(v, hx, hy, hz, dx, dy, dz) {
+    const L = v.def.length, hw = v.def.box.half * L, H = v.def.box.height * L;
+    const c = Math.cos(v.yaw), s = Math.sin(v.yaw);
+    /* into the vehicle's own frame */
+    const rx = hx - v.x, ry = hy - v.y;
+    let lx = rx * c + ry * s, ly = -rx * s + ry * c, lz = hz - v.bodyZ;
+    const ddx = dx * c + dy * s, ddy = -dx * s + dy * c;
+    const dl = Math.hypot(ddx, ddy, dz) || 1;
+    const ux = ddx / dl, uy = ddy / dl, uz = dz / dl;
+    /* which face the round came in through: the one whose outward
+       normal is most against the way it was going, the flanks and the
+       ends weighed by the box's own shape */
+    const cand = [
+      [-Math.sign(ux) || 1, 0, 0, Math.abs(ux) * (hw / (L / 2))],
+      [0, -Math.sign(uy) || 1, 0, Math.abs(uy)],
+      [0, 0, 1, Math.max(0, -uz) * 0.8],
+    ];
+    cand.sort((a, b) => b[3] - a[3]);
+    const [nx, ny, nz] = cand[0];
+    /* onto that face, and kept a little in from the edges of it along
+       the other two axes so a hole never hangs off a corner */
+    const inset = 1.5;
+    if (nx) lx = nx * (L / 2);
+    else lx = Math.max(-L / 2 + inset, Math.min(L / 2 - inset, lx));
+    if (ny) ly = ny * hw;
+    else ly = Math.max(-hw + inset, Math.min(hw - inset, ly));
+    if (nz) lz = H;
+    else lz = Math.max(inset, Math.min(H - inset, lz));
+    const P = this.pools.hole;
+    const i = P.alloc(true);
+    const size = HOLE_SIZE[0] + (pRandom() / 255) * (HOLE_SIZE[1] - HOLE_SIZE[0]);
+    P.place(i, hx, hy, hz, { nx, ny, nz }, size, (pRandom() / 255) * Math.PI * 2, 0.92, v.light ?? 0.75, v.sky ?? 1, 0);
+    P.owner[i] = v; P.owned++;
+    P.lx[i] = lx; P.ly[i] = ly; P.lz[i] = lz;
+    P.lnx[i] = nx; P.lny[i] = ny; P.lnz[i] = nz;
+    this.holes++;
+  }
+
   /** A flame has landed: the spot heats. Nearby frost melts. */
   heat(x, y, z, n, amount = HEAT_PER_LANDING) {
     this._feed(this.pools.heat, x, y, z, n, amount, HEAT_SIZE);
@@ -402,7 +454,29 @@ export class Decals {
     mk(this.pools.heat, glow, 1, 'add', 6, 1);
   }
 
+  /** The holes that ride on vehicles: put where their vehicle is now,
+   *  and dropped the moment it stops being whole — a wreck on its roof
+   *  is not the box the holes were laid on. */
+  _carry() {
+    const P = this.pools.hole;
+    if (!P.owned) return;
+    for (let i = 0; i < P.max; i++) {
+      const v = P.owner[i];
+      if (!v) continue;
+      if (!v.whole) { P.owner[i] = null; P.owned--; P.strength[i] = 0; P.count--; P.dirtyStrength = true; continue; }
+      const c = Math.cos(v.yaw), s = Math.sin(v.yaw);
+      P.x[i] = v.x + P.lx[i] * c - P.ly[i] * s;
+      P.y[i] = v.y + P.lx[i] * s + P.ly[i] * c;
+      P.z[i] = v.bodyZ + P.lz[i];
+      P.nx[i] = P.lnx[i] * c - P.lny[i] * s;
+      P.ny[i] = P.lnx[i] * s + P.lny[i] * c;
+      P.nz[i] = P.lnz[i];
+    }
+    P.dirtyPos = true;
+  }
+
   render() {
+    this._carry();
     for (const P of Object.values(this.pools)) {
       if (!P.mesh) continue;
       const g = P.mesh.geometry;

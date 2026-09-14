@@ -301,7 +301,9 @@ export const WEAPONS = {
     refire: BELT_REFIRE_AT,
     volley: true, rounds: BELT_PER_TIC, spread: 0.055,
     damage: () => 24 + (pRandom() % 25),
-    sound: 'minigun',
+    /* no sound per cycle: the firing is one held sound, the user's
+       recording, started and stopped in weaponTic — see gunLoop */
+    sound: null,
   },
   MOLOTOV: {
     slot: 5, name: 'MOLOTOV', sprite: 'MOLG',
@@ -361,6 +363,8 @@ export class Player {
     this.beltDry = false;
     this.spin = 0;
     this.heat = 0;
+    /* the held firing sound, while rounds are leaving — see weaponTic */
+    this.gunLoop = null;
     /* whether the trigger has already clicked on this press of it */
     this._clicked = false;
     /* DEBUG MODE: every tank refills to the top once a tic. Off, saved
@@ -599,6 +603,10 @@ export class Player {
       const pt = this.pitch + (pRandom() / 255 - 0.5) * 2 * d.spread * 0.7;
       g.hitscan(this, a, 2400, d.damage(), { shot: true, pitch: pt, dx, dy, force: 1.6, from,
                                            spark: (i === 0) });
+      /* EVERY OTHER ROUND IS A TRACER, at the user's request: a streak
+         of light from the muzzle to wherever the round stopped, which
+         Game.hitscan leaves in lastHit — see js/tracers.js */
+      if ((i & 1) === 0 && g.tracers && g.lastHit) g.tracers.spawn(from, g.lastHit);
     }
   }
 
@@ -624,7 +632,18 @@ export class Player {
     if (input.weaponSlot) this.selectSlot(input.weaponSlot);
     if (input.weaponCycle) this.cycleWeapon(input.weaponCycle > 0 ? 1 : -1);
     this.spinTic(input);
+    this._weaponTic(input);
+    /* THE FIRING IS ONE HELD SOUND on a volley weapon: the user's
+       recording, looped from the first round to the last and stopped
+       with a short ramp. Judged after the tic, on whether rounds are
+       leaving, so a dry belt and a released trigger end it the same
+       way. */
+    const on = this.firing && !!this.def.volley;
+    if (on && !this.gunLoop) this.gunLoop = this.game.sound?.loop('minigunloop', this) || null;
+    else if (!on && this.gunLoop) { this.gunLoop.stop(); this.gunLoop = null; }
+  }
 
+  _weaponTic(input) {
     if (this.firing) {
       const d = this.def;
       /* a stream pours every tic the trigger is down, not once a frame */

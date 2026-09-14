@@ -16,13 +16,32 @@
    less useful than it sounds.
    ===================================================================== */
 
-/* ALL OF IT IS OFF FOR NOW, at the user's request. One switch: with it
-   on, resume() never opens an AudioContext, so play(), the ambience
-   and everything that calls them fall through the `!this.ctx` guards
-   they already have, and no oscillator is ever made. Every sound in
-   the table below is still defined and still asked for by the game;
-   flip this and they are all back. */
+/* THE SYNTHESISED SOUNDS ARE OFF FOR NOW, at the user's request. One
+   switch: with it on, play() refuses every name in DEFS below and the
+   ambience never starts, so no oscillator is ever made. Every sound in
+   the table is still defined and still asked for by the game; flip
+   this and they are all back.
+
+   WHAT IT DOES NOT SILENCE IS A SAMPLE. The minigun arrived with three
+   recordings of its own (SAMPLES below), at the user's request, and
+   those play whatever this says: the switch is about the noises this
+   file makes up, not about the ones the user made. */
 export const MUTED = true;
+
+/* THE RECORDED ONES, and the first sounds in the game that are files:
+   the minigun winding up, a two-second loop of it firing, and it
+   winding down, the user's own. Fetched at boot, decoded once there is
+   a context, and played by the same play() as everything else — a
+   name in SAMPLE_FOR is a sample, and everything else is synthesised
+   — so the player asks for 'spinup' the way it always did and gets
+   the recording. The loop is the one thing with a second verb, loop(),
+   because a held trigger is a held sound. */
+export const SAMPLES = {
+  minigun_start: 'assets/sfx/minigun_start.wav',
+  minigun_fire:  'assets/sfx/minigun_fire.wav',
+  minigun_stop:  'assets/sfx/minigun_stop.wav',
+};
+export const SAMPLE_FOR = { spinup: 'minigun_start', minigunloop: 'minigun_fire', spindown: 'minigun_stop' };
 
 const DEFS = {
   /* the store */
@@ -126,12 +145,34 @@ export class Audio {
     this.maxDistance = 1800;
     this._noiseBuf = null;
     this._lastAt = new Map();       // one of each sound per few tics, at most
+    this.bytes = {};                // the samples, as fetched
+    this.samples = {};              // and decoded
+  }
+
+  /** Fetch the recordings. No context is needed for this, so it can
+   *  start at boot; decoding waits for the start tap. A file that
+   *  does not arrive is simply a sound the game does not have. */
+  async loadSamples() {
+    await Promise.all(Object.entries(SAMPLES).map(async ([k, url]) => {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`${url}: ${res.status}`);
+        this.bytes[k] = await res.arrayBuffer();
+      } catch (e) { console.warn('no sample:', e.message); }
+    }));
+  }
+
+  async _decodeSamples() {
+    for (const k of Object.keys(this.bytes)) {
+      if (this.samples[k] || !this.ctx) continue;
+      try { this.samples[k] = await this.ctx.decodeAudioData(this.bytes[k].slice(0)); }
+      catch (e) { console.warn('sample would not decode:', k, e.message); }
+    }
   }
 
   /* Browsers will not start an AudioContext until the user has done
      something, so this is called from the first click. */
   resume() {
-    if (MUTED) { this.enabled = false; return; }
     if (!this.ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) { this.enabled = false; return; }
@@ -142,6 +183,44 @@ export class Audio {
       this._makeNoise();
     }
     if (this.ctx.state === 'suspended') this.ctx.resume();
+    this._decodeSamples();
+  }
+
+  /** Distance, as a gain: 1 for the player's own sounds, falling off
+   *  to nothing at maxDistance. */
+  _gainFor(from) {
+    if (!from || from === this.listener) return 1;
+    const d = Math.hypot(from.x - this.listener.x, from.y - this.listener.y);
+    if (d > this.maxDistance) return 0;
+    return Math.max(0, 1 - d / this.maxDistance) ** 1.7;
+  }
+
+  /** One recording, once. */
+  _playSample(key, from, loop = false) {
+    const buf = this.samples[key];
+    if (!buf) return null;
+    const gain = this._gainFor(from);
+    if (gain < 0.004) return null;
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf; src.loop = loop;
+    const g = this.ctx.createGain();
+    g.gain.value = gain;
+    src.connect(g); g.connect(this.master);
+    src.start();
+    const ctx = this.ctx;
+    return {
+      src, gain: g,
+      /* a short ramp out, so a loop that stops mid-cycle does not click */
+      stop() { try { g.gain.setTargetAtTime(0, ctx.currentTime, 0.02); src.stop(ctx.currentTime + 0.12); } catch (e) { /* already gone */ } },
+    };
+  }
+
+  /** A held sound: starts now, runs until the handle's stop() is
+   *  called. Only a name in SAMPLE_FOR can be held. */
+  loop(name, from) {
+    if (!name || !this.enabled || !this.ctx) return null;
+    const key = SAMPLE_FOR[name];
+    return key ? this._playSample(key, from, true) : null;
   }
 
   setVolume(v) { if (this.master) this.master.gain.value = v; }
@@ -163,6 +242,9 @@ export class Audio {
 
   play(name, from) {
     if (!name || !this.enabled || !this.ctx) return;
+    /* a recording, if there is one under that name — see SAMPLE_FOR */
+    if (SAMPLE_FOR[name]) { this._playSample(SAMPLE_FOR[name], from); return; }
+    if (MUTED) return;
     const def = DEFS[name];
     if (!def) return;
 
@@ -218,7 +300,7 @@ export class Audio {
   /** The bed of noise a burning building makes. Started once the fire
    *  gets going and modulated by how much of the store is alight. */
   startAmbience() {
-    if (!this.ctx || this._amb) return;
+    if (MUTED || !this.ctx || this._amb) return;
     const src = this.ctx.createBufferSource();
     src.buffer = this._noiseBuf; src.loop = true;
     const f = this.ctx.createBiquadFilter();

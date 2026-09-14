@@ -177,7 +177,9 @@ export class FlameStream {
        starts the countdown in Actor.ignite, and a thing with a countdown
        running ignores fire damage until it runs out. */
     if (a.flammable) a.ignite?.(300);
-    a.damage(5 + (pRandom() % 5), this.game.player, { fire: true });
+    /* `stream` is for the vehicles, which the stream lights rather than
+       hurts — see Vehicle.damage; a person takes it as fire like before */
+    a.damage(5 + (pRandom() % 5), this.game.player, { fire: true, stream: true });
     this.game.fire?.ignite(x, y, STREAM.heat, 24);
     this.game.fx?.splash(x, y, z);
   }

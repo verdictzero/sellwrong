@@ -36,6 +36,7 @@ import { buildSky, followSky } from './sky.js';
 import { Forest } from './forest.js';
 import { FlameStream } from './flame.js';
 import { Decals, wallNormal, UP, DOWN } from './decals.js';
+import { Tracers } from './tracers.js';
 import { FrostStream } from './frost.js';
 import { Effects, SMOKE_PUFFS } from './effects.js';
 import { Giblets } from './people.js';
@@ -134,6 +135,11 @@ export class Game {
        Data always; pictures only where there are pictures. */
     this.decals = new Decals(this);
     if (fxAtlases) this.decals.attach(scene);
+    /* and the minigun's tracers, a streak from the muzzle to the hit */
+    this.tracers = new Tracers(this);
+    if (fxAtlases) this.tracers.attach(scene);
+    /* where the last hitscan stopped, for a tracer to be drawn to */
+    this.lastHit = { x: 0, y: 0, z: 0 };
     if (flameAtlas) this.flame.attach(scene);
     if (fxAtlases) { this.frost.attach(scene); this.fx.attach(scene); }
     if (gibAtlases) this.giblets.attach(scene);
@@ -407,6 +413,7 @@ export class Game {
     this.fx.tic();
     this.giblets.tic();
     this.decals.tic();
+    this.tracers.tic();
     this.applyChar();
     this.ticBurnGrid();
 
@@ -645,9 +652,16 @@ export class Game {
       bestT = t; best = { a, x: px, y: py, z: pz };
     }
 
+    const lh = this.lastHit;
     if (best) {
       best.a.damage(damage, from, opts);
       this.spawnPuff(best.x, best.y, best.z);
+      lh.x = best.x; lh.y = best.y; lh.z = best.z;
+      /* A ROUND INTO A VAN LEAVES A HOLE IN THE VAN, on whichever face
+         of its box the round came in through, and the hole rides with
+         it — see Decals.vehicleHole */
+      if (opts.shot && best.a.vehicle)
+        this.decals.vehicleHole(best.a.vehicle, best.x, best.y, best.z, dx, dy, tz - z);
       return best.a;
     }
     if (wall && (!pitch || wall.t <= maxT + 1e-9)) {
@@ -655,11 +669,15 @@ export class Game {
       if (opts.spark) this.spawnSparks(wall.x, wall.y, wall.z, 2 + (pRandom() & 1));
       /* and the hole it leaves, facing the side it came from */
       if (opts.shot) this.decals.hole(wall.x, wall.y, wall.z, wallNormal(wall.line, ox, oy));
+      lh.x = wall.x; lh.y = wall.y; lh.z = wall.z;
     } else if (floorHit !== null) {
       const hx = ox + dx * maxT, hy = oy + dy * maxT;
       this.spawnPuff(hx, hy, floorHit);
       if (opts.spark) this.spawnSparks(hx, hy, floorHit, 2 + (pRandom() & 1));
       if (opts.shot) this.decals.hole(hx, hy, floorHit, tz < z ? UP : DOWN);
+      lh.x = hx; lh.y = hy; lh.z = floorHit;
+    } else {
+      lh.x = tx; lh.y = ty; lh.z = tz;
     }
     return null;
   }
@@ -1085,6 +1103,7 @@ export class Game {
     this.fx.render(billboardRot);
     this.giblets.render(billboardRot);
     this.decals.render();
+    this.tracers.render(ex, ey, ez);
     this.renderProjectiles(billboardRot);
     this.bore.render(billboardRot);
 

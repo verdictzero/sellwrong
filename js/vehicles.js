@@ -58,6 +58,17 @@ import {
 const GRAVITY = 0.85;        // units per tic per tic — the sparks' own fall
 
 const HEALTH = 150;          // a few seconds of being on fire
+/* HOW MANY ROUNDS IT TAKES, at the user's request: a vehicle should
+   take a lot of the minigun and show every hit before it goes. The
+   minigun does twenty-four to forty-eight a round and a car has a
+   hundred and fifty of health, so without this a hatchback was gone in
+   a tic and a half. What a round does to a vehicle is divided by this
+   — twenty for a car in the lot, which is eighty-odd rounds, about
+   two thirds of a second of the trigger; the police van and the APC
+   set their own, much higher, below. The holes go on regardless (see
+   js/decals.js, vehicleHole), which is the point: you watch it fill
+   with them and then it chars and goes up the way a burnt one does. */
+const SHOT_ARMOUR = 20;
 const BURN_EVERY = 10;       // tics between a burning car taking it
 const BURN_DAMAGE = 12;
 const FUEL = 520;            // what a tank is worth to the tarmac under it
@@ -306,6 +317,7 @@ class Vehicle {
        and it is now a slow answer to the thing he arrived in. */
     this.fireArmour = Math.max(1, opts.fireArmour || 1);
     this.charFuse = Math.max(1, opts.charFuse || 1);
+    this.shotArmour = Math.max(1, opts.shotArmour || SHOT_ARMOUR);
     /* HOW HIGH IT RIDES OFF THE TARMAC, and zero for everything with
        wheels. The army's APC is a hover carrier and floats (see ArmyApc),
        which in here is one number and three consequences: the mesh is
@@ -362,6 +374,8 @@ class Vehicle {
    *  tarmac, plus whatever it hovers. One place, because three things
    *  used to work it out and the hover had to reach all three. */
   get ridingHeight() { return this.ground + this.hover + this.def.box.height / 2 * this.def.length; }
+  /** Where the bottom of the body is: the tarmac, plus the hover. */
+  get bodyZ() { return this.ground + this.hover; }
 
   /** Doom's cylinders, three in a row. They carry a pointer back here,
    *  which is what makes a shot at any third of a van damage the van. */
@@ -395,10 +409,24 @@ class Vehicle {
    *  know whether what arrived was fire. */
   damage(n, source = null, opts = {}) {
     if (!this.whole) return;
-    /* THE ARMOUR IS ONLY AGAINST FIRE. A bullet, a bang and a van are
-       the same to a squad van as to a hatchback; what it is built to
-       stand in is the burning. */
+    /* THE STREAM LIGHTS IT AND THAT IS ALL IT DOES, at the user's
+       request. The flamethrower's particles used to land on the
+       blockers as damage, six a tic at five to nine each, and a held
+       stream took a hatchback apart in a couple of seconds without it
+       ever really burning. A car the flame reaches now CATCHES —
+       ignite(), the same thing a blast or a burning neighbour does to
+       it — and then burns on its own clock: forty seconds alight,
+       twelve off its health every ten tics through whatever fire
+       armour it has, the char, the launch. Holding the stream on it
+       longer changes nothing, which is what "stays alight like normal"
+       means. A blast still hurts (it carries `fire`, not `stream`). */
+    if (opts.stream) { this.ignite(); return; }
+    /* THE ARMOUR IS AGAINST FIRE, AND SEPARATELY AGAINST ROUNDS. A bang
+       and a van are the same to a squad van as to a hatchback; what it
+       is built to stand in is the burning, and what it is built to
+       take a lot of is the minigun — see SHOT_ARMOUR. */
     if (opts.fire) n /= this.fireArmour;
+    if (opts.shot) n /= this.shotArmour;
     /* MORE DAMAGE TO ONE ALREADY CHARRING HURRIES IT: two tics off the
        fuse per point, so a car that has just started to blacken and is
        then hit by the bang next door goes early, and a chain reaction
@@ -1026,6 +1054,10 @@ export class SwatVan extends Vehicle {
          the fire to get through it and four times as long turning
          black: most of a minute against a hatchback's nine seconds. */
       fireArmour: 8, charFuse: 4,
+      /* AND ROUNDS: fifty, which is two hundred-odd of the minigun's,
+         a second and a half of the trigger held on one van — see
+         SHOT_ARMOUR — and every one of them a hole in the bodywork */
+      shotArmour: 50,
     });
     this.route = route.slice(1);
     /* HOW FAR IT STILL HAS TO GO FROM EACH POINT ON, worked out once so
@@ -1356,6 +1388,9 @@ export class ArmyApc extends SwatVan {
        thing in the lot you would choose to spend a tank on. */
     this.fireArmour = 14;
     this.charFuse = 6;
+    /* and ninety against rounds: nearly four hundred of them, three
+       seconds of the trigger, which is a carrier and not a van */
+    this.shotArmour = 90;
     /* AND IT IS HEAVIER TO DRIVE. Slower to wind up, slower to shed it,
        and a lower top speed: a carrier is not a squad car, and the
        weight shift reads harder for it because the springs are being

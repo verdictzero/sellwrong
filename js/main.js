@@ -70,13 +70,13 @@ const DEFAULT_DETAIL = 8;              // 720, the top of the ladder
 
    OFF is last because it is the finest setting there is — the grid
    becomes the buffer, which is exactly what this game did before the two
-   were pulled apart. It is not the default: the default is 200 rows of
-   5:6 pixels off a 720-row render, at the user's request, which is
-   320x200 at the shape Doom was drawn at, off a render fine enough that
-   every one of those chunky pixels is the average of a dozen. */
+   were pulled apart. It is not the default: the default is 240 rows of
+   5:6 pixels off a 720-row render, at the user's request (it was 200,
+   which is 320x200 at the shape Doom was drawn at), off a render fine
+   enough that every one of those chunky pixels is the average of nine. */
 const PIXELS = [120, 150, 200, 240, 300, 400, 480, 600, 0];
 const PIXELS_OFF = PIXELS.length - 1;
-const DEFAULT_PIXELS = 2;              // 200, which is 5:6 and about 485 across
+const DEFAULT_PIXELS = 3;              // 240, at the user's request, up from 200
 
 /* THE SHAPE OF ONE, width over height as displayed. 320x200 filling a
    4:3 monitor is not a square-pixel mode and never was: each pixel stood
@@ -90,6 +90,13 @@ const PIXEL_ASPECT = [
   { v: 1.0,     n: 'SQUARE' },
   { v: 0.83333, n: 'TALL 5:6' },      // 320x200 on a 4:3 monitor
   { v: 1.16667, n: 'WIDE 7:6' },      // 256x224 on the same
+  /* AND ONE TO THREE, at the user's request: a pixel three times as
+     tall as it is wide, which is a 240-row grid twelve hundred and
+     eighty across on a 16:9 window — every column of the 720-row
+     buffer, in rows a third as fine. lofiSizes clamps the width to the
+     buffer's, so on a narrower render the rows give way, as they do
+     for every tall setting. */
+  { v: 0.33333, n: 'TALL 1:3' },
 ];
 const DEFAULT_PIXAR = 1;               // 5:6, which is the shape Doom was drawn on
 
@@ -127,20 +134,22 @@ const WOOD   = [{ v: 1, n: 'ALL OF IT' }, { v: 0.6, n: 'NEARER' }, { v: 0.35, n:
    bumped when a default changes, so a saved setting from before does
    not quietly keep the old default alive. */
 const PREF_KEY = 'sellwrong.prefs';
-const PREF_VERSION = 3;
+/* 4: the defaults moved — 240 rows of pixels, and the picture a third
+   brighter — so a saved 200 and a saved 1.0 are not kept alive */
+const PREF_VERSION = 4;
 const DEFAULT_PREFS = { v: PREF_VERSION, sens: 1, invert: false, lefty: false, haptics: true,
                         detail: DEFAULT_DETAIL, pixels: DEFAULT_PIXELS, pixar: DEFAULT_PIXAR,
                         crowd: 0, fx: 0, wood: 0, fps: false, debug: false, godmode: false,
                         /* the three picture dials, at the user's request — see
                            LofiPipeline.setPicture; 1 is the picture as drawn */
-                        bright: 1, contrast: 1, gamma: 1,
+                        bright: 1.35, contrast: 1, gamma: 1,
                         /* and the music's fader — see js/music.js */
                         music: 0.5 };
 function loadPrefs() {
   try {
     const saved = JSON.parse(localStorage.getItem(PREF_KEY) || '{}');
     if (saved.v !== PREF_VERSION) {
-      delete saved.detail; delete saved.pixels; delete saved.pixar;
+      delete saved.detail; delete saved.pixels; delete saved.pixar; delete saved.bright;
       saved.v = PREF_VERSION;
     }
     return { ...DEFAULT_PREFS, ...saved };
@@ -257,6 +266,9 @@ async function boot() {
      js/music.js. Sixteen megabytes, behind everything else. */
   const music = new Music();
   const musicP = music.load();
+  /* and the minigun's three recordings — see SAMPLES in js/audio.js */
+  const audio = new Audio();
+  audio.loadSamples();
 
   status('BAKING TEXTURES', 0.05); await breathe();
   const textures = bakeTextures();
@@ -321,7 +333,6 @@ async function boot() {
 
   status('THE FLAMETHROWER', 0.78);
   const hud = new Hud(null);
-  const audio = new Audio();
   const input = new Input(renderer.domElement);
   const game = new Game({ level, scene, camera, textures, sprites, hud, audio, input, sky: skyImage,
                          flameAtlas: streamAtlas, bodyAtlas: flameAtlas, fxAtlases, gibAtlases,
