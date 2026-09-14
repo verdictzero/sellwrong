@@ -977,13 +977,20 @@ const SIREN_EVERY = 19;          // tics between the two notes
    is not a suspension: it is the acceleration, read twice, through
    something that overshoots.
 
-   `PITCH_PER_G` turns acceleration into a target angle — negative when
+   `pitchPerG` turns acceleration into a target angle — negative when
    braking, which is nose down, because the mesh's own +Z rotation
    raises the nose (see carMesh, which orders the Euler YXZ so that
-   pitch and roll are in the vehicle's own frame). `ROLL_PER_G` does the
+   pitch and roll are in the vehicle's own frame). `rollPerG` does the
    same for how hard it is turning, and leans the body OUT of the bend
    the way a real one does, because it is the outside springs that
    compress.
+
+   BOTH ARE ON THE INSTANCE AND BOTH CAN BE NEGATIVE, which is the whole
+   of what makes a hover carrier a different vehicle rather than a
+   recoloured one. A thing on springs leans out of a bend and dips its
+   nose to stop; a thing on thrust does the opposite of both, because
+   what it is doing is pointing its lift somewhere else. The APC takes
+   the same two lines of code with the signs turned over. See ArmyApc.
 
    SPRING and DAMP are what make it read as weight rather than as a
    tilt. Undamped it wobbles for ever; critically damped it slides into
@@ -1046,6 +1053,12 @@ export class SwatVan extends Vehicle {
     this.topSpeed = DRIVE_SPEED;
     this.accel = DRIVE_ACCEL;
     this.brake = DRIVE_BRAKE;
+    /* and how the body answers the two of them — see suspension, and
+       see ArmyApc for a vehicle that answers them the other way round */
+    this.pitchPerG = PITCH_PER_G;
+    this.rollPerG = ROLL_PER_G;
+    this.pitchMax = PITCH_MAX;
+    this.rollMax = ROLL_MAX;
     this.runoverDmg = RUNOVER_DMG;
     this.runoverPlayer = RUNOVER_PLAYER;
   }
@@ -1056,12 +1069,9 @@ export class SwatVan extends Vehicle {
     /* AND THE BODY GOES ON ROCKING after it has stopped, because that is
        where the whole thing is spent: a van brakes, the nose goes down,
        it stands still and the springs push it back. Runs until the
-       spring is asleep and then never again. */
-    if (this.whole && (Math.abs(this.pitchV) > ASLEEP || Math.abs(this.rollV) > ASLEEP ||
-                       Math.abs(this.rz) > ASLEEP || Math.abs(this.rx) > ASLEEP)) {
-      this.suspension(0, 0);
-      this.place();
-    }
+       spring is asleep and then never again — and for a hover carrier
+       that is never, because its resting angles are moving. */
+    if (this.whole && !this.asleep) { this.suspension(0, 0); this.place(); }
   }
 
   /** How far it is, in whole units, from the next point on its route. */
@@ -1081,12 +1091,28 @@ export class SwatVan extends Vehicle {
    * what make arriving at those angles look like weight.
    */
   suspension(accel, turn) {
-    const wantPitch = Math.max(-PITCH_MAX, Math.min(PITCH_MAX, accel * PITCH_PER_G));
-    const wantRoll = Math.max(-ROLL_MAX, Math.min(ROLL_MAX, turn * this.speed * ROLL_PER_G));
+    const wantPitch = this.restPitch +
+      Math.max(-this.pitchMax, Math.min(this.pitchMax, accel * this.pitchPerG));
+    const wantRoll = this.restRoll +
+      Math.max(-this.rollMax, Math.min(this.rollMax, turn * this.speed * this.rollPerG));
     this.pitchV += (wantPitch - this.rz) * SPRING - this.pitchV * DAMP;
     this.rollV += (wantRoll - this.rx) * SPRING - this.rollV * DAMP;
     this.rz += this.pitchV;
     this.rx += this.rollV;
+  }
+
+  /** WHERE THE BODY SITS WHEN NOTHING IS HAPPENING TO IT, which for
+   *  anything on wheels is level. A hovering one is never quite level
+   *  and never quite still — see ArmyApc. */
+  get restPitch() { return 0; }
+  get restRoll() { return 0; }
+
+  /** Nothing left to move: the springs have settled onto their resting
+   *  angles and nothing is driving them. Checked so a parked van costs
+   *  nothing for the rest of the night; a hovering one is never asleep. */
+  get asleep() {
+    return Math.abs(this.pitchV) < ASLEEP && Math.abs(this.rollV) < ASLEEP &&
+           Math.abs(this.rz - this.restPitch) < ASLEEP && Math.abs(this.rx - this.restRoll) < ASLEEP;
   }
 
   drive() {
@@ -1212,14 +1238,49 @@ export class SwatVan extends Vehicle {
    already measured against this map. What is different is everything
    about what it IS.
 
-   IT FLOATS. `hover` holds the whole vehicle off the tarmac and BOB
-   breathes it up and down on a four-second cycle, which is the entire
-   trick: nothing else in this game moves when it is standing still, so
-   a thing that does reads as held up by something rather than parked.
-   The gap under it is not a gap you can use — the blockers are as tall
-   as the hover plus the hull and they still stand ON the ground (see
-   Vehicle.block), because an APC's skirts are in the way whether they
-   are touching or not.
+   IT FLOATS, AND IT NEVER HOLDS STILL. `hover` holds the whole vehicle
+   off the tarmac and the BOB breathes it up and down, which is the
+   entire trick: nothing else in this game moves when it is standing
+   still, so a thing that does reads as held up by something rather than
+   parked. The gap under it is not a gap you can use — the blockers are
+   as tall as the hover plus the hull and they still stand ON the ground
+   (see Vehicle.block), because an APC's skirts are in the way whether
+   they are touching or not.
+
+   THE BOB IS TWO SINES, not one, on periods that do not divide into one
+   another: a four-second breath with a ten-second swell under it. One
+   sine on its own is a metronome and the eye finds it in about three
+   cycles; two is a thing being held up by something that is not quite
+   managing it. And it is BIGGER WHEN IT IS PARKED — a little over half
+   as much while it is moving — because a hovercraft at speed is held
+   steadier by the ground under it and one standing still wallows, and
+   because what the user asked for was the bob you see when it has
+   stopped.
+
+   AND IT IS NEVER LEVEL. Two more slow sines, on two more periods, put
+   a degree or so of pitch and a degree and a half of roll into it and
+   take them out again — see restPitch and restRoll, which is where the
+   springs in SwatVan are told what "at rest" means. A parked van's
+   springs settle and then cost nothing for the rest of the night; a
+   parked APC's are never asleep, because what they are settling onto
+   keeps moving.
+
+   AND IT BANKS INTO ITS TURNS, AND PITCHES UP TO STOP. Which is the
+   same two lines of SwatVan's suspension with both signs turned over,
+   and it is turned over for a reason rather than for the look. A thing
+   on springs leans OUT of a bend because the outside springs compress,
+   and dips its nose to brake because the weight goes forward. A thing
+   on THRUST has no springs and no weight to move: to turn it points its
+   lift into the bend, and to stop it points its lift forward, so it
+   banks in and it pitches nose-up. Twice the van's lean at nearly three
+   times the coefficient, because a carrier heeling over into the
+   frontage lane is the whole reason anybody draws one of these.
+
+   The angles are capped where they are because of the ground: at seven
+   degrees of pitch the nose drops fifteen units and at ten degrees of
+   bank the low flank drops eleven, against thirty-four of hover with
+   seven of bob in it. It leans as far as it can lean without putting a
+   corner through the tarmac, and no further.
 
    AND IT BLOWS THE CAR PARK ABOUT. Whatever holds it up throws grit
    down, so there is a puff under the middle of it every few tics — hard
@@ -1237,8 +1298,22 @@ export class SwatVan extends Vehicle {
    a square wave that wails. See `hover` and `hover2` in js/audio.js.
    ===================================================================== */
 const HOVER = 34;                // how high the skirts ride, in game units
-const BOB = 5;                   // and how far it breathes, either way
+const BOB = 7;                   // and how far it breathes, either way, parked
+const BOB_DRIVING = 0.45;        // and how much of that while it is moving
 const BOB_RATE = Math.PI * 2 / 140;   // one whole breath in four seconds
+const SWELL_RATE = BOB_RATE * 0.41;   // and the slow one under it, in ten
+const SWELL = 0.30;              // which is this much of the whole
+/* the two it is never quite level on: about a degree of pitch and a
+   degree and a half of roll, on two more periods that do not line up */
+const IDLE_PITCH = 0.019, IDLE_PITCH_RATE = Math.PI * 2 / 191;
+const IDLE_ROLL = 0.027, IDLE_ROLL_RATE = Math.PI * 2 / 233;
+/* AND THE SIGNS TURNED OVER, which is what makes it a hover vehicle:
+   into the bend rather than out of it, nose up to stop rather than
+   down. See the note above, and suspension in SwatVan. */
+const HOVER_PITCH_PER_G = -0.100;
+const HOVER_ROLL_PER_G = -0.055;
+const HOVER_PITCH_MAX = 0.12;    // seven degrees: the nose drops fifteen units
+const HOVER_ROLL_MAX = 0.17;     // ten: the low flank drops eleven
 const WASH_MOVING = 3;           // tics between downwash puffs, driving
 const WASH_STANDING = 13;        // and standing
 const APC_RUNOVER = 440;         // what the front of one does to a person
@@ -1269,6 +1344,14 @@ export class ArmyApc extends SwatVan {
     this.topSpeed = DRIVE_SPEED * 0.82;
     this.accel = DRIVE_ACCEL * 0.62;
     this.brake = DRIVE_BRAKE * 0.70;
+    /* AND THE BODY ANSWERS THEM THE OTHER WAY ROUND. Both signs turned
+       over: into the bend rather than out of it, nose up to stop rather
+       than nose down, because there are no springs and no weight to
+       move — there is lift, and it gets pointed somewhere. */
+    this.pitchPerG = HOVER_PITCH_PER_G;
+    this.rollPerG = HOVER_ROLL_PER_G;
+    this.pitchMax = HOVER_PITCH_MAX;
+    this.rollMax = HOVER_ROLL_MAX;
     this.cz = this.ridingHeight;
     /* it was built standing on the tarmac; stand it up and make the
        thing you cannot walk through as tall as it now is */
@@ -1279,11 +1362,31 @@ export class ArmyApc extends SwatVan {
   /** The height it rides at with the breath taken out, for anyone
    *  outside measuring the hover against what it is meant to be. */
   static get HOVER() { return HOVER; }
+  /** And the most the breath ever takes it either side of that. */
+  static get BOB() { return BOB; }
+
+  /** THE BREATH: two sines on periods that do not divide into one
+   *  another, so it never visibly repeats, and rather more of it when it
+   *  is standing than when it is moving. */
+  get bob() {
+    const t = this.bobT;
+    const k = (Math.sin(t * BOB_RATE) * (1 - SWELL) + Math.sin(t * SWELL_RATE + 2.3) * SWELL);
+    return k * BOB * (this.state === 'driving' ? BOB_DRIVING : 1);
+  }
+
+  /* AND IT IS NEVER LEVEL. What the springs in SwatVan settle ONTO,
+     rather than what drives them: two more slow sines, so a parked
+     carrier drifts a degree one way and a degree and a half the other
+     and never quite arrives anywhere. */
+  get restPitch() { return Math.sin(this.bobT * IDLE_PITCH_RATE) * IDLE_PITCH; }
+  get restRoll() { return Math.sin(this.bobT * IDLE_ROLL_RATE + 1.7) * IDLE_ROLL; }
+  /** And so it is never asleep: what it is settling onto keeps moving. */
+  get asleep() { return false; }
 
   tic() {
     /* the breath first, so whatever super does with cz does it at the
        height this tic is actually at */
-    if (this.whole) this.hover = HOVER + Math.sin((this.bobT += 1) * BOB_RATE) * BOB;
+    if (this.whole) { this.bobT += 1; this.hover = HOVER + this.bob; }
     super.tic();
     if (!this.whole) return;
     /* super recomputes cz on its own clock — every fourth tic while it

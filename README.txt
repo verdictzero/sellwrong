@@ -1774,17 +1774,53 @@ black. The bore is still the answer to the men and it is still rationed.
 
 AND THE CARRIER HOVERS, which is the first vehicle in this game that does
 not touch the road. The model says nothing about it — a GLB has no
-opinion — so it is three numbers in ArmyApc (js/vehicles.js) and three
-consequences. It rides thirty-four units off the tarmac and BREATHES five
-either way on a four-second cycle, which matters more than it sounds:
-nothing else in this game moves while it is standing still, so a thing
-that does reads as held up rather than parked. It throws GRIT: a puff
-under the skirts every three tics while it is moving and every thirteen
-while it stands, which is what sells the hover at a distance where five
-units of bob is nothing. And you do not get to walk under it — the three
-cylinders you cannot walk through stand on the ground the way every other
-vehicle's do, and are as tall as the gap plus the hull. A wreck loses the
-hover, because nothing that has stopped working floats.
+opinion — so all of it is in ArmyApc (js/vehicles.js). It rides
+thirty-four units off the tarmac and it is never still and never level.
+
+THE BREATH IS TWO SINES, on periods that do not divide into one another:
+a four-second one with a ten-second swell under it. One sine on its own
+is a metronome and the eye finds it in about three cycles; two is a thing
+being held up by something that is not quite managing it. Seven units
+either way when it is parked and a little under half that while it is
+moving, at the user's request and for a reason — a hovercraft at speed is
+held steadier by the ground under it and one standing still wallows, and
+the bob you actually watch is the parked one. Measured: twenty-nine to
+forty-one units of air standing, thirty-one to thirty-six on the road.
+
+AND TWO MORE SLOW SINES put a degree of pitch and a degree and a half of
+roll into it and take them out again. Those are not a movement, they are
+what the SPRINGS SETTLE ONTO — `restPitch` and `restRoll`, which is how
+the same suspension that serves a van serves this. A parked van's springs
+reach zero and are then left alone for the rest of the night; a parked
+carrier's are settling onto something that keeps moving, so it never
+arrives and is never asleep. Two point two degrees of pitch drift and
+three point one of roll, parked, measured over four hundred tics.
+
+AND IT BANKS INTO ITS TURNS AND PITCHES UP TO STOP, which is SwatVan's
+two springs with both signs turned over — and turned over for a reason
+rather than for the look. A thing on springs leans OUT of a bend, because
+the outside springs compress, and dips its nose to brake, because the
+weight goes forward. A thing on THRUST has no springs and no weight to
+move: to turn it points its lift into the bend, to stop it points its
+lift forward. So it banks IN and it pitches nose UP. Given the same
+braking left-hander, side by side in the test: the carrier +3.4 degrees
+of pitch and -6.3 of roll, the van -2.9 and +2.3. Opposite in both axes,
+and the carrier banks nearly three times as hard.
+
+The angles are capped where they are because of the GROUND. At seven
+degrees of pitch the nose drops fifteen units and at ten of bank the low
+flank drops eleven, against thirty-four of hover with seven of breath in
+it. It leans as far as it can without putting a corner through the
+tarmac, and the test measures the lowest corner over a whole drive and
+holds it against the hover at the bottom of its breath.
+
+It throws GRIT: a puff under the skirts every three tics while it is
+moving and every thirteen while it stands, which is what sells the hover
+at a distance where seven units of bob is nothing. And you do not get to
+walk under it — the three cylinders you cannot walk through stand on the
+ground the way every other vehicle's do, and are as tall as the gap plus
+the hull. A wreck loses the hover, because nothing that has stopped
+working floats.
 
 It is two hundred and sixty units nose to tail against the assault van's
 two hundred and fourteen, and a hundred and thirty-three across against

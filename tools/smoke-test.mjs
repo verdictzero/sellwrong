@@ -5221,15 +5221,80 @@ section('the van');
       const body = car.carHeight(apc) / 2;
       const air = seen => [Math.min(...seen) - body, Math.max(...seen) - body];
       let n = 0;
+      const drove = [];
       {
         const seen = [];
-        for (; n < 6000 && !apcs().some(v => v.state === 'parked'); n++) { ga.tic(); seen.push(one.cz - one.ground); }
+        for (; n < 6000 && !apcs().some(v => v.state === 'parked'); n++) {
+          const before = one.speed, wasYaw = one.yaw;
+          ga.tic();
+          seen.push(one.cz - one.ground);
+          drove.push({ v: one.speed, accel: one.speed - before,
+                       turn: Math.atan2(Math.sin(one.yaw - wasYaw), Math.cos(one.yaw - wasYaw)),
+                       pitch: one.rz, roll: one.rx });
+        }
         const [lo, hi] = air(seen);
         const parked0 = apcs().find(v => v.state === 'parked');
         note('the APC', `${n} tics to a standing carrier, ${parked0 ? parked0.driven.toFixed(0) : '-'} units driven, ` +
           `${lo.toFixed(1)} to ${hi.toFixed(1)} units of air under it on the way`);
         check('it rides off the tarmac on the road rather than driving on it',
           lo > veh.ArmyApc.HOVER * 0.7, `${lo.toFixed(1)} units of air`);
+      }
+      /* --- AND IT FLIES RATHER THAN DRIVES, at the user's request:
+         the same two springs as the van with both signs turned over.
+         A thing on springs leans OUT of a bend and dips its nose to
+         brake; a thing on thrust points its lift into the bend and
+         forward to stop, so it banks IN and pitches nose UP. Measured
+         against the van's own numbers rather than against a remembered
+         sign, so the two can never quietly agree. */
+      {
+        /* ON THE ROAD IT ACTUALLY DROVE, first: it brakes into its
+           place like everything else, and the whole of that braking is
+           spent nose UP. */
+        const braking = drove.filter(q => q.accel < -0.2 && q.v > 6);
+        const noseUp = braking.filter(q => q.pitch > 0).length;
+        note('how it carries itself', `${noseUp} of ${braking.length} braking tics nose up`);
+        check('it pitches nose UP to stop, where a van dips',
+          braking.length > 4 && noseUp > braking.length * 0.8, `${noseUp} of ${braking.length}`);
+        /* AND THE BANK, ASKED DIRECTLY, because the way in is short and
+           nearly straight now and a drive may hold one real corner —
+           which is a fact about the ROUTE and not about the vehicle. So
+           the spring is driven by hand instead, from level, with the
+           same braking left-hand corner given to one of each, and the
+           two are held against each other. */
+        const aSwatVan = Ra.vans.find(v => v.force === Ra.swat);
+        const corner = v => {
+          const keep = { rz: v.rz, rx: v.rx, pv: v.pitchV, rv: v.rollV, sp: v.speed };
+          v.rz = v.restPitch; v.rx = v.restRoll; v.pitchV = 0; v.rollV = 0; v.speed = 20;
+          for (let i = 0; i < 80; i++) v.suspension(-0.6, 0.1);     // braking, turning left
+          const out = { pitch: v.rz - v.restPitch, roll: v.rx - v.restRoll };
+          Object.assign(v, { rz: keep.rz, rx: keep.rx, pitchV: keep.pv, rollV: keep.rv, speed: keep.sp });
+          return out;
+        };
+        const A = corner(one), V = corner(aSwatVan);
+        note('braking into a left-hander', `the carrier ${(A.pitch * 180 / Math.PI).toFixed(1)}° pitch ` +
+          `${(A.roll * 180 / Math.PI).toFixed(1)}° roll, the van ${(V.pitch * 180 / Math.PI).toFixed(1)}° ` +
+          `${(V.roll * 180 / Math.PI).toFixed(1)}°`);
+        check('the van leans OUT of the bend and dips its nose, because it has springs',
+          V.roll > 0.01 && V.pitch < -0.01, `${V.roll.toFixed(3)}, ${V.pitch.toFixed(3)}`);
+        check('and the carrier banks INTO it and lifts its nose, because it has thrust',
+          A.roll < -0.01 && A.pitch > 0.01, `${A.roll.toFixed(3)}, ${A.pitch.toFixed(3)}`);
+        check('and it banks harder than the van leans', Math.abs(A.roll) > Math.abs(V.roll) * 1.5,
+          `${Math.abs(A.roll).toFixed(3)} against ${Math.abs(V.roll).toFixed(3)}`);
+        check('and it is two signs on the instance, not a second suspension',
+          one.rollPerG < 0 && one.pitchPerG < 0 && aSwatVan.rollPerG > 0 && aSwatVan.pitchPerG > 0,
+          `apc ${one.rollPerG}/${one.pitchPerG}, van ${aSwatVan.rollPerG}/${aSwatVan.pitchPerG}`);
+        /* AND IT NEVER PUTS A CORNER THROUGH THE TARMAC, which is the
+           only thing the angles are actually capped for: the nose drops
+           by half the length times the pitch and the low flank by half
+           the width times the bank, and together they have to stay
+           inside the hover at the bottom of its breath. */
+        const half = car.carLength(apc) / 2, side = car.carWidth(apc) / 2;
+        const worst = Math.max(...drove.map(q =>
+          half * Math.abs(Math.sin(q.pitch)) + side * Math.abs(Math.sin(q.roll))));
+        const clear = veh.ArmyApc.HOVER - veh.ArmyApc.BOB;
+        note('the lowest corner', `${worst.toFixed(1)} units down against ${clear} of hover at its lowest`);
+        check('and however far it leans, no corner of it goes through the tarmac',
+          worst < clear, `${worst.toFixed(1)} against ${clear}`);
       }
       const parked = apcs().find(v => v.state === 'parked');
       check('an APC arrives and stands', !!parked);
@@ -5242,8 +5307,30 @@ section('the van');
         note('standing still', `${lo.toFixed(1)} to ${hi.toFixed(1)} units of air, breathing ${(hi - lo).toFixed(1)}`);
         check('and it is still hovering now that it has stopped', lo > veh.ArmyApc.HOVER * 0.7);
         check('and it breathes, which is the only thing in this game that moves while it is still',
-          hi - lo > 4 && hi - lo < 14, `${(hi - lo).toFixed(1)} units of travel`);
+          hi - lo > 4 && hi - lo < 2.2 * veh.ArmyApc.BOB, `${(hi - lo).toFixed(1)} units of travel`);
         check('and the van beside it does not', Ra.vans.some(v => v.force === Ra.swat && v.hover === 0));
+        /* AND IT BREATHES HARDER STANDING THAN MOVING, at the user's
+           request — the bob you actually watch is the parked one — and
+           because a hovercraft at speed is held steadier by the ground
+           under it and one standing still wallows. */
+        check('and it breathes harder standing still than it does moving',
+          hi - lo > 2 * veh.ArmyApc.BOB * 0.45, `${(hi - lo).toFixed(1)} standing`);
+        /* AND IT IS NEVER LEVEL AND NEVER ASLEEP. A parked van's springs
+           settle onto zero and are then left alone for the rest of the
+           night; a parked carrier's are settling onto something that
+           keeps moving, so it drifts a degree one way and a degree and a
+           half the other and never arrives. */
+        const angles = [];
+        for (let i = 0; i < 400; i++) { ga.tic(); angles.push({ p: one.rz, r: one.rx }); }
+        const spanP = Math.max(...angles.map(q => q.p)) - Math.min(...angles.map(q => q.p));
+        const spanR = Math.max(...angles.map(q => q.r)) - Math.min(...angles.map(q => q.r));
+        note('parked, and not still', `${(spanP * 180 / Math.PI).toFixed(2)}° of pitch drift, ` +
+          `${(spanR * 180 / Math.PI).toFixed(2)}° of roll`);
+        check('a parked carrier is never level and never asleep',
+          !one.asleep && spanP > 0.004 && spanR > 0.004 && spanP < 0.09 && spanR < 0.12,
+          `${spanP.toFixed(4)} pitch, ${spanR.toFixed(4)} roll`);
+        const aVan = Ra.vans.find(v => v.force === Ra.swat && v.state === 'parked');
+        check('and a parked van settles level and is left alone', !aVan || aVan.asleep, aVan && `${aVan.rz}`);
       }
       /* AND YOU DO NOT GET TO WALK UNDER IT. The three cylinders stand
          on the ground the way every other vehicle's do; what changes is
