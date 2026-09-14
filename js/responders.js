@@ -553,7 +553,11 @@ export class Responders {
     f.nextVanAt = this.tics + (f.num.firstDelay || 0);
     f.gap = 0;
     const g = this.game;
-    g.setBigMessage?.(f.def.message, 3 * TICRATE);
+    /* NOTHING IS WRITTEN ACROSS THE PICTURE ANY MORE, at the user's
+       request: the call used to put SIRENS, or THE ARMY IS ON THE ROAD,
+       in the middle of the screen for three seconds, and the siren
+       itself says it. The words stay in FORCES for whoever reads the
+       table; nothing draws them. */
     g.sound?.play(f === this.swat ? 'siren' : 'hover', null);
     g.onResponders?.('called', f.def);
   }

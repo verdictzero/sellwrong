@@ -16,6 +16,14 @@
    less useful than it sounds.
    ===================================================================== */
 
+/* ALL OF IT IS OFF FOR NOW, at the user's request. One switch: with it
+   on, resume() never opens an AudioContext, so play(), the ambience
+   and everything that calls them fall through the `!this.ctx` guards
+   they already have, and no oscillator is ever made. Every sound in
+   the table below is still defined and still asked for by the game;
+   flip this and they are all back. */
+export const MUTED = true;
+
 const DEFS = {
   /* the store */
   ignite:    { kind: 'hiss',  dur: 0.55, f0: 900,  f1: 200,  gain: 0.30 },
@@ -80,6 +88,14 @@ const DEFS = {
   borefly:   { kind: 'sweep', dur: 0.20, f0: 1100, f1: 1300, gain: 0.12, wave: 'sawtooth' },
   bore:      { kind: 'sweep', dur: 0.24, f0: 700,  f1: 1900, gain: 0.30, wave: 'sawtooth' },
   clang:     { kind: 'thud',  dur: 0.12, f0: 900,  f1: 300,  gain: 0.30 },
+  /* THE MINIGUN: a round is the rifle's crack cut short, and the audio
+     layer's own rate limit turns a hundred and forty of them a second
+     into the buzz a minigun actually makes; the barrels winding up are
+     a sawtooth climbing over a third of a second, and winding down the
+     same run the other way, longer. */
+  minigun:   { kind: 'noise', dur: 0.06, f0: 2600, f1: 500,  gain: 0.34 },
+  spinup:    { kind: 'sweep', dur: 0.34, f0: 120,  f1: 520,  gain: 0.22, wave: 'sawtooth' },
+  spindown:  { kind: 'sweep', dur: 0.80, f0: 520,  f1: 90,   gain: 0.18, wave: 'sawtooth' },
 
   /* the staff */
   gib:       { kind: 'noise', dur: 0.42, f0: 1500, f1: 180,  gain: 0.44 },
@@ -115,6 +131,7 @@ export class Audio {
   /* Browsers will not start an AudioContext until the user has done
      something, so this is called from the first click. */
   resume() {
+    if (MUTED) { this.enabled = false; return; }
     if (!this.ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) { this.enabled = false; return; }

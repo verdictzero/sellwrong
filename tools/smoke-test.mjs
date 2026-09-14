@@ -2267,8 +2267,8 @@ section('the cold');
     const fs3 = await import('node:fs');
     note('the guns', Object.entries(w3.GUNS).map(([k, d]) =>
       `${k} ${d.url.split('/').pop()}${d.fit ? ' (fitted)' : ''}`).join(', '));
-    check('there are three guns and all three files are there',
-      Object.keys(w3.GUNS).length === 3 &&
+    check('there are four guns and all four files are there',
+      Object.keys(w3.GUNS).length === 4 &&
       Object.values(w3.GUNS).every(d => fs3.existsSync(d.url)));
     const E = w3.GUNS.EXTINGUISHER;
     /* THE MODEL IS SOMEBODY ELSE'S AND IS NOT REWRITTEN, which is the
@@ -2287,8 +2287,13 @@ section('the cold');
        Sketchfab model that carries nothing, so all three are fitted and
        anchored by this table rather than by editing the file, which is
        the rule the van set. */
-    check('all three guns are fitted to the game\'s length and say where they point',
-      Object.values(w3.GUNS).every(d => d.fit && Array.isArray(d.nozzle) && d.nozzle.length === 3));
+    /* AND THE MINIGUN IS THE EXCEPTION THAT PROVES IT: the user's own
+       model again, with a marker cylinder in it for the emission point,
+       so its nozzle is null here — the file says — and the reader that
+       was kept for exactly that day reads it. */
+    check('all four guns are fitted to the game\'s length, and three say where they point',
+      Object.values(w3.GUNS).every(d => d.fit) &&
+      Object.entries(w3.GUNS).every(([k, d]) => k === 'MINIGUN' ? d.nozzle === null : Array.isArray(d.nozzle) && d.nozzle.length === 3));
     check('and the flamethrower is the only one with a pilot light, being the only one that burns',
       Array.isArray(w3.GUNS.FLAMER.pilot) && E.pilot === null && w3.GUNS.BORE.pilot === null);
     check('and it is the only one whose muzzle is fire as painted',
@@ -2352,7 +2357,7 @@ section('the cold');
     check('and all three say how far out they are held, the two streams at about three',
       B.out === 1.33 && w3.GUNS.FLAMER.out === 3.0 && E.out === 2.8);
     check('and farther off is a push straight back along the view, z alone, not the whole position scaled',
-      /\(VIEW\.pos\[2\] \+ this\.kick \* 0\.025\) \* \(G\.def\.out \?\? 1\)/.test(gunSrc) &&
+      /\(VIEW\.pos\[2\] \+ off\[2\] \+ this\.kick \* 0\.025\) \* \(G\.def\.out \?\? 1\)/.test(gunSrc) &&
       !/multiplyScalar\(G\.def\.out/.test(gunSrc));
     /* HOW FAR A GUN IS DRAWN IS NOT HOW FAR ITS FIRE STARTS. The world
        takes the nozzle as a RAY out of the eye, and the point on it was
@@ -5604,6 +5609,204 @@ section('the cerebral bore');
   /* the sight's drawing parts exist */
   check('the sight has a dot, a reticle and a bore to draw with',
     ['LASRA', 'LOCKA', 'BOREA', 'BOREB', 'BOREC'].every(k => g.sprites.frames.has(k)));
+}
+
+/* ---------- the minigun, the jump, and the van ---------- */
+section('the minigun, the jump and the van');
+{
+  const fs = await import('node:fs');
+  const { Game } = await import('../js/game.js');
+  const pl = await import('../js/player.js');
+  const MAPM = await import('../js/maps/sellwrong.js');
+  const THREEM = await import('three');
+  const mk = () => new Game({
+    level: MAPM.buildSellWrong(), scene: new THREEM.Scene(), camera: {},
+    textures: tex.bakeTextures(), sprites: spr.bakeSprites(),
+    hud: { message() {}, ticMessages() {} }, audio: null,
+    input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
+             attack: false, use: false, run: false, jump: false, sample() {}, sensitivity: 0 },
+  });
+  const inp = (o = {}) => ({ look: { x: 0, y: 0 }, move: { x: 0, y: 0 }, attack: false, use: false,
+                             run: false, jump: false, weaponSlot: 0, weaponCycle: 0, ...o });
+
+  /* --- the weapon --------------------------------------------------- */
+  const d = pl.WEAPONS.MINIGUN;
+  check('the minigun is the fourth weapon, a volley off a belt, and issued',
+    !!d && d.slot === 4 && d.volley === true && d.ammo === 'rounds' && d.autofire === true &&
+    pl.WEAPONS.MOLOTOV.slot === 5 && new (class extends pl.Player { constructor() { super({ level: level, sectorAt: () => null }, 0, 0, 0); } })().owned.MINIGUN === true);
+  note('the belt', `${pl.BELT} rounds at ${pl.BELT_PER_TIC} a tic: ${(pl.BELT / pl.BELT_PER_TIC / 35).toFixed(0)} seconds, ` +
+    `back in ${(pl.BELT * pl.BELT_REGEN_EVERY / 35).toFixed(0)}; ${d.rounds} a tic of ${d.damage()}-ish`);
+  check('absurdly destructive: over a hundred rounds a second, each more than a shopper',
+    d.rounds * 35 >= 100 && [...Array(50)].every(() => d.damage() >= 20));
+
+  const g = mk();
+  const p = g.player;
+  p.weapon = 'MINIGUN';
+  /* --- it spins up before it fires ---------------------------------- */
+  const held = inp({ attack: true });
+  const was = p.ammo.rounds;
+  let firedAt = -1;
+  for (let t = 1; t <= pl.SPIN_UP + 4; t++) {
+    p.tic(held, 1 / 35);
+    if (firedAt < 0 && p.ammo.rounds < was) firedAt = t;
+  }
+  check('the trigger does nothing until the barrels are up to speed',
+    firedAt > pl.SPIN_UP - 1 && firedAt <= pl.SPIN_UP + 2, `first round on tic ${firedAt}, spin-up is ${pl.SPIN_UP}`);
+  check('and then every tic costs the belt a volley',
+    p.ammo.rounds === was - d.rounds * (pl.SPIN_UP + 4 - firedAt + 1) + Math.floor((pl.SPIN_UP + 4) / pl.BELT_REGEN_EVERY) * 0 ||
+    Math.abs((was - p.ammo.rounds) - d.rounds * (pl.SPIN_UP + 5 - firedAt)) <= pl.SPIN_UP + 5,
+    `${was} -> ${p.ammo.rounds}`);
+  check('and the barrels are at full speed and warming',
+    p.spin === 1 && p.heat > 0 && p.heat < 0.2, `spin ${p.spin} heat ${p.heat.toFixed(3)}`);
+  /* --- the heat ------------------------------------------------------ */
+  for (let t = 0; t < pl.HEAT_UP; t++) p.tic(held, 1 / 35);
+  check('four seconds of fire and the barrels are white', p.heat === 1, `${p.heat}`);
+  const up = inp();
+  for (let t = 0; t < pl.SPIN_DOWN + 2; t++) p.tic(up, 1 / 35);
+  check('let go and they wind down and start to cool', p.spin === 0 && p.heat < 1 && p.heat > 0.8,
+    `spin ${p.spin} heat ${p.heat.toFixed(3)}`);
+  /* --- the latch ----------------------------------------------------- */
+  p.ammo.rounds = d.rounds - 1; p.spin = 1; p.fireIndex = 0; p.fireTics = 1;
+  p.volleyTic(d);
+  check('a belt too short for a volley stops the gun and latches it',
+    p.beltDry && p.fireIndex === -1 && p.latched('MINIGUN') && !p.armed('MINIGUN'));
+  p.ammo.rounds = Math.ceil(pl.BELT * pl.BELT_REFIRE_AT);
+  p.fuelTic();
+  check('and a quarter of a belt clears it', !p.beltDry && p.latched('MINIGUN') === false);
+  check('and a dry belt does not spin', (() => { p.beltDry = true; p.spin = 0; p.spinTic(held); const r = p.spin; p.beltDry = false; return r === 0; })());
+
+  /* --- the rounds go where the eye looks, pitch and all ------------- */
+  {
+    const g2 = mk();
+    const q = g2.player;
+    const before = g2.actors.length;
+    const floor = q.sector.floor;
+    /* straight down at your own feet: the shot stops at the lino and
+       puts its puff there, rather than at eye height a mile away */
+    g2.hitscan(q, q.angle, 2400, 10, { shot: true, pitch: -0.7, from: g2.nozzle() });
+    const puff = g2.actors.slice(before).find(a => a.type === 'PUFF' || a.info?.name === 'PUFF' || /PUFF/.test(a.type || ''));
+    const last = g2.actors[g2.actors.length - 1];
+    check('a shot aimed at the floor stops at the floor',
+      g2.actors.length > before && Math.abs(last.z - floor) < 1e-6 && Math.hypot(last.x - q.x, last.y - q.y) < 120,
+      `puff at z ${last.z}, floor ${floor}, ${Math.hypot(last.x - q.x, last.y - q.y).toFixed(0)} out`);
+    /* and a level one still lands on a person at their height */
+    const target = g2.actors.find(a => a.shootable && !a.dead && !a.vehicle && a.solid && a.health > 0 && !a.noclip);
+    if (target) {
+      /* brought out to the car park in front of the player, where
+         there is nothing between the two of them but night */
+      target.x = q.x + Math.cos(q.angle) * 200; target.y = q.y + Math.sin(q.angle) * 200;
+      g2.blockmap?.moved(target); target.updateSector?.();
+      target.z = q.z;
+      q.angle = q.angle; q.x = q.x; q.y = q.y; q.viewZ = q.z + 49;
+      const hp = target.health;
+      const hit = g2.hitscan(q, q.angle, 2400, 10, { shot: true, pitch: 0 });
+      check('and a level one lands on a person', hit === target && target.health < hp, `${hit ? hit.type : 'nothing'}`);
+      const hp2 = target.health;
+      g2.hitscan(q, q.angle, 2400, 10, { shot: true, pitch: 0.6 });
+      check('but one aimed over their head goes over their head', target.health === hp2);
+    }
+  }
+
+  /* --- the jump ------------------------------------------------------ */
+  {
+    const g3 = mk();
+    const q = g3.player;
+    const floor = q.z;
+    check('you start on the ground', q.onGround === true && q.momz === 0);
+    q.tic(inp({ jump: true }), 1 / 35);
+    check('a press of jump is a push off it', q.onGround === false && q.momz > 0 && q.z > floor);
+    let top = q.z, air = 1;
+    for (let t = 0; t < 60 && !q.onGround; t++) { q.tic(inp(), 1 / 35); top = Math.max(top, q.z); air++; }
+    const expect = pl.JUMP_VEL * pl.JUMP_VEL / (2 * pl.GRAVITY);
+    check('rises about forty units and comes back down to the floor',
+      q.onGround && q.z === floor && top > expect * 0.85 && top < expect * 1.15 && air > 10 && air < 30,
+      `top ${top - floor} (expected ~${expect}), ${air} tics in the air`);
+    check('and holding it is not a pogo stick: one jump per press',
+      (() => { const src = fs.readFileSync('js/input.js', 'utf8'); return /this\.jump = this\.pressed\('jump'\)/.test(src) && /padEdge\(6\)/.test(src); })());
+  }
+
+  /* --- the van throws you ------------------------------------------- */
+  {
+    const g4 = mk();
+    const q = g4.player;
+    const x0 = q.x, a2 = q.armour2;
+    q.damage(40, { x: q.x - 40, y: q.y }, { impact: true, launch: { x: 20, y: 0, z: 12, grace: 30 } });
+    check('a launch is a hit and a velocity, sideways and up',
+      q.armour2 === a2 - 40 && q.momz === 12 && q.momx > 20 && q.onGround === false && q.launched === 30);
+    let far = 0;
+    for (let t = 0; t < 40; t++) { q.tic(inp(), 1 / 35); far = Math.max(far, q.x - x0); }
+    check('and you land somewhere else', q.onGround && far > 60 && q.launched === 0, `${far.toFixed(0)} units on`);
+    const g5 = mk();
+    const r = g5.player;
+    r.invincible = true;
+    r.damage(40, { x: r.x - 40, y: r.y }, { impact: true, launch: { x: 20, y: 0, z: 12 } });
+    check('and invincible refuses the launch with the rest', r.momz === 0 && r.onGround === true);
+    const vsrc = fs.readFileSync('js/vehicles.js', 'utf8');
+    check('the van works its launch out of its speed and lets you clear it',
+      /launch: \{ x: lx \* k, y: ly \* k, z: up/.test(vsrc) && /!\(p\.launched > 0\)/.test(vsrc) &&
+      /Math\.min\(30, 10 \+ sp \* 0\.55\)/.test(vsrc));
+  }
+
+  /* --- the model, as the tool left it ------------------------------- */
+  {
+    const G = await import('../js/glb.js');
+    const buf = fs.readFileSync(new URL('../assets/models/minigun.glb', import.meta.url));
+    const { json } = G.parseGLB(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+    const ex = json.asset.extras || {};
+    note('the minigun', `${json.nodes.length} nodes, ${json.images.length} images, ${(buf.length / 1024 / 1024).toFixed(1)} MB, from ${ex.source}`);
+    check('its emission marker was read into the file as the nozzle, through the node\'s own transform',
+      Array.isArray(ex.anchors?.nozzle) && ex.anchors.nozzle.length === 3 &&
+      Math.abs(ex.anchors.nozzle[1] - -1.33) < 0.05 && Math.abs(ex.anchors.nozzle[2] - 15.27) < 0.05, JSON.stringify(ex.anchors));
+    check('and the marker itself is gone from the mesh', !json.nodes.some(n => /EmissionPoint/i.test(n.name || '')));
+    check('and the barrel set is named to turn, and still there with its mesh',
+      typeof ex.spin === 'string' && json.nodes.some(n => n.name === ex.spin && n.mesh !== undefined));
+    check('and only the two diffuse maps survive', json.images.length === 2 && json.materials.length === 2 &&
+      json.materials.every(m => !m.normalTexture && !m.pbrMetallicRoughness?.metallicRoughnessTexture));
+    const w3 = await import('../js/weapon3d.js');
+    const M = w3.GUNS.MINIGUN;
+    check('and the game says how it is held, what glows and what spins',
+      M.nozzle === null && M.pilot === null && M.heat?.material === 'minigun_barrel_mat' && M.spin > 0 &&
+      M.fit > w3.GUN_LENGTH && M.out > 1 && json.materials.some(m => m.name === M.heat.material));
+    const gunSrc = fs.readFileSync('js/weapon3d.js', 'utf8');
+    check('the heat is drawn from the muzzle back, on the one material, banded like the light',
+      /uniform float heat;/.test(gunSrc) && /heatMaterial\.uniforms\.heat\.value = player\.heat/.test(gunSrc) &&
+      /floor\(h \* 8\.0 \+ 0\.5\) \/ 8\.0/.test(gunSrc));
+    check('and the barrels turn at the player\'s spin', /G\.spin\.rotation\.z = G\.spinAngle/.test(gunSrc));
+  }
+
+  /* --- the page and the pad ----------------------------------------- */
+  {
+    const html = fs.readFileSync('index.html', 'utf8');
+    const css = fs.readFileSync('css/style.css', 'utf8');
+    const mainSrc = fs.readFileSync('js/main.js', 'utf8');
+    const inSrc = fs.readFileSync('js/input.js', 'utf8');
+    const rsp = fs.readFileSync('js/responders.js', 'utf8');
+    const hudSrc = fs.readFileSync('js/hud.js', 'utf8');
+    const lofiSrc = fs.readFileSync('js/lofi.js', 'utf8');
+    const au = await import('../js/audio.js');
+    check('the sound is off, all of it, for now, by one switch',
+      au.MUTED === true && /if \(MUTED\) \{ this\.enabled = false; return; \}/.test(fs.readFileSync('js/audio.js', 'utf8')));
+    check('the loading screen says RETICULATING SPLINES and the steps do not talk over it',
+      /RETICULATING SPLINES/.test(html) && !/s\.textContent = text/.test(mainSrc.split('const failed')[0]));
+    check('nothing is written across the picture when a convoy is called',
+      !/setBigMessage/.test(rsp));
+    check('the fire button says FIRE and there is a JUMP button',
+      />FIRE<\/div>/.test(html) && !/tb-fire[^>]*>\s*<svg/.test(html) && /data-btn="jump"/.test(html) && /\.tb-jump \{/.test(css));
+    check('the three small buttons stand in an arc round the big one', /--arc:/.test(css) && /\.7071/.test(css));
+    check('a pad fades the thumb controls and a finger brings them back',
+      /#touch\.pad \.tb/.test(css) && /setPadHeld\(true\)/.test(inSrc) && /pointerType !== 'mouse'\) this\.setPadHeld\(false\)/.test(inSrc) &&
+      /input\.onPadChange = on => touch\.setPadHeld\(on\)/.test(mainSrc));
+    check('the pad is laid out as asked: left stick looks, right stick moves, R2 fires, L2 jumps, bumpers cycle',
+      /mx \+= dead\(pad\.axes\[2\]\); my -= dead\(pad\.axes\[3\]\)/.test(inSrc) && /lx \+= dead\(pad\.axes\[0\]\)/.test(inSrc) &&
+      /btn\(7\)/.test(inSrc) && /padEdge\(6\)/.test(inSrc) && /padEdge\(4\)\) this\.weaponCycle = -1/.test(inSrc) && /padEdge\(5\)\) this\.weaponCycle = 1/.test(inSrc));
+    check('space jumps, F uses, 4 is the minigun', /Space: 'jump'/.test(inSrc) && /KeyF: 'use'/.test(inSrc) && /Digit4: 'weapon4'/.test(inSrc));
+    check('the readout names what you are holding, top right, and steps past the pause button on a phone',
+      /buildName\(/.test(hudSrc) && /setNameInset/.test(hudSrc) && /hud\.setNameInset\(on \?/.test(mainSrc));
+    check('brightness, contrast and gamma are three sliders applied before the palette snap',
+      ['opt-bright', 'opt-contrast', 'opt-gamma'].every(id => html.includes(`id="${id}"`)) &&
+      /setPicture\(/.test(lofiSrc) && lofiSrc.indexOf('uPicture.x') < lofiSrc.indexOf('vec3 snapped = palSnap(c)') &&
+      /pipeline\.setPicture\(\{ brightness: prefs\.bright/.test(mainSrc));
+  }
 }
 
 section('the gun');

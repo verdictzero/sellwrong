@@ -55,27 +55,71 @@ if ((json.buffers || []).length !== 1) throw new Error('expected exactly one buf
 if ((json.animations || []).length || (json.skins || []).length) throw new Error('animations and skins are not handled');
 if (json.extensionsRequired?.length) throw new Error('required extensions: ' + json.extensionsRequired.join());
 
-/* ---- the reference markers ----------------------------------------- */
+/* ---- the reference markers -----------------------------------------
+   TWO SPELLINGS NOW. The flamethrower's spheres were CLAUDE_delete_this_
+   and_put_..._here; the minigun arrived with a small cylinder named
+   ClaudeThisIsTheWeaponFiringEffectEmissionPoint, and a barrel set named
+   ClaudeRotateThis_..., which is not a marker at all but an instruction
+   about a part that stays. Both spellings are the same thing said two
+   ways — the user putting the answer IN the file — so both are read.
+
+   A marker's position is where its GEOMETRY is, not where its node is:
+   the minigun's emission cylinder sits thirty units up its own node's y,
+   with the node turned a quarter round x and scaled by a third. So the
+   mesh's box centre goes through the node's own scale, rotation and
+   translation, and the answer is the point the user actually drew. */
 const anchors = {};
-const isMarker = n => /^CLAUDE_delete_this/i.test(n.name || '');
+const isMarker = n => /^CLAUDE_delete_this/i.test(n.name || '') || /^ClaudeThisIs/i.test(n.name || '');
+const isSpin = n => /^ClaudeRotateThis/i.test(n.name || '');
+const ITEMS0 = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16 };
+const markerPoint = n => {
+  let p = [0, 0, 0];
+  if (n.mesh !== undefined) {
+    /* the centre of the marker's own box, off the file's min and max */
+    const prims = json.meshes[n.mesh].primitives;
+    let lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    for (const pr of prims) {
+      const a = json.accessors[pr.attributes.POSITION];
+      if (!a?.min || !a?.max || ITEMS0[a.type] !== 3) continue;
+      for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], a.min[k]); hi[k] = Math.max(hi[k], a.max[k]); }
+    }
+    if (Number.isFinite(lo[0])) p = [0, 1, 2].map(k => (lo[k] + hi[k]) / 2);
+  }
+  if (n.matrix) throw new Error('marker ' + n.name + ' carries a matrix; expected translation/rotation/scale');
+  const s = n.scale || [1, 1, 1];
+  p = p.map((v, k) => v * s[k]);
+  if (n.rotation) {
+    /* the quaternion, applied longhand: t = 2 (q x v), v' = v + w t + q x t */
+    const [qx, qy, qz, qw] = n.rotation;
+    const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const t = cross([qx, qy, qz], p).map(v => 2 * v);
+    const qt = cross([qx, qy, qz], t);
+    p = p.map((v, k) => v + qw * t[k] + qt[k]);
+  }
+  const tr = n.translation || [0, 0, 0];
+  return p.map((v, k) => +(v + tr[k]).toFixed(6));
+};
 const keepNode = [];
+let spinName = null;
 json.nodes.forEach((n, i) => {
+  if (isSpin(n)) spinName = n.name;
   if (!isMarker(n)) { keepNode.push(i); return; }
-  const key = /pilot/i.test(n.name) ? 'pilot' : /output|flame|nozzle|muzzle/i.test(n.name) ? 'nozzle' : n.name;
-  /* A root node's translation IS its position. If somebody parents one
-     of these later, that is the moment to add a matrix walk here. */
+  const key = /pilot/i.test(n.name) ? 'pilot' : /output|flame|nozzle|muzzle|emission|firing/i.test(n.name) ? 'nozzle' : n.name;
+  /* A root node's transform IS its place. If somebody parents one of
+     these later, that is the moment to add a matrix walk here. */
   if (n.children?.length || json.nodes.some(o => o.children?.includes(i))) throw new Error('marker ' + n.name + ' is not a root node');
-  anchors[key] = (n.translation || [0, 0, 0]).map(v => +v.toFixed(6));
+  anchors[key] = markerPoint(n);
 });
 /* A MODEL WITH NO MARKERS IS ALLOWED THROUGH, as of the cerebral bore:
    it arrived as a mesh and a diffuse and nothing else, and the only
    reason to run it through here is the two maps below that an unlit
    renderer cannot use — ten megabytes of them. Where the nozzle is on a
    file like that is a number in js/weapon3d.js (see GUNS), which is the
-   same answer the extinguisher got. A model that has SOME markers and
-   not both is still an error, because half a set is a mistake. */
-if (Object.keys(anchors).length && (!anchors.pilot || !anchors.nozzle))
-  throw new Error('expected a pilot and a nozzle marker, found ' + Object.keys(anchors).join());
+   same answer the extinguisher got. A nozzle on its own is fine too — the
+   minigun has nothing that burns while the trigger is up — but a pilot
+   with no nozzle is half a set, and half a set is a mistake. */
+if (anchors.pilot && !anchors.nozzle)
+  throw new Error('expected a nozzle marker to go with the pilot, found ' + Object.keys(anchors).join());
 if (!Object.keys(anchors).length) console.warn('no marker spheres: stripping the maps only, the anchors are the game\'s business');
 
 const nodeMap = new Map(keepNode.map((old, i) => [old, i]));
@@ -214,7 +258,8 @@ const out = {
   asset: {
     ...json.asset,
     generator: (json.asset.generator || '') + ' + tools/prep-model.mjs',
-    extras: { ...(json.asset.extras || {}), ...(Object.keys(anchors).length ? { anchors } : {}), source: inFile.split('/').pop() },
+    extras: { ...(json.asset.extras || {}), ...(Object.keys(anchors).length ? { anchors } : {}),
+            ...(spinName ? { spin: spinName } : {}), source: inFile.split('/').pop() },
   },
   scene: json.scene ?? 0,
   scenes, nodes, meshes, materials, textures, images, samplers: json.samplers,
@@ -238,4 +283,5 @@ const kb = n => (n / 1024).toFixed(0) + 'K';
 console.log(`${outFile}: ${kb(buf.length)} -> ${kb(fs.statSync(outFile).size)}`);
 console.log(`  nodes ${json.nodes.length} -> ${nodes.length}, meshes ${json.meshes.length} -> ${meshes.length}, images ${json.images.length} -> ${images.length}`);
 if (dropped.size) console.log(`  attributes nothing binds: ${[...dropped].map(([k, n]) => `${k} (${n} vertices)`).join(', ')}`);
-if (anchors.pilot) console.log(`  anchors: pilot ${anchors.pilot.join(', ')}  nozzle ${anchors.nozzle.join(', ')}`);
+if (anchors.nozzle) console.log(`  anchors: ${anchors.pilot ? 'pilot ' + anchors.pilot.join(', ') + '  ' : ''}nozzle ${anchors.nozzle.join(', ')}`);
+if (spinName) console.log(`  spins: ${spinName}`);

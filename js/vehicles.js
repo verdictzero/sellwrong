@@ -970,7 +970,7 @@ export const DRIVE_ACCEL = 0.75; // and how quickly it gets there
 export const DRIVE_BRAKE = 0.85; // and how hard it can stop, units a tic a tic
 const DRIVE_TURN = 0.12;         // radians a tic the heading may change
 const RUNOVER_DMG = 220;         // what the front of a van does to a person
-const RUNOVER_PLAYER = 28;       // and to you
+const RUNOVER_PLAYER = 40;       // and to you, once per hit now that a hit throws you clear
 const SIREN_EVERY = 19;          // tics between the two notes
 
 /* THE BODY ON TWO SPRINGS, which is the whole of the weight shift and
@@ -1185,10 +1185,29 @@ export class SwatVan extends Vehicle {
       if (dist2(nx, ny, a.x, a.y) > rr * rr) continue;
       a.damage(this.runoverDmg, null, { impact: true, dx: c, dy: s, force: 2.5 });
     }
+    /* AND YOU, at the user's request, are LAUNCHED rather than shoved:
+       the hit is one hit, hard, and carries a velocity — along the
+       vehicle's heading blended with the line from its nose to you, so
+       a square hit throws you down the road and a glancing one throws
+       you off it — and UP, in proportion to how fast it was going, so
+       a van at speed puts you in the air. Player.damage spends it; the
+       grace tics on the player are what stop the same nose finding you
+       again every tic while you are still in front of it, which is
+       what it used to do at a shove's worth of push. */
     const p = g.player;
-    if (p && !p.dead) {
+    if (p && !p.dead && !(p.launched > 0)) {
       const rr = r + p.radius;
-      if (dist2(nx, ny, p.x, p.y) < rr * rr) p.damage(this.runoverPlayer, this, { impact: true });
+      if (dist2(nx, ny, p.x, p.y) < rr * rr) {
+        const sp = Math.max(0, this.speed || 0);
+        const ax = p.x - nx, ay = p.y - ny;
+        const ad = Math.hypot(ax, ay) || 1;
+        let lx = c * 0.65 + (ax / ad) * 0.35, ly = s * 0.65 + (ay / ad) * 0.35;
+        const ld = Math.hypot(lx, ly) || 1;
+        lx /= ld; ly /= ld;
+        const k = Math.min(30, 10 + sp * 0.55);
+        const up = Math.min(17, 8 + sp * 0.25);
+        p.damage(this.runoverPlayer, this, { impact: true, launch: { x: lx * k, y: ly * k, z: up, grace: 30 } });
+      }
     }
   }
 

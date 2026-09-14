@@ -31,7 +31,21 @@
                   let go to aim.
 
      USE          above the flame, for the doors that are not automatic.
+     JUMP         beside the flame, a tap, at the user's request. The
+                  three small buttons stand in an arc round the big one
+                  — jump at nine o'clock, use above that, swap at
+                  twelve — so the right thumb reaches all four without
+                  leaving its corner and the big one is still the
+                  nearest.
      PAUSE        in the corner, out of the way of everything.
+
+   AND A PAD TAKES THEM OFF THE PICTURE. A phone with a controller
+   paired is still a phone, but while the pad is being used the thumb
+   controls are in the way of nothing but the view, so the moment a
+   stick moves or a button goes down they fade — quickly, a quarter of
+   a second — and the moment a finger touches the screen they are back
+   just as fast. input.js decides (Input.padHeld); this only wears the
+   class.
 
    The controls dim when they have not been touched for a moment and
    brighten under the thumb, keep out of the notch and the home
@@ -154,6 +168,12 @@ export class TouchControls {
 
   applyPrefs() { this.root.classList.toggle('lefty', !!this.prefs.lefty); }
 
+  /** A pad has the controls, or has given them back — see Input.padHeld. */
+  setPadHeld(on) {
+    this.root.classList.toggle('pad', !!on);
+    if (on) this.releaseAll();
+  }
+
   resize() {
     const b = this.root.getBoundingClientRect();
     this.width = b.width || innerWidth;
@@ -176,6 +196,8 @@ export class TouchControls {
       this.pointers.set(e.pointerId, { kind, el: btn, lx: e.clientX, ly: e.clientY });
       if (kind === 'fire') t.attack = true;
       if (kind === 'use') { t.use = true; t.usePulse = true; }
+      /* a tap, like use: one jump per press — see Input.jump */
+      if (kind === 'jump') t.jumpPulse = true;
       /* a TAP and not a hold: it fires on the way down and the input
          layer clears it, the same way the use pulse works */
       if (kind === 'swap') t.cycle = 1;
@@ -226,6 +248,7 @@ export class TouchControls {
       case 'fire': t.attack = false; p.el.classList.remove('held'); break;
       case 'use': t.use = false; p.el.classList.remove('held'); break;
       case 'swap': p.el.classList.remove('held'); break;
+      case 'jump': p.el.classList.remove('held'); break;
       case 'pause': p.el.classList.remove('held'); if (deliberate) this.onPause(); break;
       default: break;
     }

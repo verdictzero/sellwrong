@@ -40,11 +40,14 @@ import { Weapon3D } from './weapon3d.js';
 import { KINDS } from './forest.js';
 
 const $ = id => document.getElementById(id);
+/* THE LOADING SCREEN SAYS ONE THING, at the user's request, and it is
+   RETICULATING SPLINES for the whole of the half second. The steps
+   still move the bar; they no longer say their names. */
 const status = (text, pct) => {
-  const s = $('load-status'), b = $('load-bar');
-  if (s) s.textContent = text;
+  const b = $('load-bar');
   if (b) b.style.width = (pct * 100).toFixed(0) + '%';
 };
+const failed = text => { const s = $('load-status'); if (s) s.textContent = text; };
 
 /* HOW MUCH THE WORLD IS DRAWN WITH. The vertical resolution of the
    buffer the 3D goes into — width follows the window's shape, so a wider
@@ -126,7 +129,10 @@ const PREF_KEY = 'sellwrong.prefs';
 const PREF_VERSION = 3;
 const DEFAULT_PREFS = { v: PREF_VERSION, sens: 1, invert: false, lefty: false, haptics: true,
                         detail: DEFAULT_DETAIL, pixels: DEFAULT_PIXELS, pixar: DEFAULT_PIXAR,
-                        crowd: 0, fx: 0, wood: 0, fps: false, debug: false, godmode: false };
+                        crowd: 0, fx: 0, wood: 0, fps: false, debug: false, godmode: false,
+                        /* the three picture dials, at the user's request — see
+                           LofiPipeline.setPicture; 1 is the picture as drawn */
+                        bright: 1, contrast: 1, gamma: 1 };
 function loadPrefs() {
   try {
     const saved = JSON.parse(localStorage.getItem(PREF_KEY) || '{}');
@@ -349,6 +355,16 @@ async function boot() {
     /* nothing is drawn along the bottom of the picture any more, so the
        controls sit on the edge */
     $('touch').style.setProperty('--bar', '0px');
+    nameInset();
+  }
+  /* THE PAUSE BUTTON AND THE WEAPON'S NAME SHARE A CORNER on a phone,
+     so the name steps left by the button's width — measured off the
+     page in CSS pixels and handed to the readout in chunky ones, the
+     same way the bar's height used to go the other way. */
+  function nameInset() {
+    const on = input.mode === 'touch';
+    const w = container.clientWidth || window.innerWidth;
+    hud.setNameInset(on ? Math.ceil(60 * pipeline.gridWidth / w) : 0);
   }
   addEventListener('resize', resize);
   resize();
@@ -371,16 +387,24 @@ async function boot() {
     document.documentElement.classList.toggle('touch', mode === 'touch');
     touch.setEnabled(started && mode === 'touch' && game.state === 'play');
     $('opt-full').hidden = !fullscreenAllowed();
+    nameInset();
   }
   input.onModeChange = applyMode;
   applyMode(input.mode);
+  /* and a pad taking over from the thumbs, or handing back to them —
+     which is not a mode change, only a fade; see Input.padHeld */
+  input.onPadChange = on => touch.setPadHeld(on);
 
   /* ---- the settings ------------------------------------------------ */
   const sensEl = $('opt-sens'), sensV = $('opt-sens-v');
+  /* the three picture dials: pref key, the slider, and its readout */
+  const PICTURE = [['bright', 'opt-bright', 'opt-bright-v'], ['contrast', 'opt-contrast', 'opt-contrast-v'],
+                   ['gamma', 'opt-gamma', 'opt-gamma-v']];
   const setTog = (id, on) => $(id).setAttribute('aria-pressed', on ? 'true' : 'false');
   function syncMenu() {
     sensEl.value = prefs.sens;
     sensV.textContent = prefs.sens.toFixed(1) + 'X';
+    for (const [key, id, vid] of PICTURE) { $(id).value = prefs[key]; $(vid).textContent = prefs[key].toFixed(2); }
     setTog('opt-invert', prefs.invert);
     setTog('opt-lefty', prefs.lefty);
     setTog('opt-haptic', prefs.haptics);
@@ -413,6 +437,7 @@ async function boot() {
     input.sensitivity = 0.0022 * prefs.sens;    // the mouse and the thumb share one dial
     input.invertY = !!prefs.invert;
     touch.applyPrefs();
+    pipeline.setPicture({ brightness: prefs.bright, contrast: prefs.contrast, gamma: prefs.gamma });
     /* the three dials, straight onto the game — see game.quality */
     game.quality.crowd = CROWD[prefs.crowd].v;
     game.quality.effects = FX[prefs.fx].v;
@@ -427,6 +452,8 @@ async function boot() {
   }
   applyPrefs();
   sensEl.addEventListener('input', () => { prefs.sens = parseFloat(sensEl.value) || 1; applyPrefs(); });
+  for (const [key, id] of PICTURE)
+    $(id).addEventListener('input', () => { prefs[key] = parseFloat($(id).value) || 1; applyPrefs(); });
   const toggle = (id, key) => $(id).addEventListener('click', () => { prefs[key] = !prefs[key]; applyPrefs(); });
   toggle('opt-invert', 'invert');
   toggle('opt-lefty', 'lefty');
@@ -596,7 +623,7 @@ async function boot() {
 
 boot().catch(e => {
   console.error(e);
-  status('FAILED: ' + e.message, 1);
+  failed('FAILED: ' + e.message);
   const s = $('load-status');
   if (s) s.style.color = '#f44';
 });

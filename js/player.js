@@ -18,12 +18,18 @@
    letting go, and that slide is most of what people mean when they say
    the movement has weight.
 
-   NO GRAVITY, NO JUMPING, NO CROUCHING. The player is a cylinder that
-   walks, climbs anything 24 or under without slowing down, and cannot
-   get over anything taller. Not a simplification — a design. Every
-   height in the map means something because the player cannot cheat it.
+   GRAVITY AND A JUMP, as of the user's request, and still no crouch.
+   The player is a cylinder that walks, climbs anything 24 or under
+   without slowing down, and gets over anything up to about forty with
+   a jump — see GRAVITY and JUMP_VEL, and the second half of move().
+   Every height in the map still means something; it is only that a
+   few of them can be cleared with a run at them now.
 
-   THREE WEAPONS, and they are an argument about fire.
+   FOUR WEAPONS, and three of them are an argument about fire.
+
+     MINIGUN    the user's model, slot four, and the one that is not
+                about fire at all: a hundred and forty rounds a second,
+                a spin-up, and barrels that glow. See BELT.
 
      BORE       Turok 2's cerebral bore, the user's model. A red sight,
                 a lock on a head, a projectile that finds it, two seconds
@@ -150,6 +156,46 @@ export const REFIRE_AT = 0.5;
 export const BORES = 5;
 export const BORE_REGEN_EVERY = 12 * TICRATE;
 
+/* THE MINIGUN'S BELT, at the user's request, and the request was
+   "absurdly destructive", so the numbers are: four rounds a tic out of
+   a belt of three thousand, which is twenty-one seconds of the trigger
+   held down at a hundred and forty rounds a second, each of them enough
+   to drop a shopper and a burst of them enough to open a van. It fills
+   itself one round a tic, so a belt is back in a minute and a half, and
+   it latches at a quarter — see REFIRE_AT for why a latch at all.
+
+   AND IT HAS TO SPIN UP. SPIN_UP tics from the trigger going down to
+   the first round, SPIN_DOWN from the trigger coming up to the barrels
+   stopping; the barrel set on the model turns to match (js/weapon3d.js
+   reads Player.spin). A third of a second is long enough to be a
+   decision and short enough not to be a wait.
+
+   AND IT HEATS. HEAT_UP seconds of fire takes the barrels from cold to
+   the yellow-white of steel that should have stopped, and HEAT_DOWN
+   seconds of not firing brings them back. Nothing else happens at the
+   top — the glow is the whole of it, at the user's request — but the
+   gun tells you how long you have been holding the trigger, which a
+   belt gauge only says in a corner. */
+export const BELT = 3000;
+export const BELT_PER_TIC = 4;
+export const BELT_REGEN_EVERY = 1;
+export const BELT_REFIRE_AT = 0.25;
+export const SPIN_UP = 12;
+export const SPIN_DOWN = 28;
+export const HEAT_UP = 4 * TICRATE;
+export const HEAT_DOWN = 7 * TICRATE;
+
+/* THE PLAYER CAN JUMP NOW, at the user's request, which is the end of
+   the NO GRAVITY, NO JUMPING line below and is done the way a Doom port
+   does it: a vertical momentum, a gravity that takes a unit a tic off
+   it, and a floor that stops it. JUMP_VEL is the push off the ground —
+   nine, which with a unit of gravity is forty units of height, enough
+   to clear a shelf end or a bonnet and not a gondola. A drop deeper
+   than a step is a FALL rather than a snap, on the same gravity, which
+   is what makes a jump off the loading dock feel like one. */
+export const GRAVITY = 1.0;
+export const JUMP_VEL = 9.0;
+
 const FRICTION   = 0.90625;
 const WALK_FWD   = 25 / 32,  RUN_FWD  = 50 / 32;
 const WALK_SIDE  = 24 / 32,  RUN_SIDE = 40 / 32;
@@ -240,8 +286,25 @@ export const WEAPONS = {
     damage: () => 0,
     sound: 'borefire',
   },
+  /* THE MINIGUN. `volley` is the whole of what makes it a different
+     kind of thing to hold: every tic the trigger is down and the barrels
+     are up to speed, `rounds` hitscans leave the nozzle inside `spread`
+     radians of where the eye is looking, pitch and all — see volleyTic
+     and Game.hitscan. Billed per tic out of the belt like the streams
+     are out of their tanks, and latched at empty the same way. The fire
+     frames are a two-tic shudder and nothing else; the model, the spin
+     and the heat are js/weapon3d.js's. */
+  MINIGUN: {
+    slot: 4, name: 'MINIGUN', sprite: 'FLMG',
+    ready: 'A', fire: ['B', 'C'], fireTics: [1, 1],
+    ammo: 'rounds', ammoPerShot: 0, autofire: true,
+    refire: BELT_REFIRE_AT,
+    volley: true, rounds: BELT_PER_TIC, spread: 0.055,
+    damage: () => 24 + (pRandom() % 25),
+    sound: 'minigun',
+  },
   MOLOTOV: {
-    slot: 4, name: 'MOLOTOV', sprite: 'MOLG',
+    slot: 5, name: 'MOLOTOV', sprite: 'MOLG',
     ready: 'A', fire: ['B', 'B', 'C', 'C'], fireTics: [6, 6, 8, 12],
     throwAt: 2,
     ammo: 'bottles', ammoPerShot: 1,
@@ -254,6 +317,13 @@ export class Player {
     this.game = game;
     this.x = x; this.y = y; this.angle = angle; this.pitch = 0;
     this.momx = 0; this.momy = 0;
+    /* and up, which is new: see GRAVITY */
+    this.momz = 0;
+    this.onGround = true;
+    /* tics of grace after a vehicle has thrown you, during which the
+       same vehicle cannot throw you again — see damage() and
+       SwatVan.runOver */
+    this.launched = 0;
     this.radius = PLAYER_RADIUS;
     this.height = PLAYER_HEIGHT;
     this._near = [];                   // scratch for thingInWay's blockmap query
@@ -270,8 +340,8 @@ export class Player {
     this.shootable = true;
     this.monster = false;
 
-    this.ammo = { fuel: TANK, co2: BOTTLE, bores: BORES, bottles: 0 };
-    this.maxAmmo = { fuel: TANK, co2: BOTTLE, bores: BORES, bottles: 12 };
+    this.ammo = { fuel: TANK, co2: BOTTLE, bores: BORES, rounds: BELT, bottles: 0 };
+    this.maxAmmo = { fuel: TANK, co2: BOTTLE, bores: BORES, rounds: BELT, bottles: 12 };
     /* THE LATCH. True from the moment the tank runs out until it is back
        to REFIRE_AT of full, and the only thing that stops the flamer
        firing while there is fuel in it. */
@@ -284,6 +354,13 @@ export class Player {
     /* the bore's magazine has a clock and no latch — see BORES */
     this.boreTick = 0;
     this.boreDry = false;
+    /* the minigun's belt: its own latch and clock, and the two numbers
+       js/weapon3d.js draws — how fast the barrels are turning, 0..1 of
+       full speed, and how hot they are, 0..1 of glowing white */
+    this.beltTick = 0;
+    this.beltDry = false;
+    this.spin = 0;
+    this.heat = 0;
     /* whether the trigger has already clicked on this press of it */
     this._clicked = false;
     /* DEBUG MODE: every tank refills to the top once a tic. Off, saved
@@ -294,10 +371,10 @@ export class Player {
        It is not a heal: it stops you being hurt from the moment it goes
        on, so turned on at forty health you stay at forty for ever. */
     this.invincible = false;
-    /* THREE WEAPONS. The molotov is built and tested and stays switched
-       off; the boxcutter is gone; the bore is the third — see the note
-       above WEAPONS. */
-    this.owned = { FLAMER: true, EXTINGUISHER: true, BORE: true };
+    /* FOUR WEAPONS. The molotov is built and tested and stays switched
+       off; the boxcutter is gone; the bore is the third and the minigun
+       the fourth — see the note above WEAPONS. */
+    this.owned = { FLAMER: true, EXTINGUISHER: true, BORE: true, MINIGUN: true };
     this.weapon = 'FLAMER';
     this.pendingWeapon = null;
 
@@ -328,6 +405,7 @@ export class Player {
     if (this.useCooldown > 0) this.useCooldown--;
     if (this.damageFlash > 0) this.damageFlash--;
     if (this.pickupFlash > 0) this.pickupFlash--;
+    if (this.launched > 0) this.launched--;
 
     if (this.dead) { this.deathTic(); return; }
 
@@ -381,11 +459,40 @@ export class Player {
     forest?.clampInside(this);
 
     const sec = lv.sectorAt(this.x, this.y, this.sector);
-    if (sec) {
-      this.sector = sec;
-      /* Step up or down. Instant, like Doom — the smoothing is in the
-         view height below, not in the body. */
-      this.z = sec.floor;
+    if (sec) this.sector = sec;
+    const floor = this.sector ? this.sector.floor : this.z;
+    const ceil = this.sector ? this.sector.ceil : Infinity;
+
+    /* UP AND DOWN, which used to be one line: z is the floor. It is
+       still the floor for as long as you are standing on it — a step up
+       or down within MAX_STEP is instant, like Doom, with the smoothing
+       in the view height below and not in the body. What is new is
+       everything else: a jump is a push off it, a drop deeper than a
+       step is a fall, and both run on the same gravity until the floor
+       is under you again. See GRAVITY and JUMP_VEL. */
+    if (this.onGround && input.jump) {
+      this.momz = JUMP_VEL;
+      this.onGround = false;
+    }
+    if (this.onGround && floor < this.z - MAX_STEP) this.onGround = false;   // walked off something
+    if (this.onGround) {
+      this.z = floor;
+      this.momz = 0;
+    } else {
+      this.momz -= GRAVITY;
+      this.z += this.momz;
+      /* the ceiling stops a jump the way the floor stops a fall */
+      if (this.z + this.height > ceil) { this.z = Math.max(floor, ceil - this.height); if (this.momz > 0) this.momz = 0; }
+      if (this.z <= floor) {
+        /* LANDED, and the harder the landing the more the knees give:
+           the eye dips by a share of the speed it arrived at and the
+           smoothing below brings it back up over a few tics */
+        const fall = -this.momz;
+        this.z = floor;
+        this.momz = 0;
+        this.onGround = true;
+        if (fall > 4) this.viewZ -= Math.min(12, fall * 0.7);
+      }
     }
 
     /* View bob. Doom's: proportional to the square of the speed, capped,
@@ -393,7 +500,7 @@ export class Player {
     const speed2 = this.momx * this.momx + this.momy * this.momy;
     const targetBob = Math.min(16, speed2 * 0.32);
     this.bob += (targetBob - this.bob) * 0.25;
-    this.bobPhase += 0.19;
+    if (this.onGround) this.bobPhase += 0.19;
     const eye = this.z + PLAYER_EYE + Math.sin(this.bobPhase) * this.bob * 0.5;
     /* the eye lags the feet, so a kerb is a lurch and not a teleport */
     this.viewZ += (eye - this.viewZ) * 0.45;
@@ -444,14 +551,62 @@ export class Player {
        and the whole feel of the bore: it is not a gun you point, it is
        a gun you wait with. */
     if (WEAPONS[w].lock && !this.game.bore?.lock) return false;
+    /* AND A GUN THAT HAS TO SPIN UP IS NOT ARMED UNTIL IT HAS: the
+       trigger is down, the barrels are winding, and nothing comes out
+       for a third of a second — see SPIN_UP and spinTic */
+    if (WEAPONS[w].volley && this.spin < 1) return false;
     return true;
+  }
+
+  /** THE BARRELS, WINDING UP AND DOWN, AND HOW HOT THEY ARE. Both are
+   *  states rather than animations, so js/weapon3d.js draws them and
+   *  a pause holds them. The spin climbs while the trigger is down on
+   *  a volley weapon that is not latched — a dry belt does not spin,
+   *  because a spin that leads to nothing is a promise the gun cannot
+   *  keep — and runs down otherwise, faster up than down, the way a
+   *  motor and a heavy set of barrels behave. The heat climbs while
+   *  rounds are actually leaving and cools the rest of the time. */
+  spinTic(input) {
+    const d = this.def;
+    const want = !!(d.volley && input.attack && !this.latched(this.weapon) && this.hasAmmo(this.weapon));
+    const was = this.spin;
+    this.spin = clamp(this.spin + (want ? 1 / SPIN_UP : -1 / SPIN_DOWN), 0, 1);
+    if (want && was === 0) this.game.sound?.play('spinup', this);
+    if (!want && was === 1) this.game.sound?.play('spindown', this);
+    const firingRounds = this.firing && d.volley;
+    this.heat = clamp(this.heat + (firingRounds ? 1 / HEAT_UP : -1 / HEAT_DOWN), 0, 1);
+  }
+
+  /** The minigun: one tic of rounds out of the nozzle. Where the eye is
+   *  looking, pitch included, with a little scatter round it, and each
+   *  one a hitscan the world resolves — see Game.hitscan. */
+  volleyTic(d) {
+    const g = this.game;
+    if (d.ammo) {
+      if (this.ammo[d.ammo] < d.rounds) {
+        /* DRY MID-BURST stops it where it stands and latches, the same
+           bargain the streams make — see flameTic */
+        this.fireIndex = -1;
+        this.beltDry = true;
+        return;
+      }
+      this.ammo[d.ammo] -= d.rounds;
+    }
+    const from = g.nozzle();
+    const dx = Math.cos(this.angle), dy = Math.sin(this.angle);
+    for (let i = 0; i < d.rounds; i++) {
+      const a = this.angle + (pRandom() / 255 - 0.5) * 2 * d.spread;
+      const pt = this.pitch + (pRandom() / 255 - 0.5) * 2 * d.spread * 0.7;
+      g.hitscan(this, a, 2400, d.damage(), { shot: true, pitch: pt, dx, dy, force: 1.6, from,
+                                           spark: (i === 0) });
+    }
   }
 
   /* WHICH TANK IS SULKING. Two streams, two tanks, two latches, and a
      weapon that has neither is never refused. */
   latched(w) {
     const d = WEAPONS[w];
-    return d.ammo === 'co2' ? this.co2Dry : d.ammo === 'fuel' ? this.dry : false;
+    return d.ammo === 'co2' ? this.co2Dry : d.ammo === 'fuel' ? this.dry : d.ammo === 'rounds' ? this.beltDry : false;
   }
 
   selectSlot(n) {
@@ -468,11 +623,14 @@ export class Player {
   weaponTic(input) {
     if (input.weaponSlot) this.selectSlot(input.weaponSlot);
     if (input.weaponCycle) this.cycleWeapon(input.weaponCycle > 0 ? 1 : -1);
+    this.spinTic(input);
 
     if (this.firing) {
       const d = this.def;
       /* a stream pours every tic the trigger is down, not once a frame */
       if (d.stream) this.flameTic(d);
+      /* and a volley fires every tic the barrels are up to speed */
+      if (d.volley) this.volleyTic(d);
       if (--this.fireTics > 0) return;
       /* the frame we are ABOUT to leave is the one that does the damage */
       this.fireIndex++;
@@ -573,13 +731,14 @@ export class Player {
        in the game has to know the mode exists. */
     if (this.debug) {
       for (const kind of Object.keys(this.maxAmmo)) this.ammo[kind] = this.maxAmmo[kind];
-      this.dry = false; this.co2Dry = false;
-      this.regenTick = 0; this.co2Tick = 0;
+      this.dry = false; this.co2Dry = false; this.beltDry = false;
+      this.regenTick = 0; this.co2Tick = 0; this.beltTick = 0;
       return;
     }
     this._refill('fuel', REGEN_EVERY, REFIRE_AT, 'regenTick', 'dry');
     this._refill('co2', CO2_REGEN_EVERY, CO2_REFIRE_AT, 'co2Tick', 'co2Dry');
     this._refill('bores', BORE_REGEN_EVERY, 0, 'boreTick', 'boreDry');
+    this._refill('rounds', BELT_REGEN_EVERY, BELT_REFIRE_AT, 'beltTick', 'beltDry');
   }
 
   /** One tank, one tic. Both fill on the same terms and differ only in
@@ -659,6 +818,22 @@ export class Player {
       const push = Math.min(6, amount * 0.22);
       this.momx += Math.cos(a) * push; this.momy += Math.sin(a) * push;
     }
+    /* AND THE LAUNCH, which is what a vehicle does instead of a shove,
+       at the user's request: `launch` is a velocity, sideways and up,
+       worked out by whatever hit you from how fast it was going (see
+       SwatVan.runOver), and it goes straight into the momentum — up as
+       well, which is the part a shove never had, so a van at speed puts
+       you in the air and the gravity in move() brings you down somewhere
+       else. The grace tics stop the same nose hitting you again every
+       tic while you are still in front of it. */
+    if (opts.launch) {
+      const l = opts.launch;
+      this.momx += l.x; this.momy += l.y;
+      this.momz = Math.max(this.momz, l.z);
+      this.onGround = false;
+      this.launched = l.grace ?? 24;
+      this.game.sound?.play('whack', this);
+    }
     if (this.health <= 0) this.die();
   }
 
@@ -689,6 +864,12 @@ export class Player {
     /* the view sinks to the floor and stays there */
     this.viewZ += (this.z + 8 - this.viewZ) * 0.12;
     this.momx *= 0.86; this.momy *= 0.86;
+    /* a body in the air comes down */
+    if (!this.onGround) {
+      this.momz -= GRAVITY; this.z += this.momz;
+      const floor = this.sector ? this.sector.floor : this.z;
+      if (this.z <= floor) { this.z = floor; this.momz = 0; this.onGround = true; }
+    }
     const [nx, ny] = this.game.level.slideMove(this.x, this.y, this.momx, this.momy, this.radius, this.z, 8, false);
     this.x = nx; this.y = ny;
   }

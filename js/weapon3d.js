@@ -2,11 +2,13 @@
    GROCERY STORE SIMULATOR — the thing in your hands
    =====================================================================
 
-   THREE MODELS NOW, and this file used to be certain there was one.
-   All three are somebody else's, dropped in as they stand: the
+   FOUR MODELS NOW, and this file used to be certain there was one.
+   Three are somebody else's, dropped in as they stand: the
    flamethrower the user built was replaced by one of Vaportrash's, at
    the user's request, and the extinguisher and the cerebral bore came
-   from there too. All are .glb, all are drawn in the same little scene
+   from there too. The fourth, the minigun, is the user's own again, and
+   carries its own nozzle and a barrel set that turns — see GUNS.
+   All are .glb, all are drawn in the same little scene
    in front of the world, and that scene has its own perspective camera
    sitting at the origin looking down -z with the gun parked in front of
    it in metres — so "where the gun is on screen" is the handful of
@@ -93,7 +95,16 @@ export const GUN_LENGTH = 1.4;
              twenty frames of billowing and differ by those two: one is
              fire as painted, one is the white-blue of something very
              cold leaving a nozzle very fast
-     muzzle  how long and wide that effect is, in metres */
+     muzzle  how long and wide that effect is, in metres
+     pos     a gun's own offset on VIEW.pos, in metres, for one that is
+             carried somewhere other than where a hose is. Absent means
+             none
+     rot     and its own turn on VIEW's, pitch yaw roll, for the same
+             reason. Absent means none
+     heat    the material that glows with use and the run of the
+             barrels along it — see GUN_FRAG. Only the minigun has one
+     spin    turns a second the part the file names as rotating makes
+             at full speed. Only the minigun has one */
 export const GUNS = {
   /* THE CEREBRAL BORE, the user's third model and the one with nothing
      coming out of the nozzle but a red line: the projectile is the
@@ -174,6 +185,43 @@ export const GUNS = {
     cold: true,
     muzzle: { len: 0.30, wid: 0.22 },
   },
+  /* THE MINIGUN, the user's fourth model and the first since the old
+     flamethrower to carry its own answers: a marker cylinder named for
+     the emission point, which tools/prep-model.mjs takes out of the
+     mesh and writes into the file's extras as the nozzle, and a barrel
+     set named to be ROTATED, which it leaves in and names in the same
+     place (extras.spin). So `nozzle` is null here — the file says — and
+     the game's part is how it is held and what happens to it in use.
+
+     IN THE CORNER, the user's pick of the six placements that were
+     drawn up for it (see README, THE MINIGUN, for the other five and
+     what each looked like): held on VIEW's own hold like the streams
+     are, a quarter longer than the flamethrower and a little nearer
+     than it, so the receiver fills the corner and the barrel set comes
+     in across the lower right quarter of the picture. Any of the
+     others is a `pos` and a `rot` on this entry and a change to these
+     two numbers.
+
+     `heat` is the barrel material and the run of the barrels along it,
+     in the model's own units: the shader tints that material from the
+     muzzle back as the gun is used (see GUN_FRAG), dull red first,
+     orange, and then the yellow-white of steel that should have
+     stopped. `spin` is how many turns a second the barrel set makes at
+     full speed. */
+  MINIGUN: {
+    url: 'assets/models/minigun.glb',
+    fit: GUN_LENGTH * 1.25,
+    out: 2.6,
+    nozzle: null,
+    pilot: null,
+    /* what leaves the muzzle: a short hard flash rather than a tongue,
+       the frames desaturated and pushed toward white-yellow */
+    tint: [1.7, 1.4, 0.8],
+    cold: true,
+    muzzle: { len: 0.34, wid: 0.30 },
+    heat: { material: 'minigun_barrel_mat', z: [-0.83, 10.56] },
+    spin: 6,
+  },
 };
 
 /* Where the gun sits in front of the eye, in metres, and how it is
@@ -211,11 +259,13 @@ const GUN_VERT = /* glsl */`
 varying vec2 vUv;
 varying vec3 vN;
 varying vec3 vP;
+varying vec3 vL;
 void main() {
   vUv = uv;
   vN = normalize(normalMatrix * normal);
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   vP = mv.xyz;
+  vL = position;
   gl_Position = projectionMatrix * mv;
 }
 `;
@@ -232,9 +282,12 @@ uniform vec3  glowPos;
 uniform float pilot;
 uniform vec3  pilotPos;
 uniform float dim;
+uniform float heat;
+uniform vec2  heatZ;
 varying vec2 vUv;
 varying vec3 vN;
 varying vec3 vP;
+varying vec3 vL;
 void main() {
   vec4 t = texture2D(map, vUv);
   if (t.a < 0.5) discard;
@@ -244,6 +297,21 @@ void main() {
   float l = (0.50 + 0.50 * d) * dim;
   l = floor(l * 12.0 + 0.5) / 12.0;
   vec3 c = t.rgb * l;
+  /* THE BARRELS HEAT UP. heat is 0..1 and only ever set on the one
+     material the gun's table names (see GUNS[].heat); heatZ is the
+     run of the barrels in the mesh's own units, muzzle end last, and
+     the glow climbs from the muzzle back down them as the heat rises
+     — dull red first, then orange, then the yellow-white of steel that
+     should have stopped. Banded like the light above, so it reads as
+     the same kind of picture as the rest of the gun. */
+  if (heat > 0.001) {
+    float along = clamp((vL.z - heatZ.x) / max(heatZ.y - heatZ.x, 1e-4), 0.0, 1.0);
+    float h = heat * smoothstep(0.0, 0.9, along * 0.7 + heat * 0.3);
+    h = floor(h * 8.0 + 0.5) / 8.0;
+    vec3 hot = h < 0.5 ? mix(vec3(0.42, 0.02, 0.0), vec3(1.0, 0.36, 0.05), h * 2.0)
+                       : mix(vec3(1.0, 0.36, 0.05), vec3(1.0, 0.92, 0.62), (h - 0.5) * 2.0);
+    c = mix(c, hot, h * 0.85) + hot * h * 0.35;
+  }
   vec3 fire = vec3(1.0, 0.55, 0.20);
   vec3 tg = glowPos - vP;
   float gd = length(tg);
@@ -374,14 +442,18 @@ export class Weapon3D {
     const { root, extras } = await loadGLB(def.url, {
       material: (mdef, maps) => {
         if (!maps.map) return new THREE.MeshBasicMaterial({ color: 0x0c1410, toneMapped: false });
-        return new THREE.ShaderMaterial({
+        const m = new THREE.ShaderMaterial({
           uniforms: {
             map: { value: maps.map }, glow: { value: 0 }, glowPos: { value: new THREE.Vector3() },
             pilot: { value: 0.35 }, pilotPos: { value: new THREE.Vector3() }, dim: { value: 1 },
+            heat: { value: 0 }, heatZ: { value: new THREE.Vector2(0, 1) },
           },
           vertexShader: GUN_VERT, fragmentShader: GUN_FRAG,
           side: mdef?.doubleSided ? THREE.DoubleSide : THREE.FrontSide, toneMapped: false, fog: false,
         });
+        /* the file's own name for it, so a table can point at one */
+        m.name = mdef?.name || '';
+        return m;
       },
     });
 
@@ -429,15 +501,26 @@ export class Weapon3D {
        same three uniforms seventeen times a frame. */
     const gunMaterials = [];
     const seen = new Set();
+    let heatMaterial = null;
     root.traverse(o => {
       if (!o.isMesh || !o.material.uniforms?.glow || seen.has(o.material)) return;
       seen.add(o.material);
       gunMaterials.push(o.material);
+      /* the one material the barrels wear, if the table names one, is
+         the one the heat goes into — see GUN_FRAG */
+      if (def.heat && o.material.name === def.heat.material) heatMaterial = o.material;
     });
+    if (heatMaterial) heatMaterial.uniforms.heatZ.value.fromArray(def.heat.z);
+
+    /* AND THE PART THAT TURNS, named in the file's extras by
+       tools/prep-model.mjs — the minigun's barrel set. Spun about its
+       own z, which is the axis the barrels run along. */
+    const spin = extras.spin ? root.getObjectByName(extras.spin) : null;
 
     const g = {
       def, group, inner, anchors: { nozzle: place(nozzle), pilot: pilot ? place(pilot) : null },
-      gunMaterials, pilot: null, muzzle: null, muzzleMaterials: [],
+      gunMaterials, heatMaterial, spin, spinAngle: 0,
+      pilot: null, muzzle: null, muzzleMaterials: [],
     };
 
     /* the pilot light: a small flame sprite, always on, for a gun that
@@ -497,8 +580,16 @@ export class Weapon3D {
     /* `out` is a push straight back along the view — z alone, kick and
        all — see the note on the bore in GUNS for why not the whole
        vector */
-    g.position.set(VIEW.pos[0] + bobX + jx, VIEW.pos[1] - bobY + jy, (VIEW.pos[2] + this.kick * 0.025) * (G.def.out ?? 1));
-    g.rotation.set(VIEW.pitch + this.sway.y, VIEW.yaw + this.sway.x, VIEW.roll + this.sway.x * 0.4, 'YXZ');
+    /* and `pos` is a gun's own offset on the shared hold — a heavy gun
+       carried in both hands sits nearer the middle than a hose does */
+    const off = G.def.pos || [0, 0, 0];
+    g.position.set(VIEW.pos[0] + off[0] + bobX + jx, VIEW.pos[1] + off[1] - bobY + jy,
+                   (VIEW.pos[2] + off[2] + this.kick * 0.025) * (G.def.out ?? 1));
+    /* and `rot` is a gun's own turn on the shared one — pitch, yaw,
+       roll — for a gun held square rather than angled in from a corner */
+    const rot = G.def.rot || [0, 0, 0];
+    g.rotation.set(VIEW.pitch + rot[0] + this.sway.y, VIEW.yaw + rot[1] + this.sway.x,
+                   VIEW.roll + rot[2] + this.sway.x * 0.4, 'YXZ');
     g.updateMatrixWorld(true);
 
     /* the pilot, flickering, on its anchor */
@@ -529,6 +620,19 @@ export class Weapon3D {
       G.pilot.material.uniforms.frame.value = (tics >> 1) % this.frames;
       G.pilot.visible = !firing;
     }
+
+    /* THE BARRELS TURN AND THE BARRELS HEAT, both read off the player,
+       who owns the numbers (see Player.spin and Player.heat): the spin
+       is 0..1 of full speed, so the set winds up before the first round
+       and runs down after the last, and the heat is 0..1 of a barrel
+       that should have stopped. Neither is a frame count — both are
+       states, so a pause holds them where they are. */
+    if (G.spin) {
+      const rate = (player.spin || 0) * (G.def.spin || 0) * Math.PI * 2;
+      G.spinAngle = (G.spinAngle + rate * dt) % (Math.PI * 2);
+      G.spin.rotation.z = G.spinAngle;
+    }
+    if (G.heatMaterial) G.heatMaterial.uniforms.heat.value = player.heat || 0;
 
     /* the muzzle, only while firing */
     G.muzzle.visible = !!firing;

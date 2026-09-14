@@ -39,7 +39,10 @@ somewhere else: the people, the trees, the sky, and the gun.
   assets/sky/night.png  the night, baked from a Polyhaven panorama
   assets/models/        the flamethrower, the fire extinguisher rifle and
                           the cerebral bore, all three Vaportrash's and all
-                          three stripped by tools/prep-model.mjs; the van,
+                          three stripped by tools/prep-model.mjs; the
+                          minigun, the user's own, stripped by the same tool
+                          with its emission marker read into the file's
+                          extras and its barrel set named there; the van,
                           the police van and the army's hover APC, which
                           are the user's three — the APC stripped by the
                           same tool, two megabytes of normal and
@@ -130,14 +133,36 @@ the three layers of you — see AND YOU CAN BE HURT NOW.
 
   WASD          move            MOUSE     look
   SHIFT         run             LMB/CTRL  fire
-  SPACE / F     open, use       WHEEL     cycle weapons
-  1 2           flamer / extinguisher
+  SPACE         jump            WHEEL     cycle weapons
+  F             open, use
+  1 2 3 4       flamer / extinguisher / bore / minigun
   [  ]          render size     SHIFT [ ] pixel size
   N             palette on / off          ESC       pause
   `             the frame-rate readout, off by default
 
-Gamepad works. Mouse look needs a click to grab the pointer. On a phone
-none of that applies and the next section is the one that does.
+GAMEPAD, laid out the way the user asked for it, which is not the way
+most games do it and is the whole point of a preference:
+
+  LEFT STICK    look            RIGHT STICK  move
+  R2            fire            L2           jump
+  L1 / R1       previous / next weapon
+  A             use             L3 / R3      run
+
+And a pad in use takes the phone's thumb controls off the picture — see
+ON A PHONE. Mouse look needs a click to grab the pointer. On a phone
+none of the keyboard applies and the next section is the one that does.
+
+AND THE SOUND IS OFF, all of it, for now, at the user's request: MUTED
+at the top of js/audio.js is one switch, and with it on resume() never
+opens an AudioContext, so every sound in the game is still asked for
+and none of them is made. Flip it and they are all back.
+
+THE LOADING SCREEN SAYS RETICULATING SPLINES, at the user's request, and
+nothing else, for the whole of the half second; the bar still moves.
+And nothing is written across the middle of the picture any more — the
+SIRENS and THE ARMY IS ON THE ROAD cards that used to announce a convoy
+are gone, at the user's request. The siren says it. The one card left
+is the one that ends the night.
 
 One weapon, and it is a flamethrower: a STREAM. Hold the trigger and
 six fireballs a tic leave the nozzle at a thousand units a second, in a
@@ -171,8 +196,9 @@ percentage on the status bar is replaced by the mark it is climbing to
 with a pip on the bar where that is.
 
 THE BOXCUTTER IS GONE, deleted at the user's request, and the third
-weapon is the CEREBRAL BORE — see THE CEREBRAL BORE below. Mouse wheel,
-or 1, 2, 3. The molotov is written, tested and still switched off. The
+weapon is the CEREBRAL BORE — see THE CEREBRAL BORE below — and the
+fourth is THE MINIGUN, see the section of that name. Mouse wheel, or
+1, 2, 3, 4. The molotov is written, tested and still switched off. The
 player cannot be hurt BY FIRE — that is one flag at the top of js/player.js, FIREPROOF, and it
 used to be the whole of the player's invulnerability. A bullet gets
 through it now, because there are bullets: see THE ROAD, AND WHO COMES
@@ -408,6 +434,113 @@ and the bore should not teach it a second one. The kill is the player's,
 and a kill is what calls the SWAT.
 
 
+THE MINIGUN
+-----------
+
+THE FOURTH WEAPON, at the user's request, and the user's own model:
+assets/models/minigun.glb, twelve and a half megabytes as it arrived
+and seven and a half after tools/prep-model.mjs took the normal and
+metal-rough maps off it. Slot 4, or the wheel, or SWAP. And it is the
+first model since the old flamethrower to carry its own answers, in
+its own node names: a marker cylinder named for the emission point,
+which the tool takes out of the mesh and writes into the file's extras
+as the nozzle (through the node's own scale, quarter-turn and
+translation, because the cylinder sits thirty units up its own node's
+y), and a barrel set named to be ROTATED, which the tool leaves in and
+names in the same place. js/weapon3d.js reads both back: the nozzle is
+where the muzzle flash sits and the rounds are born, and the barrel
+set turns about its own z.
+
+ABSURDLY DESTRUCTIVE, which was the specification. Four rounds a tic
+out of a belt of three thousand — a hundred and forty a second for
+twenty-one seconds with the trigger down — each one a hitscan of
+twenty-four to forty-eight, which is two to four times a shopper and
+enough of them, in a burst, to open a van. It goes where the eye
+looks, PITCH AND ALL: Game.hitscan grew a pitch for it, since a rifle
+that fires level was fine for a trooper and is not fine for a gun you
+point at the floor of the car park. The belt fills itself a round a
+tic and latches at a quarter, on the tanks' terms and for the tanks'
+reason. Infinite ammo fills it like the rest.
+
+AND IT SPINS UP, a third of a second from the trigger going down to
+the first round, and eight tenths to stop after it comes up — the
+barrel set on the model turns to match, and js/audio.js has a sawtooth
+for each direction. A dry belt does not spin, because a spin that
+leads to nothing is a promise the gun cannot keep. AND IT HEATS: four
+seconds of fire takes the barrel material from cold to the yellow-white
+of steel that should have stopped, dull red first from the muzzle
+back, then orange, then white; seven seconds of not firing brings it
+back. It is one uniform on the one material the barrels wear, banded
+like the rest of the gun's light, and nothing else happens at the top
+— the glow is the whole of it, at the user's request — but the gun
+tells you how long you have been holding the trigger, which a belt
+gauge in a corner only says in a corner.
+
+WHERE IT SITS WAS DRAWN UP SIX WAYS BEFORE ONE WAS PICKED, at the
+user's request, off the same scene the game draws. The model's own
+centre is well back in its body, so held close (like the flamethrower
+used to be) everything but the barrels drops off the bottom of the
+picture; held dead centre at the hip it is a grey tube; held out far
+enough to see the whole thing it is a toy. The user picked the CORNER:
+GUNS.MINIGUN in js/weapon3d.js holds it on VIEW's own hold like the
+streams, a quarter longer than the flamethrower and a little nearer,
+so the receiver fills the corner and the barrel set comes in across
+the lower right quarter of the picture, the way the old flamethrower
+did. The other five are the same two numbers (fit, out) plus an offset
+(pos) and a turn (rot), and any of them is a one-line change.
+
+THE HUD SAYS WHAT YOU ARE HOLDING, small, top right, at the user's
+request — the one word the readout has grown back since the corner
+went to bars. Four weapons that all cycle off one button on a phone is
+one too many to keep track of by the shape of the barrel.
+
+
+THE JUMP, AND BEING HIT BY A VAN
+--------------------------------
+
+THE PLAYER CAN JUMP, at the user's request, which is the end of the
+line at the top of js/player.js that said NO GRAVITY, NO JUMPING — and
+it is done the way a Doom port does it rather than a physics engine:
+a vertical momentum, a gravity of a unit a tic off it, and a floor
+that stops it. Nine units of push is forty of height, enough to clear
+a shelf end or a bonnet and not a gondola. A step up or down within
+twenty-four is still instant, like Doom; a drop deeper than a step is
+a FALL now, on the same gravity, which is what makes a jump off the
+loading dock feel like one; a hard landing dips the eye by a share of
+the speed it arrived at and the view's own smoothing brings it back.
+The ceiling stops a jump the way the floor stops a fall. Space, L2 or
+the JUMP button, one jump per press — holding it is not a pogo stick.
+
+AND A VEHICLE THROWS YOU, at the user's request, instead of the six
+units of sideways shove a hit used to be. SwatVan.runOver (the APC
+inherits it) works a velocity out of how fast it was going — along its
+heading blended with the line from its nose to you, so a square hit
+throws you down the road and a glancing one throws you off it — and
+UP, in proportion, so a van at speed puts you in the air and the
+gravity above brings you down somewhere else. Player.damage spends it
+(opts.launch), and thirty tics of grace on the player stop the same
+nose finding you again every tic while you are still in front of it,
+which is what it used to do at a shove's worth of push: the hit is one
+hit now, at forty, rather than twenty-eight every tic for as long as
+you overlapped. DEBUG: INVINCIBLE still refuses the whole function,
+launch included, which is the documented reading of the word.
+
+
+BRIGHTNESS, CONTRAST, GAMMA
+---------------------------
+
+THREE SLIDERS IN THE PAUSE MENU, at the user's request, and they are
+applied in the one place in the pipeline where they are honest: after
+the block average and BEFORE the dither and the palette snap. Doom's
+own gamma keys worked that way — they changed the palette the picture
+was quantised to, not the picture after — and the reason still holds:
+a brighter picture should still be made of the same two hundred and
+fifty-six colours, and a lift applied after the snap puts colours on
+the screen the palette does not have. Contrast pivots on mid grey,
+brightness multiplies, gamma is the usual curve, and 1 on all three is
+the picture as drawn. They are remembered with the rest.
+
+
 ON A PHONE
 ----------
 
@@ -422,16 +555,38 @@ were designed rather than bolted on. Open the page, tap, and:
                 old rim.
   RIGHT THUMB   drag anywhere to look. The view moves exactly as far
                 as the thumb did and stops when it stops.
-  FLAME         under the right thumb's rest. Hold it to burn — and
-                while it is held, sliding the same thumb still looks,
-                so a held flame swept across an aisle is one motion.
-                That one detail is what makes a one-weapon game
-                playable with two thumbs: the thumb that fires never
-                lets go to aim.
-  USE           above the flame, for the doors that are not automatic.
+  FIRE          under the right thumb's rest, and it says FIRE now
+                rather than wearing a flame, at the user's request —
+                with a minigun in the game a flame was a lie a quarter
+                of the time. Hold it — and while it is held, sliding
+                the same thumb still looks, so a held flame swept
+                across an aisle is one motion. That one detail is what
+                makes a one-weapon game playable with two thumbs: the
+                thumb that fires never lets go to aim.
+  JUMP USE SWAP the three small buttons, in an arc round the big one:
+                jump at nine o'clock, use at half past ten, swap at
+                twelve, all the same distance from FIRE's centre, so
+                the thumb rolls from one to the next without leaving
+                its corner and the big one is always nearest. JUMP is
+                the newest, at the user's request, and took the spot
+                beside FIRE because jumping and firing are the two
+                things you do without looking.
   PAUSE         top corner. The menu has look speed, invert, a
                 left-handed mirror of the whole layout, vibration,
-                chunkiness and fullscreen, and remembers them.
+                brightness, contrast and gamma, chunkiness and
+                fullscreen, and remembers them.
+
+AND A PAD TAKES THEM OFF THE PICTURE, at the user's request. A phone
+with a controller paired is still a phone — no keyboard, menus you tap
+— but while the pad is being used the thumb controls are in the way of
+nothing but the view, so the moment a stick moves or a button goes
+down they fade, in a quarter of a second, and the moment a finger
+touches the screen they are back as fast. input.js decides
+(Input.padHeld, true from the first button until the next touch);
+touch.js only wears the class. The weapon's name in the top right
+steps left past the pause button on a phone, for the same reason the
+old status bar's height used to be handed to the CSS: the two corners
+are shared and somebody has to give way.
 
 The rules the layout follows: nothing ever sits over the picture's
 status bar, whatever the chunkiness (the bar's height on screen is

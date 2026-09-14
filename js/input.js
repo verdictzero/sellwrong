@@ -37,9 +37,11 @@ const KEYMAP = {
   KeyD: 'right', KeyE: 'right',
   ArrowLeft: 'turnLeft', ArrowRight: 'turnRight',
   ShiftLeft: 'run', ShiftRight: 'run',
-  Space: 'use', KeyF: 'use',
+  /* SPACE IS JUMP NOW, at the user's request, and F is use — the
+     arrangement every game since Quake has settled on */
+  Space: 'jump', KeyF: 'use',
   ControlLeft: 'attack', ControlRight: 'attack',
-  Digit1: 'weapon1', Digit2: 'weapon2', Digit3: 'weapon3',
+  Digit1: 'weapon1', Digit2: 'weapon2', Digit3: 'weapon3', Digit4: 'weapon4',
   Tab: 'map', KeyM: 'map',
   Escape: 'pause', KeyP: 'pause',
 };
@@ -63,8 +65,18 @@ export class Input {
     this.invertY = false;
     this.touch = {
       move: { x: 0, y: 0 }, look: { x: 0, y: 0 },
-      attack: false, use: false, usePulse: false, run: false, weapon: 0,
+      attack: false, use: false, usePulse: false, jumpPulse: false, run: false, weapon: 0,
     };
+    /* WHETHER A PAD IS IN CHARGE, which is a different question from
+       which MODE the game is in: a phone with a controller paired is
+       still a phone — it has no keyboard, its menus are tapped — but
+       while the pad is being used the thumb controls are in the way
+       of the picture and are faded off it (see js/touch.js and
+       #touch.pad in the CSS). True from the first button or stick
+       movement until the next touch, and announced on the way over. */
+    this.padHeld = false;
+    this.onPadChange = null;
+    this._padPrev = [];
     this.hasTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
     /* The first guess. `pointer: coarse` is the browser's word for "the
        main thing pointing at me is a finger", which is a better start
@@ -100,6 +112,8 @@ export class Input {
        always agree on whose turn it is. */
     addEventListener('pointerdown', e => {
       this.setMode(e.pointerType === 'mouse' ? 'desktop' : 'touch');
+      /* a finger on the screen takes the controls back from the pad */
+      if (e.pointerType !== 'mouse') this.setPadHeld(false);
     }, true);
 
     this.canvas.addEventListener('mousedown', e => {
@@ -136,6 +150,12 @@ export class Input {
     this.onModeChange?.(mode);
   }
 
+  setPadHeld(on) {
+    if (on === this.padHeld) return;
+    this.padHeld = on;
+    this.onPadChange?.(on);
+  }
+
   requestLock() {
     if (this.mode === 'touch' || !this.canvas.requestPointerLock) return;
     /* newer browsers hand back a promise that rejects when the lock is
@@ -156,12 +176,20 @@ export class Input {
   sample(dt) {
     const pad = this._gamepad();
 
+    /* THE PAD, AS THE USER LAID IT OUT: the RIGHT stick moves and the
+       LEFT stick looks — the other way round from the usual, and the
+       user's call. The triggers are the trigger: R2 fires, L2 jumps;
+       the bumpers cycle the weapons, L1 back and R1 forward; A is use
+       and either stick pressed in is run. */
+    const btn = i => !!(pad && pad.buttons[i]?.pressed);
+    const padEdge = i => { const now = btn(i), was = !!this._padPrev[i]; this._padPrev[i] = now; return now && !was; };
+
     let mx = 0, my = 0;
     if (this.down('right')) mx += 1;
     if (this.down('left')) mx -= 1;
     if (this.down('forward')) my += 1;
     if (this.down('back')) my -= 1;
-    if (pad) { mx += dead(pad.axes[0]); my -= dead(pad.axes[1]); }
+    if (pad) { mx += dead(pad.axes[2]); my -= dead(pad.axes[3]); }
     mx += this.touch.move.x; my += this.touch.move.y;
 
     const mag = Math.hypot(mx, my);
@@ -178,32 +206,42 @@ export class Input {
     if (this.down('turnLeft')) lx -= turn;
     if (this.down('turnRight')) lx += turn;
     if (pad) {
-      lx += dead(pad.axes[2]) * 3.2 * dt;
-      ly += dead(pad.axes[3]) * 2.2 * dt;
+      lx += dead(pad.axes[0]) * 3.2 * dt;
+      ly += dead(pad.axes[1]) * 2.2 * dt;
     }
     lx += this.touch.look.x; ly += this.touch.look.y;
     this.touch.look.x = 0; this.touch.look.y = 0;
     if (this.invertY) ly = -ly;
     this.look = { x: lx, y: ly };
 
-    this.attack = this.mouseDown || this.down('attack') || this.touch.attack ||
-      !!(pad && (pad.buttons[7]?.pressed || pad.buttons[5]?.pressed));
+    this.attack = this.mouseDown || this.down('attack') || this.touch.attack || btn(7);
     /* a tap shorter than a tic still counts as one press of Use */
-    this.use = this.down('use') || this.touch.use || this.touch.usePulse ||
-      !!(pad && pad.buttons[0]?.pressed);
+    this.use = this.down('use') || this.touch.use || this.touch.usePulse || btn(0);
     this.touch.usePulse = false;
-    this.run = this.down('run') || this.touch.run || !!(pad && pad.buttons[10]?.pressed);
+    this.run = this.down('run') || this.touch.run || btn(10) || btn(11);
+    /* JUMP is a press, not a hold: one jump per press of the key, the
+       trigger or the button, so holding it down is not a pogo stick */
+    this.jump = this.pressed('jump') || this.touch.jumpPulse || padEdge(6);
+    this.touch.jumpPulse = false;
 
     this.weaponSlot = 0;
     if (this.pressed('weapon1')) this.weaponSlot = 1;
     if (this.pressed('weapon2')) this.weaponSlot = 2;
     if (this.pressed('weapon3')) this.weaponSlot = 3;
+    if (this.pressed('weapon4')) this.weaponSlot = 4;
     if (this.touch.weapon) { this.weaponSlot = this.touch.weapon; this.touch.weapon = 0; }
     this.weaponCycle = this.wheel; this.wheel = 0;
     if (this.touch.cycle) { this.weaponCycle = this.touch.cycle; this.touch.cycle = 0; }
+    if (padEdge(4)) this.weaponCycle = -1;
+    if (padEdge(5)) this.weaponCycle = 1;
+
+    /* and whether the pad said anything at all this frame, which is
+       what fades the thumb controls off the picture — see padHeld */
     if (pad) {
-      if (pad.buttons[4]?.pressed && !this._padLB) this.weaponCycle = -1;
-      this._padLB = pad.buttons[4]?.pressed;
+      let used = false;
+      for (let i = 0; i < 4 && !used; i++) if (dead(pad.axes[i])) used = true;
+      for (let i = 0; i < pad.buttons.length && !used; i++) if (pad.buttons[i]?.pressed) used = true;
+      if (used) this.setPadHeld(true);
     }
 
     this.pausePressed = this.pressed('pause');

@@ -207,6 +207,7 @@ uniform vec2  uTaps;          // samples across one chunky pixel, 1..4
 uniform float uDither;        // 0 = off, ~1 = one palette step of wobble
 uniform float uLutSize;
 uniform float uSnap;          // 0 = truecolour passthrough, 1 = full palette
+uniform vec3  uPicture;       // brightness, contrast, gamma — all 1 for the picture as drawn
 varying vec2 vUv;
 
 /* 4x4 ordered Bayer, built the way Bayer matrices are actually defined:
@@ -273,6 +274,18 @@ void main() {
     }
     c = sum / n;
   }
+
+  /* BRIGHTNESS, CONTRAST, GAMMA, at the user's request, and here — after
+     the average and BEFORE the dither and the snap — for the reason
+     Doom's own gamma keys worked the way they did: they changed the
+     palette the picture was quantised to, not the picture after. A
+     brighter picture should still be made of the same two hundred and
+     fifty-six colours, and a lift applied after the snap would put
+     colours on the screen the palette does not have. Contrast pivots on
+     mid grey, brightness multiplies, gamma is the usual curve. */
+  c = (c - 0.5) * uPicture.y + 0.5;
+  c = max(c * uPicture.x, 0.0);
+  c = pow(c, vec3(1.0 / max(uPicture.z, 0.05)));
 
   if (uDither > 0.0) {
     /* ON THE GRID and not on the buffer: one threshold per chunky pixel.
@@ -361,6 +374,7 @@ export class LofiPipeline {
         uDither:    { value: opts.dither ?? 1.0 },
         uLutSize:   { value: LUT_SIZE },
         uSnap:      { value: opts.snap ?? 1.0 },
+        uPicture:   { value: new THREE.Vector3(1, 1, 1) },
       },
       vertexShader: POST_VERT,
       fragmentShader: FILTER_FRAG,
@@ -433,6 +447,12 @@ export class LofiPipeline {
   setPixels(h) {
     this.pixelHeight = h > 0 ? Math.round(h) : 0;
     return this.resize(this.displayW, this.displayH);
+  }
+
+  /** The three picture dials, each 1 for the picture as drawn. Applied
+   *  before the palette snap — see uPicture in the shader. */
+  setPicture({ brightness = 1, contrast = 1, gamma = 1 } = {}) {
+    this.material.uniforms.uPicture.value.set(brightness, contrast, gamma);
   }
 
   /** The width of one chunky pixel over its height, as displayed. */

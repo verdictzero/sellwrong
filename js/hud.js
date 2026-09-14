@@ -99,8 +99,31 @@ export class Hud {
     this.bigMesh.visible = false;
     this.scene.add(this.bigMesh);
 
+    /* the other corner: what is in your hands, in small letters */
+    this.nameTex = null;
+    this.nameMesh = new THREE.Mesh(geo, createHudMaterial(null));
+    this.nameMesh.renderOrder = 4;
+    this.nameMesh.frustumCulled = false;
+    this.nameMesh.visible = false;
+    this.scene.add(this.nameMesh);
+
+    /* how far in from the right edge the name sits, in chunky pixels:
+       zero on a desktop, and on a phone the width of the pause button
+       that lives in that corner — main.js works it out on resize */
+    this.nameInset = 0;
+
     this._topKey = '';
     this._bigKey = '';
+    this._nameKey = '';
+  }
+
+  /** The room the page's own furniture takes in the top right corner,
+   *  in chunky pixels, so the name is not drawn under it. */
+  setNameInset(px) {
+    px = Math.max(0, Math.round(px || 0));
+    if (px === this.nameInset) return;
+    this.nameInset = px;
+    this._nameKey = '';
   }
 
   resize(w, h) {
@@ -111,6 +134,37 @@ export class Hud {
     this.scale = Math.max(1, Math.min(3, Math.round(h / 200)));
     this._topKey = '';
     this._bigKey = '';
+    this._nameKey = '';
+  }
+
+  /* ------------------------------------------------------------------
+     THE OTHER CORNER: WHAT YOU ARE HOLDING
+
+     At the user's request, and it is the one word this readout has
+     grown back: the weapon's name, small, in the top right, out of the
+     way of the bars on the left and the shop in the middle. Four
+     weapons that all cycle off one button on a phone is one too many
+     to keep track of by the shape of the barrel, and the swap happens
+     between shots, so the word is what tells you the SWAP landed.
+     ------------------------------------------------------------------ */
+  buildName(p) {
+    const s = this.scale;
+    const name = p && !p.dead ? (WEAPONS[p.weapon]?.name || '') : '';
+    const key = name + '#' + this.width + '#' + s + '#' + this.nameInset;
+    if (key === this._nameKey) return;
+    this._nameKey = key;
+    if (!name) { this.nameMesh.visible = false; return; }
+    const M = 3 * s;
+    const w = textWidth(name) * s + M * 2 + s, h = 8 * s + M * 2;
+    const pix = new Pix(w, h, 1, false);
+    bigText(pix, name, M, M, 'bone', 0.72, s);
+    pix.snap(0);
+    if (this.nameTex) this.nameTex.dispose();
+    this.nameTex = makeTex(pix);
+    this.nameMesh.material.uniforms.map.value = this.nameTex;
+    this.nameMesh.scale.set(w, h, 1);
+    this.nameMesh.position.set(this.width / 2 - w / 2 - this.nameInset, this.height / 2 - h / 2, 0);
+    this.nameMesh.visible = true;
   }
 
   /* ------------------------------------------------------------------
@@ -272,6 +326,7 @@ export class Hud {
 
     this.buildTop(player);
     this.buildBig();
+    this.buildName(player);
 
     /* the sprite gun, only if the model never came */
     if (this.showWeaponSprite) {

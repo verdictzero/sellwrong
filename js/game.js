@@ -590,38 +590,68 @@ export class Game {
   }
 
   /** A shot that arrives instantly. Walks the ray, takes the nearest of
-   *  the first actor it crosses and the first wall. */
+   *  the first actor it crosses and the first wall.
+   *
+   *  LEVEL BY DEFAULT, which is what a trooper's rifle has always been,
+   *  and PITCHED for the minigun (opts.pitch, radians): the ray then
+   *  climbs or drops along its length, stops at the floor or the
+   *  ceiling of the shooter's own sector the way trace() does, and
+   *  takes an actor only at the height it is at when it crosses them.
+   *  `opts.from` moves the origin off the shooter — the nozzle rather
+   *  than the eye, so the puffs line up with the barrels — and
+   *  `opts.spark` throws a few sparks off whatever it hits. */
   hitscan(from, angle, range, damage, opts = {}) {
-    const tx = from.x + Math.cos(angle) * range;
-    const ty = from.y + Math.sin(angle) * range;
-    const z = from.eyeZ;
+    const pitch = opts.pitch || 0;
+    const cp = Math.cos(pitch);
+    const o = opts.from || from;
+    const ox = o.x, oy = o.y;
+    const z = opts.from ? (o.z ?? from.eyeZ) : from.eyeZ;
+    const tx = ox + Math.cos(angle) * cp * range;
+    const ty = oy + Math.sin(angle) * cp * range;
+    const tz = z + Math.sin(pitch) * range;
 
-    const wall = this.level.rayHitWall(from.x, from.y, z, tx, ty, z);
-    const maxT = wall ? wall.t : 1;
+    const wall = this.level.rayHitWall(ox, oy, z, tx, ty, tz);
+    let maxT = wall ? wall.t : 1;
+    let floorHit = null;
+    if (pitch) {
+      const sec = from.sector || this.level.sectorAt(ox, oy);
+      if (sec) {
+        if (tz < sec.floor && z > sec.floor) { const t = (z - sec.floor) / (z - tz); if (t < maxT) { maxT = t; floorHit = sec.floor; } }
+        if (tz > sec.ceil && z < sec.ceil) { const t = (sec.ceil - z) / (tz - z); if (t < maxT) { maxT = t; floorHit = sec.ceil; } }
+      }
+    }
 
     let best = null, bestT = maxT;
     const targets = from === this.player ? this.actors : [this.player, ...this.actors];
+    const dx = tx - ox, dy = ty - oy;
+    const len2 = dx * dx + dy * dy || 1;
     for (const a of targets) {
       if (!a || a === from || a.removed || a.dead || !a.shootable) continue;
       /* project the actor onto the ray and see if it is within its
          radius of the line */
-      const dx = tx - from.x, dy = ty - from.y;
-      const len2 = dx * dx + dy * dy;
-      let t = ((a.x - from.x) * dx + (a.y - from.y) * dy) / len2;
+      let t = ((a.x - ox) * dx + (a.y - oy) * dy) / len2;
       if (t <= 0 || t >= bestT) continue;
-      const px = from.x + dx * t, py = from.y + dy * t;
+      const px = ox + dx * t, py = oy + dy * t;
       if (dist2(px, py, a.x, a.y) > a.radius * a.radius) continue;
       /* and that the shot is at a height the thing occupies */
-      if (z < a.z - 8 || z > a.z + a.height + 8) continue;
-      bestT = t; best = { a, x: px, y: py };
+      const pz = z + (tz - z) * t;
+      if (pz < a.z - 8 || pz > a.z + a.height + 8) continue;
+      bestT = t; best = { a, x: px, y: py, z: pz };
     }
 
     if (best) {
       best.a.damage(damage, from, opts);
-      this.spawnPuff(best.x, best.y, z);
+      this.spawnPuff(best.x, best.y, best.z);
       return best.a;
     }
-    if (wall) this.spawnPuff(wall.x, wall.y, wall.z);
+    if (wall && (!pitch || wall.t <= maxT + 1e-9)) {
+      this.spawnPuff(wall.x, wall.y, wall.z);
+      if (opts.spark) this.spawnSparks(wall.x, wall.y, wall.z, 2 + (pRandom() & 1));
+    } else if (floorHit !== null) {
+      const hx = ox + dx * maxT, hy = oy + dy * maxT;
+      this.spawnPuff(hx, hy, floorHit);
+      if (opts.spark) this.spawnSparks(hx, hy, floorHit, 2 + (pRandom() & 1));
+    }
     return null;
   }
 

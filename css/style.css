@@ -192,35 +192,56 @@ html.touch .desk-only, html:not(.touch) .touch-only { display: none !important; 
   box-shadow: inset 0 2px 5px rgba(0, 0, 0, .45), inset 0 -1px 0 rgba(255, 255, 255, .12);
 }
 
+/* THE FIRE BUTTON SAYS FIRE, at the user's request — it used to wear a
+   flame, and with a minigun in the game a flame is a lie a quarter of
+   the time. */
 .tb-fire {
   width: var(--btn); height: var(--btn);
   right: var(--edge-x); bottom: var(--edge-y);
   border-color: rgba(232, 98, 26, .62);
   background: var(--bevel), rgba(232, 98, 26, .16);
+  font-size: 13px; letter-spacing: .22em; color: #ffd9a8;
 }
-.tb-fire svg { width: 58%; height: 58%; display: block; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .5)); }
 #touch .tb-fire.held {
   background: var(--bevel), rgba(232, 98, 26, .52);
   border-color: #ffe07a;
   box-shadow: 0 0 28px rgba(232, 98, 26, .6), inset 0 2px 6px rgba(120, 40, 0, .5), inset 0 0 12px rgba(255, 224, 122, .35);
 }
 
-.tb-use {
-  width: calc(var(--btn) * .72); height: calc(var(--btn) * .72);
-  right: calc(var(--edge-x) + var(--btn) + 14px);
-  bottom: calc(var(--edge-y) + var(--btn) * .55);
+/* THE THREE SMALL ONES STAND IN AN ARC ROUND THE BIG ONE. Jump at nine
+   o'clock, use at half past ten, swap at twelve, all the same size and
+   all the same distance from the fire button's centre (--arc), so the
+   right thumb rolls from one to the next without leaving its corner
+   and the big one is always the nearest thing to it. JUMP is the
+   newest, at the user's request, and took the spot beside the fire
+   button because jumping and firing are the two things you do without
+   looking. */
+#touch {
+  --small: calc(var(--btn) * .72);
+  --arc: calc(var(--btn) * .5 + var(--small) * .5 + 12px);
+  --fire-cx: calc(var(--edge-x) + var(--btn) * .5);
+  --fire-cy: calc(var(--edge-y) + var(--btn) * .5);
 }
-
-/* THE WEAPON SWAP, which a phone needed the moment there were two of
-   them. Above USE and the same size, so the right thumb reaches all
-   three without leaving its corner, and cool rather than orange because
-   what it mostly swaps to is the thing that puts fires out. */
-.tb-swap {
-  width: calc(var(--btn) * .72); height: calc(var(--btn) * .72);
-  right: calc(var(--edge-x) + var(--btn) + 14px);
-  bottom: calc(var(--edge-y) + var(--btn) * .55 + var(--btn) * .72 + 12px);
-  border-color: rgba(122, 196, 224, .40);
+.tb-use, .tb-swap, .tb-jump {
+  width: var(--small); height: var(--small);
   font-size: 11px;
+}
+.tb-jump {
+  right: calc(var(--fire-cx) + var(--arc) - var(--small) * .5);
+  bottom: calc(var(--fire-cy) - var(--small) * .5);
+  border-color: rgba(232, 195, 74, .42);
+}
+.tb-use {
+  right: calc(var(--fire-cx) + var(--arc) * .7071 - var(--small) * .5);
+  bottom: calc(var(--fire-cy) + var(--arc) * .7071 - var(--small) * .5);
+}
+/* THE WEAPON SWAP, which a phone needed the moment there were two of
+   them, and cool rather than orange because what it mostly swaps to is
+   the thing that puts fires out. */
+.tb-swap {
+  right: calc(var(--fire-cx) - var(--small) * .5);
+  bottom: calc(var(--fire-cy) + var(--arc) - var(--small) * .5);
+  border-color: rgba(122, 196, 224, .40);
 }
 
 .tb-pause { width: 44px; height: 44px; top: 8px; right: 8px; border-color: rgba(207, 207, 214, .22); }
@@ -228,9 +249,16 @@ html.touch .desk-only, html:not(.touch) .touch-only { display: none !important; 
 
 /* the left-handed layout is the same layout in a mirror */
 #touch.lefty .tb-fire { right: auto; left: var(--edge-x); }
-#touch.lefty .tb-use  { right: auto; left: calc(var(--edge-x) + var(--btn) + 14px); }
-#touch.lefty .tb-swap { right: auto; left: calc(var(--edge-x) + var(--btn) + 14px); }
+#touch.lefty .tb-jump { right: auto; left: calc(var(--fire-cx) + var(--arc) - var(--small) * .5); }
+#touch.lefty .tb-use  { right: auto; left: calc(var(--fire-cx) + var(--arc) * .7071 - var(--small) * .5); }
+#touch.lefty .tb-swap { right: auto; left: calc(var(--fire-cx) - var(--small) * .5); }
 #touch.lefty .tb-pause { right: auto; left: 8px; }
+
+/* A PAD IN CHARGE FADES THEM, quickly, and a finger brings them back
+   as quickly — see Input.padHeld. The elements stay where they are and
+   keep their hit areas, because the touch that brings them back lands
+   on them. */
+#touch.pad .tb, #touch.pad .stick, #touch.pad .hint { opacity: 0 !important; transition: opacity .25s ease; }
 
 /* the stick: drawn where the thumb landed, towed along behind it */
 .stick {
