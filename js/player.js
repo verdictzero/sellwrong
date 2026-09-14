@@ -277,6 +277,11 @@ export class Player {
     this.fireIndex = -1;      // -1 = at rest
     this.fireTics = 0;
     this.refire = false;
+    /* EVERY TIME THE TRIGGER HAS ACTUALLY DONE SOMETHING. Counted here
+       and read by js/responders.js, where the first one is what calls
+       the police — a refusal is not a shot, so this only ever goes up
+       in startFire, which is the one door every weapon goes through. */
+    this.shotsFired = 0;
 
     this.bob = 0; this.bobPhase = 0;
     this.lookRate = 0; this.pitchRate = 0;     // how fast the view is turning, smoothed, for the gun to lag
@@ -482,6 +487,10 @@ export class Player {
     /* `?? 1` and not `|| 1`: the flamethrower declares 0 on purpose,
        because it is billed per tic of stream rather than per shot. */
     if (d.ammo) this.ammo[d.ammo] = Math.max(0, this.ammo[d.ammo] - (d.ammoPerShot ?? 1));
+    /* AND SOMEBODY HEARD IT. The first one of these is what brings the
+       police down the road (js/responders.js); nothing else in here
+       needs to know that, which is why it is a count and not a call. */
+    this.shotsFired++;
     this.fireIndex = 0;
     this.fireTics = d.fireTics[0];
     this.game.sound?.play(d.sound, this);

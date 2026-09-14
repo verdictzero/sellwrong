@@ -10,10 +10,14 @@
    already written and tested. What is new is underneath it: one squad,
    on its own trigger, that does not wait for the alarm.
 
-   WHAT CALLS THEM IS A KILL. Not the fire — a supermarket alight is the
-   fire brigade's business — but the moment somebody is dead by your
-   hand the night has changed, and the first vans are on the road. THREE
-   AT A TIME, at the user's request: where one van used to be sent,
+   WHAT CALLS THEM IS THE TRIGGER, at the user's request. Not the fire —
+   a supermarket alight is the fire brigade's business — but the first
+   shot out of any weapon, on the tic you fire it, which in this game is
+   the first thing anybody does. It used to be the first KILL and a
+   sixteen-second wait on top, which together read as the game giving
+   you a head start; now there is no head start and the sirens are the
+   answer to the flamethrower rather than to the body. THREE AT A TIME,
+   at the user's request: where one van used to be sent,
    three are, nose to tail from the same end of the road, and the budget
    is three times what it was so that the second and third are not
    simply refused. They unload their crews one at a time and, when the
@@ -100,9 +104,9 @@ export function alarmOf({ storePct = 0, woodPct = 0, kills = 0, minutesAlight = 
 /* ---------------------------------------------------------------------
    THE SQUAD, IN NUMBERS
 
-   `after` is the kill that calls them — the first — and `firstDelay`
-   is the drive from wherever they were, which is long enough to have
-   forgotten and short enough that you have not gone far.
+   `after` is the trigger pull that calls them — the first — and
+   `firstDelay` is what used to be the drive from wherever they were
+   and is now nothing: they are dispatched on the tic you fire.
 
    THEN THE CURVE. `doubling` is how often the pressure doubles, from
    the call; the four `at pressure 1` numbers are what the night starts
@@ -115,8 +119,12 @@ export function alarmOf({ storePct = 0, woodPct = 0, kills = 0, minutesAlight = 
    holds the lot at what the engine will carry.
    ------------------------------------------------------------------- */
 export const SWAT = {
-  after: 1,                              // kills before anybody is called
-  firstDelay: 16 * TICRATE,              // the first van's drive
+  /* WHAT CALLS THEM IS THE TRIGGER, at the user's request: one shot out
+     of any weapon, which is the first thing anybody does in this game.
+     It used to be one kill, which in practice was ten seconds later and
+     read as the game letting you start. */
+  after: 1,                              // shots fired before anybody is called
+  firstDelay: 0,                         // and they are dispatched on that tic
   doubling: 60 * TICRATE,                // how often the pressure doubles, from the call
   every: 55 * TICRATE,                   // the gap between sends, at pressure 1, give or take a fifth
   minEvery: 6 * TICRATE,                 // and the least it can ever be
@@ -275,8 +283,11 @@ export class Responders {
   squadTic() {
     const g = this.game, p = g.player;
     if (!p) return;
-    /* THE CALL. One kill, and the first van is on its way. */
-    if (!this.called && p.kills >= SWAT.after) this.call();
+    /* THE CALL. One pull of the trigger and the first convoy is on the
+       road that tic — or one death, if somebody has managed to die
+       without a shot being fired, which the fire can do on its own once
+       it is going. */
+    if (!this.called && (p.shotsFired >= SWAT.after || p.kills > 0)) this.call();
     if (!this.called || p.dead) return;
     /* the next van, if the curve allows another on the road. The gap is
        read off the curve as each van leaves, not set at the call, so
@@ -494,11 +505,31 @@ export class Responders {
     return way.filter((q, i) => i === 0 || Math.hypot(q.x - way[i - 1].x, q.y - way[i - 1].y) > 1);
   }
 
+  /** Which end of the road they come from: whichever is the shorter
+   *  drive to where they are going. The road ends are nine thousand
+   *  units out from the ring on either side, so coming in at the wrong
+   *  one is half a minute of tarmac and the difference between a
+   *  response and an interval. */
+  sideFor(ringT) {
+    const routes = this.game.level.swatRoutes, R = this.ring;
+    let best = Object.keys(routes)[0], bd = Infinity;
+    for (const name of Object.keys(routes)) {
+      const r = routes[name], e = r[r.length - 1];
+      const fwd = ((ringT - this.ringNearest(e.x, e.y)) % R.total + R.total) % R.total;
+      const d = Math.min(fwd, R.total - fwd);
+      if (d < bd) { bd = d; best = name; }
+    }
+    return best;
+  }
+
   /** THREE OF THEM, at the user's request, nose to tail from the same
    *  end of the road — as many as the budget still has room for. */
   sendConvoy() {
     const room = this.vanCap - this.liveVans.length;
-    const side = this.side++ % 2 ? 'east' : 'west';
+    const first = this.freeStand();
+    if (!first) return [];
+    const side = this.sideFor(first.ring);
+    this.side++;
     const sent = [];
     for (let k = 0; k < Math.min(SWAT.convoy, room); k++) {
       const v = this.sendVan(side, k * SWAT.convoyGap);

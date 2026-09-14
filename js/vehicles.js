@@ -869,7 +869,15 @@ class Chunk {
    to come apart, and the player is shoved and hurt, which is the one
    thing other than a rifle that gets through their fireproofing.
    ===================================================================== */
-const DRIVE_SPEED = 15;          // units a tic — twice a running shopper; the road in is long
+/* AT THE USER'S REQUEST THEY SPEED IN. It was fifteen units a tic —
+   twice a running shopper — and the drive in from the end of the road is
+   fifteen thousand units, so the first van arrived half a minute after
+   it was called. Half a minute is an interval, not a response. Thirty is
+   about seventy miles an hour in this game's units, which is what a van
+   with its lights on does on an empty road at two in the morning, and it
+   is still slow enough that the heading (DRIVE_TURN below) keeps up with
+   the corners. */
+const DRIVE_SPEED = 30;          // units a tic
 const DRIVE_TURN = 0.09;         // radians a tic the heading may change
 const RUNOVER_DMG = 220;         // what the front of a van does to a person
 const RUNOVER_PLAYER = 28;       // and to you

@@ -4437,18 +4437,25 @@ section('the van');
       p.momx = p.momy = 0;
     };
     const home = { x: p.x, y: p.y };
+    const fsSquad = await import('node:fs');
     const inShop = gs.actors.find(a => a.type === 'SHOPPER' && a.sector && !a.sector.outdoor);
     stand(inShop.x, inShop.y);
     check('the player is in the building, so the doors are where a van goes', !p.sector.outdoor && !R.chasing);
-    check('nobody has been called before a kill', !R.called && R.vans.length === 0 && p.kills === 0);
-    const who = gs.actors.find(a => a.type === 'SHOPPER' && !a.dead && !a.removed);
-    who.damage(100, p);
+    check('nobody has been called before a shot', !R.called && R.vans.length === 0 && p.shotsFired === 0);
+    /* ONE PULL OF THE TRIGGER, at the user's request, and they are
+       dispatched on that tic — no kill, no sixteen-second grace. */
+    p.startFire();
+    check('firing counts as firing', p.shotsFired === 1 && p.kills === 0);
     gs.tic();
-    check('killing somebody is the call', p.kills >= 1 && R.called);
-    check('and the van is not here yet', R.vans.length === 0);
-    for (let i = 0; i < S.firstDelay + 2 && !R.vans.length; i++) gs.tic();
+    check('and that is the call', R.called && R.calledAt === R.tics);
+    check('and they are on the road already, not in sixteen seconds',
+      S.firstDelay === 0 && R.vans.length > 0, `${R.vans.length} vans, delay ${S.firstDelay}`);
     const v = R.vans[0];
-    check('a van is on the road after the drive from the station', !!v && v.state === 'driving');
+    check('a van is on the road', !!v && v.state === 'driving');
+    /* and a death still calls them, for the night the fire kills
+       somebody on its own after you have stopped firing */
+    check('a kill would have called them too',
+      /p\.shotsFired >= SWAT\.after \|\| p\.kills > 0/.test(fsSquad.readFileSync('js/responders.js', 'utf8')));
     /* THREE OF THEM, at the user's request, from the same end of the
        road and strung out along it rather than stacked on the spot. */
     check('and three of them, not one', R.vans.length === S.convoy, `${R.vans.length}`);
@@ -4618,6 +4625,11 @@ section('the van');
       v.startChar(); v.blowUp();
       check('nor go up for a bang beside it, nor when told to', v.state === vs && v.health === vh && v.burning === 0);
       const out = v.unloaded;
+      /* ROOM UNDER THE BUDGET FIRST. Whether this van puts anybody out
+         is the trooper cap's business and the cap is saturated by now —
+         what is being measured here is that a van nothing can destroy
+         never stops, so clear the ground and watch it. */
+      for (const a of gs.actors) if (a.type === 'SWAT') a.remove();
       for (let i = 0; i < 900; i++) { p.health = 100; gs.tic(); }
       check('nine hundred tics later it is where it was, standing', v.state === 'parked' && R.liveVans.includes(v));
       check('and still unloading', v.unloaded > out, `${v.unloaded} after ${out}`);
@@ -4745,6 +4757,29 @@ section('the van');
     check('three minutes in, there are vans everywhere the curve allows',
       R.vanCap >= S.bays && R.vans.length >= 6, `${R.vans.length} vans, cap ${R.vanCap}`);
     check('and the troopers allowed have doubled at least twice since the call', R.trooperCap >= 4 * S.troopers, `${R.trooperCap}`);
+    /* AND HOW LONG IT TAKES THEM TO GET HERE from one pull of the
+       trigger, which is the whole of what "speed in" means: a fresh
+       night, one shot, and the clock runs until a van is standing. */
+    {
+      const fresh = new Game({
+        level: MAP.buildSellWrong(), scene: new THREE2.Scene(), camera: {},
+        textures: gm.textures, sprites: spr.bakeSprites(),
+        hud: { message() {}, ticMessages() {} }, audio: null,
+        input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
+                 attack: false, use: false, run: false, sample() {}, sensitivity: 0 },
+        fleet: { texture: {}, def: van }, police: { texture: {}, def: police },
+      });
+      const fp = fresh.player;
+      fp.startFire();
+      fresh.tic();
+      check('one shot and the convoy is already on the road', fresh.responders.vans.length === S.convoy);
+      let t2 = 1;
+      for (; t2 < 4000 && !fresh.responders.vans.some(q => q.state === 'parked'); t2++) { fp.health = 100; fresh.tic(); }
+      note('trigger to tyres', `${t2} tics, ${(t2 / 35).toFixed(1)}s from the shot to a van standing`);
+      check('and a van is standing within twenty seconds of the shot', t2 < 20 * 35, `${(t2 / 35).toFixed(1)}s`);
+      check('and it came from the nearer end of the road',
+        fresh.responders.vans[0].side === fresh.responders.sideFor(fresh.responders.vans[0].stand.ring));
+    }
 
     /* the corner grows a third bar the moment something hurts you */
     const hudSrc = fs.readFileSync('js/hud.js', 'utf8');

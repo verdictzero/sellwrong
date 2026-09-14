@@ -83,7 +83,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         961 checks, no install and no browser
+  the smoke test         966 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -1434,24 +1434,40 @@ bar across the mouth of the minor road, which is the marking that says
 THE SWAT COME DOWN IT, at the user's request, and they are the first
 thing in the game that fights back.
 
-WHAT CALLS THEM IS A KILL. Not the fire — a supermarket alight is the fire
-brigade's business — but the moment somebody is dead by your hand the
-night has changed: SIRENS across the middle of the screen, and sixteen
-seconds later the first van is on the road. It is the user's police van,
-an armoured assault truck loaded the same way the customers' van is (see
-THE ART) and drawn as its own mesh on its own sheet, because it can never
-be in the slab with the others and, unlike them, it MOVES: in along the
-through road from whichever end it was sent to, up the leg of the ring,
-along the frontage lane, and across the fire lane in front of the doors —
-the strip the map keeps empty because nobody parks there, which is what a
-fire lane is for. The route is the map's (level.swatRoutes, level.swatBays;
-the lot's own numbers are in scope there and nowhere else), the driving is
+WHAT CALLS THEM IS THE TRIGGER, at the user's request. Not the fire — a
+supermarket alight is the fire brigade's business — and no longer the
+first body either: ONE SHOT out of any weapon, on the tic you fire it.
+SIRENS across the middle of the screen and the first convoy is already on
+the road. It used to be the first kill and a sixteen-second wait on top of
+it, which together read as the game giving you a head start; there is no
+head start now, and the sirens are the answer to the flamethrower rather
+than to the body. (A death still calls them, for the night the fire kills
+somebody on its own after you have stopped firing — but in practice you
+fire first, because firing is how anything in this game begins.)
+
+AND THEY SPEED IN. From the shot to a van standing in front of you is
+fourteen seconds, and two things make it that rather than the thirty-five
+it was. They come in at whichever END OF THE ROAD is the shorter drive to
+where they are going — the two are nine thousand units out from the ring
+on either side, so guessing wrong was half a minute of tarmac. And the
+van does thirty units a tic rather than fifteen, which is about seventy
+miles an hour in this game's units and what a van with its lights on does
+on an empty road at two in the morning.
+
+It is the user's police van, an armoured assault truck loaded the same way
+the customers' van is (see THE ART) and drawn as its own mesh on its own
+sheet, because it can never be in the slab with the others and, unlike
+them, it MOVES: in along the through road from whichever end it was sent
+to, round the perimeter loop the short way, and off it toward you. The
+route is the map's (level.swatRing, level.swatRoutes, level.swatBays; the
+lot's own numbers are in scope there and nowhere else), the driving is
 SwatVan in js/vehicles.js, and it is not a car physics: the position rides
-the polyline exactly and the heading eases toward it at a fixed rate, which
-at a van's pace round a T-junction is all anybody looks at. It does not
-stop for anybody. A crowd running from the fire is a crowd in the road, and
-a squad van at speed goes through it; the player is shoved and hurt, which
-with a bullet is the only thing that gets through the fireproofing.
+the polyline exactly and the heading eases toward it at a fixed rate,
+which at a van's pace round a T-junction is all anybody looks at. It does
+not stop for anybody. A crowd running from the fire is a crowd in the
+road, and a squad van at speed goes through it; the player is shoved and
+hurt, which with a bullet is the only thing that gets through the
+fireproofing.
 
 THREE AT A TIME, at the user's request. Where one van used to be sent,
 three are: a convoy, nose to tail from the same end of the road, each
@@ -2670,7 +2686,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-961 checks. Every one of them earns its place by having caught something
+966 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
