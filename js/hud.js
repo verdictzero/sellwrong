@@ -25,7 +25,7 @@ import * as THREE from 'three';
 import { Pix, drawText, textWidth } from './pixel.js';
 import { createHudMaterial } from './material.js';
 import { weaponTexture } from './sprites.js';
-import { WEAPONS } from './player.js';
+import { WEAPONS, HEALTH, ARMOUR1, ARMOUR2 } from './player.js';
 
 /** drawText, but every pixel becomes an n-by-n block, over a one-block
  *  shadow so it reads on the sky as well as on the floor. */
@@ -157,20 +157,28 @@ export class Hud {
        it is not waiting on anything — so the gauge has a pip on it
        exactly while the answer is "not yet". */
     const mark = p ? (p.refireMark || 0) : 0;
-    /* AND A THIRD BAR, THE MOMENT SOMETHING HURTS YOU. There was no
+    /* AND THREE MORE BARS, THE MOMENT SOMETHING HURTS YOU. There was no
        health on the screen because nothing could take any off; the SWAT
        can (see js/responders.js), so from the first bullet that lands
-       there is a bar for it — and not before, because a full bar that
-       never moves is the plate of numbers this corner got rid of. */
-    const hp = p ? Math.max(0, Math.round(p.health)) : 100;
-    const hurt = p ? (p.health < 100 || p.dead) : false;
-    const key = [this.width, s, burn, tank, mark, hurt ? hp : -1].join('|');
+       there are bars for it — and not before, because a full bar that
+       never moves is the plate of numbers this corner got rid of.
+
+       THREE OF THEM, at the user's request, stacked in the order they
+       are spent: the outer plate, the inner plate, and then you. They
+       arrive together on the first hit rather than one at a time,
+       because what the stack is FOR is showing you which one is moving
+       and how far down the pile the night has got. */
+    const a2 = p ? Math.max(0, Math.round(p.armour2)) : ARMOUR2;
+    const a1 = p ? Math.max(0, Math.round(p.armour1)) : ARMOUR1;
+    const hp = p ? Math.max(0, Math.round(p.health)) : HEALTH;
+    const hurt = p ? (a2 < ARMOUR2 || a1 < ARMOUR1 || hp < HEALTH || p.dead) : false;
+    const key = [this.width, s, burn, tank, mark, hurt ? `${a2},${a1},${hp}` : -1].join('|');
     if (key === this._topKey) return;
     this._topKey = key;
 
     const M = 3 * s, BAR = 3 * s, GAP = 3 * s;
     const bw = Math.min(this.width - M * 2, 64 * s);
-    const rows = 1 + (tank >= 0 ? 1 : 0) + (hurt ? 1 : 0);
+    const rows = 1 + (tank >= 0 ? 1 : 0) + (hurt ? 3 : 0);
     const w = bw + M * 2;
     const h = M * 2 + BAR * rows + GAP * (rows - 1);
     const pix = new Pix(w, h, 1, false);
@@ -212,10 +220,15 @@ export class Hud {
         for (let k = -1; k < BAR + 1; k++) pix.ink(px, y + k, 'bone', 0.85);
       }
     }
-    /* and what is left of you: bone, going amber, going red */
+    /* AND WHAT IS LEFT OF YOU, three deep and in the order they go: the
+       outer plate in blue, the inner one in the purple this palette
+       keeps for bruises, and underneath them the old bar — bone, going
+       amber, going red — which is the one that ends the night. */
     if (hurt) {
-      const y = M + (BAR + GAP) * (rows - 1);
-      bar(y, hp / 100, hp > 50 ? 'bone' : hp > 25 ? 'yellow' : 'red', 0.45);
+      let y = M + (BAR + GAP) * (rows - 3);
+      bar(y, a2 / ARMOUR2, 'blue', 0.50); y += BAR + GAP;
+      bar(y, a1 / ARMOUR1, 'purple', 0.50); y += BAR + GAP;
+      bar(y, hp / HEALTH, hp > 50 ? 'bone' : hp > 25 ? 'yellow' : 'red', 0.45);
     }
 
     pix.snap(0);

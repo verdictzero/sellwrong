@@ -2176,7 +2176,55 @@ section('the cold');
        the rifles, the vans, the fire FIREPROOF already refuses — and
        the only way out of the level dead is health reaching zero in
        there. So refusing the function is the whole feature. */
-    const inv = mk().player;
+    /* --- THREE BARS, SPENT OUTSIDE IN ------------------------------
+       At the user's request: an outer plate worth ten of you, an inner
+       one worth five, and then you. They are LAYERS and not Doom's
+       soak — the top one takes the whole of every hit until there is
+       none of it left — which is the only reason a stack of three bars
+       is worth drawing. */
+    {
+      const L = mk().player;
+      check('you start with both plates and your health, in that order',
+        L.armour2 === pl.ARMOUR2 && L.armour1 === pl.ARMOUR1 && L.health === pl.HEALTH,
+        `${L.armour2}/${L.armour1}/${L.health}`);
+      check('and the plates are ten and five times what a person is worth',
+        pl.ARMOUR2 === 10 * pl.HEALTH && pl.ARMOUR1 === 5 * pl.HEALTH);
+      L.damage(400, null, { shot: true });
+      check('the first hit is all outer plate and nothing else',
+        L.armour2 === pl.ARMOUR2 - 400 && L.armour1 === pl.ARMOUR1 && L.health === pl.HEALTH,
+        `${L.armour2}/${L.armour1}/${L.health}`);
+      L.damage(600, null, { shot: true });
+      check('and the outer plate goes exactly at its own size, with nothing spilt',
+        L.armour2 === 0 && L.armour1 === pl.ARMOUR1 && L.health === pl.HEALTH,
+        `${L.armour2}/${L.armour1}/${L.health}`);
+      L.damage(120, null, { shot: true });
+      check('then the inner one starts', L.armour2 === 0 && L.armour1 === pl.ARMOUR1 - 120 && L.health === pl.HEALTH);
+      /* 380 of inner plate left, so 420 is exactly forty into you */
+      L.damage(420, null, { shot: true });
+      check('and the overflow carries into you, but only the overflow',
+        L.armour1 === 0 && L.health === pl.HEALTH - 40 && !L.dead,
+        `${L.armour1}/${L.health}`);
+      /* one hit big enough goes through all three in the same call */
+      const T = mk().player;
+      T.damage(pl.ARMOUR2 + pl.ARMOUR1 + pl.HEALTH, null, { shot: true });
+      check('and a hit worth all sixteen hundred goes through the lot at once',
+        T.armour2 === 0 && T.armour1 === 0 && T.health <= 0 && T.dead);
+      /* and nothing under the whole stack kills you */
+      const N = mk().player;
+      N.damage(pl.ARMOUR2 + pl.ARMOUR1 + pl.HEALTH - 1, null, { shot: true });
+      check('while one short of it leaves you standing on nothing', !N.dead && N.health === 1,
+        `${N.health}`);
+      /* fire is still refused before any of this: the plates are not
+         what makes you fireproof */
+      const F = mk().player;
+      F.damage(900, null, { fire: true });
+      check('and fire does not touch the plates either', F.armour2 === pl.ARMOUR2 && F.health === pl.HEALTH);
+    }
+
+    /* what the layers do to a test that wants to reach the health bar:
+       take the plates off it first */
+    const bare = q => { q.armour2 = 0; q.armour1 = 0; return q; };
+    const inv = bare(mk().player);
     check('invincibility is off unless it is asked for', inv.invincible === false);
     inv.health = 70;
     inv.damage(9, null, { shot: true });
@@ -4522,7 +4570,11 @@ section('the van');
       p.x = a.x + 160; p.y = a.y;
       a.angle = 0;
       check('a trooper can see you at a hundred and sixty', a.canSee(p));
-      p.health = 100;
+      /* THE PLATES OFF FIRST. What is being measured here is that a
+         rifle reaches the player at all; sixteen hundred of armour in
+         front of the health bar would take three hundred rounds to say
+         so. See the layer tests in `the guns`. */
+      p.health = 100; p.armour2 = 0; p.armour1 = 0;
       const shots0 = a.shots || 0;
       /* five, not thirty: at this range every shot lands and thirty of
          them is a dead player, which the rest of this section needs not
@@ -4783,8 +4835,11 @@ section('the van');
 
     /* the corner grows a third bar the moment something hurts you */
     const hudSrc = fs.readFileSync('js/hud.js', 'utf8');
-    check('the corner draws a health bar, and only once you are hurt',
-      /bar\(y, hp \/ 100/.test(hudSrc) && /hurt \? 1 : 0/.test(hudSrc));
+    check('the corner draws all three bars, and only once you are hurt',
+      /bar\(y, hp \/ HEALTH/.test(hudSrc) && /hurt \? 3 : 0/.test(hudSrc) &&
+      /bar\(y, a2 \/ ARMOUR2, 'blue'/.test(hudSrc) && /bar\(y, a1 \/ ARMOUR1, 'purple'/.test(hudSrc));
+    check('and it knows it is hurt when any of the three has moved',
+      /a2 < ARMOUR2 \|\| a1 < ARMOUR1 \|\| hp < HEALTH/.test(hudSrc));
   }
 }
 

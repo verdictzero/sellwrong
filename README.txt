@@ -83,7 +83,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         966 checks, no install and no browser
+  the smoke test         976 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -114,7 +114,8 @@ There are seven hundred and thirty-six people in the shop and six fire
 exits for them to get out of, so the shop empties: light one aisle and
 most of the building is in the car park or in the trees inside a minute.
 
-THE CORNER IS TWO BARS AND NOTHING ELSE, at the user's request. It used
+THE CORNER IS TWO BARS UNTIL SOMETHING HURTS YOU, at the user's request.
+It used
 to be four numbers — how much of the store had gone, how much of the
 wood, how many were left, how much was in the tank — with a running list
 of notifications under them, and all of the words are gone. What is left
@@ -122,7 +123,8 @@ is the two gauges that were already drawn under the numbers: the store
 burning, in fire colours, and whatever is in the thing you are holding.
 The count of the living went with the text and went on purpose; a bar
 cannot say a number and the shop on fire in front of you was always the
-better readout anyway.
+better readout anyway. From the first hit it is five: the two gauges and
+the three layers of you — see AND YOU CAN BE HURT NOW.
 
   WASD          move            MOUSE     look
   SHIFT         run             LMB/CTRL  fire
@@ -1563,11 +1565,26 @@ Freeze one and the flamethrower lets him out, running; the bore or a blow
 is what finishes him. Fire on the floor under a frozen trooper thaws him
 the same way, where it would eat a shopper.
 
-AND YOU CAN BE HURT NOW. There was no health on the screen because nothing
-could take any off; from the first bullet that lands there is a third bar
-in the corner — bone, going amber, going red — and not before, because a
-full bar that never moves is the plate of numbers that corner got rid of.
-When it is gone you die in aisle five like the card always said.
+AND YOU CAN BE HURT NOW, THROUGH THREE LAYERS. There was no health on the
+screen because nothing could take any off; from the first bullet that
+lands there are THREE bars in the corner, at the user's request, and not
+before, because a full bar that never moves is the plate of numbers that
+corner got rid of.
+
+They are the user's numbers as well as the user's idea: an OUTER PLATE
+worth ten of you, an INNER PLATE worth five, and then you — a thousand,
+five hundred and a hundred, sixteen hundred in all, against a trooper's
+rifle that does three to fifteen a round. They are spent OUTSIDE IN, and
+that order is the whole feature: this is not Doom's armour, which takes a
+third of every hit for as long as any of it lasts and so drains alongside
+your health rather than in front of it. A layer here takes the whole of
+every hit until there is none of it left, and only the overflow reaches
+the next, so one hit big enough goes through all three in the same call.
+That is what makes a stack of three bars worth drawing — the top one is
+the only one moving, until it isn't. Blue, then the purple this palette
+keeps for bruises, then the old bone-amber-red one that ends the night in
+aisle five like the card always said. It is js/player.js: three fields, a
+loop over two of them in damage(), and nothing else in the game knows.
 
 THE REST OF js/responders.js is still the shape it was: one number, the
 ALARM, climbing with how much of the store and the wood has gone and how
@@ -2686,7 +2703,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-966 checks. Every one of them earns its place by having caught something
+976 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -3314,7 +3331,9 @@ WHAT IS NOT DONE
   the player cannot be hurt by fire — asked for, and one flag in
     js/player.js, FIREPROOF. Bullets and vans get through it; nothing
     else does. The tank is finite and fills itself very slowly; nothing
-    else refills it, and nothing refills your health at all
+    else refills it, and nothing refills any of the three bars at all.
+    There is no armour on the floor to pick up either: what you start
+    the night with is what there is of you
   the SWAT sheet and the army sheet are JPEGs, decoded to PNGs in a
     browser and kept in art/people/ as those PNGs, because node has no
     JPEG decoder and one was not worth writing for files converted once

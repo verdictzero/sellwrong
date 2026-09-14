@@ -54,6 +54,29 @@ import { PLAYER_RADIUS, PLAYER_HEIGHT, PLAYER_EYE, MAX_STEP, TICRATE,
    and nothing else does. */
 export const FIREPROOF = true;
 
+/* ---------------------------------------------------------------------
+   WHAT THERE IS OF YOU, IN THREE LAYERS
+
+   At the user's request: two plates of armour over the person, spent
+   from the outside in, and a bar on the screen for each. The sizes are
+   the user's too — the outer plate ten times what a person is worth,
+   the inner one five — so a hit has to eat sixteen hundred before it
+   reaches the hundred that kills you, and a trooper's rifle does three
+   to fifteen of that.
+
+   THE ORDER IS THE WHOLE FEATURE. It is not Doom's armour, which takes
+   a third of every hit for as long as any of it lasts and so drains
+   alongside your health rather than in front of it; these are LAYERS,
+   and a layer takes everything until there is none of it left. That is
+   what makes three bars worth drawing: the top one is the only one
+   moving, until it isn't.
+   ------------------------------------------------------------------- */
+export const HEALTH  = 100;
+export const ARMOUR1 = 5 * HEALTH;      // the inner plate
+export const ARMOUR2 = 10 * HEALTH;     // and the outer one, which goes first
+/* the order they are spent in, outermost first; health is what is left */
+export const LAYERS = ['armour2', 'armour1'];
+
 /* THE TANK EMPTIES NOW, at the user's request, and there is nothing in
    the shop to refill it with — the fuel cans are gone from the level.
    What is left is a tank that fills itself, very slowly, and that one
@@ -237,8 +260,12 @@ export class Player {
     this.sector = game.level.sectorAt(x, y);
     this.z = this.sector ? this.sector.floor : 0;
 
-    this.health = 100;
-    this.armour = 0;
+    /* THREE BARS, OUTSIDE IN, at the user's request. A hit spends the
+       outer plate first, then the inner one, then you — see damage(),
+       which is the only place any of the three moves. */
+    this.health = HEALTH;
+    this.armour2 = ARMOUR2;
+    this.armour1 = ARMOUR1;
     this.dead = false;
     this.shootable = true;
     this.monster = false;
@@ -607,11 +634,22 @@ export class Player {
     /* fire, blasts, the heat of the floor: none of it, by design. A
        bullet or a van are the two things that get through. */
     if (FIREPROOF && !opts.shot && !opts.impact) return;
-    if (this.armour > 0) {
-      const soak = Math.min(this.armour, Math.floor(amount / 3));
-      this.armour -= soak; amount -= soak;
+    /* THREE LAYERS, SPENT OUTSIDE IN, at the user's request, and they
+       are LAYERS and not a soak: the outer plate takes the whole of
+       every hit until there is none of it left, then the inner one,
+       then you. It used to be Doom's armour rule — a third of each hit,
+       while any armour lasted — which shares the damage out instead of
+       ordering it, and an order is what was asked for and what a stack
+       of three bars draws. The overflow carries, so one hit big enough
+       goes through all three in the same call. */
+    let left = amount;
+    for (const layer of LAYERS) {
+      if (left <= 0) break;
+      const take = Math.min(this[layer], left);
+      this[layer] -= take;
+      left -= take;
     }
-    this.health -= amount;
+    this.health -= left;
     this.damageFlash = Math.min(16, 5 + amount * 0.6);
     this.game.sound?.play(opts.fire ? 'burn' : 'hurt', this);
     this.game.onPlayerHurt?.(amount);
@@ -627,7 +665,7 @@ export class Player {
   give(kind, amount) {
     if (kind === 'health') {
       const before = this.health;
-      this.health = Math.min(100, this.health + amount);
+      this.health = Math.min(HEALTH, this.health + amount);
       if (this.health === before) return false;
     } else {
       const cap = this.maxAmmo[kind] ?? 999;
@@ -641,6 +679,7 @@ export class Player {
   die() {
     this.dead = true;
     this.health = 0;
+    this.armour2 = 0; this.armour1 = 0;
     this.deathViewTarget = this.z + 8;
     this.game.sound?.play('playerDie', this);
     this.game.onPlayerDied();
