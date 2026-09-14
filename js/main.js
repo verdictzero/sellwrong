@@ -39,6 +39,7 @@ import { bakeEffectAtlases } from './effects.js';
 import { Weapon3D } from './weapon3d.js';
 import { KINDS } from './forest.js';
 import { Music } from './music.js';
+import { VERSION } from './version.js';
 
 const $ = id => document.getElementById(id);
 /* THE LOADING SCREEN SAYS ONE THING, at the user's request, and it is
@@ -398,6 +399,7 @@ async function boot() {
   const loading = $('loading');
   const title = $('title');
   const pauseEl = $('pause');
+  $('version').textContent = 'V' + VERSION;
   loading.classList.add('gone');
   title.classList.remove('gone');
 

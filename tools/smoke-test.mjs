@@ -6115,6 +6115,10 @@ section('the music');
     /musicP\.then\(\(\) => music\.start\(\)\)/.test(mainSrc) && /music\.tick\(\);/.test(mainSrc));
   check('and it has its own context, so the muted effects do not take it with them',
     /new AC\(\)/.test(fs.readFileSync('js/music.js', 'utf8')) && !/audio\.ctx/.test(fs.readFileSync('js/music.js', 'utf8')));
+  const { VERSION } = await import('../js/version.js');
+  check('the version is one string, MAJOR.MINOR.PATCH, and the title screen shows it',
+    /^\d+\.\d+\.\d+$/.test(VERSION) && html.includes('id="version"') && /\$\('version'\)\.textContent = 'V' \+ VERSION/.test(mainSrc)
+      && /#version \{/.test(fs.readFileSync('css/style.css', 'utf8')), VERSION);
 }
 
 section('the gun');

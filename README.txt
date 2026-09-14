@@ -2152,7 +2152,10 @@ so nothing is fetched — as two SVG text lines held to one width by
 textLength, GROCERY STORE small over SIMULATOR large, the pair skewed
 together so they lean as one. The title screen is that and a way in,
 over the car park standing still, with the eye wandering very slightly
-so the picture breathes. Nothing else on it.
+so the picture breathes. Nothing else on it but the version number,
+small and grey in the bottom right corner: one string in js/version.js,
+MAJOR.MINOR.PATCH, bumped there and nowhere else, so that a report of
+what the game does can say which game.
 
 
 HOW IT IS BUILT

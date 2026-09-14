@@ -95,6 +95,16 @@ html, body {
   animation: breathe 2.8s ease-in-out infinite;
 }
 @keyframes breathe { 50% { opacity: .38; } }
+/* The version, small and dim in the bottom right corner, clear of the
+   phone's rounded edge; set in the same face and grey as the loading
+   line so it reads as part of the furniture and not of the picture. */
+#version {
+  position: absolute;
+  right: calc(env(safe-area-inset-right, 0px) + 1rem);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + .8rem);
+  letter-spacing: .2em; font-size: .62rem; color: rgba(207, 207, 214, .45);
+  user-select: none;
+}
 @media (prefers-reduced-motion: reduce) { .prompt { animation: none; } }
 
 h2 { font-size: .78rem; letter-spacing: .42em; color: rgba(207, 207, 214, .55); margin-bottom: 1rem; font-weight: normal; }
