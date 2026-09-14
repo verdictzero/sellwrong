@@ -42,6 +42,11 @@ export const SAMPLES = {
   minigun_stop:  'assets/sfx/minigun_stop.wav',
 };
 export const SAMPLE_FOR = { spinup: 'minigun_start', minigunloop: 'minigun_fire', spindown: 'minigun_stop' };
+/* HOW LOUD EACH RECORDING IS, against the music: the minigun as
+   recorded drowned the three tracks the user mixed, so it is turned
+   down here — the loop most, since it is what runs — and the music is
+   left where the fader puts it. 1 is the file as it came. */
+export const SAMPLE_GAIN = { minigun_fire: 0.32, minigun_start: 0.42, minigun_stop: 0.42 };
 
 const DEFS = {
   /* the store */
@@ -199,7 +204,7 @@ export class Audio {
   _playSample(key, from, loop = false) {
     const buf = this.samples[key];
     if (!buf) return null;
-    const gain = this._gainFor(from);
+    const gain = this._gainFor(from) * (SAMPLE_GAIN[key] ?? 1);
     if (gain < 0.004) return null;
     const src = this.ctx.createBufferSource();
     src.buffer = buf; src.loop = loop;

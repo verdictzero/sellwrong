@@ -13,6 +13,7 @@ export const NearestFilter = 1003, NearestMipmapNearestFilter = 1004, LinearFilt
 export const RepeatWrapping = 1000, ClampToEdgeWrapping = 1001;
 export const SRGBColorSpace = 'srgb', FrontSide = 0, BackSide = 1, DoubleSide = 2;
 export const RGBAFormat = 1023, UnsignedByteType = 1009, GLSL3 = '300 es';
+export const RedFormat = 1028, NearestMipmapLinearFilter = 1005, DynamicDrawUsage = 35048;
 
 class Stub { constructor(o) { if (o && typeof o === 'object') Object.assign(this, o); } }
 export class CanvasTexture extends Stub {
@@ -21,6 +22,8 @@ export class CanvasTexture extends Stub {
 }
 export class DataTexture extends Stub { constructor(d, w, h) { super(); this.image = { data: d, width: w, height: h }; } }
 export class Vector2 { constructor(x = 0, y = 0) { this.x = x; this.y = y; } set(x, y) { this.x = x; this.y = y; return this; } }
+export class Vector4 extends Vector2 { constructor(x = 0, y = 0, z = 0, w = 0) { super(x, y); this.z = z; this.w = w; } }
+export class Sphere { constructor(c, r) { this.center = c; this.radius = r; } }
 export class Vector3 extends Vector2 { constructor(x = 0, y = 0, z = 0) { super(x, y); this.z = z; } set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; } multiplyScalar(k) { this.x *= k; this.y *= k; this.z *= k; return this; } }
 export class Color { constructor() {} setRGB() { return this; } setHex() { return this; } }
 export class Group {
@@ -34,7 +37,7 @@ export class Object3D extends Group {}
 /* rotation is a Vector3 rather than an Euler, which is enough: the
    game only ever sets x, y, z and an order, and nothing headless reads
    a matrix back out of it. */
-export class Mesh extends Stub { constructor(g, m) { super(); this.geometry = g; this.material = m; this.position = new Vector3(); this.scale = new Vector3(1, 1, 1); this.rotation = new Vector3(); this.rotation.order = 'XYZ'; } }
+export class Mesh extends Stub { constructor(g, m) { super(); this.geometry = g; this.material = m; this.position = new Vector3(); this.scale = new Vector3(1, 1, 1); this.rotation = new Vector3(); this.rotation.order = 'XYZ'; this.userData = {}; this.visible = true; } }
 /* It keeps its attributes, because things that read one back —
    js/slidedoor.js relights a door by rewriting its light attribute —
    cannot be exercised headless otherwise, and because it lets a test
@@ -44,6 +47,8 @@ export class BufferGeometry {
   setAttribute(name, attr) { this.attributes[name] = attr; return this; }
   getAttribute(name) { return this.attributes[name]; }
   computeBoundingSphere() {}
+  setIndex(attr) { this.index = attr; return this; }
+  setDrawRange(start, count) { this.drawRange = { start, count }; }
   dispose() {}
   translate() { return this; }
 }
@@ -53,6 +58,10 @@ export class Texture extends Stub { constructor(img) { super(); this.image = img
 export class CylinderGeometry extends BufferGeometry {}
 export class Float32BufferAttribute { constructor(a, n) { this.array = a; this.itemSize = n; } }
 export class BufferAttribute extends Float32BufferAttribute {}
+/* the forest's chunks are instanced: the geometry keeps its instance
+   count and its attributes, so a test can count what each chunk holds */
+export class InstancedBufferGeometry extends BufferGeometry { constructor() { super(); this.instanceCount = 0; } }
+export class InstancedBufferAttribute extends Float32BufferAttribute { setUsage() { return this; } }
 export class ShaderMaterial extends Stub { dispose() {} }
 export class RawShaderMaterial extends ShaderMaterial {}
 export class MeshBasicMaterial extends Stub { constructor(o) { super(o); this.color = new Color(); } dispose() {} }

@@ -7,7 +7,12 @@
    tracer is not the round, it is a streak of light drawn along the
    line the round took, from the muzzle to wherever it stopped, moving
    fast enough to read as flight and gone when it gets there. Every
-   other round is one, which is how a belt is loaded.
+   other round is one, which is how a belt is loaded. It is VERY LONG,
+   at the user's request — four hundred and twenty units, a good part
+   of the way down an aisle — and it starts at the end of the barrel:
+   the head leaves the muzzle and the tail stays there until the
+   streak is its full length, so what you see is a line of light
+   drawn out of the gun rather than one appearing in front of it.
 
    A STREAK IS A QUAD THAT FACES YOU ALONG ITS LENGTH: two corners at
    the tail, two at the head, spread sideways along the direction that
@@ -24,8 +29,17 @@ import * as THREE from 'three';
 
 export const MAX_TRACERS = 128;
 export const TRACER_SPEED = 150;   // units a tic
-export const TRACER_LEN = 60;      // units long
+export const TRACER_LEN = 420;     // units long, at the user's request: very
 export const TRACER_WIDTH = 2.6;   // units across
+
+/* THE TAIL NEVER LEAVES THE MUZZLE BEHIND. A streak this long would
+   otherwise hang out of the back of the gun and through the eye for
+   its first two tics; so the tail is the head less the length, held at
+   the muzzle until the head has flown a whole length — the streak
+   GROWS out of the barrel, the way one does — and once the head has
+   arrived it is the tail that keeps flying, shrinking the streak into
+   the hit, until nothing is left. That is `trav`: how far the head
+   would have flown by now, past the hit or not. */
 
 const VERT = /* glsl */`
 attribute float aFade;
@@ -52,7 +66,10 @@ export class Tracers {
     this.alive = new Uint8Array(n);
     this.x = new Float32Array(n); this.y = new Float32Array(n); this.z = new Float32Array(n);   // the head
     this.dx = new Float32Array(n); this.dy = new Float32Array(n); this.dz = new Float32Array(n); // unit direction
+    this.ox = new Float32Array(n); this.oy = new Float32Array(n); this.oz = new Float32Array(n); // the muzzle
     this.ex = new Float32Array(n); this.ey = new Float32Array(n); this.ez = new Float32Array(n); // where it stops
+    this.d = new Float32Array(n);                                                                // muzzle to hit
+    this.trav = new Float32Array(n);                                                             // how far the head has flown
     this.left = new Float32Array(n);                                                             // distance still to go
     this.next = 0;
     this.count = 0;
@@ -69,8 +86,10 @@ export class Tracers {
     if (!this.alive[i]) this.count++;
     this.alive[i] = 1;
     this.x[i] = from.x; this.y[i] = from.y; this.z[i] = from.z;
+    this.ox[i] = from.x; this.oy[i] = from.y; this.oz[i] = from.z;
     this.dx[i] = dx / d; this.dy[i] = dy / d; this.dz[i] = dz / d;
     this.ex[i] = to.x; this.ey[i] = to.y; this.ez[i] = to.z;
+    this.d[i] = d; this.trav[i] = 0;
     this.left[i] = d;
     return i;
   }
@@ -78,13 +97,12 @@ export class Tracers {
   tic() {
     for (let i = 0; i < MAX_TRACERS; i++) {
       if (!this.alive[i]) continue;
-      const step = Math.min(TRACER_SPEED, this.left[i]);
-      this.x[i] += this.dx[i] * step; this.y[i] += this.dy[i] * step; this.z[i] += this.dz[i] * step;
-      this.left[i] -= step;
-      /* the head has arrived: the tail is drawn shrinking into it for
-         one more tic and then it is gone */
-      if (this.left[i] <= 0 && step < TRACER_SPEED * 0.5) { this.alive[i] = 0; this.count--; }
-      else if (this.left[i] <= 0) this.left[i] = -1;
+      this.trav[i] += TRACER_SPEED;
+      const at = Math.min(this.trav[i], this.d[i]);
+      this.x[i] = this.ox[i] + this.dx[i] * at; this.y[i] = this.oy[i] + this.dy[i] * at; this.z[i] = this.oz[i] + this.dz[i] * at;
+      this.left[i] = this.d[i] - at;
+      /* the head has arrived and the tail has caught it up: gone */
+      if (this.trav[i] - TRACER_LEN >= this.d[i]) { this.alive[i] = 0; this.count--; }
     }
   }
 
@@ -117,11 +135,12 @@ export class Tracers {
     for (let i = 0; i < MAX_TRACERS; i++) {
       if (!this.alive[i]) continue;
       const hx = this.x[i], hy = this.y[i], hz = this.z[i];
-      /* the tail: TRACER_LEN back along the line, but never behind
-         where it was fired from — a tracer just out of the muzzle is
-         short, which is also what one looks like */
-      const len = TRACER_LEN;
-      const tx = hx - this.dx[i] * len, ty = hy - this.dy[i] * len, tz = hz - this.dz[i] * len;
+      /* the tail: TRACER_LEN behind the head, but never behind the
+         muzzle — a tracer just out of the barrel is short and grows,
+         which is also what one looks like — and never ahead of the hit */
+      const back = Math.min(Math.max(0, this.trav[i] - TRACER_LEN), this.d[i]);
+      const tx = this.ox[i] + this.dx[i] * back, ty = this.oy[i] + this.dy[i] * back, tz = this.oz[i] + this.dz[i] * back;
+      if (back >= this.d[i]) continue;
       /* sideways: across the streak and the line to the eye */
       const vx = ex - hx, vy = ey - hy, vz = ez - hz;
       let sx = this.dy[i] * vz - this.dz[i] * vy, sy = this.dz[i] * vx - this.dx[i] * vz, sz = this.dx[i] * vy - this.dy[i] * vx;

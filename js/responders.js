@@ -285,14 +285,16 @@ export const SWAT = {
    half again wider needs to not be parked inside the last one.
 
    `at` is the one number that is not about the army at all. It is the
-   SWAT's pressure at the moment the army is called — eight, which is
-   three doublings, which is three minutes after your first shot — and
-   from that tic the army has a curve of its own starting at 1. So the
-   army arrives small while the police are already eightfold, and then
-   doubles on the same clock underneath them. Nobody leaves.
+   SWAT's pressure at the moment the army is called — two, which is
+   one doubling, which is seventy seconds after your first shot (it was
+   eight, three and a half minutes, and the user wanted the army
+   sooner) — and from that
+   tic the army has a curve of its own starting at 1. So the army
+   arrives small while the police are already twofold, and then doubles
+   on the same clock underneath them. Nobody leaves.
    ------------------------------------------------------------------- */
 export const ARMY = {
-  at: 8,                                 // the SWAT's pressure when they are called
+  at: 2,                                 // the SWAT's pressure when they are called
   firstDelay: 0,                         // and then they come at once, like everybody
   doubling: 60 * TICRATE,
   every: 70 * TICRATE, minEvery: 9 * TICRATE,

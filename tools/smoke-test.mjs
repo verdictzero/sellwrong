@@ -1208,6 +1208,64 @@ section('the wood');
      for an hour in Node in a second. */
   const F = await import('../js/forest.js');
   const forest = new F.Forest(level);
+  /* --- THE LOD: three chunk sizes, every plant drawn exactly once ------- */
+  {
+    const fL = new F.Forest(level);
+    const scene = new (await import('three')).Scene();
+    const art = { ground: {}, groundBurnt: {}, sprites: Object.fromEntries(F.KINDS.map(k => [k.name, { albedo: {}, burn: {} }])) };
+    fL.build(scene, art);
+    const A = fL.kindArrays;
+    const lod = A.filter(a => a && a.lod && a.levels.length), fine = A.filter(a => a && !a.lod && a.levels.length);
+    check('the firs and the bushes are built at three chunk sizes, the understory at one',
+      lod.length >= 4 && lod.every(a => a.levels.length === 3 && a.levels[1].ch === 4096 && a.levels[2].ch === 8192) &&
+      fine.every(a => a.levels.length === 1), `${lod.length} kinds with a LOD, ${fine.length} without`);
+    /* every plant of the kind is in every level, once. A kind's source
+       is whichever array its slots are sized to — the canopy's for the
+       firs, the understory's for the bushes */
+    const srcOf = a => (a.levels[0].slot.length === fL.trees.n ? fL.trees : fL.covers);
+    check('and every tree is in every level once',
+      lod.every(a => a.levels.every(L => { let n = 0; for (let i = 0; i < L.slot.length; i++) if (L.slot[i] >= 0) n++; return n === a.n; })));
+    check('and the bushes are drawn at all now — they are planted in the understory\'s arrays and were read out of the canopy\'s',
+      lod.some(a => srcOf(a) === fL.covers && a.n > 0) && F.KINDS.filter(k => !k.cover && k.h <= 120).every(k => A[F.KINDS.indexOf(k)].n > 0));
+    /* drawn exactly once, from wherever you stand */
+    const cl = level.clearing, clx = (cl[0] + cl[2]) / 2, cly = (cl[1] + cl[3]) / 2;   // the store's box
+    const eyes = [[clx, cly], [fL.originX + 3000, fL.originY + 3000], [fL.originX + fL.cols * F.CELL * 0.5, fL.originY + 900]];
+    let once = true, fineDraws = 0, lodDraws = 0, worst = '';
+    for (const [ex, ey] of eyes) {
+      fL.render(ex, ey, 40, 0, 0, 1);
+      for (const a of lod) {
+        const T = srcOf(a);
+        const seen = new Uint8Array(T.n);
+        let draws = 0;
+        for (const L of a.levels) {
+          for (const ch of L.chunks) if (ch.mesh.visible) draws++;
+          for (let i = 0; i < T.n; i++) { const ch = L.chunks[L.chunkOf[i]]; if (ch && L.slot[i] >= 0 && ch.mesh.visible) seen[i]++; }
+        }
+        lodDraws += draws;
+        /* what the fine chunks alone would have cost */
+        const far = (a.far + 2048);
+        let fd = 0;
+        for (const ch of a.levels[0].chunks) { const dx = ch.x - ex, dy = ch.y - ey; if (dx * dx + dy * dy < far * far) fd++; }
+        fineDraws += fd;
+        for (let i = 0; i < T.n; i++) {
+          if (T.kind[i] !== A.indexOf(a)) continue;
+          const dx = T.x[i] - ex, dy = T.y[i] - ey;
+          const inRange = dx * dx + dy * dy < far * far;
+          if (seen[i] > 1 || (seen[i] === 0 && inRange && Math.hypot(dx, dy) < a.far - 2048 * 1.5)) { once = false; worst = `${seen[i]} of tree ${i}`; }
+        }
+      }
+    }
+    check('and from three places, every tree in range is drawn exactly once', once, worst);
+    note('tree draws, fine chunks / with the LOD', `${fineDraws} / ${lodDraws}`);
+    check('and the LOD is well under half the draws of fine chunks alone', lodDraws < fineDraws * 0.5, `${lodDraws} against ${fineDraws}`);
+    check('the burn reaches every level', (() => {
+      const wx = fL.originX + 3000, wy = fL.originY + 3000;   // in the wood
+      fL.ignite(wx, wy, 200);
+      for (let t = 0; t < 40; t++) fL.tic();
+      fL.render(wx, wy, 40, 0, 0, 1);
+      return lod.some(a => a.levels.every(L => L.chunks.some(ch => { for (let i = 0; i < ch.burn.length; i++) if (ch.burn[i] > 0) return true; return false; })));
+    })());
+  }
   note('cells / fuel cells', `${forest.cols}x${forest.rows} / ${forest.fuelCells}`);
   note('trees / plants', `${forest.treeCount} / ${forest.plantCount}`);
   check('the wood is huge', forest.fuelCells > 100000, `${forest.fuelCells} cells`);
@@ -2250,8 +2308,11 @@ section('the cold');
         /id="opt-debug"[^>]*>DEBUG: INFINITE AMMO</.test(html) &&
         /id="opt-godmode"[^>]*>DEBUG: INVINCIBLE</.test(html));
       check('and both are remembered and put on the player',
-        /godmode: false/.test(main) && /toggle\('opt-godmode', 'godmode'\)/.test(main) &&
+        /godmode: true/.test(main) && /toggle\('opt-godmode', 'godmode'\)/.test(main) &&
         /game\.player\.invincible = !!prefs\.godmode/.test(main));
+      check('and both are ON by default, at the user\'s request, under a bumped prefs version',
+        /debug: true, godmode: true/.test(main) && /const PREF_VERSION = 5;/.test(main) &&
+        /id="opt-debug"[^>]*aria-pressed="true"/.test(html) && /id="opt-godmode"[^>]*aria-pressed="true"/.test(html));
     }
 
     /* and holding the trigger down cannot outrun it */
@@ -5121,8 +5182,14 @@ section('the van');
         `${R.vans.length} vans (${Object.entries(by).map(([k, n]) => `${n} ${k}`).join(', ')}), ` +
         `${R.troopers} troopers up of ${R.trooperCap} allowed, ${R.spawned} ever, ${R.defeatedCount} down`);
     }
-    check('there are never more troopers on their feet than the curve allows', R.troopers <= R.trooperCap);
-    check('and never more vans on the road or standing than it allows', R.liveVans.length <= R.vanCap);
+    /* each force against its OWN cap — the army is on the road inside
+       this window now that it is called at pressure two */
+    check('there are never more troopers on their feet than the curve allows',
+      R.forces.every(f => R.troopersOf(f) <= R.trooperCapOf(f)),
+      R.forces.map(f => `${f.def.key} ${R.troopersOf(f)}/${R.trooperCapOf(f)}`).join(', '));
+    check('and never more vans on the road or standing than it allows',
+      R.forces.every(f => R.liveVansOf(f).length <= R.vanCapOf(f)),
+      R.forces.map(f => `${f.def.key} ${R.liveVansOf(f).length}/${R.vanCapOf(f)}`).join(', '));
     check('and forty seconds on, more of both are allowed than were',
       R.trooperCap > capsBefore.troopers && R.vanCap >= capsBefore.vans && R.spawned > capsBefore.ever,
       `troopers ${capsBefore.troopers} -> ${R.trooperCap}, vans ${capsBefore.vans} -> ${R.vanCap}, ever ${capsBefore.ever} -> ${R.spawned}`);
@@ -5190,7 +5257,8 @@ section('the van');
         FORCES[0].troop === 'SWAT' && FORCES[1].troop === 'ARMY' &&
         FORCES[0].Van === veh.SwatVan && FORCES[1].Van === veh.ArmyApc);
       check('and the army is called at a PRESSURE, so it moves when the escalation is retuned',
-        A.at === 8 && pa(3 * S.doubling) === A.at, `${A.at} is ${Math.log2(A.at)} doublings`);
+        A.at === 2 && pa(S.doubling) === A.at, `${A.at} is ${Math.log2(A.at)} doubling`);
+      check('and that is seventy seconds after the first shot — one doubling — at the user\'s request', S.doubling === 70 * 35);
       check('and there is less of them and it is heavier',
         A.convoy < S.convoy && A.vans < S.vans && A.maxTroopers < S.maxTroopers &&
         A.crew > S.crew && A.stand > S.stand,
@@ -5793,9 +5861,8 @@ section('the minigun, the jump and the van');
       /uniform float heat;/.test(gunSrc) && /heatMaterial\.uniforms\.heat\.value = player\.heat/.test(gunSrc) &&
       /floor\(h \* 8\.0 \+ 0\.5\) \/ 8\.0/.test(gunSrc));
     check('and the barrels turn at the player\'s spin', /G\.spin\.rotation\.z = G\.spinAngle/.test(gunSrc));
-    check('and it has a muzzle flash that faces you, additive, at the user\'s request',
-      M.flash && M.flash.size > 0.2 && M.muzzle.additive === true &&
-      /new THREE\.PlaneGeometry\(def\.flash\.size, def\.flash\.size\)/.test(gunSrc) && /G\.flash\.rotation\.z = Math\.random/.test(gunSrc));
+    check('and no disc across the muzzle any more, at the user\'s request: the tracers say it is firing',
+      !M.flash && M.muzzle.additive === true && !/flashPicture/.test(gunSrc) && !/G\.flash/.test(gunSrc));
   }
 
   /* --- the page and the pad ----------------------------------------- */
@@ -5903,6 +5970,25 @@ section('the decals');
   /* THE RING: a thousand rounds into one wall are still one pool */
   for (let k = 0; k < D.POOLS.hole + 50; k++) g.decals.hole(q.x, q.y, 0, D.UP);
   check('the holes are a ring, so the pool never overflows', g.decals.pools.hole.count === D.POOLS.hole && g.decals.holes === D.POOLS.hole + 52);
+  check('and the ring is the MAX COUNT, five hundred and twelve, at the user\'s request', D.POOLS.hole === 512);
+  /* --- the cull: drawn only in range and in front of the eye ------------ */
+  {
+    const gC = mk();
+    const dC = gC.decals;
+    dC.attach(gC.scene);
+    const hx = gC.player.x, hy = gC.player.y;
+    dC.hole(hx + 300, hy, 40, D.UP);                   // ahead
+    dC.hole(hx - 300, hy, 40, D.UP);                   // behind
+    dC.hole(hx + D.DRAW_RANGE + 200, hy, 40, D.UP);    // too far
+    const H = dC.pools.hole;
+    dC.render();
+    check('with no eye given every hole is drawn', H.drawn === 3);
+    dC.render(hx, hy, 1, 0);
+    check('given the eye, the one behind it and the one out of range are not', H.drawn === 1, `${H.drawn} drawn`);
+    dC.render(hx, hy, -1, 0);
+    check('turn round and it is the other one', H.drawn === 1 && H.mesh.geometry.drawRange.count === 6);
+    check('and the range is a number the readme can name', D.DRAW_RANGE >= 2000 && D.DRAW_RANGE <= 4000);
+  }
   /* --- heat ---------------------------------------------------------- */
   const g2 = mk();
   const d = g2.decals, x = g2.player.x, y = g2.player.y, z = g2.player.z;
@@ -5950,7 +6036,7 @@ section('the decals');
   check('and the extinguisher held at the floor rimes it', g5.decals.pools.frost.count > 0);
   const gsrc = fs.readFileSync('js/game.js', 'utf8');
   check('the decals are ticked, drawn, and attached only where there are pictures',
-    /this\.decals\.tic\(\)/.test(gsrc) && /this\.decals\.render\(\)/.test(gsrc) && /if \(fxAtlases\) this\.decals\.attach\(scene\)/.test(gsrc));
+    /this\.decals\.tic\(\)/.test(gsrc) && /this\.decals\.render\(ex, ey, vx, vy\)/.test(gsrc) && /if \(fxAtlases\) this\.decals\.attach\(scene\)/.test(gsrc));
 }
 
 /* ---------- the vans under fire ---------- */
@@ -5960,7 +6046,7 @@ section('the vans under fire');
   const { Game } = await import('../js/game.js');
   const MAPV = await import('../js/maps/sellwrong.js');
   const THREEV = await import('three');
-  const { Tracers, MAX_TRACERS, TRACER_SPEED } = await import('../js/tracers.js');
+  const { Tracers, MAX_TRACERS, TRACER_SPEED, TRACER_LEN } = await import('../js/tracers.js');
   /* the lot's van, off the user's file, the way `the van` builds it */
   const carV = await import('../js/car.js');
   const glbV = await import('../js/glb.js');
@@ -6050,11 +6136,38 @@ section('the vans under fire');
   check('a tracer leaves the muzzle toward the hit', t0 >= 0 && T.count === 1 && T.dx[t0] === 1 && T.left[t0] === 400);
   T.tic();
   check('and flies a hundred and fifty a tic', Math.abs(T.x[t0] - TRACER_SPEED) < 1e-6);
+  /* VERY LONG, at the user's request, and it grows out of the barrel:
+     for its first tics the tail is AT the muzzle, not behind it */
+  check('a tracer is very long', TRACER_LEN >= 300, `${TRACER_LEN}`);
+  {
+    const tailAt = (i) => Math.min(Math.max(0, T.trav[i] - TRACER_LEN), T.d[i]);
+    check('and its tail stays at the muzzle until the head is a whole length out',
+      tailAt(t0) === 0 && T.trav[t0] === TRACER_SPEED);
+    for (let k = 0; k < 2; k++) T.tic();
+    check('the head arrives and waits at the hit', T.x[t0] === 400 && T.left[t0] === 0 && T.alive[t0] === 1);
+    const before = tailAt(t0);
+    T.tic();
+    check('while the tail keeps flying, shrinking the streak into it', tailAt(t0) > before && tailAt(t0) < 400);
+  }
   for (let k = 0; k < 6; k++) T.tic();
-  check('and is gone once it has arrived', T.count === 0);
+  check('and is gone once the tail has caught the head up', T.count === 0);
   for (let k = 0; k < MAX_TRACERS + 10; k++) T.spawn({ x: 0, y: 0, z: 40 }, { x: 4000, y: 0, z: 40 });
   check('and a burst past the pool reuses the oldest', T.count === MAX_TRACERS);
   check('the minigun fires one every other round', /\(i & 1\) === 0 && g\.tracers/.test(fs.readFileSync('js/player.js', 'utf8')));
+  /* --- the puff sits on the hole ---------------------------------------- */
+  {
+    const bank = spr.bakeSprites();
+    const e = bank.get('PUFF', 'A');
+    check('the hit puff is centred on the hit, not stood a height and a half above it',
+      e.lift === -(e.h * e.scale) / 2, `lift ${e.lift} for ${e.h} tall`);
+  }
+  /* --- the minigun, under the music ------------------------------------- */
+  {
+    const au = await import('../js/audio.js');
+    check('the minigun\'s recordings are turned down so the music stands out',
+      au.SAMPLE_GAIN.minigun_fire <= 0.4 && au.SAMPLE_GAIN.minigun_start <= 0.5 && au.SAMPLE_GAIN.minigun_stop <= 0.5 &&
+      /this\._gainFor\(from\) \* \(SAMPLE_GAIN\[key\] \?\? 1\)/.test(fs.readFileSync('js/audio.js', 'utf8')));
+  }
 }
 
 /* ---------- the music ---------- */

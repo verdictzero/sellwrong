@@ -69,32 +69,6 @@ import * as THREE from 'three';
 import { loadGLB } from './glb.js';
 import { Pix } from './pixel.js';
 
-/* THE FLASH'S OWN PICTURE, drawn here like everything else: a white
-   core going yellow then orange outward, with eight rays off it, four
-   long and four short. The fire frames are the wrong shape for this —
-   a flame is tall and narrow and a muzzle flash is a star — and on a
-   disc that faced the eye they read as a spark. Alpha is hard-edged
-   because the flame shader discards under a half; the fading is in
-   the colour, which the additive blend turns into light. */
-function flashPicture() {
-  const S = 32, pix = new Pix(S, S, 1, false);
-  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
-    const dx = (x + 0.5) / S * 2 - 1, dy = (y + 0.5) / S * 2 - 1;
-    const d = Math.hypot(dx, dy), ang = Math.atan2(dy, dx);
-    const core = Math.max(0, 1 - d / 0.34);
-    const ray4 = Math.pow(Math.max(0, Math.cos(ang * 2)), 14) * Math.max(0, 1 - d / 0.98);
-    const ray8 = Math.pow(Math.max(0, Math.sin(ang * 2)), 24) * Math.max(0, 1 - d / 0.62);
-    const a = Math.min(1, core * 1.4 + ray4 * 0.9 + ray8 * 0.8);
-    if (a < 0.18) continue;
-    const r = 255, g = Math.round(255 * Math.min(1, 0.45 + a * 0.6)), b = Math.round(255 * Math.max(0, a * 1.3 - 0.4));
-    pix.set(x, y, Math.round(r * (0.55 + a * 0.45)), Math.round(g * (0.55 + a * 0.45)), b, 255);
-  }
-  const t = new THREE.CanvasTexture(pix.toCanvas());
-  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter;
-  t.generateMipmaps = false; t.colorSpace = THREE.SRGBColorSpace; t.needsUpdate = true;
-  return { texture: t, frames: 1 };
-}
-
 /* How long a gun is in this scene, in metres, measured off the
    flamethrower — which is the one VIEW was tuned against, so it is the
    ruler whether or not it is a round number. */
@@ -246,12 +220,10 @@ export const GUNS = {
     tint: [1.7, 1.4, 0.8],
     cold: true,
     muzzle: { len: 0.34, wid: 0.30, additive: true },
-    /* AND A FLASH THAT FACES YOU, at the user's request. The two crossed
-       tongues every gun wears are seen nearly end-on on a gun that
-       points straight down the view, and collapse to nothing; this is
-       a disc across the muzzle, the same fire frames turned to face
-       the eye, additive, that a minigun's muzzle actually reads as. */
-    flash: { size: 0.55 },
+    /* NO DISC ACROSS THE MUZZLE, any more, at the user's request: the
+       flash that faced the eye is gone, and the tracers — which now
+       start at the end of the barrel and are very long — are what
+       says the gun is firing. See js/tracers.js. */
     heat: { material: 'minigun_barrel_mat', z: [-0.83, 10.56] },
     spin: 6,
   },
@@ -578,22 +550,10 @@ export class Weapon3D {
     g.muzzle.position.copy(g.anchors.nozzle);
     g.muzzle.visible = false;
     g.muzzleMaterials = [mA, mB];
-    /* the disc across the muzzle, for a gun that has one — see GUNS */
-    g.flash = null;
-    if (def.flash) {
-      this._flashPic = this._flashPic || flashPicture();
-      const mF = flameMaterial(this._flashPic, true);
-      g.flash = new THREE.Mesh(new THREE.PlaneGeometry(def.flash.size, def.flash.size), mF);
-      g.flash.position.z = len * 0.25;
-      g.muzzle.add(g.flash);
-      g.muzzleMaterials.push(mF);
-    }
     for (const m of g.muzzleMaterials) {
       m.uniforms.tint.value.fromArray(def.tint || [1, 1, 1]);
       m.uniforms.desat.value = def.cold ? 1 : 0;
     }
-    /* the flash is its own colours already */
-    if (g.flash) { g.flash.material.uniforms.tint.value.set(1, 1, 1); g.flash.material.uniforms.desat.value = 0; }
     inner.add(g.muzzle);
 
     return g;
@@ -688,13 +648,6 @@ export class Weapon3D {
       G.muzzle.scale.set(s, s, 0.9 + Math.random() * 0.35);
       G.muzzleMaterials[0].uniforms.frame.value = tics % this.frames;
       G.muzzleMaterials[1].uniforms.frame.value = (tics + 7) % this.frames;
-      /* the disc turns and breathes every frame, so it flickers */
-      if (G.flash) {
-        G.flash.rotation.z = Math.random() * Math.PI * 2;
-        const f = 0.8 + Math.random() * 0.5;
-        G.flash.scale.set(f, f, 1);
-        G.muzzleMaterials[2].uniforms.frame.value = 0;
-      }
     }
 
     /* and what they throw on the gun. A gun with no pilot gets no pilot

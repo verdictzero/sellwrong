@@ -136,11 +136,17 @@ const WOOD   = [{ v: 1, n: 'ALL OF IT' }, { v: 0.6, n: 'NEARER' }, { v: 0.35, n:
    not quietly keep the old default alive. */
 const PREF_KEY = 'sellwrong.prefs';
 /* 4: the defaults moved — 240 rows of pixels, and the picture a third
-   brighter — so a saved 200 and a saved 1.0 are not kept alive */
-const PREF_VERSION = 4;
+   brighter — so a saved 200 and a saved 1.0 are not kept alive.
+   5: the two debug switches default to on. */
+const PREF_VERSION = 5;
 const DEFAULT_PREFS = { v: PREF_VERSION, sens: 1, invert: false, lefty: false, haptics: true,
                         detail: DEFAULT_DETAIL, pixels: DEFAULT_PIXELS, pixar: DEFAULT_PIXAR,
-                        crowd: 0, fx: 0, wood: 0, fps: false, debug: false, godmode: false,
+                        crowd: 0, fx: 0, wood: 0, fps: false,
+                        /* BOTH DEBUG SWITCHES ON BY DEFAULT, at the user's request:
+                           infinite ammo and invincibility, until told otherwise
+                           from the pause menu, where either can still be turned
+                           off and the choice is kept */
+                        debug: true, godmode: true,
                         /* the three picture dials, at the user's request — see
                            LofiPipeline.setPicture; 1 is the picture as drawn */
                         bright: 1.35, contrast: 1, gamma: 1,

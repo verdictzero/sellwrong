@@ -1102,7 +1102,7 @@ export class Game {
     this.frost.render(billboardRot);
     this.fx.render(billboardRot);
     this.giblets.render(billboardRot);
-    this.decals.render();
+    this.decals.render(ex, ey, vx, vy);
     this.tracers.render(ex, ey, ez);
     this.renderProjectiles(billboardRot);
     this.bore.render(billboardRot);

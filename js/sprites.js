@@ -504,7 +504,14 @@ export function bakeSprites() {
         const a = rng() * Math.PI * 2, d = rng() * spread;
         p.disc(12 + Math.cos(a) * d, 12 + Math.sin(a) * d, 1.4 - i * 0.3, 'red', 0.34 - i * 0.08);
       }
-    }, 24, 24, 700 + i), { lift: 24 });
+    }, 24, 24, 700 + i), { lift: -12 });
+    /* MINUS twelve: the quad's foot is its origin and this is a
+       twenty-four-pixel picture of a puff, so lifting it by half its
+       own height down puts the puff's CENTRE on the point it was
+       spawned at — the hole the round just made, or the body it went
+       into. It was +24 before, which stood the whole picture a full
+       height and a half above the hit: a bullet hole with its puff
+       floating over it, which the user saw. */
   });
 
   const ms = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;

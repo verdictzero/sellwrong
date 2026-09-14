@@ -57,7 +57,16 @@ import { WORLD_UNIFORMS_GLSL, WORLD_SHADE_GLSL, worldUniforms } from './material
 import { pRandom, TICRATE } from './util.js';
 
 /* the pools, and the numbers that make each kind what it is */
-export const POOLS = { hole: 800, heat: 240, frost: 240 };
+export const POOLS = { hole: 512, heat: 240, frost: 240 };
+/* HOW MANY HOLES, AND HOW FAR. The hole pool is the MAX COUNT: five
+   hundred and twelve on the walls at once, the oldest overwritten by
+   the next, which a minigun reaches in about eight seconds of holding
+   the trigger — the scorches share it. And a hole is CULLED when it
+   cannot be seen: past DRAW_RANGE from the eye, or behind the plane
+   the eye is looking along, it is not written into the buffer at all,
+   so a wall you have shot to pieces costs nothing until you turn round
+   and look at it. The heat and the frost are culled the same way. */
+export const DRAW_RANGE = 2600;               // world units from the eye
 export const HOLE_SIZE = [5, 9];              // world units across, min..max
 export const SCORCH_SIZE = 46;                // the blot a hot spot leaves
 export const HEAT_SIZE = 38;
@@ -87,6 +96,15 @@ export const DOWN = Object.freeze({ nx: 0, ny: 0, nz: -1 });
 
 /** Two unit directions across a normal, for laying a quad on it: along
  *  the wall and up for a wall, x and y for a floor. Pure. */
+const CORNER_U = [-1, 1, 1, -1], CORNER_V = [-1, -1, 1, 1];
+/** surfaceBasis without the allocation: the same two axes, written
+ *  into `out`. */
+export function surfaceBasisInto(nx, ny, nz, out) {
+  if (Math.abs(nz) > 0.5) { out.ux = 1; out.uy = 0; out.uz = 0; out.vx = 0; out.vy = 1; out.vz = 0; }
+  else { out.ux = -ny; out.uy = nx; out.uz = 0; out.vx = 0; out.vy = 0; out.vz = 1; }
+  return out;
+}
+
 export function surfaceBasis(n) {
   if (Math.abs(n.nz) > 0.5) return { ux: 1, uy: 0, uz: 0, vx: 0, vy: 1, vz: 0 };
   return { ux: -n.ny, uy: n.nx, uz: 0, vx: 0, vy: 0, vz: 1 };
@@ -290,6 +308,7 @@ export class Decals {
     this.tics = 0;
     this.holes = 0; this.scorches = 0;      // counts, for the readout and the test
     this._n = { nx: 0, ny: 0, nz: 0 };
+    this._basis = { ux: 0, uy: 0, uz: 0, vx: 0, vy: 0, vz: 0 };
   }
 
   /* ---- placing ------------------------------------------------------ */
@@ -475,48 +494,56 @@ export class Decals {
     P.dirtyPos = true;
   }
 
-  render() {
+  /** `ex, ey` is the eye and `vx, vy` the unit direction it looks
+   *  along, in game coordinates; with none given nothing is culled.
+   *  The buffers are rebuilt every frame, compacted to the decals that
+   *  are live and in view, with no allocation in the loop: a thousand
+   *  quads' worth of arithmetic, which is nothing next to the draw. */
+  render(ex = 0, ey = 0, vx = 0, vy = 0) {
     this._carry();
+    const cull = vx !== 0 || vy !== 0;
+    const R2 = DRAW_RANGE * DRAW_RANGE;
+    const B = this._basis;
     for (const P of Object.values(this.pools)) {
       if (!P.mesh) continue;
       const g = P.mesh.geometry;
-      if (P.dirtyPos) {
-        const pos = g.attributes.position.array, uv = g.attributes.uv.array;
-        const lt = g.attributes.aLight.array, sk = g.attributes.aSky.array;
-        let used = 0;
-        for (let i = 0; i < P.max; i++) {
-          if (P.strength[i] <= 0 && P.kind !== 'hole') continue;
-          used = i + 1;
-          const n = { nx: P.nx[i], ny: P.ny[i], nz: P.nz[i] };
-          const b = surfaceBasis(n);
-          const c = Math.cos(P.rot[i]), s = Math.sin(P.rot[i]), h = P.size[i] / 2;
-          /* the quad's two axes, turned by rot about the normal */
-          const ax = (b.ux * c + b.vx * s) * h, ay = (b.uy * c + b.vy * s) * h, az = (b.uz * c + b.vz * s) * h;
-          const bx = (b.vx * c - b.ux * s) * h, by = (b.vy * c - b.uy * s) * h, bz = (b.vz * c - b.uz * s) * h;
-          const cx = P.x[i] + n.nx * LIFT, cy = P.y[i] + n.ny * LIFT, cz = P.z[i] + n.nz * LIFT;
-          const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
-          const f0 = P.frame[i] / P.frames, f1 = (P.frame[i] + 1) / P.frames;
-          for (let k = 0; k < 4; k++) {
-            const [u, v] = corners[k];
-            const wx = cx + ax * u + bx * v, wy = cy + ay * u + by * v, wz = cz + az * u + bz * v;
-            const o = (i * 4 + k) * 3;
-            /* game (x, y, z) to three (x, z, -y) */
-            pos[o] = wx; pos[o + 1] = wz; pos[o + 2] = -wy;
-            uv[(i * 4 + k) * 2] = u < 0 ? f0 : f1; uv[(i * 4 + k) * 2 + 1] = v < 0 ? 0 : 1;
-            lt[i * 4 + k] = P.light[i]; sk[i * 4 + k] = P.sky[i];
-          }
+      const pos = g.attributes.position.array, uv = g.attributes.uv.array;
+      const lt = g.attributes.aLight.array, sk = g.attributes.aSky.array, st = g.attributes.aStrength.array;
+      let n = 0;
+      for (let i = 0; i < P.max; i++) {
+        const strength = P.strength[i];
+        if (strength <= 0) continue;
+        const px = P.x[i], py = P.y[i], h = P.size[i] / 2;
+        if (cull) {
+          const dx = px - ex, dy = py - ey;
+          if (dx * dx + dy * dy > R2) continue;
+          if (dx * vx + dy * vy < -h) continue;
         }
-        g.setDrawRange(0, used * 6);
-        g.attributes.position.needsUpdate = true; g.attributes.uv.needsUpdate = true;
-        g.attributes.aLight.needsUpdate = true; g.attributes.aSky.needsUpdate = true;
-        P.dirtyPos = false;
+        const nx = P.nx[i], ny = P.ny[i], nz = P.nz[i];
+        surfaceBasisInto(nx, ny, nz, B);
+        const c = Math.cos(P.rot[i]), sn = Math.sin(P.rot[i]);
+        /* the quad's two axes, turned by rot about the normal */
+        const ax = (B.ux * c + B.vx * sn) * h, ay = (B.uy * c + B.vy * sn) * h, az = (B.uz * c + B.vz * sn) * h;
+        const bx = (B.vx * c - B.ux * sn) * h, by = (B.vy * c - B.uy * sn) * h, bz = (B.vz * c - B.uz * sn) * h;
+        const cx = px + nx * LIFT, cy = py + ny * LIFT, cz = P.z[i] + nz * LIFT;
+        const f0 = P.frame[i] / P.frames, f1 = (P.frame[i] + 1) / P.frames;
+        const v0 = n * 4;
+        for (let k = 0; k < 4; k++) {
+          const u = CORNER_U[k], v = CORNER_V[k];
+          const o = (v0 + k) * 3;
+          /* game (x, y, z) to three (x, z, -y) */
+          pos[o] = cx + ax * u + bx * v; pos[o + 1] = cz + az * u + bz * v; pos[o + 2] = -(cy + ay * u + by * v);
+          uv[(v0 + k) * 2] = u < 0 ? f0 : f1; uv[(v0 + k) * 2 + 1] = v < 0 ? 0 : 1;
+          lt[v0 + k] = P.light[i]; sk[v0 + k] = P.sky[i]; st[v0 + k] = strength;
+        }
+        n++;
       }
-      if (P.dirtyStrength) {
-        const st = g.attributes.aStrength.array;
-        for (let i = 0; i < P.max; i++) { const v = P.strength[i]; st[i * 4] = v; st[i * 4 + 1] = v; st[i * 4 + 2] = v; st[i * 4 + 3] = v; }
-        g.attributes.aStrength.needsUpdate = true;
-        P.dirtyStrength = false;
-      }
+      P.drawn = n;
+      g.setDrawRange(0, n * 6);
+      g.attributes.position.needsUpdate = true; g.attributes.uv.needsUpdate = true;
+      g.attributes.aLight.needsUpdate = true; g.attributes.aSky.needsUpdate = true;
+      g.attributes.aStrength.needsUpdate = true;
+      P.dirtyPos = false; P.dirtyStrength = false;
     }
   }
 

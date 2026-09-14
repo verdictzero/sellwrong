@@ -189,6 +189,14 @@ export function plantRadius(kind, f) {
    understory's short range keeps only a handful of them, big enough that
    the whole wood is a few hundred meshes rather than thousands. */
 const CHUNK = 2048;
+/* THE LOD: how many chunk sizes a far-ranging kind is built at (2048,
+   4096, 8192), which kinds get it (those whose range reaches LOD_FROM —
+   the firs and the bushes; the understory is short-ranged and stays
+   fine), and where the bands fall as fractions of the kind's range.
+   See build() and _pickLevels(). */
+const LOD_LEVELS = 3;
+const LOD_FROM = 6000;
+const LOD_BAND = [0.28, 0.56];
 
 const FADE = k => k.cover ? [2900, 4800]
                 : k.h <= 120 ? [4600, 7200]
@@ -660,84 +668,111 @@ export class Forest {
        The draw calls go up, from one a kind to a few a kind, and that
        is the trade: a handful of draws against a hundred thousand
        vertices, which is not a close call. */
-    const CH = CHUNK;
+    /* AND THE CHUNKS HAVE THREE SIZES, WHICH IS THE LOD. A tree at a
+       distance is the same four vertices as a tree up close, so there
+       is nothing to make cheaper about the tree; what there is to make
+       cheaper is the DRAW. With 2048-unit chunks and the firs kept to
+       sixteen thousand, the wood in front of you is two or three
+       hundred draws a kind — and a draw is the thing a phone runs out
+       of first. So the firs and the bushes are built three times over
+       into 2048, 4096 and 8192-unit chunks of the same plants, and each
+       frame every patch of ground is drawn from exactly ONE of the
+       three: fine near the eye, where frustum culling wants small
+       pieces, coarse at range, where forty small pieces are one. The
+       rule that makes it exact is in render(): a coarse chunk is drawn
+       only when every fine chunk under it is far enough to be, and a
+       fine chunk only when neither of its parents is. The understory
+       stays fine — its range is short enough that it is a handful of
+       chunks already. See LOD_LEVELS and LOD_BAND. */
     KINDS.forEach((k, ki) => {
-      const src = k.cover ? this.covers : this.trees;
+      /* THE BUSHES ARE IN THE UNDERSTORY'S ARRAYS — several a cell,
+         planted beside the ferns (see _plant) — and this read them out
+         of the canopy's, where there are none, so not one bush was
+         ever drawn: the art loaded, the plants were planted, the fire
+         burnt them, and the wood was firs over ferns. Found while the
+         LOD was being tested headless, which counts what is built. */
+      const src = (k.cover || BUSH_KINDS.includes(ki)) ? this.covers : this.trees;
       const list = [];
       for (let i = 0; i < src.n; i++) if (src.kind[i] === ki) list.push(i);
       const n = list.length;
-      const A = {
-        slot: new Int32Array(src.n).fill(-1), chunkOf: new Int32Array(src.n).fill(-1),
-        chunks: [], n, cover: !!k.cover, far: FADE(k)[1],
-      };
+      const A = { levels: [], chunks: [], n, cover: !!k.cover, far: FADE(k)[1], lod: !k.cover && FADE(k)[1] >= LOD_FROM };
       this.kindArrays[ki] = A;
       if (!n || !art.sprites[k.name]) return;
 
-      /* group by chunk of ground */
-      const by = new Map();
-      for (const i of list) {
-        const cx = Math.floor((src.x[i] - this.originX) / CH);
-        const cy = Math.floor((src.y[i] - this.originY) / CH);
-        const key = cy * 4096 + cx;
-        let g2 = by.get(key);
-        if (!g2) by.set(key, g2 = { cx, cy, list: [] });
-        g2.list.push(i);
-      }
-
       const albedo = spriteTex(art.sprites[k.name].albedo, false);
       const burnTex = spriteTex(art.sprites[k.name].burn, true);
-      for (const c of by.values()) {
-        const m2 = c.list.length;
-        const pos = new Float32Array(m2 * 3), size = new Float32Array(m2 * 2);
-        const flip = new Float32Array(m2), burn = new Float32Array(m2), seed = new Float32Array(m2);
-        let maxH = 0;
-        c.list.forEach((i, sIdx) => {
-          const sc = src.scale[i], h = k.h * sc, w = h * k.aspect;
-          pos[sIdx * 3] = src.x[i]; pos[sIdx * 3 + 1] = 0; pos[sIdx * 3 + 2] = -src.y[i];
-          size[sIdx * 2] = w; size[sIdx * 2 + 1] = h;
-          flip[sIdx] = src.flip[i]; seed[sIdx] = src.seed[i];
-          burn[sIdx] = this.prog[src.cell[i]] / 255;
-          if (h > maxH) maxH = h;
-          A.slot[i] = sIdx;
-          A.chunkOf[i] = A.chunks.length;
-        });
-        const g = new THREE.InstancedBufferGeometry();
-        g.index = base.index;
-        g.setAttribute('position', base.getAttribute('position'));
-        g.setAttribute('uv', base.getAttribute('uv'));
-        g.setAttribute('iPos', new THREE.InstancedBufferAttribute(pos, 3));
-        g.setAttribute('iSize', new THREE.InstancedBufferAttribute(size, 2));
-        g.setAttribute('iFlip', new THREE.InstancedBufferAttribute(flip, 1));
-        const burnAttr = new THREE.InstancedBufferAttribute(burn, 1).setUsage(THREE.DynamicDrawUsage);
-        g.setAttribute('iBurn', burnAttr);
-        g.setAttribute('iSeed', new THREE.InstancedBufferAttribute(seed, 1));
-        g.instanceCount = m2;
-        /* The bounding sphere is the chunk of ground plus the tallest
-           thing standing on it. Without one three.js has to compute it
-           from `position`, which for an instanced quad is a unit square
-           at the origin — every chunk would claim to be at the origin
-           and the frustum cull would be wrong in both directions. */
-        const wx = this.originX + (c.cx + 0.5) * CH, wy = this.originY + (c.cy + 0.5) * CH;
-        g.boundingSphere = new THREE.Sphere(
-          new THREE.Vector3(wx, maxH * 0.5, -wy),
-          Math.hypot(CH * 0.5, CH * 0.5) + maxH);
-        const mat = new THREE.ShaderMaterial({
-          uniforms: {
-            map: { value: albedo }, burnMap: { value: burnTex },
-            billboardRot: this.uRot, uTime: this.uTime, ramp: { value: ramp },
-            fadeBand: { value: new THREE.Vector2(...FADE(k)) },
-            light: { value: 0.56 },
-            ...worldUniforms(),
-          },
-          vertexShader: PLANT_VERT, fragmentShader: PLANT_FRAG,
-          side: THREE.DoubleSide, toneMapped: false, fog: false,
-        });
-        const m = new THREE.Mesh(g, mat);
-        m.name = `forest-${k.name}-${c.cx}-${c.cy}`;
-        m.userData.chunk = { x: wx, y: wy, far: A.far + CH };
-        A.chunks.push({ burn, burnAttr, mesh: m });
-        this.mesh.add(m);
+      const nLevels = A.lod ? LOD_LEVELS : 1;
+      for (let L = 0; L < nLevels; L++) {
+        const CH = CHUNK << L;
+        const level = { ch: CH, chunks: [], slot: new Int32Array(src.n).fill(-1), chunkOf: new Int32Array(src.n).fill(-1), byKey: new Map() };
+        A.levels.push(level);
+        /* group by chunk of ground */
+        const by = new Map();
+        for (const i of list) {
+          const cx = Math.floor((src.x[i] - this.originX) / CH);
+          const cy = Math.floor((src.y[i] - this.originY) / CH);
+          const key = cy * 4096 + cx;
+          let g2 = by.get(key);
+          if (!g2) by.set(key, g2 = { cx, cy, list: [] });
+          g2.list.push(i);
+        }
+        for (const c of by.values()) {
+          const m2 = c.list.length;
+          const pos = new Float32Array(m2 * 3), size = new Float32Array(m2 * 2);
+          const flip = new Float32Array(m2), burn = new Float32Array(m2), seed = new Float32Array(m2);
+          let maxH = 0;
+          c.list.forEach((i, sIdx) => {
+            const sc = src.scale[i], h = k.h * sc, w = h * k.aspect;
+            pos[sIdx * 3] = src.x[i]; pos[sIdx * 3 + 1] = 0; pos[sIdx * 3 + 2] = -src.y[i];
+            size[sIdx * 2] = w; size[sIdx * 2 + 1] = h;
+            flip[sIdx] = src.flip[i]; seed[sIdx] = src.seed[i];
+            burn[sIdx] = this.prog[src.cell[i]] / 255;
+            if (h > maxH) maxH = h;
+            level.slot[i] = sIdx;
+            level.chunkOf[i] = level.chunks.length;
+          });
+          const g = new THREE.InstancedBufferGeometry();
+          g.index = base.index;
+          g.setAttribute('position', base.getAttribute('position'));
+          g.setAttribute('uv', base.getAttribute('uv'));
+          g.setAttribute('iPos', new THREE.InstancedBufferAttribute(pos, 3));
+          g.setAttribute('iSize', new THREE.InstancedBufferAttribute(size, 2));
+          g.setAttribute('iFlip', new THREE.InstancedBufferAttribute(flip, 1));
+          const burnAttr = new THREE.InstancedBufferAttribute(burn, 1).setUsage(THREE.DynamicDrawUsage);
+          g.setAttribute('iBurn', burnAttr);
+          g.setAttribute('iSeed', new THREE.InstancedBufferAttribute(seed, 1));
+          g.instanceCount = m2;
+          /* The bounding sphere is the chunk of ground plus the tallest
+             thing standing on it. Without one three.js has to compute it
+             from `position`, which for an instanced quad is a unit square
+             at the origin — every chunk would claim to be at the origin
+             and the frustum cull would be wrong in both directions. */
+          const wx = this.originX + (c.cx + 0.5) * CH, wy = this.originY + (c.cy + 0.5) * CH;
+          g.boundingSphere = new THREE.Sphere(
+            new THREE.Vector3(wx, maxH * 0.5, -wy),
+            Math.hypot(CH * 0.5, CH * 0.5) + maxH);
+          const mat = new THREE.ShaderMaterial({
+            uniforms: {
+              map: { value: albedo }, burnMap: { value: burnTex },
+              billboardRot: this.uRot, uTime: this.uTime, ramp: { value: ramp },
+              fadeBand: { value: new THREE.Vector2(...FADE(k)) },
+              light: { value: 0.56 },
+              ...worldUniforms(),
+            },
+            vertexShader: PLANT_VERT, fragmentShader: PLANT_FRAG,
+            side: THREE.DoubleSide, toneMapped: false, fog: false,
+          });
+          const m = new THREE.Mesh(g, mat);
+          m.name = `forest-${k.name}-L${L}-${c.cx}-${c.cy}`;
+          m.visible = false;
+          m.userData.chunk = { x: wx, y: wy, far: A.far + CH, level: L, cx: c.cx, cy: c.cy };
+          const ch = { burn, burnAttr, mesh: m, cx: c.cx, cy: c.cy, x: wx, y: wy, level: L, band: 0, drawn: false };
+          level.chunks.push(ch);
+          level.byKey.set(c.cy * 4096 + c.cx, ch);
+          this.mesh.add(m);
+        }
       }
+      A.chunks = A.levels[0].chunks;
     });
     scene.add(this.mesh);
     this._flush();
@@ -754,11 +789,13 @@ export class Forest {
       const v = this.prog[i];
       this.mask.image.data[i] = v;
       const paint = (A, idx) => {
-        const ch = A.chunks[A.chunkOf[idx]];
-        const s = A.slot[idx];
-        if (!ch || s < 0) return;
-        ch.burn[s] = v / 255;
-        touched.add(ch);
+        for (const level of A.levels) {
+          const ch = level.chunks[level.chunkOf[idx]];
+          const s = level.slot[idx];
+          if (!ch || s < 0) continue;
+          ch.burn[s] = v / 255;
+          touched.add(ch);
+        }
       };
       const t = this.cellTree[i];
       if (t >= 0) paint(this.kindArrays[this.trees.kind[t]], t);
@@ -785,14 +822,68 @@ export class Forest {
        in. `reach` is game.quality.wood — see js/game.js. */
     for (const A of this.kindArrays) {
       if (!A || !A.chunks.length) continue;
-      for (const ch of A.chunks) {
-        const c = ch.mesh.userData.chunk;
-        const dx = c.x - camX, dy = c.y - camY;
-        const far = c.far * reach;
-        ch.mesh.visible = dx * dx + dy * dy < far * far;
+      if (!A.lod) {
+        for (const ch of A.chunks) {
+          const dx = ch.x - camX, dy = ch.y - camY;
+          const far = (A.far + CHUNK) * reach;
+          ch.mesh.visible = dx * dx + dy * dy < far * far;
+        }
+        continue;
       }
+      this._pickLevels(A, camX, camY, reach);
     }
     if (this.flames) { this._placeFlames(camX, camY, camZ); this.flames.render(billboardRot); }
+  }
+
+  /** THE LOD, decided fine-chunk first so every plant is drawn once.
+   *  Each fine chunk gets a BAND off its distance: 0 near, 1 middle,
+   *  2 far (LOD_BAND, as fractions of the kind's range), or hidden
+   *  past the range. A level-2 chunk is drawn when every fine chunk
+   *  under it is in band 2; a level-1 chunk when every fine chunk under
+   *  it is in band 1 or 2 and its level-2 parent is not drawn; a fine
+   *  chunk when it is in range and neither parent is drawn. */
+  _pickLevels(A, camX, camY, reach) {
+    const [L0, L1, L2] = A.levels;
+    const range = A.far * reach;
+    const far0 = (A.far + CHUNK) * reach;
+    const t1 = range * LOD_BAND[0], t2 = range * LOD_BAND[1];
+    for (const ch of L0.chunks) {
+      const dx = ch.x - camX, dy = ch.y - camY, d2 = dx * dx + dy * dy;
+      ch.band = d2 >= far0 * far0 ? 3 : d2 >= t2 * t2 ? 2 : d2 >= t1 * t1 ? 1 : 0;
+      ch.drawn = false;
+    }
+    /* coarsest first: a level-2 chunk holds sixteen fine ones */
+    for (const ch of L2.chunks) {
+      let all = true, any = false;
+      for (let j = 0; j < 4 && all; j++) for (let i = 0; i < 4; i++) {
+        const f = L0.byKey.get((ch.cy * 4 + j) * 4096 + ch.cx * 4 + i);
+        if (!f) continue;
+        if (f.band === 3) continue;          // out of range: not drawn by anybody
+        any = true;
+        if (f.band < 2) { all = false; break; }
+      }
+      ch.drawn = all && any;
+      ch.mesh.visible = ch.drawn;
+    }
+    for (const ch of L1.chunks) {
+      const parent = L2.byKey.get((ch.cy >> 1) * 4096 + (ch.cx >> 1));
+      let all = !(parent && parent.drawn), any = false;
+      for (let j = 0; j < 2 && all; j++) for (let i = 0; i < 2; i++) {
+        const f = L0.byKey.get((ch.cy * 2 + j) * 4096 + ch.cx * 2 + i);
+        if (!f) continue;
+        if (f.band === 3) continue;
+        any = true;
+        if (f.band < 1) { all = false; break; }
+      }
+      ch.drawn = all && any;
+      ch.mesh.visible = ch.drawn;
+    }
+    for (const ch of L0.chunks) {
+      const p1 = L1.byKey.get((ch.cy >> 1) * 4096 + (ch.cx >> 1));
+      const p2 = L2.byKey.get((ch.cy >> 2) * 4096 + (ch.cx >> 2));
+      ch.drawn = ch.band < 3 && !(p1 && p1.drawn) && !(p2 && p2.drawn);
+      ch.mesh.visible = ch.drawn;
+    }
   }
 
   /* ------------------------------------------------------------------

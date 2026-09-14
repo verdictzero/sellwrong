@@ -186,7 +186,11 @@ they play whatever the switch says. The player asks for 'spinup' the
 way it always did and js/audio.js hands back the recording (see
 SAMPLE_FOR); the firing is one held sound, looped from the first round
 to the last and stopped with a short ramp when the trigger comes up
-or the belt runs dry (see Player.gunLoop).
+or the belt runs dry (see Player.gunLoop). And they are turned DOWN
+(SAMPLE_GAIN, a fraction a recording): as recorded the minigun drowned
+the three tracks the user mixed, so the loop plays at a third and the
+spin-up and wind-down under half, and the music stays where its fader
+puts it.
 
 THE LOADING SCREEN SAYS RETICULATING SPLINES, at the user's request, and
 nothing else, for the whole of the half second; the bar still moves.
@@ -235,7 +239,10 @@ used to be the whole of the player's invulnerability. A bullet gets
 through it now, because there are bullets: see THE ROAD, AND WHO COMES
 DOWN IT.
 
-AND THERE ARE TWO SWITCHES IN THE PAUSE MENU THAT TURN ALL OF THAT OFF.
+AND THERE ARE TWO SWITCHES IN THE PAUSE MENU THAT TURN ALL OF THAT OFF,
+AND BOTH ARE ON BY DEFAULT, at the user's request, until turned off
+there (the choice is kept; the prefs version went to 5 so a saved
+"off" from before the default changed is not kept alive).
 DEBUG: INFINITE AMMO fills every tank — the flamethrower's, the
 extinguisher's and the molotovs — back to the top once a tic, so nothing
 ever empties and neither latch ever catches. It is for looking at the
@@ -520,12 +527,13 @@ the lower right quarter of the picture, the way the old flamethrower
 did. The other five are the same two numbers (fit, out) plus an offset
 (pos) and a turn (rot), and any of them is a one-line change.
 
-AND IT HAS A MUZZLE FLASH THAT FACES YOU, at the user's request. The
-two crossed tongues every gun wears are seen nearly end-on on a gun
-that points straight down the view, and collapse to nothing; the
-minigun adds a disc across the muzzle — the same fire frames, turned
-to face the eye, additive, spun and breathed every frame so it
-flickers — which is what a minigun's muzzle actually reads as.
+AND NO DISC ACROSS THE MUZZLE, any more. It had one for a while, at
+the user's request — the same fire frames turned to face the eye,
+additive, spun every frame — and then the user asked for it gone: the
+tracers start at the end of the barrel now and are very long, and a
+line of light drawn out of the gun says it is firing better than a
+flash in front of it did. The two crossed tongues stay, as on every
+gun.
 
 THE HUD SAYS WHAT YOU ARE HOLDING, small, top right, at the user's
 request — the one word the readout has grown back since the corner
@@ -543,10 +551,21 @@ js/decals.js:
            core inside a ragged pale lip — the chipped plaster, which
            is what you actually see, because the shop is dark at night
            and a dark spot on a dark wall is nothing — a hand across,
-           turned at random, and it stays. Eight hundred of them in a
-           ring, so a thousand rounds into one wall are still one pool
-           and the oldest hole is the next one overwritten. The
-           troopers' rifles leave them too.
+           turned at random, and it stays. FIVE HUNDRED AND TWELVE of
+           them in a ring — the MAX COUNT, at the user's request — so a
+           thousand rounds into one wall are still one pool and the
+           oldest hole is the next one overwritten; the scorches share
+           the ring. The troopers' rifles leave them too. AND THEY ARE
+           CULLED: a hole past DRAW_RANGE (2600 units) from the eye, or
+           behind the plane the eye looks along, is not written into
+           the buffer at all, so a shop shot to pieces costs nothing
+           until you turn round and look at it. The buffers are
+           rebuilt every frame, compacted to what is in view, with no
+           allocation in the loop. And the PUFF a round throws where it
+           lands — the same small sprite as the blood off a body — is
+           centred on the hit now: its picture's lift was a full height
+           and a half, so every hole had its puff floating above it,
+           which the user saw. See the PUFF frame in js/sprites.js.
   HEAT     SPOT HEATING for the flamethrower: where the stream lands,
            the surface itself glows, and the longer the stream is held
            on one spot the hotter the spot — dull red, orange, the
@@ -609,9 +628,14 @@ nothing. A blast still hurts, because a blast carries `fire` and the
 stream carries `stream`, and Vehicle.damage reads the second first.
 
 AND THE ROUNDS ARE SEEN: every other one is a TRACER, a streak of
-light sixty units long drawn from the muzzle to wherever the round
-stopped (Game.lastHit, which every hitscan leaves behind), flying at a
-hundred and fifty units a tic and gone when it gets there. A streak is
+light four hundred and twenty units long — VERY long, at the user's
+request — drawn from the muzzle to wherever the round stopped
+(Game.lastHit, which every hitscan leaves behind), flying at a hundred
+and fifty units a tic. It starts at the end of the barrel: the tail is
+held at the muzzle until the head is a whole length out, so the streak
+grows out of the gun rather than appearing in front of it, and once
+the head has arrived the tail keeps flying and the streak shrinks into
+the hit and is gone. A streak is
 a quad that faces you along its length — spread sideways along the
 direction across both the streak and the line to the eye, so it is a
 line of light from wherever you stand and never a sliver seen edge-on
@@ -1547,6 +1571,28 @@ wood behind you for free, and each class hides the chunks past its own
 range — the fern carpet is submitted for the ground you are standing on
 and nowhere else. Twice the plants, a third of the frame time.
 
+AND THE CHUNKS HAVE THREE SIZES, WHICH IS THE LOD (at the user's
+request). A fir at a distance is the same four vertices as a fir up
+close, so there is nothing to make cheaper about the tree; what there
+is to make cheaper is the DRAW, and with 2048-unit chunks and the firs
+kept to sixteen thousand the wood in front of you was two or three
+hundred draws a kind — the thing a phone runs out of first. So the
+firs and the bushes are built three times over, into 2048, 4096 and
+8192-unit chunks of the SAME plants, and each frame every patch of
+ground is drawn from exactly one of the three: fine near the eye,
+where frustum culling wants small pieces, coarse at range, where forty
+small pieces are one draw. The rule that makes it exact is decided
+fine-chunk first (Forest._pickLevels): every 2048 chunk gets a band
+off its distance — near, middle, far, as fractions of the kind's
+range — and a coarse chunk is drawn only when every fine chunk under
+it is in a band far enough for it, a fine chunk only when neither of
+its parents is drawn. The smoke test builds the wood headless and
+counts: from three places, every tree in range is drawn once and the
+draws are well under half what fine chunks alone cost. The understory
+stays fine; its range is short enough that it is a handful of chunks
+already. The burn is painted into every level, so a fir is as black at
+range as it is up close.
+
 THE SIMULATION is a grid of 64-unit cells with a byte of state each —
 green, alight, gone — and a list of the ones burning. Every cell is fuel
 (the floor is dry litter) and a cell with a tree in it burns longer and
@@ -2034,12 +2080,13 @@ there, a third entry in js/people.js, a third call to troopStates in
 js/states.js and a third kit in js/sprites.js. Four tables and a sheet.
 
 THEY ARE CALLED AT A PRESSURE, NOT AT A TIME: when the night is pressing
-EIGHT times what it was at your first shot, which on the police's own
-doubling clock is three minutes in. Writing the threshold in the units of
-the escalation rather than in seconds means retuning the doubling moves
-the army with it instead of leaving it stranded. From that tic the army
-has a curve of its own STARTING AT 1 — so it arrives small underneath a
-police force already eightfold, and then doubles on the same clock. Both
+TWICE what it was at your first shot, which on the police's own doubling
+clock is seventy seconds in (it was eight times and three and a half
+minutes; the user wanted the army sooner). Writing the threshold in the units of the
+escalation rather than in seconds means retuning the doubling moves the
+army with it instead of leaving it stranded. From that tic the army has
+a curve of its own STARTING AT 1 — so it arrives small underneath a
+police force already twofold, and then doubles on the same clock. Both
 curves run to the end of the night.
 
 FEWER AND HEAVIER is the difference in every number. Two carriers a send
