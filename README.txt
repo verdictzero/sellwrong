@@ -17,6 +17,12 @@ every sprite, every sound and the whole level are generated in the page
 at start-up, in about half a second. What it loads is what was made
 somewhere else: the people, the trees, the sky, and the gun.
 
+  TOWN.txt              the plan for the town round the mall: a street
+                          grid, a school, a church, townhouses of two
+                          and three storeys with interiors — and the
+                          one engine idea all of it waits on, which is
+                          that a sector may name the sector above it.
+                          Nothing in it is built
   .gitlab-ci.yml        test, then publish to GitLab Pages
   .github/workflows/    the same two jobs, for GitHub Pages
   index.html            the page
