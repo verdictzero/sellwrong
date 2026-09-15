@@ -6,8 +6,47 @@ strip mall on the edge of it: a street grid, a school, a church,
 townhouses of two and three storeys, and an interior behind every door
 that is drawn as a door.
 
-Nothing here is built. This is the plan, the numbers it falls out of,
-the one engine idea it needs, and the order to do it in.
+WHAT IS BUILT OF IT, as of the commit this paragraph arrived in: all
+seven phases, in the shape below and with the departures noted at the
+end. The column is in js/level.js, the scale work in js/mapgeo.js and
+js/fire.js, and the town itself in js/maps/town.js. Twenty-five blocks,
+sixty runs of street and thirty-six junctions, two hundred and
+sixty-eight houses with an interior behind every door that is drawn as a
+door, a school, a church with a choir loft, and a fire that climbs the
+stairs. The rest of this document is the plan it was built from and is
+left as it was written, so that what was argued for and what was done
+can be compared.
+
+WHERE IT DEPARTS FROM THE PLAN, and why:
+
+  THE TOWN IS SOUTH, not north. The plan says north of the mall; the
+    map's north is the back of the store and its wood, and the road
+    into town runs east-west across the bottom of the car park. South
+    is where a town on the other side of that road goes.
+  A DETACHED HOUSE IS TWELVE TO A BLOCK, not thirty-two. The plan's own
+    numbers distinguish a house lot (512 x 1152) from a townhouse
+    (192 x 384) and it is the townhouse blocks that carry sixteen to a
+    face. Twelve detached houses and thirty-two terraced ones is what
+    the two lot sizes give.
+  THE SCHOOL HAS SIX CLASSROOMS, not ten. Ten of 480 will not fit
+    beside a gym of 1200 in a block of 3072, which the plan's own
+    figures say if you add them up.
+  THERE ARE NO UTILITY POLES and no furniture. Both are content on top
+    of a construction that works; see WHAT IS NOT DONE in README.txt.
+  THE STAIR IS A COLUMN OF STEPPED BOXES rather than a column of one
+    with flights inside it. Tread i is floor 16i and ceiling 16i + 96,
+    and the next flight stacks over it with the deck between — which is
+    a staircase, and needs no special case anywhere.
+  FIRE CLIMBS BY TWO PATHS. The plan gives it the stairwell; it has the
+    stairwell, four times as willing as going along, and the CEILING as
+    the slow way at a tenth of that. One flight reaches into the floor
+    above at exactly one tread, and one cell cannot carry a house on
+    its own.
+  THE HALF-SECOND IS NOW ABOUT A SECOND AND A HALF. See THE TEST below
+    for what was done about it and README.txt for the number.
+
+Nothing below this line was built from. This is the plan, the numbers it
+falls out of, the one engine idea it needs, and the order to do it in.
 
 SIGHT.txt is its companion and covers what a town does to the renderer:
 occlusion, fog, a sky that changes, levels of detail, the cull distance,
@@ -647,7 +686,7 @@ order by anybody.
 THE TEST
 --------
 
-1278 checks pass today in about a minute, with no install and no
+1436 checks pass today in about three minutes, with no install and no
 browser, and every one of them is there because something reached a
 screenshot. The column breaks assumptions that nothing currently
 asserts, so these come first, in phase 1, before the code they check:

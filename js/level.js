@@ -526,9 +526,14 @@ export class Level {
        sector's two-sided lines are its doors to the sectors next to
        it, and the flood walks them. */
     for (const s of this.sectors) { s.lines = []; s._vis = 0; s._vlo = 0; s._vhi = 0; s._vn = 0; }
+    /* EVERY STOREY, and not only the ground one. l.front and l.back are
+       the ground sectors of the two columns, so walking those alone
+       gave a first-floor bedroom no doors at all — the portal flood
+       could enter it and never leave, and nothing upstairs could be
+       walked to. The columns are what a line actually joins. */
     for (const l of this.lines) {
-      if (l.front !== null) this.sectors[l.front].lines.push(l);
-      if (l.back !== null) this.sectors[l.back].lines.push(l);
+      for (const i of l.frontCol) this.sectors[i].lines.push(l);
+      for (const i of l.backCol) this.sectors[i].lines.push(l);
     }
     this._visStamp = 1;
     this.visList = [];

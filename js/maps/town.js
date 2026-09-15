@@ -390,6 +390,16 @@ export function buildTown(rm, mb, opts = {}) {
     });
     door(HALL, 48, ROOMX, 112, `${tag} front door way`, 'PLASTER');
     door(HALL, front + WALL + 32, ROOMX, front + WALL + 96, `${tag} kitchen door`, 'PLASTER');
+    /* AND THE DOOR BETWEEN THE TWO ROOMS, which is the one that makes
+       the upstairs a floor rather than two halves of one.
+   *
+       The stair rises from the FRONT of the hall to the BACK, so you
+       arrive on the rear landing; the next flight starts at the front
+       again. Without this door the front landing and the rear landing
+       are two rooms in the same house with a staircase between them and
+       no way from one to the other, and the check that walks every
+       storey of every house from its own front hall is what said so. */
+    door(ROOMX + 32, front, ROOMX + 96, front + WALL, `${tag} room door`, 'PLASTER');
     /* and the front door itself, out into the yard: ground only, because
        nobody has a front door on the first floor */
     put(16, -WALL, 16 + 64, 0, {

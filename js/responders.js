@@ -417,8 +417,20 @@ export class Responders {
 
   /* Where the road leaves the map: whoever comes, comes from one of
      these. Falls back to the mouth of the lot if the map has no road. */
-  arrivalPoints() {
+  arrivalPoints(tier = 0) {
     const lv = this.game.level;
+    /* THE POLICE AND THE FIRE BRIGADE COME FROM A BUILDING, now that
+       there is one to come from. Tier 3 is called "the police" and tier
+       4 "the fire brigade" and both of them used to arrive out of the
+       wood from nowhere, which was the second of TOWN.txt's three
+       reasons for building a town at all. They are four blocks away on
+       A5 with an engine standing in the bay, and the comment that used
+       to be on spawn() said PLACEHOLDER. */
+    const st = lv.town?.stations;
+    if (st) {
+      const from = tier === 3 ? st.police : tier === 4 ? st.fire : null;
+      if (from) return [{ x: from.x, y: from.y, heading: Math.PI / 2, side: tier === 3 ? 'the police station' : 'the fire station' }];
+    }
     if (lv.roadEnds?.length) return lv.roadEnds;
     const p = this.game.player;
     return [{ x: p ? p.x : 0, y: p ? p.y - 400 : 0, heading: Math.PI / 2, side: 'the lot' }];
@@ -451,16 +463,22 @@ export class Responders {
 
   arrive(t) {
     this.arrived.add(t.tier);
-    const points = this.arrivalPoints();
+    const points = this.arrivalPoints(t.tier);
     const from = points[(t.tier + this.tics) % points.length];
     this.spawn(t, from);
     this.game.onResponders?.('arrive', t, from);
   }
 
   /**
-   * PLACEHOLDER, still: where a tier's wave would be put on the road.
-   * Records what was asked for and returns. The SWAT do not come
-   * through here — they have a trigger of their own, below.
+   * Where a tier's wave is put on the road. Records what was asked for
+   * and returns; what actually drives in is the squad, below, and what
+   * this is for is the account of who was sent and from where.
+   *
+   * It said PLACEHOLDER for a long time because there was nowhere for
+   * anybody to come FROM — nine thousand units of wood in every
+   * direction and two points where the road left the map. There is a
+   * town now: see arrivalPoints, and THE RESPONDERS COME FROM NOWHERE
+   * in TOWN.txt, which is the paragraph this answers.
    */
   spawn(t, from) {
     this.waves.push({ tier: t.tier, name: t.name, count: t.count, x: from.x, y: from.y, heading: from.heading, side: from.side, tic: this.tics });

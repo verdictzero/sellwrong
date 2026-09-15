@@ -6872,10 +6872,17 @@ section('the gunship');
   for (let t = 1; t <= 900; t++) {
     gg.tic();
     if (onStation < 0 && ship.state === 'station') onStation = t;
+    /* THE PODS ARE WATCHED FOR THE WHOLE FLIGHT and the altitude only on
+       station, because they are two different claims: the differential
+       is about the mechanism and shows best in the run-in, where it
+       turns hardest, while the altitude is about where it settles. They
+       used to share the on-station window, which made the mechanism's
+       evidence depend on how tight an orbit the player happened to give
+       it — and a player stood somewhere else is not a broken gearbox. */
+    diffSeen = Math.max(diffSeen, Math.abs(ship.tiltL - ship.tiltR));
     if (ship.state === 'station') {
       lowest = Math.min(lowest, ship.altitude); highest = Math.max(highest, ship.altitude);
       maxBank = Math.max(maxBank, Math.abs(ship.rx));
-      diffSeen = Math.max(diffSeen, Math.abs(ship.tiltL - ship.tiltR));
     }
   }
   note('the flight', `on station in ${(onStation / 35).toFixed(1)}s, holding ${lowest.toFixed(0)}-${highest.toFixed(0)} up, ` +
@@ -7388,6 +7395,206 @@ section('the gun');
   check('and every vertex is where the file says it is', worst < 1e-4, `${checked} vertices, worst ${worst.toExponential(1)}`);
   check('no marker spheres are left in any model this tool has touched',
     !names.some(n => /CLAUDE/i.test(n)), names.join());
+}
+
+/* ---------- the town ---------- */
+section('the town');
+{
+  const T = await import('../js/maps/town.js');
+  const G = level.town.grid;
+
+  /* THE GRID, and that the mall is already on it. TOWN.txt's single
+     most useful fact: the clearing is 14,000 across and four pitches
+     less one street is 13,968, so the town did not have to be
+     reconciled with the supermarket — the supermarket was on the grid
+     before anybody drew one. */
+  note('the grid', `${G.width} x ${G.depth}, 5 x 5 blocks on a pitch of ${T.PITCH}`);
+  check('five blocks each way, six streets', G.bx.length === 5 && G.sx.length === 6 && G.by.length === 5 && G.sy.length === 6);
+  check('a block is 3072 and a street is 576',
+    G.bx.every(([a, b]) => b - a === T.BLOCK) &&
+    G.sx.filter((_, i) => i !== 3).every(([a, b]) => b - a === T.STREET));
+  check('main street is the wide one', G.main[1] - G.main[0] === T.MAIN_W);
+  check('and it points at the supermarket doors',
+    Math.abs((G.main[0] + G.main[1]) / 2 - 2140) < 64, `${((G.main[0] + G.main[1]) / 2).toFixed(0)} against 2140`);
+  check('the town starts where the lot stops', G.y1 === -3096, `${G.y1}`);
+
+  const townSecs = level.sectors.filter(inTown);
+  note('what is in it', `${townSecs.length} regions, ${level.roofs.length} roofs, ${level.sectors.filter(s => s.storey > 0).length} storeys over a ground floor`);
+  check('the town is most of the map now', townSecs.length > level.sectors.length * 0.8, `${townSecs.length} of ${level.sectors.length}`);
+  note('the mall', `${level.sectors.filter(inMall).length} regions of the original 327, the rest being wood the town took`);
+  check('and the mall is still all there', level.sectors.filter(inMall).length >= 320,
+    `${level.sectors.filter(inMall).length}`);
+
+  /* EVERY COLUMN STACKS. The first of TOWN.txt's listed invariants and
+     the one that catches a floor plan whose storeys were written by
+     hand: no overlap, no storey under the one below it. */
+  let bad = 0, deep = 0;
+  for (const s of level.sectors) {
+    if (s.above === null) continue;
+    const up = level.sectors[s.above];
+    if (up.floor < s.ceil - 1e-6) bad++;
+    /* a gap is a DECK (sixteen of joist) or a WALL (a whole storey of
+       it, which is what the nave door has over it where the choir loft
+       opens) — anything deeper than that is a storey somebody forgot */
+    if (up.floor - s.ceil > T.STOREY + 16) deep++;
+  }
+  check('every column stacks without overlap', bad === 0, `${bad} storeys start under the one below`);
+  check('and the gap between two storeys is a deck or a wall, never a missing floor', deep === 0, `${deep} too deep`);
+
+  /* SPANAT AGREES WITH SECTORAT for every column of one, which is the
+     whole of the existing map and is the regression that matters. */
+  let disagree = 0, sampled = 0;
+  for (const s of level.sectors) {
+    if (s.above !== null || s.colBase !== s.index) continue;
+    const x = (s.bbox[0] + s.bbox[2]) / 2, y = (s.bbox[1] + s.bbox[3]) / 2;
+    if (!level._inSector(s, x, y)) continue;
+    sampled++;
+    if (level.spanAt(x, y, s.floor + 1) !== s) disagree++;
+  }
+  check('spanAt agrees with sectorAt for every column of one', disagree === 0, `${disagree} of ${sampled}`);
+
+  /* AND IT PICKS THE RIGHT STOREY in a column that has several. */
+  const hall = level.sectors.find(s => /no 3 hall$/.test(s.name) && s.storey === 0);
+  if (check('a house has a hall with something over it', !!hall && hall.above !== null)) {
+    const hx = (hall.bbox[0] + hall.bbox[2]) / 2, hy = (hall.bbox[1] + hall.bbox[3]) / 2;
+    const ground = level.spanAt(hx, hy, 4), first = level.spanAt(hx, hy, T.STOREY + 4);
+    check('standing in it you are on the ground floor', ground === hall);
+    check('and a storey up you are on the landing', first && first.storey === 1 && first.colBase === hall.index);
+    check('and sectorAt still answers with the ground one', level.sectorAt(hx, hy) === hall);
+  }
+
+  /* A WALL IS WHERE TWO COLUMNS DISAGREE — and over the whole of the
+     store, which is columns of one, the rule reproduces Doom's upper
+     and lower exactly. This is the check the plan asked for by name. */
+  let mismatch = 0, twoSided = 0;
+  for (const l of level.lines) {
+    if (!l.frontCol.length || !l.backCol.length || l.texLocked) continue;
+    if (l.frontCol.length > 1 || l.backCol.length > 1) continue;
+    twoSided++;
+    const f = level.sectors[l.front], b = level.sectors[l.back];
+    if (l.upper !== (f.ceil <= b.ceil ? f : b).upperTex) mismatch++;
+    else if (l.lower !== (f.floor >= b.floor ? f : b).lowerTex) mismatch++;
+  }
+  check('the disagreement rule reproduces upper and lower, texture for texture',
+    mismatch === 0, `${mismatch} of ${twoSided}`);
+  check('and it had plenty to reproduce', twoSided > 600, `${twoSided}`);
+
+  /* NO SURFACE OF ZERO OR NEGATIVE HEIGHT. */
+  let degenerate = 0, bands = 0;
+  for (const l of level.lines) for (const bd of l.bands || []) { bands++; if (bd.z1 - bd.z0 <= 0) degenerate++; }
+  note('wall bands', `${bands} over ${level.lines.length} lines`);
+  check('no wall band is zero or negative', degenerate === 0, `${degenerate}`);
+
+  /* THE MALL'S EDGE CONFLICTS. Three columns meeting on one edge is a
+     map error with no honest answer; the builder counts them. */
+  check('no edge has three columns on it', (level.edgeConflicts ?? 0) === 0, `${level.edgeConflicts}`);
+
+  /* EVERY STOREY IS REACHABLE. A walk from the ground floor of a house
+     must get to its top floor, which is the check that catches a
+     stairwell laid out one rect short. Done as the engine would do it:
+     step up no more than MAX_STEP through openings that are actually
+     open at the height you are at. */
+  {
+    const U = await import('../js/util.js');
+    const houses = new Map();
+    for (const s of level.sectors) {
+      const m = /^(\S+ no \d+) /.exec(s.name);
+      if (m) (houses.get(m[1]) || houses.set(m[1], []).get(m[1])).push(s);
+    }
+    const walk = (secs) => {
+      const start = secs.find(s => /hall$/.test(s.name) && s.storey === 0);
+      if (!start) return null;
+      const seen = new Set([start.index]), stack = [start];
+      while (stack.length) {
+        const s = stack.pop();
+        for (const l of s.lines) {
+          const other = s.colBase === l.frontBase ? l.backCol : l.frontCol;
+          for (const oi of other) {
+            const o = level.sectors[oi];
+            if (o === s || seen.has(o.index)) continue;
+            const openTop = Math.min(s.ceil, o.ceil), openBottom = Math.max(s.floor, o.floor);
+            if (openTop - openBottom < 56) continue;            // you do not duck
+            if (openBottom - s.floor > U.MAX_STEP) continue;    // nor climb
+            seen.add(o.index); stack.push(o);
+          }
+        }
+      }
+      return seen;
+    };
+    let checked = 0, unreachable = 0, worst = '';
+    for (const [tag, secs] of houses) {
+      const seen = walk(secs);
+      if (!seen) continue;
+      checked++;
+      for (const s of secs) {
+        if (s.storey === 0 || seen.has(s.index)) continue;
+        unreachable++;
+        if (!worst) worst = `${s.name} (storey ${s.storey})`;
+      }
+    }
+    note('houses walked from the front hall', checked);
+    check('every storey above the ground can be walked to', unreachable === 0, `${unreachable} cannot, e.g. ${worst}`);
+    check('and that was every house on the map', checked > 200, `${checked}`);
+  }
+
+  /* NOTHING IS OUTSIDE ITS OWN SHELL. RectMap throws on two rectangles
+     that overlap, so a room outside the house that is supposed to
+     contain it cannot be built at all — getting this far is the check,
+     and it is worth saying so rather than leaving the reader to
+     wonder where it went. */
+}
+
+/* ---------- the town on fire ---------- */
+section('the town on fire');
+{
+  const F = await import('../js/fire.js');
+  const { pSeed } = await import('../js/util.js');
+  pSeed(9182);
+  const fresh = MAP.buildSellWrong();
+  const fire = new F.FireSystem({ level: fresh, fx: null, actors: [] });
+  note('the fuel grid', `${fire.cols}x${fire.rows} x ${fire.levels} storeys = ${(fire.plane * fire.levels).toLocaleString()} cells`);
+  check('there is a plane per storey', fire.levels === 3, `${fire.levels}`);
+  check('and the ground plane is exactly the grid it always was',
+    fire.plane === fire.cols * fire.rows);
+  note('the ways up', `${fire.up.size} cells can carry fire to the storey above`);
+  check('fire has somewhere to climb', fire.up.size > 200, `${fire.up.size}`);
+
+  /* THE RASTERISED GRID IS THE QUERIED GRID. Run both and compare, once
+     — which is what TOWN.txt asks for by name. Over the ground plane,
+     where sectorAt is the question being replaced. */
+  let cellMiss = 0;
+  for (let cy = 0; cy < fire.rows; cy += 3) for (let cx = 0; cx < fire.cols; cx += 3) {
+    const i = fire.idx(cx, cy, 0);
+    const s = fresh.sectorAt(fire.worldX(cx), fire.worldY(cy));
+    if (fire.sectorOf[i] !== (s ? s.index : -1)) cellMiss++;
+  }
+  check('rasterising the grid gives what querying it gave', cellMiss === 0, `${cellMiss} cells differ`);
+
+  /* A FIRE ON A GROUND FLOOR REACHES THE STOREY ABOVE. Poured over one
+     house's ground floor the way a player would, and then left. */
+  const TAG = 'D3 no 3 ';
+  const mine = fresh.sectors.filter(s => s.name.startsWith(TAG));
+  const ground = mine.filter(s => s.storey === 0 && s.fuel > 0);
+  check('the house it is poured on has a ground floor and an upstairs',
+    ground.length > 4 && mine.some(s => s.storey > 0), `${ground.length} rooms`);
+  for (let k = 0; k < 40; k++) for (const s of ground)
+    fire.ignite((s.bbox[0] + s.bbox[2]) / 2, (s.bbox[1] + s.bbox[3]) / 2, 200, 40);
+  for (let t = 0; t < 35 * 60 * 8 && fire.liveCells > 0; t++) fire.tic();
+  const up = mine.filter(s => s.storey > 0 && s.charred);
+  note('one house, poured on downstairs', `${mine.filter(s => s.charred).length} of ${mine.length} regions charred, ${up.length} of them upstairs`);
+  check('the fire climbs to the floor above', up.length > 0, `${up.length} upstairs regions charred`);
+  check('and it went up the stairs to get there',
+    mine.some(s => s.storey > 0 && s.charred && /stair|landing/.test(s.name)) || up.length > 2,
+    up.map(s => s.name.slice(TAG.length)).join(', '));
+
+  /* AND IT DOES NOT COME BACK DOWN SOMEBODY ELSE'S CHIMNEY: a house
+     four blocks away is not alight. */
+  const far = fresh.sectors.filter(s => s.name.startsWith('E5 no 1 ') && s.charred).length;
+  check('a house four blocks off is not alight', far === 0, `${far} regions`);
+
+  /* THE STORE IS UNTOUCHED, which is the firebreak the ring road is. */
+  const shop = fresh.sectors.filter(s => inMall(s) && s.charred).length;
+  check('and neither is the supermarket', shop === 0, `${shop} regions`);
 }
 
 /* ---------- the site ---------- */

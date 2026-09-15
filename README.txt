@@ -8,15 +8,22 @@ The store is SellWrong, the anchor of a strip mall — one long shed cut
 into tenancies, with the big one in the middle paying most of the rent
 and ten small ones either side hanging on. Four of them have a name on
 the fascia and the rest never did. Seven of them you can walk into. All
-of them burn. Round the lot is a perimeter road, and round the whole
-parade, for nine thousand units in every direction, is a wood of fifty
-thousand firs and bushes, and that burns too.
+of them burn. Round the lot is a perimeter road, and round that a wood
+of thirty-five thousand firs and bushes, and that burns too.
+
+AND ON THE OTHER SIDE OF THE ROAD IS THE TOWN whose main street the mall
+killed: five by five blocks of it, a school, a church, and two hundred
+and sixty-eight houses with an upstairs and an interior behind every
+door that is drawn as a door. The fire crosses into it, climbs the
+stairs, and goes through a party wall one house at a time. See TOWN.txt.
 
 Open index.html in a browser. No install, no build step. Every texture,
 every sprite, every sound and the whole level are generated in the page
-at start-up, in about half a second. What it loads is what was made
-somewhere else: the people, the trees, and the gun. The sky was a
-photograph and is generated now, for the hour and the weather.
+at start-up, in about a second and a half — it was half a second before
+there was a town, and a town is ten thousand regions. What it loads is
+what was made somewhere else: the people, the trees, and the gun. The
+sky was a photograph and is generated now, for the hour and the
+weather.
 
   TOWN.txt              the plan for the town round the mall: a street
                           grid, a school, a church, townhouses of two
@@ -37,6 +44,9 @@ photograph and is generated now, for the hour and the weather.
   manifest.webmanifest  what a phone calls it when it is added to a home screen
   icon.png              and what it draws there — node tools/bake-icons.mjs
   vendor/three.module.js  three r160, local so the game runs off a memory stick
+  js/maps/town.js       the town: the grid, the houses, the school and
+                          the church. See TOWN.txt for the plan and for
+                          where this departs from it
   js/                   the game — js/weather.js, js/skyart.js and
                           js/rain.js are the newest of it: the hour, the
                           weather and the wind; the sky baked in the page
@@ -119,7 +129,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         1278 checks, no install and no browser
+  the smoke test         1436 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -3193,12 +3203,14 @@ worthless: from the stockroom the set is one region, from the car park
 facing the wood it is fourteen of 327 and none of them indoors, and
 raising the stockroom's door takes it from one to fourteen.
 
-WHAT IS NOT DONE OF THE PLAN: the level's own geometry is still one
-batch per texture for the whole map, so the flood does not cull a
-single wall — it culls what stands in front of them. Batching per
-block, so that the flood's visible regions become the drawn blocks, is
-TOWN.txt's phase two and the place the two plans meet. And the LOD
-ladder for buildings is meaningless until there are buildings.
+AND THE FLOOD NOW CULLS WALLS. The level's geometry used to be one
+batch per texture for the whole map, which gives every batch a bounding
+sphere the size of the world and a frustum that never fires. A batch is
+one texture IN ONE BLOCK of 3648 now, the flood's visible regions
+decide which blocks are submitted, and a block's INDOOR surfaces are a
+group of their own that comes in at two block pitches — which is the
+LOD ladder, and it stopped being meaningless the day there were
+buildings. See THE BLOCK IS THE UNIT OF DRAWING in js/mapgeo.js.
 
 
 THE ART
@@ -3780,7 +3792,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-1278 checks. Every one of them earns its place by having caught something
+1436 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -4338,10 +4350,21 @@ WHAT IS NOT DONE
     the photograph had, and the band drawn across them is a gesture at
     it. The photograph is still in assets/sky if anyone wants it as a
     star layer under the bake
-  the level's walls are one batch per texture for the whole map, so
-    the portal flood culls the crowd, the wood and the fire in front of
-    them and not a single wall. Per-block batching is TOWN.txt's
-    business and the flood is ready for it
+  nobody lives in the town. No residents, no cars moving, no crowd on
+    the streets — two in the morning is the excuse and it is a good one
+    for a first pass; it will not survive a second. What the town has
+    instead is light in windows, and a window that goes dark when its
+    room burns
+  there are no utility poles down the streets and no furniture in the
+    houses. A bed is a sector forty up wearing a bed picture and the
+    machinery for it is the same machinery the produce bins use, so
+    this is content and not a problem
+  a burnt-out first floor does not fall into the kitchen. js/ruin.js
+    drops a roof and leaves its steel; a storey landing on the one
+    below it is the same idea one level down and is the best thing this
+    engine could do that no other Doom-alike does
+  fire climbs but does not fall: there are up links and no down ones,
+    so a fire started upstairs stays there
   the flood is horizontal: an opening you can only see above or below
     the window still lets it through, which draws more than it need
     and never less
