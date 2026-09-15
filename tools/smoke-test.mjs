@@ -6468,15 +6468,91 @@ section('the gunship');
     onStation > 0 && onStation < 8 * 35, `${onStation} tics`);
   check('and holds its altitude there, under the lot\'s own ceiling so it can be shot at',
     Math.abs(lowest - V.VTOL.alt) < 30 && highest < 480, `${lowest.toFixed(0)}..${highest.toFixed(0)}`);
-  /* THE NACELLES TILT, PHYSICALLY, which is what the user asked for:
-     the angle is the thrust vector's own — lift under the weight,
-     forward whatever it is accelerating with — and they go
-     DIFFERENTIALLY when it yaws, one forward and one back, because
-     that is how a machine with no tail rotor turns. */
-  check('the nacelles tilt, and differentially when it turns: one forward, one back',
-    diffSeen > 0.1 && Math.abs(ship.tiltL - ship.tiltR) >= 0, `${diffSeen.toFixed(2)} radians apart`);
-  check('and the tail engine tilts with them rather than sitting still',
-    Math.abs(ship.tiltAux) > 0.01);
+  /* THE NACELLES VECTOR THE THRUST, which is what the user asked for,
+     and the corrections below are what the user asked for after seeing
+     it: the pods were drawn nose-DOWN as it accelerated and level in a
+     hover, which is both signs of it inverted, and they jangled.
+
+     TWO ANGLES NOW. `vector` is where the jet is pointed, measured up
+     from level — a right angle in a hover, flattening toward the nose
+     with speed — and `tilt` is where the pod is DRAWN, a geared share
+     of the same. See the block at VTOL.hover for why a two-hundred-unit
+     pod is not swung to a true right angle. */
+  check('the pods go differentially when it turns: one up, one down',
+    diffSeen > 0.05, `${diffSeen.toFixed(3)} radians apart`);
+  check('and the tail engine takes most of their angle rather than sitting still',
+    ship.tiltAux > 0.1, `${ship.tiltAux.toFixed(2)}`);
+  /* HOLDING STATION IS A HOVER, so the jet is near enough straight
+     down and the pods are well nose-UP. Level is CRUISE on this
+     airframe, and that is the half of it that was inverted. */
+  note('holding station', `the jet ${(ship.vector * 57.3).toFixed(0)} degrees up from level, ` +
+    `the pods drawn at ${(ship.tilt * 57.3).toFixed(0)}`);
+  check('holding station the jet is all but straight down, and the pods are nose-up',
+    ship.vector > 1.3 && ship.tilt > 0.35,
+    `jet ${(ship.vector * 57.3).toFixed(0)} degrees, pods ${(ship.tilt * 57.3).toFixed(0)}`);
+  check('and the body is near enough level rather than sitting nose-down through the whole hover',
+    Math.abs(ship.rz) < 0.1, `${(ship.rz * 57.3).toFixed(0)} degrees of pitch`);
+  check('and what is drawn never leaves the range a pod still reads as an engine in',
+    ship.tilt >= V.VTOL.tiltMin && ship.tilt <= V.VTOL.tiltMax &&
+    V.VTOL.tiltMax < 1.2 && V.VTOL.hover > 0.3);
+
+  /* AND AT SPEED IT IS THE OTHER WAY ROUND, which is the whole claim:
+     the same aircraft driven hard forward flattens its pods toward
+     level and points the jet ahead of it. Driven rather than waited
+     for, so the check is about the law and not about the route. */
+  {
+    const flat = (() => {
+      /* somewhere a long way off to fly at, because the station keeping
+         is what holds it at a loiter: told to go nowhere it goes
+         nowhere, and a test that only sets the velocity is overruled on
+         the next tic by the controller that owns it */
+      const home = ship.station;
+      ship.station = function () {
+        return { x: this.x + Math.cos(this.yaw) * 9000, y: this.y + Math.sin(this.yaw) * 9000, z: -1 };
+      };
+      for (let t = 0; t < 220; t++) gg.tic();
+      const got = { vector: ship.vector, tilt: ship.tilt, speed: Math.hypot(ship.vx, ship.vy) };
+      /* and then home, because the run took it thousands of units off
+         and everything after this is about a gunship that is overhead */
+      ship.station = home;
+      for (let t = 0; t < 500; t++) gg.tic();
+      return got;
+    })();
+    check('and it comes back to its station afterwards',
+      Math.hypot(ship.x - pg.x, ship.y - pg.y) < V.VTOL.standoff * 1.8,
+      `${Math.hypot(ship.x - pg.x, ship.y - pg.y).toFixed(0)} units out`);
+    note('and at full speed', `${flat.speed.toFixed(0)} units a tic: the jet ` +
+      `${(flat.vector * 57.3).toFixed(0)} degrees up from level, the pods ${(flat.tilt * 57.3).toFixed(0)}`);
+    check('driven hard forward the jet comes down toward the nose and the pods flatten',
+      flat.vector < 1.0 && flat.tilt < 0.25,
+      `jet ${(flat.vector * 57.3).toFixed(0)}, pods ${(flat.tilt * 57.3).toFixed(0)}`);
+  }
+
+  /* AND THE PODS ARE A MACHINE, not a number. This is the check that
+     holds the jangle down: a demand thrown from one end of the travel
+     to the other cannot move a pod by more than its rate in one tic,
+     so a controller output that steps — and an acceleration does step,
+     every time the thing saturates — cannot step the drawing. */
+  {
+    const gR = mkG();
+    const sr = gR.gunships.send();
+    sr.state = 'station';
+    let worst = 0, prev = sr.tiltL;
+    for (let t = 0; t < 400; t++) {
+      /* shove the demand end to end every few tics, which is far worse
+         than anything the flight controller ever does */
+      if (t % 5 === 0) { sr.vx = -sr.vx || V.VTOL.speed; sr.vy = -sr.vy; }
+      gR.tic();
+      worst = Math.max(worst, Math.abs(sr.tiltL - prev));
+      prev = sr.tiltL;
+    }
+    note('the pod actuator', `${(V.VTOL.tiltRate * 57.3).toFixed(1)} degrees a tic, ` +
+      `so its whole travel takes ${(((V.VTOL.tiltMax - V.VTOL.tiltMin) / V.VTOL.tiltRate) / 35).toFixed(1)}s`);
+    check('a pod cannot move faster than its own actuator, whatever the demand does',
+      worst <= V.VTOL.tiltRate + 1e-9, `${worst.toFixed(4)} against a limit of ${V.VTOL.tiltRate}`);
+    check('and the whole travel takes a second or more, so it reads as machinery',
+      (V.VTOL.tiltMax - V.VTOL.tiltMin) / V.VTOL.tiltRate / 35 > 1);
+  }
   check('and it BANKS INTO its turns, like a thing held up by thrust',
     maxBank > 0.05, `${(maxBank * 57.3).toFixed(1)} degrees`);
 
@@ -6672,7 +6748,11 @@ section('the gunship');
         sw.x = car0.x; sw.y = car0.y; sw.vx = sw.vy = sw.vz = 0;
         sw.cz = gW.level.sectorAt(sw.x, sw.y).floor + V.VTOL.lowAlt;
         sw.ground = gW.level.sectorAt(sw.x, sw.y).floor;
-        sw.tilt = sw.tiltL = sw.tiltR = sw.tiltAux = 0;
+        /* the JET straight down, which is what a hover is and what the
+           wash is now aimed by — the pods are drawn at a geared share
+           of it and no longer decide where the grit goes */
+        sw.vector = Math.PI / 2;
+        sw.tilt = sw.tiltL = sw.tiltR = V.VTOL.hover; sw.tiltAux = V.VTOL.hover * V.VTOL.auxShare;
         one.x = car0.x + 40; one.y = car0.y + 40;
         gW.blockmap.moved(one); one.updateSector();
         for (let t = 0; t < 80; t++) { sw.tick++; sw.washTic(); }

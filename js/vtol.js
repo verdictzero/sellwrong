@@ -33,18 +33,25 @@
    spring, and it faces the way it is going or faces you when it is
    not going anywhere. That is the whole of the flight, and the rest
    is what the airframe does ABOUT the flight, which is the part the
-   user asked for: THE NACELLES TILT, physically. A tilt-engine
-   aircraft hovers on thrust pointed down and moves by pointing some
-   of it backward, so the nacelle angle each tic is the angle of the
-   thrust vector the controller just asked for — atan of the forward
-   acceleration plus the drag it is pushing against, over the lift —
-   and they tilt back when it brakes, forward as it cruises, and
-   DIFFERENTIALLY when it yaws, one forward and one back, which is
-   how a machine with no tail rotor turns. The body pitches a little
-   against the tilt and banks INTO a turn, because it is held up by
-   thrust and not by springs — the same reasoning as the APC's, one
-   storey higher. The tail engine tilts with the pair and a little
-   more, doing what a tail does.
+   user asked for: THE NACELLES VECTOR THE THRUST, physically. This
+   thing hovers on thrust pointed DOWN and moves by pointing some of it
+   backward, so the angle each tic is the angle of the thrust vector the
+   controller just asked for — atan of the lift over the forward
+   acceleration plus the drag it is already pushing against. Holding
+   station that is a right angle, nozzles straight down; building speed
+   it flattens toward the nose; braking it goes past the right angle and
+   points forward. And DIFFERENTIALLY when it yaws, one pod up and one
+   down, which is how a machine with no tail rotor turns.
+
+   WHAT IS DRAWN IS A GEARED SHARE OF THAT — see `hover` and `gear` in
+   VTOL below for why, which is the model's own proportions — and the
+   pods are RATE LIMITED on the way there, because a nacelle is an
+   actuator and not a number: a demand that jumps cannot make the
+   drawing jump. The body pitches gently with the ACCELERATION, nose
+   down to go and nose up to stop, and banks INTO a turn, because it is
+   held up by thrust and not by springs — the same reasoning as the
+   APC's, one storey higher. The tail engine takes most of the pods'
+   angle and leads the pitch, doing what a tail does.
 
    THE JET WASH is the exhaust arriving. Each engine's exhaust is a
    ray from the nacelle along the way its thrust is not pointing, and
@@ -158,6 +165,51 @@ export const VTOL = {
   accel: 0.55,            // and how fast it gets there, units a tic a tic
   climb: 0.45,            // the most it will accelerate vertically
   turn: 0.045,            // radians a tic the heading may change
+  /* ------------------------------------------------------------------
+     THE THRUST VECTOR, and what the airframe shows of it
+
+     TWO ANGLES, and the whole of the fix is that they are two. `vector`
+     is where the JET is pointed, measured up from level: a right angle
+     in a hover, flattening toward the nose as it builds speed, past the
+     right angle when it is braking. `tilt` is where the POD is DRAWN,
+     which is a geared-down share of the same angle.
+
+     They are separate because of the model's own proportions. Each
+     nacelle is two hundred and eleven units long — half the whole
+     aircraft — so a pod swung to a true right angle is a plate the
+     length of the fuselage standing on its edge, which is what a V-22
+     looks like from the side and is not what THIS looks like from the
+     side: it reads as the thing coming apart. Rendered through the
+     range, it stops reading as an engine somewhere past forty degrees.
+
+     So the pod carries part of the angle and the nozzle inside it
+     carries the rest, which is a real arrangement rather than a dodge —
+     a big blended pod with a vectoring nozzle in it, not a rotating
+     engine. What is DRAWN is the pod, geared so it never stands on end.
+     What the JET does is the true angle, which is why the wash lands
+     UNDER it in a hover and streams aft when it is moving.
+
+     `hover` is where the pods sit holding station, `gear` is how much
+     of a radian of jet one radian of pod is worth, and the two limits
+     are where the pod stops looking like an engine.  */
+  hover: 0.62, gear: 0.61, tiltMin: -0.18, tiltMax: 1.05,
+  vectorMin: 0.45, vectorMax: 2.25,
+  weight: 0.85,           // what the lift is holding up, in the vehicles' units
+  accelGain: 3.2,         // how much of the angle the acceleration is worth
+  dragGain: 0.05,         // and how much of it the speed it is already doing is
+  accelSmooth: 0.12,      // the low pass on the acceleration the angle is read off
+  /* AND THE POD IS A MACHINE, which is the other half of the fix. It
+     used to chase its target through a first-order lag at nearly a
+     fifth a tic, so a demand that jumped — and an acceleration that is
+     a controller output DOES jump, every time the thing saturates or
+     comes off a corner — put a jump straight into the drawing. A
+     nacelle is an actuator with a rate: this is the most of a radian it
+     can travel in a tic, which is the pod's whole range in about a
+     second and a half, and it is the reason a jittery demand can no
+     longer make a jittery aircraft. */
+  tiltRate: 0.014,
+  diffGain: 4.0, diffMax: 0.18,   // one pod forward and one back, to yaw
+  auxShare: 0.8,          // how much of the pods' angle the tail engine takes
   /* where it goes */
   standoff: 820,          // how far from you it orbits
   orbit: 0.0048,          // radians a tic round that orbit: one lap in about forty seconds
@@ -200,8 +252,15 @@ export const VTOL = {
      ground has to be before what lands on it is hot enough to light
      somebody. Three hundred sits between the two altitudes on purpose:
      cruising at three hundred and thirty it lights nothing, and the one
-     thing that puts it low enough is coming down over a crowd. */
-  wash: { every: 2, reach: 520, radius: 190, hot: 300, ignite: [260, 420], scareEvery: 24, scare: 420 },
+     thing that puts it low enough is coming down over a crowd.
+
+     TWO HUNDRED AND FIFTY rather than the three hundred it started at,
+     because the nozzle moved: the jet now leaves the aft end of a pod
+     that tilts, which in a hover hangs some forty units lower than the
+     point it used to leave from, and forty units is most of the margin
+     between the two altitudes. Measured down the ray, a torch run is a
+     hundred and seventy and a cruise is two hundred and ninety. */
+  wash: { every: 2, reach: 520, radius: 190, hot: 250, ignite: [260, 420], scareEvery: 24, scare: 420 },
   /* the wing */
   firstDelay: 8 * TICRATE,    // after the army is called
   replace: 50 * TICRATE,      // after one is lost
@@ -225,12 +284,21 @@ export const VTOL = {
 
 const rnd = () => pRandom() / 255;
 const between = ([a, b]) => a + rnd() * (b - a);
+/** An actuator: toward `want`, by at most `rate` this tic. */
+const slew = (now, want, rate) => now + clamp(want - now, -rate, rate);
 
 /* WHAT HANGS OFF WHAT, named once: the two points the game cares about
    and the direction they both look along. Held as constants rather than
    written out at each call because the hull test takes the same chain
    the position does, and the two drifting apart would be a flare
    occluded against a turret pointing somewhere else. */
+/* WHERE AN ENGINE'S JET LEAVES IT, in that engine's own frame, so the
+   point swings with the pod as it tilts: the aft end of it, a little
+   below the centreline. The pods run from a hundred and six units
+   forward of their pivot to a hundred and six behind it. */
+const POD_NOZZLE = [-86, -6, 0];
+const AUX_NOZZLE = [-24, -6, 0];
+
 const AIM_CHAIN = ['fuselage', 'turret', 'pitch'];
 const MUZZLE_CHAIN = [...AIM_CHAIN, 'gun'];
 const LAMP_CHAIN = [...AIM_CHAIN, 'lamp'];
@@ -668,7 +736,9 @@ export class Gunship {
     this.yaw = o.yaw; this.yawV = 0;
     this.rx = 0; this.rz = 0;                 // roll about its length, pitch nose up
     this.ax = 0; this.ay = 0;                 // what it accelerated by, this tic
-    this.tilt = 0; this.tiltL = 0; this.tiltR = 0; this.tiltAux = 0;
+    this.tilt = VTOL.hover; this.tiltL = VTOL.hover; this.tiltR = VTOL.hover; this.tiltAux = VTOL.hover * VTOL.auxShare;
+    this.vector = Math.PI / 2;      // where the jet is pointed: a hover
+    this.aFwdS = 0; this.yawS = 0;  // the two smoothed inputs the angle is read off
     this.state = 'inbound';                   // inbound | station | dying | wreck
     this.mode = 'orbit';                      // orbit | torch, on station
     this.phase = rnd() * Math.PI * 2;         // where on the orbit
@@ -777,11 +847,15 @@ export class Gunship {
     P.turret.rotation.set(0, this.tYaw, 0);
     P.pitch.rotation.set(0, 0, this.tPitch);
     P.gun.rotation.set(this.spin, 0, 0);
-    /* a nacelle tilted FORWARD points its exhaust down and back: that
-       is a negative turn about the part's z, which points right */
-    P.nacelleL.rotation.set(0, 0, -this.tiltL);
-    P.nacelleR.rotation.set(0, 0, -this.tiltR);
-    P.aux.rotation.set(0, 0, -this.tiltAux);
+    /* A POD TILTED NOSE-UP POINTS ITS NOZZLE DOWN, which is a POSITIVE
+       turn about the part's z — z points right, and a positive turn
+       about it takes forward toward up. It was negative, which drew the
+       pods nose-DOWN as the thing accelerated and left them level in a
+       hover: the two things the user saw as inverted. Level is CRUISE
+       on this airframe; a hover is nose-up. */
+    P.nacelleL.rotation.set(0, 0, this.tiltL);
+    P.nacelleR.rotation.set(0, 0, this.tiltR);
+    P.aux.rotation.set(0, 0, this.tiltAux);
   }
 
   /** A point in a part's frame, up the chain into the AIRCRAFT's own
@@ -798,9 +872,9 @@ export class Gunship {
       else if (name === 'lamp') q = add(q, M.lamp.offset);
       else if (name === 'pitch') q = add(rotZ(q, this.tPitch), M.pitch.offset);
       else if (name === 'turret') q = add(rotY(q, this.tYaw), M.turret.offset);
-      else if (name === 'nacelleL') q = add(rotZ(q, -this.tiltL), M.nacelleL.offset);
-      else if (name === 'nacelleR') q = add(rotZ(q, -this.tiltR), M.nacelleR.offset);
-      else if (name === 'aux') q = add(rotZ(q, -this.tiltAux), M.aux.offset);
+      else if (name === 'nacelleL') q = add(rotZ(q, this.tiltL), M.nacelleL.offset);
+      else if (name === 'nacelleR') q = add(rotZ(q, this.tiltR), M.nacelleR.offset);
+      else if (name === 'aux') q = add(rotZ(q, this.tiltAux), M.aux.offset);
       else if (name === 'fuselage') q = add(q, M.fuselage.offset);
     }
     return q;
@@ -841,9 +915,9 @@ export class Gunship {
       const name = chain[i];
       if (name === 'pitch') q = rotZ(q, this.tPitch);
       else if (name === 'turret') q = rotY(q, this.tYaw);
-      else if (name === 'nacelleL') q = rotZ(q, -this.tiltL);
-      else if (name === 'nacelleR') q = rotZ(q, -this.tiltR);
-      else if (name === 'aux') q = rotZ(q, -this.tiltAux);
+      else if (name === 'nacelleL') q = rotZ(q, this.tiltL);
+      else if (name === 'nacelleR') q = rotZ(q, this.tiltR);
+      else if (name === 'aux') q = rotZ(q, this.tiltAux);
     }
     const w = turn(q, this.yaw, this.rx, this.rz);
     const l = Math.hypot(w[0], w[1], w[2]) || 1;
@@ -1022,29 +1096,51 @@ export class Gunship {
     const c = Math.cos(this.yaw), sn = Math.sin(this.yaw);
     const aFwd = ax * c + ay * sn, aLat = -ax * sn + ay * c;
     const vFwd = this.vx * c + this.vy * sn;
-    /* THE NACELLES: the thrust vector's own angle. Lift holds the
-       weight (one gravity, in the vehicles' units) plus whatever the
-       climb wants; the forward component is the acceleration plus the
-       drag it is pushing against at this speed. Tilt is the angle
-       between the two. */
-    const lift = 0.85 + az;
-    const fwd = aFwd * 3.2 + vFwd * 0.022;
-    const tilt = clamp(Math.atan2(fwd, Math.max(0.2, lift)), -0.9, 1.15);
-    this.tilt += (tilt - this.tilt) * 0.18;
-    /* one forward and one back to yaw, which is how it turns */
-    const diff = clamp(this.yawV * 7.0, -0.35, 0.35);
-    this.tiltL = this.tilt + diff;
-    this.tiltR = this.tilt - diff;
-    /* the tail engine: with them, and a little more, doing what a tail
-       does — it leads the pitch */
-    this.tiltAux += ((this.tilt * 0.6 - aFwd * 1.2) - this.tiltAux) * 0.2;
-    /* the body: a little nose-down against the tilt, and banked INTO
-       a turn, since it is held up by thrust and not by springs; and
-       never quite still, on two slow sines, like the APC */
+    /* WHERE THE JET IS POINTED. Lift holds the weight plus whatever the
+       climb is asking for; the forward component is the acceleration
+       plus the drag it is already pushing against at this speed. The
+       angle between them is measured UP FROM LEVEL, so a hover is a
+       right angle and speed flattens it — see the block at VTOL.hover
+       for why that is the way round it is, and why the pod is drawn at
+       a share of it rather than at it.
+
+       THE ACCELERATION IS LOW-PASSED FIRST, and that is not tidiness.
+       `aFwd` is a controller output: it saturates against VTOL.accel,
+       comes off the cap the moment the error shrinks, and steps again
+       at every corner. Reading an angle straight off it put every one
+       of those steps into the drawing. */
+    this.aFwdS += (aFwd - this.aFwdS) * VTOL.accelSmooth;
+    const lift = Math.max(0.25, VTOL.weight + az);
+    const fwd = this.aFwdS * VTOL.accelGain + vFwd * VTOL.dragGain;
+    this.vector = clamp(Math.atan2(lift, fwd), VTOL.vectorMin, VTOL.vectorMax);
+    /* and where the POD is drawn: the hover angle, moved by a geared
+       share of however far the jet is from a hover */
+    const wantTilt = clamp(VTOL.hover + VTOL.gear * (this.vector - Math.PI / 2),
+                           VTOL.tiltMin, VTOL.tiltMax);
+    /* ONE POD UP AND ONE DOWN TO YAW, off the turn rate smoothed for
+       the same reason the acceleration is: the heading is a damped
+       spring and it rings, and a differential read straight off it rang
+       with it. */
+    this.yawS += (this.yawV - this.yawS) * 0.12;
+    const diff = clamp(this.yawS * VTOL.diffGain, -VTOL.diffMax, VTOL.diffMax);
+    /* and the actuators, which is where the jangle went: the pods move
+       at a RATE, so a demand that jumps is a pod that does not */
+    this.tiltL = slew(this.tiltL, wantTilt + diff, VTOL.tiltRate);
+    this.tiltR = slew(this.tiltR, wantTilt - diff, VTOL.tiltRate);
+    this.tilt = (this.tiltL + this.tiltR) / 2;
+    /* the tail engine: most of their angle, and it LEADS the pitch —
+       what a tail does */
+    this.tiltAux = slew(this.tiltAux, clamp(wantTilt * VTOL.auxShare - this.aFwdS * 0.8, VTOL.tiltMin, VTOL.tiltMax), VTOL.tiltRate);
+    /* THE BODY answers the ACCELERATION rather than the pod angle, and
+       that is the other half of what looked wrong: hung off the pod, it
+       sat nine degrees nose-down for the whole of a hover, because a
+       hovering pod is not at zero. Nose down to go, nose up to stop,
+       banked INTO the turn since it is held up by thrust and not by
+       springs, and never quite still, on two slow sines like the APC. */
     const idle = Math.sin(this.tick * 0.031) * 0.012;
     const idleR = Math.sin(this.tick * 0.023 + 1.3) * 0.016;
-    const wantPitch = -this.tilt * 0.26 + idle;
-    const wantRoll = -clamp(this.yawV * 4.5 + aLat * 0.5, -0.42, 0.42) + idleR;
+    const wantPitch = clamp(-this.aFwdS * 1.6, -0.16, 0.16) + idle;
+    const wantRoll = -clamp(this.yawS * 4.5 + aLat * 0.5, -0.42, 0.42) + idleR;
     this.rz += (wantPitch - this.rz) * 0.12;
     this.rx += (wantRoll - this.rx) * 0.10;
   }
@@ -1162,8 +1258,14 @@ export class Gunship {
     const engines = [['nacelleL', this.tiltL], ['nacelleR', this.tiltR], ['aux', this.tiltAux]];
     const which = engines[(this.tick / W.every | 0) % 3];
     const [name] = which;
-    const origin = this.worldOf([0, -0.4 * (name === 'aux' ? 20 : 30), 0], ['fuselage', name]);
-    const dir = this.dirOf([0, -1, 0], ['fuselage', name]);
+    /* out of the pod's own nozzle, which swings with it — and down the
+       way the JET is pointed rather than the way the pod is DRAWN.
+       Those are two angles on this airframe (see VTOL.hover): the pod
+       shows a geared share and the nozzle inside it carries the rest,
+       which is why a hover puts the wash straight underneath and speed
+       streams it aft. */
+    const origin = this.worldOf(name === 'aux' ? AUX_NOZZLE : POD_NOZZLE, ['fuselage', name]);
+    const dir = this.dirOf([-Math.cos(this.vector), -Math.sin(this.vector), 0], ['fuselage']);
     if (!this.exhaustHit(origin, dir, hit)) return;
     /* NOTHING FROM UP THERE. An aircraft at six hundred units does not
        blow the car park about, and a puff a tic from one that is only
@@ -1248,10 +1350,13 @@ export class Gunship {
     this.vz -= VTOL.gravity;
     this.vx *= 0.992; this.vy *= 0.992;
     this.x += this.vx; this.y += this.vy; this.cz += this.vz;
-    /* the engines: one flung, one flat, the tail dead */
-    this.tiltL += (((this.deadEngine ? 1.3 : -0.4)) - this.tiltL) * 0.05;
-    this.tiltR += (((this.deadEngine ? -0.5 : 1.2)) - this.tiltR) * 0.05;
-    this.tiltAux += (0.9 - this.tiltAux) * 0.04;
+    /* the engines: one jammed hard over, one gone slack, the tail
+       stuck wherever it was when the drive went. No rate limit on the
+       way there any more — nothing is driving them, they are falling
+       to their stops. */
+    this.tiltL += (((this.deadEngine ? VTOL.tiltMax : VTOL.tiltMin)) - this.tiltL) * 0.05;
+    this.tiltR += (((this.deadEngine ? VTOL.tiltMin : VTOL.tiltMax)) - this.tiltR) * 0.05;
+    this.tiltAux += (VTOL.tiltMax * 0.9 - this.tiltAux) * 0.04;
     /* the turret is nobody's now: it slews with the spin */
     this.tYaw += 0.02 * this.spinDir; this.tPitch += (-0.9 - this.tPitch) * 0.02;
     this.spin += this.spinV; this.spinV *= 0.97;
@@ -1506,9 +1611,12 @@ export class Gunships {
     }
     const yaw = p ? Math.atan2(p.y - ey, p.x - ex) : (from.heading ?? 0);
     const ship = new Gunship(this, model, { x: ex, y: ey, z: VTOL.roofAlt, yaw });
-    /* it arrives already at speed: it has been flying the road */
+    /* it arrives already at speed: it has been flying the road, so the
+       jet is well forward of a hover and the pods are near level */
     ship.vx = Math.cos(ship.yaw) * VTOL.speed * 0.8; ship.vy = Math.sin(ship.yaw) * VTOL.speed * 0.8;
-    ship.tilt = 0.7; ship.tiltL = ship.tiltR = 0.7;
+    ship.vector = 0.75;
+    ship.tilt = ship.tiltL = ship.tiltR = 0.14;
+    ship.tiltAux = 0.11;
     this.ships.push(ship);
     this.sent++;
     g.onResponders?.('gunship', ship);

@@ -99,7 +99,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         1271 checks, no install and no browser
+  the smoke test         1278 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -2233,17 +2233,54 @@ they are. Eight draw calls and two more for the flares. Four hundred and
 twenty units nose to tail against the APC's two hundred and sixty, three
 hundred and seventy-three across: an aircraft over a car park of vans.
 
-THE NACELLES TILT PHYSICALLY, which is the request underneath all the
-others. A tilt-engine aircraft hovers on thrust pointed down and moves
-by pointing some of it backward, so the angle each tic is the angle of
-the THRUST VECTOR the flight controller has just asked for — lift under
-the weight, forward whatever it is accelerating with plus the drag it is
-pushing against — and they tilt back to brake, forward to cruise, and
-DIFFERENTIALLY when it yaws, one forward and one back, because that is
-how a machine with no tail rotor turns. The tail engine tilts with them
-and leads the pitch. The body answers it the way the APC's does, both
-signs turned over from a van's: nose down against the tilt, banked INTO
-the turn, because it is held up by thrust and not by springs.
+THE NACELLES VECTOR THE THRUST, which is the request underneath all the
+others, and it took two goes. The first one was wrong in three ways at
+once, all of which the user saw: the pods were drawn nose-DOWN as it
+accelerated and LEVEL in a hover, which is both senses of it inverted,
+and they jangled.
+
+LEVEL IS CRUISE ON THIS AIRFRAME. The thing hovers on thrust pointed
+DOWN and moves by pointing some of it backward, so the angle each tic is
+the angle of the THRUST VECTOR the flight controller has just asked for
+— lift under the weight, forward whatever it is accelerating with plus
+the drag it is already pushing against — measured UP FROM LEVEL. Holding
+station that is a right angle, nozzles straight down. Building speed it
+flattens toward the nose. Braking it goes PAST the right angle and
+points forward. And DIFFERENTIALLY when it yaws, one pod up and one
+down, because that is how a machine with no tail rotor turns. Measured
+in the test: holding station the jet is 86 degrees up from level; driven
+hard forward it is 37.
+
+WHAT IS DRAWN IS A GEARED SHARE OF THAT, and the reason is the model's
+own proportions. Each nacelle is two hundred and eleven units long —
+half the whole aircraft — so a pod swung to a true right angle is a
+plate the length of the fuselage standing on its edge. Rendered through
+the range, it stops reading as an engine somewhere past forty degrees
+and starts reading as the thing coming apart. So the pod carries part of
+the angle and the nozzle inside it carries the rest, which is a real
+arrangement rather than a dodge: a big blended pod with a vectoring
+nozzle in it, not a rotating engine. The pods are drawn at 33 degrees
+holding station and 3 at speed. The JET is not geared, which is why the
+wash lands UNDER it in a hover and streams aft when it is moving.
+
+AND THE PODS ARE A MACHINE, which is where the jangle went. They used to
+chase their target through a first-order lag at nearly a fifth a tic,
+and the target is read off an ACCELERATION — a controller output, which
+saturates against its own cap, comes off the cap the moment the error
+shrinks, and steps again at every corner. Every one of those steps went
+straight into the drawing. Now the acceleration is low-passed before the
+angle is read off it, the yaw rate is low-passed before the differential
+is, and the pods themselves are RATE LIMITED: eight tenths of a degree a
+tic, which is the pod's whole travel in two and a half seconds. A demand
+that jumps cannot make a pod jump. The test throws the demand end to end
+every five tics for four hundred tics and holds the pods to their rate.
+
+The tail engine takes most of the pods' angle and LEADS the pitch, doing
+what a tail does. The body answers the ACCELERATION rather than the pod
+angle — nose down to go, nose up to stop, banked INTO the turn because
+it is held up by thrust and not by springs. Hanging it off the pod angle
+was the third thing that was wrong: a hovering pod is not at zero, so
+the body sat nine degrees nose-down for the whole of a hover.
 
 THE JET WASH is the exhaust arriving, at the user's request. Each
 engine's exhaust is a ray from the nacelle down the way its thrust is
@@ -3512,7 +3549,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-1271 checks. Every one of them earns its place by having caught something
+1278 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -4172,6 +4209,14 @@ WHAT IS NOT DONE
     whichever face of its box it came in through; the gunship is a
     tree of parts with no single box, so a round into it makes its
     puff and its sparks and nothing else
+  a tracer that has landed within forty-four units of your eye is not
+    drawn at all. It never came up while the only thing firing them was
+    the gun in your hands, whose rounds fly AWAY at a hundred and fifty
+    units a tic; the gunship's come the other way and STOP ON YOU, and a
+    streak two and a half units across with its head six units from the
+    eye is a quarter of the screen wide. What that costs is the last
+    instant of an incoming round, which is the instant you are being hit
+    in and not looking at the tracer
   nothing follows you into the wood, and the wood's fire and the
     store's do not cross the car park to each other; the flamethrower is
     the bridge

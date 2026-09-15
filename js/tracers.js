@@ -31,6 +31,22 @@ export const MAX_TRACERS = 128;
 export const TRACER_SPEED = 150;   // units a tic
 export const TRACER_LEN = 420;     // units long, at the user's request: very
 export const TRACER_WIDTH = 2.6;   // units across
+/* AND ONE THAT HAS ARRIVED AT YOUR FACE IS NOT DRAWN. A streak is a
+   quad two and a half units across and four hundred long, which is a
+   line of light at any distance you would ever see one — and a wall
+   of white when its head is six units from the eye, because at six
+   units two and a half units subtends a quarter of the screen. It
+   never came up while the only thing firing tracers was the gun in
+   your hands, whose rounds fly AWAY: a hundred and fifty units a tic,
+   so its head is over the far side of the car park by the first frame
+   anybody sees it. The gunship's rounds come the other way and STOP
+   ON YOU — the head parks at the hit and the tail shrinks into it over
+   the next few tics — so what a burst looked like was half a dozen
+   white wedges filling the frame, one per round that had landed.
+
+   Past this and it is a streak. Inside it, it is a round that has
+   already hit you, and the thing to draw for that is nothing. */
+export const NEAR_EYE = 44;        // units: a hit this close leaves no streak
 
 /* THE TAIL NEVER LEAVES THE MUZZLE BEHIND. A streak this long would
    otherwise hang out of the back of the gun and through the eye for
@@ -143,6 +159,8 @@ export class Tracers {
       if (back >= this.d[i]) continue;
       /* sideways: across the streak and the line to the eye */
       const vx = ex - hx, vy = ey - hy, vz = ez - hz;
+      /* and nothing at all for one that has landed on you — see NEAR_EYE */
+      if (vx * vx + vy * vy + vz * vz < NEAR_EYE * NEAR_EYE) continue;
       let sx = this.dy[i] * vz - this.dz[i] * vy, sy = this.dz[i] * vx - this.dx[i] * vz, sz = this.dx[i] * vy - this.dy[i] * vx;
       const sl = Math.hypot(sx, sy, sz) || 1;
       const w = TRACER_WIDTH / 2;
