@@ -21,10 +21,16 @@
    is always visible, in a renderer with no shading at all. Baked into the
    vertex light by the geometry builder, so it costs nothing here either.
 
-   SMOKE is the one thing that moves. As the store burns, uFogDensity
+   SMOKE is the one thing that moves. As the store burns, smokeDensity
    climbs and the far end of every aisle goes grey, which is both the
    atmosphere and an honest gameplay signal: when you can no longer see
    the checkouts from Aisle 6, it is time to leave.
+
+   THE AIR is the other thing, and it is always there: every surface
+   fades with distance toward the sky behind it — literally a texel of
+   the sky bake, in the fragment's azimuth — so the far edge of the
+   world is the sky and not a cut. How far the air lets you see is the
+   weather's, and it is also the draw distance. See SIGHT.txt.
 
    THE SHADING IS EXPORTED AS GLSL, not only as materials. The forest,
    the particles and the flame all draw with their own vertex paths —
@@ -44,10 +50,31 @@ export const world = {
   globalLight:  { value: 1.0 },      // damage flash, light-amp pickup, blackout
   lightFalloff: { value: 1400.0 },   // units at which the diminishing bottoms out
   minLight:     { value: 0.12 },     // how dark the far end of a lit room gets
-  fogColor:     { value: new THREE.Color(0x0a0a0c) },
-  fogNear:      { value: 300.0 },
-  fogFar:       { value: 2200.0 },
-  fogDensity:   { value: 0.0 },      // smoke — driven by how much of the store is alight
+  /* THE AIR. Always on. A surface starts to go at airNear and has gone
+     entirely at airFar, and what it goes TO is not a colour anybody
+     tuned: it is a texel of the sky — skyTex's horizon row, in the
+     fragment's own azimuth — so a wall at the end of the street fades
+     into precisely what is behind it. airFar is therefore also the
+     draw distance, and the weather sets both (js/weather.js). With no
+     sky texture bound, as headless, the air fades to black, which is
+     the night this game had before it had a sky. */
+  airNear:      { value: 1200.0 },
+  airFar:       { value: 14000.0 },
+  skyTex:       { value: null },
+  /* where the eye is, in the renderer's axes, for the azimuth */
+  eyePos:       { value: new THREE.Vector3(0, 0, 0) },
+  /* HOW MUCH LIGHT THE SKY IS GIVING. An outdoor vertex's own light is
+     the floor and this lifts it — see worldBand — so a dawn is one
+     uniform and no rebuild. 0.08 is two in the morning. */
+  skyLight:     { value: 0.08 },
+  /* THE SMOKE, which used to be called the fog and used to be the only
+     one there was. Warm, lit by the fire under it, and driven by how
+     much of the store is alight. It goes on AFTER the air, because it
+     is between you and everything, the sky included. */
+  smokeColor:   { value: new THREE.Color(0.46, 0.34, 0.24) },
+  smokeNear:    { value: 300.0 },
+  smokeFar:     { value: 2200.0 },
+  smokeDensity: { value: 0.0 },
   tint:         { value: new THREE.Color(1, 1, 1) },  // pain red, pickup gold
 
   /* THE FIRE GLOW. One light, for the whole game.
@@ -131,10 +158,15 @@ export const WORLD_UNIFORMS_GLSL = /* glsl */`
 uniform float globalLight;
 uniform float lightFalloff;
 uniform float minLight;
-uniform vec3  fogColor;
-uniform float fogNear;
-uniform float fogFar;
-uniform float fogDensity;
+uniform float airNear;
+uniform float airFar;
+uniform sampler2D skyTex;
+uniform vec3  eyePos;
+uniform float skyLight;
+uniform vec3  smokeColor;
+uniform float smokeNear;
+uniform float smokeFar;
+uniform float smokeDensity;
 uniform vec3  tint;
 uniform vec3  fireLightPos;
 uniform float fireLightRange;
@@ -415,8 +447,17 @@ float worldBand(float lightIn, float depth, float sky, float fullbright) {
      the far end of the car park stays a car park. */
   float fall = lightFalloff * mix(1.0, 3.4, sky);
   float mn   = min(0.85, minLight + 0.32 * sky);
+  /* WHAT THE SKY ADDS. The vertex's own light is the floor — it was
+     written for two in the morning and two in the morning must not
+     change — and the sky lifts it, by however much of this surface's
+     light comes from the sky. Indoors that is nothing. Under a canopy
+     it is half. In the car park at dawn it is the dawn. And a lit sky
+     does not diminish with distance the way a fitting does, so the
+     floor of the falloff comes up with it. */
+  float li = mix(lightIn, max(lightIn, skyLight), sky);
+  mn = mix(mn, 1.0, clamp(skyLight, 0.0, 1.0) * sky);
   float dim = 1.0 - clamp(depth / fall, 0.0, 1.0);
-  float l = lightIn * mix(mn, 1.0, dim) * globalLight;
+  float l = li * mix(mn, 1.0, dim) * globalLight;
 
   /* THE STEP. 32 levels, same as Doom's 32 colormaps. Everything above is
      continuous maths; this is the line that makes it look right. */
@@ -439,12 +480,28 @@ vec3 worldShade(vec3 albedo, float l, float depth, vec3 world, float fullbright)
     c += albedo * fireLightColor * (fa * fireLight * (1.0 - fullbright * 0.7));
   }
 
-  /* Smoke. Multiplied by fogDensity so a store that is not yet on fire has
-     no haze at all rather than a permanent grey wash. */
-  float f = clamp((depth - fogNear) / max(1.0, fogFar - fogNear), 0.0, 1.0) * fogDensity;
-  /* the smoke is lit by the fire under it, not by the room: its floor
-     sits well above the room's own light, or a burning store goes black */
-  return mix(c, fogColor * max(l, 0.7), f);
+  /* THE AIR. The fog colour is a texel of the sky: the horizon row of
+     the sky bake, in the direction this fragment lies from the eye.
+     The azimuth formula is the sphere's own (js/skyart.js, header) —
+     atan2(z, x) over a full turn in the renderer's axes. Nearest
+     filtered and repeat-wrapped, so a negative u is fine and the fetch
+     is one texel from a quarter-megapixel texture that lives in cache.
+     A smooth ramp rather than a straight one, so the air starts gently
+     and a wall does not read as crossing a line. */
+  vec3 toFrag = world - eyePos;
+  float az = atan(toFrag.z, toFrag.x) * 0.15915494;          // over 2 pi
+  vec3 air = texture2D(skyTex, vec2(az, 0.5 + 0.5 / 256.0)).rgb;
+  float at = clamp((depth - airNear) / max(1.0, airFar - airNear), 0.0, 1.0);
+  at = at * at * (3.0 - 2.0 * at);
+  c = mix(c, air, at);
+
+  /* THE SMOKE, after the air, because it is between you and everything.
+     Multiplied by smokeDensity so a store that is not yet on fire has
+     no haze at all rather than a permanent grey wash; and lit by the
+     fire under it, not by the room — its floor sits well above the
+     room's own light, or a burning store goes black. */
+  float f = clamp((depth - smokeNear) / max(1.0, smokeFar - smokeNear), 0.0, 1.0) * smokeDensity;
+  return mix(c, smokeColor * max(l, 0.7), f);
 }
 `;
 
@@ -844,10 +901,15 @@ export function worldUniforms() {
     fireLightRange: world.fireLightRange,
     fireLight:      world.fireLight,
     fireLightColor: world.fireLightColor,
-    fogColor:     world.fogColor,
-    fogNear:      world.fogNear,
-    fogFar:       world.fogFar,
-    fogDensity:   world.fogDensity,
+    airNear:      world.airNear,
+    airFar:       world.airFar,
+    skyTex:       world.skyTex,
+    eyePos:       world.eyePos,
+    skyLight:     world.skyLight,
+    smokeColor:   world.smokeColor,
+    smokeNear:    world.smokeNear,
+    smokeFar:     world.smokeFar,
+    smokeDensity: world.smokeDensity,
     tint:         world.tint,
     emberTime:    world.emberTime,
     emberRamp:    world.emberRamp,

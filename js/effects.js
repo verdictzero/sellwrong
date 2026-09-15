@@ -27,9 +27,14 @@ import { Particles, atlasTexture } from './particles.js';
 import { Pix, fbm } from './pixel.js';
 import { pRandom, dist2 } from './util.js';
 import { EMBER_RAMP } from './palette.js';
+import { climate } from './weather.js';
 
-/* The wind. The forest fire leans with it too; see forest.js. */
-const WIND_X = 0.28;
+/* THE WIND WAS A CONSTANT HERE — WIND_X = 0.28 — read by the three
+   emitters below and by nothing else, under a comment that said the
+   forest leaned with it, which it did not. It is a vector in
+   js/weather.js now, set by the weather, and the smoke, the rain, the
+   store's fire and the wood's fire all read the same two numbers. */
+const wind = climate.wind;
 
 /* =====================================================================
    A PERSON ON FIRE
@@ -201,8 +206,8 @@ export class Effects {
         x: a.x + lx + (pRandom() / 255 - 0.5) * 11,
         y: a.y + ly + (pRandom() / 255 - 0.5) * 11,
         z: a.z + 4 + up * h * 0.9,
-        vx: (pRandom() / 255 - 0.5) * 0.5 + WIND_X * 0.5,
-        vy: (pRandom() / 255 - 0.5) * 0.5,
+        vx: (pRandom() / 255 - 0.5) * 0.5 + wind.x * 0.5,
+        vy: (pRandom() / 255 - 0.5) * 0.5 + wind.y * 0.5,
         vz: B.rise + (pRandom() / 255) * 0.7,
         life: B.lifeMin + (pRandom() % (B.lifeMax - B.lifeMin)),
         size0: Math.max(6, size), size1: Math.max(3, size * 0.35),
@@ -268,7 +273,7 @@ export class Effects {
       const hot = EMBER_RAMP[7], cool = EMBER_RAMP[2 + (pRandom() & 1)];
       this.embers.spawn({
         x: x + (pRandom() / 255 - 0.5) * 18, y: y + (pRandom() / 255 - 0.5) * 18, z,
-        vx: Math.cos(a) * sp + WIND_X, vy: Math.sin(a) * sp,
+        vx: Math.cos(a) * sp + wind.x, vy: Math.sin(a) * sp + wind.y,
         vz: 1.3 + (pRandom() / 255) * 2.2 * heat,
         life: 40 + (pRandom() % 60),
         size0: 1.5 + (pRandom() / 255) * 1.2, size1: 0.8,
@@ -282,7 +287,7 @@ export class Effects {
     const warm = 0.55 + (pRandom() / 255) * 0.3;
     this.smoke.spawn({
       x: x + (pRandom() / 255 - 0.5) * 24, y: y + (pRandom() / 255 - 0.5) * 24, z,
-      vx: (pRandom() / 255 - 0.5) * 0.5 + WIND_X * 1.6, vy: (pRandom() / 255 - 0.5) * 0.5,
+      vx: (pRandom() / 255 - 0.5) * 0.5 + wind.x * 1.6, vy: (pRandom() / 255 - 0.5) * 0.5 + wind.y * 1.6,
       vz: 0.9 + (pRandom() / 255) * 0.7,
       life: life + (pRandom() % 60),
       size0: size, size1: size * 4.2,

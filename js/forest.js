@@ -46,6 +46,8 @@
 
 import * as THREE from 'three';
 import { worldUniforms, WORLD_UNIFORMS_GLSL, WORLD_SHADE_GLSL } from './material.js';
+import { climate } from './weather.js';
+import { windMultipliers } from './fire.js';
 import { Particles } from './particles.js';
 import { FLAME_FOOT } from './fireart.js';
 import { pRandom, pChance, dist2, clamp } from './util.js';
@@ -153,7 +155,13 @@ export const BURN = {
   window: [0.30, 0.90],          // the part of a burn that can light a neighbour
   treeToTree: 5, treeToGround: 4, groundToTree: 5, groundToGround: 4,
   diagonal: 0.6,
-  wind: [1.55, 0.55],            // downwind (+x) and upwind multipliers
+  /* THE WIND WAS A PAIR HERE — downwind (+x) 1.55 and upwind 0.55 —
+     fixed, and nothing to do with the WIND_X the smoke drifted on.
+     Both read js/weather.js now: the same vector, turned into the same
+     four multipliers the store's fire uses (windMultipliers in
+     js/fire.js), so the smoke goes where the fire is going. At the
+     clear night's 0.28 that is 1.21 with it and 0.79 against, which
+     is gentler than the old pair; the rain's 0.9 is 1.68 and 0.4. */
 };
 
 /* How wide a plant is at a given height, as a fraction of its sprite's
@@ -444,12 +452,21 @@ export class Forest {
     const [w0, w1] = BURN.window;
     const next = [];
     let hot = 0;
+    const [mE, mN, mW, mS] = windMultipliers(climate.wind.x, climate.wind.y);
+    /* the rain, on a wood that is all under the sky: a burn that has
+       hardly started goes out, and nothing lights easily */
+    const rain = climate.rain;
+    const rainSpread = 1 - 0.8 * rain;
     for (let k = 0; k < this.active.length; k++) {
       const i = this.active[k];
       const dur = tree[i] ? BURN.treeTics : BURN.groundTics;
       const step = Math.max(1, Math.round(255 / dur));
       const before = prog[i];
       const after = Math.min(255, before + step);
+      if (rain > 0 && before < 85 && pChance(Math.round(rain * 14))) {
+        /* put out early: back to green, the way douse does it */
+        state[i] = 0; prog[i] = 0; this._activeSet[i] = 0; this._mark(i); continue;
+      }
       prog[i] = after;
       this.burnAccum += after - before;
       this._mark(i);
@@ -474,7 +491,9 @@ export class Forest {
           let chance = fromTree ? (tree[j] ? BURN.treeToTree : BURN.treeToGround)
                                 : (tree[j] ? BURN.groundToTree : BURN.groundToGround);
           if (dx && dy) chance *= BURN.diagonal;
-          if (dx > 0) chance *= BURN.wind[0]; else if (dx < 0) chance *= BURN.wind[1];
+          if (dx > 0) chance *= mE; else if (dx < 0) chance *= mW;
+          if (dy > 0) chance *= mN; else if (dy < 0) chance *= mS;
+          chance *= rainSpread;
           if (pChance(Math.round(chance))) this._light(j);
         }
       }

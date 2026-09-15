@@ -37,6 +37,9 @@ import { TouchControls } from './touch.js';
 import { world } from './material.js';
 import { atlasTexture, imageTexture } from './particles.js';
 import { bakeEffectAtlases } from './effects.js';
+import { bakeRainAtlas } from './rain.js';
+import { SkyBaker } from './skyart.js';
+import { Weather, WEATHERS, WEATHER_ORDER, HOUR_STOPS } from './weather.js';
 import { Weapon3D } from './weapon3d.js';
 import { KINDS } from './forest.js';
 import { Music } from './music.js';
@@ -143,6 +146,9 @@ const PREF_VERSION = 5;
 const DEFAULT_PREFS = { v: PREF_VERSION, sens: 1, invert: false, lefty: false, haptics: true,
                         detail: DEFAULT_DETAIL, pixels: DEFAULT_PIXELS, pixar: DEFAULT_PIXAR,
                         crowd: 0, fx: 0, wood: 0, fps: false,
+                        /* the night's weather — see js/weather.js; the hour is not
+                           kept, because a night starts at two */
+                        weather: 0,
                         /* BOTH DEBUG SWITCHES ON BY DEFAULT, at the user's request:
                            infinite ammo and invincibility, until told otherwise
                            from the pause menu, where either can still be turned
@@ -235,7 +241,6 @@ async function boot() {
 
   /* The files start arriving now, behind the baking. */
   const forestArtP = loadForestArt().catch(e => { console.warn('no forest art:', e.message); return null; });
-  const skyP = loadImage('assets/sky/night.png').catch(e => { console.warn('no sky:', e.message); return null; });
   /* and the crowd: the galvarius project's standees, the pieces they
      come apart into, what is left on the floor and the fireball that
      does it — see js/people.js and tools/prep-people.mjs */
@@ -291,6 +296,7 @@ async function boot() {
   const sprites = bakeSprites();
   const weapons = bakeWeapons();
   const fxAtlases = bakeEffectAtlases();
+  const rainAtlas = bakeRainAtlas();
   /* the stream out of the gun is fireballs (bakeEffectAtlases); the
      muzzle, the pilot and the flames on the wood are flame frames */
   const streamAtlas = { texture: fxAtlases.fireball, frames: 8 };
@@ -336,8 +342,20 @@ async function boot() {
 
   status('THE WOOD', 0.55);
   const forestArt = await forestArtP;
-  status('THE SKY', 0.62);
-  const skyImage = await skyP;
+  /* THE SKY IS BAKED, NOT LOADED — js/skyart.js, on the GPU, for the
+     hour and the weather, and again as the night goes. It needs the
+     palette atlas the post pass builds, so the pipeline comes first. */
+  status('THE SKY', 0.62); await breathe();
+  const pipeline = new LofiPipeline(renderer, {
+    height: DETAIL[detailIndex],
+    pixelHeight: PIXELS[pixelIndex],
+    pixelAspect: PIXEL_ASPECT[pixarIndex].v,
+    dither: 1.0, snap: 1.0,
+  });
+  const weather = new Weather({ hour: 2.0, kind: WEATHER_ORDER[prefs.weather] || 'clear' });
+  const skyBaker = new SkyBaker(renderer, pipeline.lut, { seed: 11 });
+  skyBaker.bake(weather.frame);
+  world.skyTex.value = skyBaker.texture;
 
   status('BUILDING SELLWRONG', 0.68); await breathe();
   const level = buildSellWrong();
@@ -349,9 +367,9 @@ async function boot() {
   status('THE FLAMETHROWER', 0.78);
   const hud = new Hud(null);
   const input = new Input(renderer.domElement);
-  const game = new Game({ level, scene, camera, textures, sprites, hud, audio, input, sky: skyImage,
-                         flameAtlas: streamAtlas, bodyAtlas: flameAtlas, fxAtlases, gibAtlases,
-                         fleet, police, apc, vtol });
+  const game = new Game({ level, scene, camera, textures, sprites, hud, audio, input, sky: skyBaker.texture,
+                         flameAtlas: streamAtlas, bodyAtlas: flameAtlas, fxAtlases, gibAtlases, rainAtlas,
+                         fleet, police, apc, vtol, weather });
   hud.game = game;
   const touch = new TouchControls(input, { root: $('touch'), prefs, onPause: () => pause(true) });
 
@@ -366,12 +384,6 @@ async function boot() {
   console.log(`wood: ${game.forest.treeCount} trees, ${game.forest.plantCount} plants`);
 
   status('OPENING', 0.95); await breathe();
-  const pipeline = new LofiPipeline(renderer, {
-    height: DETAIL[detailIndex],
-    pixelHeight: PIXELS[pixelIndex],
-    pixelAspect: PIXEL_ASPECT[pixarIndex].v,
-    dither: 1.0, snap: 1.0,
-  });
 
   function resize() {
     const w = container.clientWidth || window.innerWidth;
@@ -466,6 +478,8 @@ async function boot() {
     $('opt-crowd').textContent = 'CROWD: ' + CROWD[prefs.crowd].n;
     $('opt-fx').textContent = 'EFFECTS: ' + FX[prefs.fx].n;
     $('opt-wood').textContent = 'THE WOOD: ' + WOOD[prefs.wood].n;
+    $('opt-time').textContent = 'TIME: ' + game.weather.label;
+    $('opt-weather').textContent = 'WEATHER: ' + WEATHERS[WEATHER_ORDER[prefs.weather]].name;
     setTog('opt-fps', prefs.fps);
     setTog('opt-debug', prefs.debug);
     setTog('opt-godmode', prefs.godmode);
@@ -481,6 +495,7 @@ async function boot() {
     game.quality.crowd = CROWD[prefs.crowd].v;
     game.quality.effects = FX[prefs.fx].v;
     game.quality.wood = WOOD[prefs.wood].v;
+    game.weather.setKind(WEATHER_ORDER[prefs.weather]);
     $('fps').hidden = !prefs.fps;
     /* and the two that are not picture settings: see Player.fuelTic and
        Player.damage, which are one branch each */
@@ -517,6 +532,16 @@ async function boot() {
   ladder('opt-crowd', 'crowd', CROWD);
   ladder('opt-fx', 'fx', FX);
   ladder('opt-wood', 'wood', WOOD);
+  ladder('opt-weather', 'weather', WEATHER_ORDER);
+  /* THE HOUR IS NOT A PREFERENCE, it is where the night has got to; the
+     button steps it to the next keyframe, for looking at the dawn
+     without waiting nine minutes for it */
+  $('opt-time').addEventListener('click', () => {
+    const h = game.weather.hour;
+    const next = HOUR_STOPS.find(x => (x <= 12 ? x + 24 : x) > (h <= 12 ? h + 24 : h) + 0.01) ?? HOUR_STOPS[0];
+    game.weather.setHour(next);
+    syncMenu();
+  });
   toggle('opt-fps', 'fps');
   toggle('opt-debug', 'debug');
   toggle('opt-godmode', 'godmode');
@@ -629,6 +654,8 @@ async function boot() {
     if (started) game.update(dt);
     music.tick();
     game.render(now);
+    /* the sky, again, when the hour or the cloud has moved enough */
+    skyBaker.update(game.weather.frame, now / 1000);
     const p = game.player;
     if (started) weapon3d.update(p, p.firing, game.tics, dt);
     hud.update(p, weapons);
@@ -653,7 +680,8 @@ async function boot() {
         el.textContent = `${Math.round(fpsFrames / fpsAccum)} FPS  ${pipeline.width}x${pipeline.height}  ` +
           `${renderer.info.render.calls} draws  ${drawn}/${live} things  ` +
           `${game.fire.burningCells} alight  ${game.forest.burningCells} wood  ` +
-          `${game.flame.liveCount + game.fx.liveCount} particles`;
+          `${game.flame.liveCount + game.fx.liveCount} particles  ` +
+          `${game.weather.label} ${game.weather.kind} ${skyBaker.bakes} bakes`;
       }
       fpsAccum = 0; fpsFrames = 0;
     }
@@ -661,7 +689,7 @@ async function boot() {
   requestAnimationFrame(frame);
 
   /* let the console poke at it */
-  window.SELLWRONG = { game, pipeline, renderer, scene, camera, textures, sprites, world, level, input, touch, weapon3d, music,
+  window.SELLWRONG = { game, pipeline, renderer, scene, camera, textures, sprites, world, level, input, touch, weapon3d, music, weather: game.weather, skyBaker,
                        responders: game.responders, giblets: game.giblets };
 }
 

@@ -11,69 +11,112 @@
    stars overhead, a glow where the town is, nothing at all where there
    is nothing.
 
-   So the background is a SPHERE now, wearing a real night: a Polyhaven
-   panorama, baked down to 512 palette pixels round the horizon by
-   tools/bake-sky.mjs so it is made of the same paint as everything else.
-   An equirectangular picture on a sphere needs no projection maths at
-   all — the sphere's own u is longitude and its v is latitude, and
-   turning your head does the right thing for free. Looking up now shows
-   sky rather than the top of a strip, which is the only thing the
-   cylinder could never do.
+   So the background is a SPHERE, wearing an equirect. It wore a
+   photograph — a Polyhaven night, baked to the palette offline — and
+   it wears a picture the page bakes now (js/skyart.js), for a given
+   hour and weather, re-baked as the night goes. An equirectangular
+   picture on a sphere needs no projection maths at all — the sphere's
+   own u is longitude and its v is latitude, and turning your head does
+   the right thing for free. Looking up shows sky rather than the top
+   of a strip, which is the only thing the cylinder could never do.
 
-   Two rules and it is convincing:
+   Three rules and it is convincing:
 
    IT IS AT INFINITY. Every frame it is moved to sit on the camera, so
    walking never gets you nearer to it. That is the whole trick — a sky
    you can approach is a wall with stars on it.
 
-   IT IS NOT LIT. Fullbright, no fog, no distance diminishing, drawn
-   first with depth off so everything in the world lands in front of it
-   whatever the far plane is doing. That includes the far plane cutting
-   the forest floor off at a distance — what shows past that cut is the
-   bottom of the sphere, which is the panorama's own dark ground, and at
-   night that is indistinguishable from more forest.
+   IT IS NOT LIT, AND IT IS NOT IN THE AIR. Fullbright, no distance
+   diminishing, drawn first with depth off so everything in the world
+   lands in front of it whatever the far plane is doing. And the air —
+   the fog every wall fades into — is not applied to it, which is a
+   proof and not a preference: the air's colour IS the sky's horizon
+   texel, so mixing the sky toward the air would be mixing it toward
+   itself. What it DOES get is the smoke, at full distance, because a
+   store throwing a column of smoke greys its own sky, and against a
+   black night nobody could tell that it did not.
+
+   IT IS SMALLER THAN THE FAR PLANE. Depth off does not switch off
+   clipping, and the far plane now follows the weather in — 2600 units
+   in mist — so the sphere is scaled each frame to sit inside it.
    ===================================================================== */
 
 import * as THREE from 'three';
+import { world } from './material.js';
 
-const RADIUS = 4200;          // inside the camera's far plane, always
+const RADIUS = 4200;          // the sphere as built; scaled to fit the far plane
+
+const VERT = /* glsl */`
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+
+const FRAG = /* glsl */`
+uniform sampler2D map;
+uniform vec3  smokeColor;
+uniform float smokeDensity;
+varying vec2 vUv;
+void main() {
+  vec3 c = texture2D(map, vUv).rgb;
+  /* the same smoke a wall gets at the far end of its ramp, at the
+     lowest light the wall's smoke can be lit to — see worldShade */
+  c = mix(c, smokeColor * 0.7, smokeDensity);
+  gl_FragColor = vec4(c, 1.0);
+}
+`;
 
 /**
- * @param {THREE.Texture|HTMLImageElement} src  the baked equirect, as a
- *   texture or the image it should be made from
+ * @param {THREE.Texture|HTMLImageElement} src  the sky as an equirect —
+ *   the baker's texture, or an image if somebody hands one in
  */
 export function buildSky(src) {
-  const tex = src.isTexture ? src : new THREE.Texture(src);
-  /* Nearest: the texels are the point. Mipmaps off: there are 512 of
-     them round the whole horizon and a mip would be a blur. */
-  tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestFilter;
-  tex.generateMipmaps = false;
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.ClampToEdgeWrapping;
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.needsUpdate = true;
+  let tex;
+  if (src.isTexture) {
+    tex = src;
+  } else {
+    /* an image from outside: nearest, no mips, the way the photograph
+       was worn. Nothing loads one any more, and it costs six lines to
+       keep the door open. */
+    tex = new THREE.Texture(src);
+    tex.magFilter = THREE.NearestFilter;
+    tex.minFilter = THREE.NearestFilter;
+    tex.generateMipmaps = false;
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
+  }
 
   /* The sphere's u runs the wrong way round when seen from inside —
      SphereGeometry is authored to be looked at from outside — so the
      picture is mirrored. A negative x scale on the mesh puts west back
-     on the left, which matters for a photograph of somewhere real even
-     when nobody could say which way the golf course faced. */
+     on the left. The bake is drawn for exactly this mapping (see the
+     header of js/skyart.js), so the mirror is part of the contract and
+     not a fix. */
   const g = new THREE.SphereGeometry(RADIUS, 48, 24);
-  const mat = new THREE.MeshBasicMaterial({
-    map: tex, side: THREE.BackSide, depthWrite: false, depthTest: false, fog: false, toneMapped: false,
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { map: { value: tex }, smokeColor: world.smokeColor, smokeDensity: world.smokeDensity },
+    vertexShader: VERT, fragmentShader: FRAG,
+    side: THREE.BackSide, depthWrite: false, depthTest: false, fog: false, toneMapped: false,
   });
   const mesh = new THREE.Mesh(g, mat);
-  mesh.scale.x = -1;
+  mesh.scale.set(-1, 1, 1);
   mesh.frustumCulled = false;
   mesh.renderOrder = -1000;
   mesh.name = 'sky';
   return mesh;
 }
 
-/** Park it on the camera, so it can never be walked towards. The eye is
- *  the horizon: the sphere's equator sits at the camera's own height,
- *  which is where the horizon of a flat world is. */
+/** Park it on the camera, so it can never be walked towards, and keep
+ *  it inside the far plane. The eye is the horizon: the sphere's
+ *  equator sits at the camera's own height, which is where the horizon
+ *  of a flat world is. */
 export function followSky(mesh, camera) {
   mesh.position.copy(camera.position);
+  const far = camera.far || RADIUS * 2;
+  const s = Math.min(1, (far * 0.9) / RADIUS);
+  mesh.scale.set(-s, s, s);
 }

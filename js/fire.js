@@ -41,6 +41,7 @@ import * as THREE from 'three';
 import { createSpriteMaterial } from './material.js';
 import { world } from './material.js';
 import { pRandom, pChance, clamp, dist2, TICRATE } from './util.js';
+import { climate } from './weather.js';
 
 const CELL = 32;
 
@@ -249,6 +250,25 @@ const spreadChance = f => SPREAD_TABLE[Math.min(1023, Math.max(0, f | 0))];
    The quantisation was the mechanic. */
 const spreadRoll = n => (((pRandom() << 8) | pRandom()) < n);
 
+/* HOW HARD THE RAIN WORKS on a cell it can reach: heat taken off per
+   fire tic at full rain, against a RISE of 14 while the fuel holds —
+   more than the fuel can put back, so a fuelled fire under the rain
+   loses eight a fire tic and a cell at a hundred is out in three
+   seconds with its fuel still in it. It was 12 at first, which only
+   slowed a fire down, and the headless check that lights a gutted
+   region in the rain and expects it out is what said so. And how much
+   of a cell's chance to light a wet neighbour the rain takes away. */
+const RAIN_COOL = 22;
+const RAIN_SPREAD = 0.85;
+
+/** The wind as four multipliers, east, north, west, south, on the
+ *  chance of a cell lighting the one in that direction. Units per tic
+ *  in; a wind of 0.9 is a 1.7 downwind and a 0.4 against. */
+export function windMultipliers(wx, wy) {
+  const m = v => Math.max(0.4, Math.min(1.8, 1 + v * 0.75));
+  return [m(wx), m(wy), m(-wx), m(-wy)];
+}
+
 export class FireSystem {
   constructor(game) {
     this.game = game;
@@ -274,6 +294,9 @@ export class FireSystem {
     this.ember = new Uint16Array(n);
     this.link  = new Uint8Array(n);      // 1 E, 2 N, 4 W, 8 S
     this.sectorOf = new Int32Array(n).fill(-1);
+    /* UNDER THE SKY: the car park, the road, the wood. What the rain
+       falls on. A gutted region joins it at runtime — see rainOn */
+    this.open  = new Uint8Array(n);
 
     this.active = [];                    // cells currently alight
     this._activeSet = new Uint8Array(n);
@@ -313,6 +336,7 @@ export class FireSystem {
         if (!s) continue;
         this.sectorOf[i] = s.index;
         this.sectorCells[s.index]++;
+        if (s.outdoor || s.forest || s.outside) this.open[i] = 1;
         const f = s.fuel | 0;
         if (f <= 0) continue;
         /* a little variation, so the burn front is ragged rather than a
@@ -491,10 +515,19 @@ export class FireSystem {
     let hot = 0;
 
     const fuel0 = this.fuel0;
+    /* THE WIND, as four multipliers on the four directions a cell can
+       light: a fire runs downwind and creeps against it, which is what
+       makes a firebreak a decision rather than a rectangle. And THE
+       RAIN, which only a cell under the sky feels — the roof is the
+       whole of the difference — and which a gutted region has lost. */
+    const [mE, mN, mW, mS] = windMultipliers(climate.wind.x, climate.wind.y);
+    const rain = climate.rain;
+    const sectors = this.game.level.sectors;
     for (let k = 0; k < this.active.length; k++) {
       const i = this.active[k];
       let h = heat[i];
       const f = fuel[i];
+      const wet = rain > 0 && this.rainOn(i, sectors) ? rain : 0;
 
       if (f > 0) {
         /* burning: heat climbs toward what this much fuel can sustain,
@@ -523,9 +556,25 @@ export class FireSystem {
           }
         }
         if (fuel[i] <= 0) this.ember[i] = EMBER_TICS;
+        /* RAIN ON A FIRE. It takes heat off faster than the fuel can put
+           it back, so a burning car park in the rain sulks at the
+           threshold and never gets to light its neighbours, and a
+           gutted store with the roof gone is a store the weather is
+           putting out. */
+        if (wet > 0) {
+          h -= Math.round(RAIN_COOL * wet);
+          /* and out, with its fuel still in it: off the active list,
+             rather than sitting there at nothing for ever */
+          if (h <= 0) { heat[i] = 0; this.ember[i] = 0; this._activeSet[i] = 0; continue; }
+        }
       } else if (h > EMBER_HEAT) {
         h -= FALL;                                  // falling back to a glow
+        if (wet > 0) h -= Math.round(RAIN_COOL * wet);
         if (h < EMBER_HEAT) h = EMBER_HEAT;
+      } else if (this.ember[i] > 0 && wet > 0) {
+        /* and the embers go, which is the difference between a fire
+           that is out and one that is sulking — see douse */
+        this.ember[i] = 0; heat[i] = 0; this._activeSet[i] = 0; continue;
       } else if (this.ember[i] > 0) {
         this.ember[i]--;                            // and sitting there a while
         h = 2 + Math.round((EMBER_HEAT - 2) * this.ember[i] / EMBER_TICS);
@@ -541,10 +590,15 @@ export class FireSystem {
          get out of the aisle. */
       if (h >= SPREAD_AT) {
         const lk = link[i];
-        if (lk & 1) this._trySpread(i + 1, toIgnite);
-        if (lk & 2) this._trySpread(i + cols, toIgnite);
-        if (lk & 4) this._trySpread(i - 1, toIgnite);
-        if (lk & 8) this._trySpread(i - cols, toIgnite);
+        /* THE WIND BLOWS OUTSIDE. A fire under a roof spreads as it
+           always did — there is no wind in aisle six — and the first
+           cut of this leaned every fire in the building and changed
+           how a night went that no weather had touched. */
+        const windy = this.open[i] === 1;
+        if (lk & 1) this._trySpread(i + 1, toIgnite, windy ? mE : 1, rain, sectors);
+        if (lk & 2) this._trySpread(i + cols, toIgnite, windy ? mN : 1, rain, sectors);
+        if (lk & 4) this._trySpread(i - 1, toIgnite, windy ? mW : 1, rain, sectors);
+        if (lk & 8) this._trySpread(i - cols, toIgnite, windy ? mS : 1, rain, sectors);
       }
       next.push(i);
     }
@@ -576,11 +630,22 @@ export class FireSystem {
    *  there pouring on them. Nothing here is impossible; most of it is
    *  merely so unlikely that waiting is not a strategy. Which is the
    *  difference between a shop you have to burn and a shop you cannot. */
-  _trySpread(j, out) {
+  _trySpread(j, out, mul = 1, rain = 0, sectors = null) {
     if (j < 0 || j >= this.heat.length) return;
     const f = this.fuel[j];
     if (f <= 0 || this.heat[j] > 0) return;
-    if (spreadRoll(spreadChance(f))) out.push(j);
+    let chance = spreadChance(f) * mul;
+    /* a wet cell is a hard cell to light */
+    if (rain > 0 && this.rainOn(j, sectors)) chance *= 1 - RAIN_SPREAD * rain;
+    if (spreadRoll(chance)) out.push(j);
+  }
+
+  /** Is the rain falling on this cell? Under the sky, or under a roof
+   *  that has gone. */
+  rainOn(i, sectors = this.game.level.sectors) {
+    if (this.open[i]) return true;
+    const si = this.sectorOf[i];
+    return si >= 0 && !!sectors[si].gutted;
   }
 
   /** Anything standing in a hot cell catches, and anything alive in one
@@ -604,30 +669,19 @@ export class FireSystem {
     }
   }
 
-  /** Smoke thickens as the store goes, and the one fire light parks
-   *  itself in the middle of whatever is burning nearest the player. */
+  /** The one fire light parks itself in the middle of whatever is
+   *  burning nearest the player.
+   *
+   *  THE SMOKE USED TO BE SET HERE TOO, and the lift in the ambient as
+   *  the store goes. Both are the atmosphere's now — js/weather.js
+   *  reads burnFraction off this and off the wood and sets every
+   *  atmosphere uniform in one place, so the smoke, the air and the
+   *  hour cannot disagree about what the far end of an aisle looks
+   *  like. The reasoning that was here went with the code: the smoke
+   *  is warm and lit and stops well short of opaque, and the ambient
+   *  comes up as the place burns because the player still has to find
+   *  the way out of it. */
   _updateAtmosphere() {
-    const burn = this.burnFraction;
-    /* The wood adds its smoke too, but a forest is big and its fraction
-       stays small: what you see of a forest fire is the smoke standing
-       over the trees (js/effects.js), not a haze over everything. */
-    const wood = this.game.forest ? this.game.forest.burnFraction : 0;
-    /* Smoke that is LIT. The first cut of this fog was near-black and
-       went to nine-tenths density, which turned a burning store into a
-       dark room with the lights off: correct for smoke in a cellar,
-       wrong for smoke over a fire, which is orange-grey from underneath.
-       So it is warm, it is lighter, and it stops well short of opaque. */
-    world.fogDensity.value = Math.min(0.50, burn * 1.2 + wood * 0.5);
-    world.fogColor.value.setRGB(0.46 + burn * 0.12, 0.34 + burn * 0.08, 0.24 + burn * 0.03);
-
-    /* A gutted store lit only by embers is, accurately, almost pitch
-       black — and the player still has to find the way out of it. So the
-       ambient lifts as the place goes: partly the embers themselves,
-       partly the roof no longer being entirely there. Accuracy loses
-       this one on purpose. */
-    world.minLight.value = 0.26 + burn * 0.30;
-    world.globalLight.value = 1.0 + burn * 0.22;
-
     const p = this.game.player;
     if (!p) return;
     let sx = 0, sy = 0, sw = 0, near = 0;

@@ -42,6 +42,7 @@ import { createSpriteMaterial } from './material.js';
 import { STATES, ACTORS, stateOf } from './states.js';
 import { angleNorm, angleDiff, pRandom, dist, dist2 } from './util.js';
 import { swayOf } from './people.js';
+import { climate } from './weather.js';
 
 /* Doom's eight, in Doom's order. Index 8 is "nowhere to go". */
 export const DI = { EAST: 0, NORTHEAST: 1, NORTH: 2, NORTHWEST: 3, WEST: 4, SOUTHWEST: 5, SOUTH: 6, SOUTHEAST: 7, NODIR: 8 };
@@ -146,6 +147,8 @@ const _score = new Float64Array(8);
 
 /* HOW FAR A THING IS DRAWN FROM, how far off the view axis, and how
    close is too close to bother asking. See the note on Actor.render. */
+/* and never past the air: whatever the weather lets you see is the
+   most anybody is drawn at — see climate.airFar in js/weather.js */
 const CULL_FAR = 6400;
 const CULL_NEAR = 96;
 const CULL_COS = Math.cos(80 * Math.PI / 180);
@@ -1100,7 +1103,8 @@ export class Actor {
     if (this.removed || !this.state) return;
     const dx = this.x - camX, dy = this.y - camY;
     const d2 = dx * dx + dy * dy;
-    if (d2 > CULL_FAR * CULL_FAR ||
+    const far = Math.min(CULL_FAR, climate.airFar);
+    if (d2 > far * far ||
         (d2 > CULL_NEAR * CULL_NEAR && (viewX !== 0 || viewY !== 0) &&
          dx * viewX + dy * viewY < Math.sqrt(d2) * CULL_COS)) {
       if (this.mesh) this.mesh.visible = false;

@@ -197,19 +197,13 @@ void main() {
 }
 `;
 
-const FILTER_FRAG = /* glsl */`
-precision highp float;
-uniform sampler2D tFrame;
+/* THE SNAP AND THE DITHER, AS GLSL ANYBODY CAN SPLICE. The post pass
+   below uses them on every chunky pixel; js/skyart.js uses the same
+   two functions on every texel of the sky it bakes, so the sky is
+   made of the same paint by the same hand. One definition. */
+export const PALETTE_GLSL = /* glsl */`
 uniform sampler2D tLut;
-uniform vec2  uFrameSize;     // the 3D buffer, in pixels
-uniform vec2  uGridSize;      // the chunky pixel grid
-uniform vec2  uTaps;          // samples across one chunky pixel, 1..4
-uniform float uDither;        // 0 = off, ~1 = one palette step of wobble
 uniform float uLutSize;
-uniform float uSnap;          // 0 = truecolour passthrough, 1 = full palette
-uniform vec3  uPicture;       // brightness, contrast, gamma — all 1 for the picture as drawn
-varying vec2 vUv;
-
 /* 4x4 ordered Bayer, built the way Bayer matrices are actually defined:
    recursively out of the 2x2 one. M4(x,y) = 4*M2(low bits) + M2(high
    bits), where M2 is [[0,2],[3,1]] and works out to (2x+3y) mod 4. Four
@@ -238,6 +232,21 @@ vec3 palSnap(vec3 c) {
   vec2 uv = vec2((b * N + r + 0.5) / (N * N), (g + 0.5) / N);
   return texture2D(tLut, uv).rgb;
 }
+
+`;
+
+const FILTER_FRAG = /* glsl */`
+precision highp float;
+uniform sampler2D tFrame;
+uniform vec2  uFrameSize;     // the 3D buffer, in pixels
+uniform vec2  uGridSize;      // the chunky pixel grid
+uniform vec2  uTaps;          // samples across one chunky pixel, 1..4
+uniform float uDither;        // 0 = off, ~1 = one palette step of wobble
+uniform float uSnap;          // 0 = truecolour passthrough, 1 = full palette
+uniform vec3  uPicture;       // brightness, contrast, gamma — all 1 for the picture as drawn
+varying vec2 vUv;
+
+${PALETTE_GLSL}
 
 void main() {
   /* WHICH CHUNKY PIXEL THIS IS. The pass renders AT the grid's own

@@ -1158,6 +1158,265 @@ section('fire');
         `${ticsAlone} tics is too fast to be worth a weapon`);
 }
 
+/* ---------- the air ---------- */
+section('the air');
+{
+  /* THE HOUR, THE WEATHER AND THE WIND, headless. The judgement lives
+     in a table in js/weather.js and this is what a table can be held
+     to: that the night gets lighter and never darker on the way to
+     the morning, that every colour in it is a colour the palette can
+     draw, and that the weather rows say what they say. See SIGHT.txt. */
+  const W = await import('../js/weather.js');
+  const SK = await import('../js/skyart.js');
+  const M = await import('../js/material.js');
+  const SKY = await import('../js/sky.js');
+
+  /* --- the clock --- */
+  check('the night runs 22:00 to 08:00 and wraps onto it',
+    W.nightHour(2) === 26 && W.nightHour(25.5) === 25.5 && W.nightHour(23) === 23 && W.nightHour(9) === 32 && W.nightHour(14) === 22,
+    `${W.nightHour(2)} ${W.nightHour(25.5)} ${W.nightHour(23)} ${W.nightHour(9)} ${W.nightHour(14)}`);
+  const w = new W.Weather({ hour: 2 });
+  check('it starts at two in the morning, clear', w.label === '02:00' && w.kind === 'clear');
+  const tics = 35 * 60;
+  for (let i = 0; i < tics; i++) w.tic();
+  note('after a minute of play', `${w.label}`);
+  check('and a minute of play is the hours-per-minute the file says',
+    Math.abs(w.hour - (2 + W.HOURS_PER_MINUTE)) < 0.01, w.label);
+  const rise = (5.67 - 2) / W.HOURS_PER_MINUTE;
+  note('two in the morning to sunrise', `${rise.toFixed(1)} minutes of play`);
+  check('you have until dawn, and it is about nine minutes', rise > 7 && rise < 12, `${rise.toFixed(1)}`);
+  w.setHour(7.9); for (let i = 0; i < tics; i++) w.tic();
+  check('the clock stops at eight, past sunrise, where the table is flat', w.hour === 8, `${w.hour}`);
+
+  /* --- the table --- */
+  const luma = c => c[0] * 0.3 + c[1] * 0.6 + c[2] * 0.1;
+  let lastSky = -1, lastHz = -1, monoSky = true, monoHz = true;
+  const rows = [];
+  for (let h = 2; h <= 8; h += 0.1) {
+    const f = W.sampleHour(h);
+    rows.push(f);
+    if (f.skyLight < lastSky - 1e-6) monoSky = false;
+    if (luma(f.horizon) < lastHz - 0.02) monoHz = false;
+    lastSky = f.skyLight; lastHz = luma(f.horizon);
+  }
+  check('from two to eight the sky only gets lighter', monoSky);
+  check('and so does the horizon', monoHz);
+  const two = W.sampleHour(2), dawn = W.sampleHour(5.17), day = W.sampleHour(8);
+  check('two in the morning is a night: stars, no sun, the fire is the light',
+    two.stars === 1 && two.sunAlt < -18 && two.skyLight < 0.12 && two.daylight === 0);
+  check('civil dawn has the sun just under and the glow on', dawn.sunAlt > -6 && dawn.sunAlt < 0 && dawn.glowAmt > 0.8 && dawn.stars < 0.1);
+  check('and a dawn is rose: more red than blue along the horizon', dawn.glow[0] > dawn.glow[2] + 0.3, `${dawn.glow.map(v => v.toFixed(2))}`);
+  check('eight is a day: the sun up, the sky full', day.sunAlt > 15 && day.skyLight === 1 && day.daylight === 1);
+  check('the sun comes up in the east', Math.abs(W.SUN_AZ) < Math.PI / 4);
+
+  /* EVERY COLOUR IN THE TABLE IS A COLOUR THE PALETTE CAN DRAW. This is
+     the check that says whether the sky ramp is big enough, and the one
+     that fails first if somebody takes its entries back: a dawn that
+     snaps three grey levels away from what the table asked for is a
+     dawn that comes out grey. */
+  {
+    let worst = 0, worstAt = '';
+    for (const k of W.KEYFRAMES) {
+      for (const key of ['zenith', 'horizon', 'ground', 'glow', 'sunCol']) {
+        const c = [1, 3, 5].map(i => parseInt(k[key].slice(i, i + 2), 16));
+        if (c[0] + c[1] + c[2] === 0) continue;
+        const p = pal.PALETTE[pal.nearestIndex(...c)];
+        const d = Math.hypot(...c.map((v, i) => v - p[i]));
+        if (d > worst) { worst = d; worstAt = `${k.hour}h ${key} ${k[key]} -> ${p}`; }
+      }
+    }
+    note('worst palette miss in the table', `${worst.toFixed(0)} — ${worstAt}`);
+    check('every colour in the night snaps within a step or two of itself', worst < 40, worstAt);
+    check('the palette has a ramp for the sky', pal.RAMP.sky && pal.RAMP.sky.n >= 16, JSON.stringify(pal.RAMP.sky));
+    check('and it still has 256 entries', pal.PALETTE.length === 256);
+  }
+
+  /* --- the weather --- */
+  const K = W.WEATHER_ORDER.map(k => W.WEATHERS[k]);
+  check('four weathers, clear first', K.length === 4 && K[0].name === 'CLEAR');
+  check('the air closes in from clear to mist', K.every((r, i) => i === 0 || r.airFar < K[i - 1].airFar),
+    K.map(r => r.airFar).join(' > '));
+  check('and near is always nearer than far', K.every(r => r.airNear < r.airFar));
+  check('only the rain rains', K.filter(r => r.rain > 0).length === 1 && W.WEATHERS.rain.rain === 1);
+  check('the mist is flat and the stars are gone under cloud', W.WEATHERS.mist.flat === 1 && W.WEATHERS.overcast.stars === 0);
+  check('the clear night keeps the wind the smoke always had', Math.abs(W.WEATHERS.clear.wind[0] - 0.28) < 1e-9);
+  const mist = W.sampleFrame(2, 'mist'), clear = W.sampleFrame(2, 'clear');
+  check('night mist is lit, not black', luma(mist.horizon) > luma(clear.horizon) + 0.1,
+    `${luma(mist.horizon).toFixed(2)} vs ${luma(clear.horizon).toFixed(2)}`);
+
+  /* --- the uniforms --- */
+  const w2 = new W.Weather({ hour: 2, kind: 'rain' });
+  w2.apply(0.016, 0.25, 0.1);
+  check('apply sets the air from the row', M.world.airFar.value === W.WEATHERS.rain.airFar && M.world.airNear.value === W.WEATHERS.rain.airNear);
+  check('and the smoke from the two fires', Math.abs(M.world.smokeDensity.value - Math.min(0.5, 0.25 * 1.2 + 0.1 * 0.5)) < 1e-9);
+  check('and the ambient from the hour plus the burn', Math.abs(M.world.minLight.value - (W.sampleHour(2).minLight + 0.25 * 0.30)) < 1e-9);
+  check('and everybody else can read the wind and the rain off climate',
+    W.climate.rain === 1 && W.climate.wind.x === 0.9 && W.climate.kind === 'rain' && W.climate.airFar === 5200);
+  w2.setKind('clear'); w2.apply(0.016, 0, 0);
+  check('and clear again', W.climate.rain === 0 && M.world.smokeDensity.value === 0);
+
+  /* --- THE FOG IS THE SKY. The claim of the whole plan, held where
+     it can be held headless: the world shader's fog colour is a fetch
+     from the sky texture's horizon row in the fragment's azimuth, and
+     the sky sphere takes the smoke and not the air — because the air
+     IS the sky's horizon, and mixing it toward itself is the identity. */
+  {
+    const src = M.WORLD_SHADE_GLSL;
+    check('the air is a texel of the sky, at the horizon, by azimuth',
+      /atan\(toFrag\.z, toFrag\.x\)/.test(src) && /texture2D\(skyTex, vec2\(az, 0\.5/.test(src));
+    check('the air goes on before the smoke', src.indexOf('mix(c, air, at)') < src.indexOf('smokeColor * max(l, 0.7)'));
+    check('and the smoke goes on after, lit by the fire under it', /mix\(c, smokeColor \* max\(l, 0\.7\), f\)/.test(src));
+    const skySrc = (await import('node:fs')).readFileSync(new URL('../js/sky.js', import.meta.url), 'utf8');
+    const frag = skySrc.slice(skySrc.indexOf('const FRAG'), skySrc.indexOf('export function buildSky'));
+    check('the sky takes the smoke', /smokeDensity/.test(frag));
+    check('and not the air', !/airFar|airNear|skyTex/.test(frag));
+    /* the same azimuth the bake writes with: skyart's dirOf turns u
+       into atan2(z, x) over a turn, and the fog reads back with the
+       same formula — measured against three's SphereGeometry, see the
+       header of js/skyart.js */
+    const bake = (await import('node:fs')).readFileSync(new URL('../js/skyart.js', import.meta.url), 'utf8');
+    check('and the bake lays the sky out on the same azimuth', /float phi = uv\.x \* 2\.0 \* PI;/.test(bake) && /sin\(phi\) \* c\)/.test(bake));
+  }
+  /* the horizon colour the fog gets, worked out the way the bake does:
+     rose toward the sun at dawn and blue-grey away from it, which is
+     what the screenshots show and what nobody wrote down */
+  {
+    const f = W.sampleFrame(5.17, 'clear');
+    const east = SK.horizonColour(f, W.SUN_AZ), west = SK.horizonColour(f, W.SUN_AZ + Math.PI);
+    check('at dawn the east is rose and the west is not', east[0] > west[0] * 2 && east[0] > east[2], `${east.map(v => v.toFixed(3))} vs ${west.map(v => v.toFixed(3))}`);
+    const n = W.sampleFrame(2, 'clear');
+    const townward = SK.horizonColour(n, Math.PI), away = SK.horizonColour(n, 0);
+    check('and at night the town glows in the west', townward[0] > away[0] && townward[0] > townward[2] * 0.8, `${townward.map(v => v.toFixed(3))}`);
+  }
+
+  /* --- THE WIND ON THE FIRE --- */
+  const F = await import('../js/fire.js');
+  const { pSeed } = await import('../js/util.js');
+  /* A FRESH MAP FOR EVERY MATCH. The fire sections above have burnt
+     the shared level's gondolas and the sim has marked those regions
+     charred and gutted on the sectors themselves — which is right, and
+     which would make a gutted gondola a gondola the rain gets into. */
+  const freshLevel = () => MAP.buildSellWrong();
+  {
+    const [e, n, ww, ss] = F.windMultipliers(0.9, 0);
+    check('a wind of 0.9 runs the fire downwind and holds it upwind', e > 1.5 && ww < 0.5 && n === 1 && ss === 1, `${e} ${ww}`);
+    const [e2, , w2_] = F.windMultipliers(0.28, 0);
+    check('the clear night\'s breeze is a lean, not a push', e2 > 1.1 && e2 < 1.3 && w2_ > 0.7 && w2_ < 0.9, `${e2} ${w2_}`);
+    check('and it never goes to nothing or to double', F.windMultipliers(9, 9).every(v => v >= 0.4 && v <= 1.8));
+  }
+  /* AND A FIRE LEANS. The same match as the fire section, in a wind
+     from the west and then from the east, and the burnt ground's
+     centre of mass moves with it. */
+  {
+    /* THE WIND BLOWS OUTSIDE, and the wood is all outside: the same
+       match in the same trees on the same roll, in a wind from the
+       west, from the east and in none, and the burnt ground's centre
+       moves with it. The store's own fire gets the same multipliers
+       on its cells under the sky, and the check after this one holds
+       that it gets them nowhere else. */
+    const fake = (lv) => ({ level: lv, player: { x: 1240, y: -520, dead: false, damage() {} }, actors: [], sound: null, forest: null });
+    const FOREST = await import('../js/forest.js');
+    const lean = (wx) => {
+      W.climate.wind.x = wx; W.climate.wind.y = 0; W.climate.rain = 0;
+      pSeed(777);
+      const wood = new FOREST.Forest(freshLevel());
+      const ox = -9000, oy = 4000;
+      wood.ignite(ox, oy, 60);
+      for (let i = 0; i < 2400; i++) wood.tic();
+      let sx = 0, n = 0;
+      for (let i = 0; i < wood.state.length; i++) if (wood.state[i]) { sx += wood.worldX(i % wood.cols); n++; }
+      return { lean: n ? sx / n - ox : 0, cells: n };
+    };
+    const east = lean(0.9), west = lean(-0.9), still = lean(0);
+    W.climate.wind.x = 0.28; W.climate.wind.y = 0.05;
+    note('a match in the wood in a wind, where the burn\'s centre went',
+      `${east.lean.toFixed(0)} units with a west wind, ${west.lean.toFixed(0)} with an east one, ${still.lean.toFixed(0)} in none; ${still.cells} cells`);
+    check('the wood catches', still.cells > 30, `${still.cells}`);
+    check('the fire leans downwind', east.lean > still.lean + 20 && west.lean < still.lean - 20, `${east.lean.toFixed(0)} / ${still.lean.toFixed(0)} / ${west.lean.toFixed(0)}`);
+    /* and the store's footway, the one strip outdoors with fuel on it,
+       is a cell under the sky as far as the fire is concerned */
+    {
+      const lv = freshLevel();
+      const fire = new F.FireSystem(fake(lv));
+      const foot = lv.sectorAt(2000, -56);
+      check('the footway is under the sky and holds fuel',
+        foot && foot.outdoor && foot.fuel > 0 && fire.open[fire.idx(fire.cellX(2000), fire.cellY(-56))] === 1, foot && foot.name);
+    }
+    /* and the same match indoors does not care: no wind in aisle six */
+    const inside = (wx) => {
+      W.climate.wind.x = wx; W.climate.wind.y = 0;
+      pSeed(777);
+      const fire = new F.FireSystem(fake(freshLevel()));
+      fire.ignite(540, 1000, 200, 40);
+      for (let i = 0; i < 1500; i++) fire.tic();
+      return fire.burnFraction;
+    };
+    const a = inside(0.9), b = inside(-0.9);
+    W.climate.wind.x = 0.28; W.climate.wind.y = 0.05;
+    check('and a fire under a roof burns the same in any wind', a === b, `${a} vs ${b}`);
+  }
+
+  /* --- THE RAIN ON THE FIRE --- */
+  {
+    const fake = (lv) => ({ level: lv, player: { x: 1240, y: -520, dead: false, damage() {} }, actors: [], sound: null, forest: null });
+    /* the roof is the whole of the difference: the same match, on the
+       same roll, dry and in the rain, under a roof and with the roof
+       gone */
+    const burn = (rain, gut) => {
+      W.climate.rain = rain; W.climate.wind.x = 0.28; W.climate.wind.y = 0.05;
+      pSeed(4242);
+      const lv = freshLevel();
+      const fire = new F.FireSystem(fake(lv));
+      if (gut) lv.sectorAt(540, 1000).gutted = true;
+      fire.ignite(540, 1000, 200, 40);
+      let alive = 0;
+      for (let i = 0; i < 2000; i++) { fire.tic(); if (fire.liveCells) alive = i; }
+      return { frac: fire.burnFraction, alive };
+    };
+    const dry = burn(0, false), wetIn = burn(1, false), wetOut = burn(1, true);
+    W.climate.rain = 0;
+    note('the same match: dry / in the rain under a roof / with the roof gone',
+      `${(dry.frac * 100).toFixed(2)}% / ${(wetIn.frac * 100).toFixed(2)}% / ${(wetOut.frac * 100).toFixed(2)}%, out at ${dry.alive} / ${wetIn.alive} / ${wetOut.alive}`);
+    check('rain under a roof changes nothing', wetIn.frac === dry.frac && wetIn.alive === dry.alive, `${dry.frac} vs ${wetIn.frac}`);
+    check('and rain on a gutted region puts it out', wetOut.frac < dry.frac * 0.5 && wetOut.alive < dry.alive, `${wetOut.frac} vs ${dry.frac}, out at ${wetOut.alive} vs ${dry.alive}`);
+    const fire = new F.FireSystem(fake(freshLevel()));
+    const outdoors = [...Array(fire.open.length).keys()].filter(i => fire.open[i]).length;
+    note('cells under the sky', `${outdoors} of ${fire.open.length}`);
+    check('the car park, the road and the wood are under the sky and the shop is not',
+      outdoors > 1000 && !fire.open[fire.idx(fire.cellX(540), fire.cellY(1000))] && fire.open[fire.idx(fire.cellX(1240), fire.cellY(-900))]);
+  }
+
+  /* --- the rain itself --- */
+  {
+    const R = await import('../js/rain.js');
+    const { Game } = await import('../js/game.js');
+    const T3 = await import('three');
+    const hudStub = { message() {}, ticMessages() {}, resize() {}, update() {} };
+    const inputStub = { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 }, attack: false, use: false, run: false, sample() {}, sensitivity: 0 };
+    const g = new Game({ level: freshLevel(), scene: new T3.Scene(), camera: {}, textures: tex.bakeTextures(), sprites: spr.bakeSprites(), hud: hudStub, audio: null, input: inputStub });
+    check('the game has a weather and a rain', g.weather instanceof W.Weather && g.rain instanceof R.Rain);
+    g.weather.setKind('rain'); g.weather.apply(0.016, 0, 0);
+    g.player.x = 1240; g.player.y = -900; g.player.viewZ = 49;    // the car park
+    for (let i = 0; i < 40; i++) g.rain.tic();
+    const outside = g.rain.liveCount;
+    g.player.x = 2000; g.player.y = 1600;                          // the middle of the shop floor
+    for (let i = 0; i < 60; i++) g.rain.tic();
+    const inside = g.rain.liveCount;
+    note('drops alive, in the car park then on the shop floor', `${outside} then ${inside}`);
+    check('it rains in the car park', outside > 500, `${outside}`);
+    check('and not in the shop', inside < 40, `${inside}`);
+    g.weather.setKind('clear'); g.weather.apply(0.016, 0, 0);
+    W.climate.rain = 0;
+  }
+  /* the wind's old home is gone */
+  {
+    const fs = await import('node:fs');
+    const eff = fs.readFileSync(new URL('../js/effects.js', import.meta.url), 'utf8');
+    check('WIND_X is gone from js/effects.js and the smoke reads the weather',
+      !/const WIND_X/.test(eff) && /climate/.test(eff) && (eff.match(/wind\.x/g) || []).length >= 3);
+  }
+}
+
 /* ---------- touch ---------- */
 section('touch');
 {

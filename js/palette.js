@@ -60,7 +60,7 @@ const RAMPS = [
   /* greys — concrete, steel, shadow. Cool at the bottom, because a shadow
      full of skylight is blue and a shadow full of nothing is still not
      brown. */
-  { key:'grey',   n:32, gamma:1.30, stops:[[0,[6,7,11]],[0.5,[92,94,102]],[1,[248,248,252]]] },
+  { key:'grey',   n:24, gamma:1.30, stops:[[0,[6,7,11]],[0.5,[92,94,102]],[1,[248,248,252]]] },
   /* bone — lino, ceiling tile, painted breeze block */
   { key:'bone',   n:16, gamma:1.25, stops:[[0,[22,20,17]],[0.5,[130,124,108]],[1,[244,238,216]]] },
   /* brown — cardboard, shelf backing, particle board */
@@ -77,15 +77,24 @@ const RAMPS = [
   /* blue — freezer glow, cold cases, the signage */
   { key:'blue',   n:16, gamma:1.25, stops:[[0,[4,6,18]],[0.5,[40,60,132]],[1,[152,184,248]]] },
   /* cyan — frost, and the light coming off the ice */
-  { key:'cyan',   n:12, gamma:1.20, stops:[[0,[6,16,18]],[0.5,[60,132,140]],[1,[188,248,252]]] },
+  { key:'cyan',   n:8,  gamma:1.20, stops:[[0,[6,16,18]],[0.5,[60,132,140]],[1,[188,248,252]]] },
   /* yellow — hazard tape, price tags, SALE */
   { key:'yellow', n:16, gamma:1.15, stops:[[0,[20,16,4]],[0.5,[168,144,24]],[1,[252,248,140]]] },
   /* rust — trolleys, shelf uprights, the dock door */
   { key:'rust',   n:16, gamma:1.20, stops:[[0,[16,9,6]],[0.5,[118,62,30]],[1,[224,150,92]]] },
   /* purple — the neon over the deli, and bruises */
-  { key:'purple', n:12, gamma:1.20, stops:[[0,[12,6,16]],[0.5,[80,44,108]],[1,[204,164,240]]] },
+  { key:'purple', n:8,  gamma:1.20, stops:[[0,[12,6,16]],[0.5,[80,44,108]],[1,[204,164,240]]] },
   /* pink — the meat counter, which is worse than the blood */
-  { key:'pink',   n:12, gamma:1.20, stops:[[0,[22,10,12]],[0.5,[164,84,92]],[1,[252,196,196]]] },
+  { key:'pink',   n:8,  gamma:1.20, stops:[[0,[22,10,12]],[0.5,[164,84,92]],[1,[252,196,196]]] },
+  /* SKY. Twenty entries, and they came out of grey, cyan, purple and
+     pink, eight and four and four and four. The fire got forty-four on
+     the argument that the store burning down is the only thing anyone
+     looks at closely; a dawn is the second thing, and it fills half
+     the frame with a gradient no other ramp runs through — night blue,
+     violet, rose, a cold gold, and the pale blue of a morning. Without
+     these it snapped into blue and pink and dithered into crosshatch,
+     which was the first thing the first screenshot showed. */
+  { key:'sky',    n:20, gamma:1.10, stops:[[0,[10,16,48]],[0.30,[62,66,128]],[0.55,[176,120,140]],[0.78,[236,196,150]],[1,[214,232,248]]] },
   /* FIRE. Seven stops and 44 entries, spaced by hand. The stops are
      bunched toward the bottom because most of a flame, most of the time,
      is the dull end — the white heat is a few pixels at the base of it. */

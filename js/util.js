@@ -101,6 +101,11 @@ export function rngKit(seed) {
 }
 
 let _pr = 0x1f2e3d4c;
+/* Put the generator back where it started — or anywhere — so the same
+   match struck twice burns the same way. The smoke test compares a fire
+   dry against the same fire in the rain, and a comparison of two
+   different rolls is a comparison of nothing. */
+export function pSeed(v = 0x1f2e3d4c) { _pr = (v | 0) || 0x1f2e3d4c; }
 export function pRandom() {          // 0..255, like Doom's
   _pr ^= _pr << 13; _pr |= 0;
   _pr ^= _pr >>> 17;

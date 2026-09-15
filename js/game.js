@@ -44,6 +44,8 @@ import { Responders } from './responders.js';
 import { Gunships } from './vtol.js';
 import { Vehicles } from './vehicles.js';
 import { BoreSystem } from './bore.js';
+import { Weather, climate, CLEAR_FAR } from './weather.js';
+import { Rain } from './rain.js';
 
 const THING_TO_ACTOR = {
   SHOPPER: 'SHOPPER',
@@ -59,7 +61,7 @@ const LAMP_RANGE = 340;
 const LAMP_GAIN = 0.30;
 
 export class Game {
-  constructor({ level, scene, camera, textures, sprites, hud, audio, input, sky, flameAtlas, bodyAtlas, fxAtlases, gibAtlases, fleet, police, apc, vtol }) {
+  constructor({ level, scene, camera, textures, sprites, hud, audio, input, sky, flameAtlas, bodyAtlas, fxAtlases, gibAtlases, rainAtlas, fleet, police, apc, vtol, weather }) {
     this.level = level;
     this.scene = scene;
     this.camera = camera;
@@ -85,6 +87,10 @@ export class Game {
        setting, it is only the drawing that is cheaper.
        ------------------------------------------------------------------ */
     this.quality = { crowd: 1, effects: 1, wood: 1 };
+    /* THE HOUR AND THE WEATHER — see js/weather.js. Ticked with the
+       world, applied with the frame; everything about the atmosphere
+       is set from it and nothing else touches those uniforms. */
+    this.weather = weather || new Weather();
     this.tics = 0;
     this.accum = 0;
     this.paused = false;
@@ -111,11 +117,14 @@ export class Game {
     this.vehicles = new Vehicles(this, fleet?.texture || null, fleet?.def || null)
       .place(this.level.carSlots);
     this.slideDoors = buildSlideDoors(this);
-    /* the sky is a picture that arrives from outside; without one (the
-       smoke test) there is simply no sky, and nothing else minds */
+    /* the sky is a picture the page bakes (js/skyart.js) and hands in as
+       a texture; without one (the smoke test) there is simply no sky,
+       and nothing else minds */
     this.sky = sky ? buildSky(sky) : null;
     if (this.sky) scene.add(this.sky);
     this.fire = new FireSystem(this);
+    /* and what falls out of the sky when the weather says so */
+    this.rain = new Rain(this, rainAtlas || null);
 
     /* The wood round the outside, the flame out of the gun, and what
        rises off anything burning. All three simulate without a renderer;
@@ -144,6 +153,7 @@ export class Game {
     if (flameAtlas) this.flame.attach(scene);
     if (fxAtlases) { this.frost.attach(scene); this.fx.attach(scene); }
     if (gibAtlases) this.giblets.attach(scene);
+    if (rainAtlas) this.rain.attach(scene);
     this.weapon3d = null;
     /* who the night brings, in the order the user set: the SWAT in the
        user's van from your first shot, and the army in the user's hover
@@ -411,9 +421,11 @@ export class Game {
     this.ticProjectiles();
     this.ticDoors();
     for (let i = 0; i < this.slideDoors.length; i++) this.slideDoors[i].tic();
+    this.weather.tic();
     this.fire.tic();
     this.vehicles.tic();
     this.forest.tic();
+    this.rain.tic();
     this.flame.tic();
     this.frost.tic();
     this.fx.tic();
@@ -1071,7 +1083,21 @@ export class Game {
       ex += 3.0 * Math.sin(t * 0.19 + 0.5); ey += 2.4 * Math.cos(t * 0.27);
       ez += 1.4 * Math.sin(t * 0.47 + 1.1);
     }
+    /* THE ATMOSPHERE, once a frame: the clouds drift, and every uniform
+       the hour and the weather own is set — the air's reach, the sky's
+       light, the smoke off the two fires. See js/weather.js. */
+    const dt = this._lastNow === undefined ? 0 : Math.min(0.25, (now - this._lastNow) / 1000);
+    this._lastNow = now;
+    this.weather.apply(dt, this.fire ? this.fire.burnFraction : 0, this.forest ? this.forest.burnFraction : 0);
+    /* THE FAR PLANE IS THE AIR'S. Nothing past airFar can be seen, so
+       nothing past it is drawn; the sky sphere follows it in. */
+    const far = climate.airFar * 1.06;
+    if (this.camera.updateProjectionMatrix && Math.abs(this.camera.far - far) > 1) {
+      this.camera.far = far;
+      this.camera.updateProjectionMatrix();
+    }
     this.camera.position.set(ex, ez, -ey);
+    world.eyePos.value.set(ex, ez, -ey);
     if (this.sky) followSky(this.sky, this.camera);
     this.camera.rotation.set(pitch, yaw - Math.PI / 2, 0, 'YXZ');
     this.camera.updateMatrixWorld(true);
@@ -1104,7 +1130,12 @@ export class Game {
       a.render(p.x, p.y, billboardRot, vx, vy);
     }
     this.fire.render(p.x, p.y, billboardRot);
-    this.forest.render(p.x, p.y, ez, billboardRot, world.emberTime.value, this.quality.wood);
+    /* the wood's range is a fraction of a clear night's, because that
+       is what its own range was written against, and the weather pulls
+       it in with the air: nothing past airFar is drawn by anybody */
+    this.forest.render(p.x, p.y, ez, billboardRot, world.emberTime.value,
+                       this.quality.wood * Math.min(1, climate.airFar / CLEAR_FAR));
+    this.rain.render(billboardRot);
     this.flame.render(billboardRot);
     this.frost.render(billboardRot);
     this.fx.render(billboardRot);
