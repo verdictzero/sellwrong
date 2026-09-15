@@ -333,6 +333,13 @@ export function buildTown(rm, mb, opts = {}) {
     const inside = k => ({
       light: lit[k] ? 0.54 : 0.17, ambient: lit[k] ? 0.54 : 0.17,
       ceilTex: 'PLASTER', wallTex: 'WALLPAPR', upperTex: 'PLASTER', lowerTex: 'SKIRTING',
+      /* A PARTY WALL IS A WALL FIRE GETS THROUGH. Sixteen units of void
+         between two houses stops it the way any wall does, and then it
+         does not: see _linkCells in js/fire.js, which links two regions
+         that both say this across a wall it would otherwise call solid.
+         It is the difference between burning a house and burning a
+         street, and it is one flag on one kind of room. */
+      party: true,
     });
 
     /* the hall, which runs the depth of the house with the stair in it */

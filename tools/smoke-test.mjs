@@ -782,17 +782,31 @@ section('fire');
      poured on tarmac makes tarmac burn — so a sweep done with a bigger
      number would quietly torch the car park and take the firebreak
      check with it. The flamethrower is 36 and lays none. */
+  /* OVER THE MALL'S OWN GROUND. The clearing used to be the whole of
+     what could burn; it is the mall AND the town now, and a player
+     walking every thirty units of nineteen thousand by twenty-six
+     thousand is not a test of anything, it is a different game. The
+     claim was always about the shop. */
+  let mallBurnt = 0, mallFuel = 0;
   {
-    const [minx, miny, maxx, maxy] = level.fireBounds || level.bounds;
+    const mall = level.sectors.filter(inMall);
+    let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+    for (const s of mall) {
+      if (s.forest || s.outside) continue;
+      minx = Math.min(minx, s.bbox[0]); miny = Math.min(miny, s.bbox[1]);
+      maxx = Math.max(maxx, s.bbox[2]); maxy = Math.max(maxy, s.bbox[3]);
+    }
     for (let y = miny; y <= maxy; y += 30) {
       for (let x = minx; x <= maxx; x += 30) fire.ignite(x, y, 36, 22);
       for (let k = 0; k < 30; k++) fire.tic();
     }
     for (let i = 0; i < 200000 && fire.liveCells > 0; i++) fire.tic();
+    for (const s of mall) { mallFuel += fire.sectorFuel[s.index]; mallBurnt += fire.sectorBurnt[s.index]; }
   }
-  note('and then walked with a flamethrower', `${(fire.burnFraction * 100).toFixed(1)}% burned`);
+  const mallFrac = mallBurnt / Math.max(1, mallFuel);
+  note('and then walked with a flamethrower', `${(mallFrac * 100).toFixed(1)}% of the mall burned`);
   check('a player who does the work can still burn all of it',
-    fire.burnFraction > 0.97, `${(fire.burnFraction * 100).toFixed(1)}%`);
+    mallFrac > 0.97, `${(mallFrac * 100).toFixed(1)}%`);
 
   /* And it must still not touch anything the map declared as a
      firebreak. This used to be phrased as "no outdoor sector burns",
@@ -820,6 +834,12 @@ section('fire');
     if (si < 0) continue;
     const s = level.sectors[si];
     if (s.outdoor || s.fuel <= 0) continue;
+    /* THE SHOP, which is what this section is about. The player walks
+       the supermarket with a flamethrower; the town four thousand units
+       away across the ring road is not somewhere the fire has been
+       given any reason to go, and counting its bedrooms here would be
+       asking whether the store burns and answering about a bungalow. */
+    if (!inMall(s)) continue;
     const r = reached[s.name] || (reached[s.name] = { cells: 0, burnt: 0 });
     r.cells++;
     if (fire.fuel[i] < fire.fuel0[i]) r.burnt++;

@@ -258,6 +258,21 @@ const spreadRoll = n => (((pRandom() << 8) | pRandom()) < n);
    slowed a fire down, and the headless check that lights a gutted
    region in the rain and expects it out is what said so. And how much
    of a cell's chance to light a wet neighbour the rain takes away. */
+/* Fire goes UP much more readily than it goes along, and through a
+   party wall far less readily than either.
+
+   FOUR TIMES, and it has to be: a staircase is a chimney with a
+   handrail, and the only place a flight reaches into the floor above is
+   the top tread — one or two cells of the several hundred in a house.
+   At the sideways chance that one cell has to win a race against its own
+   fuel running out, and it loses it, and a house burns to the ceiling
+   and stops. At four it goes up, which is what a house does.
+
+   A PARTY WALL is sixteen units of void and two skins of plasterboard:
+   hours, not minutes, which is what lets you watch a terrace go one
+   house at a time rather than all at once. */
+const UP_SPREAD = 4, CEIL_SPREAD = 0.4, PARTY_SPREAD = 0.10;
+
 const RAIN_COOL = 22;
 const RAIN_SPREAD = 0.85;
 
@@ -282,7 +297,17 @@ export class FireSystem {
        a world position into this grid — see Game.ticBurnGrid, which
        hands the whole thing to the shader as a picture */
     this.CELL = CELL;
-    const n = this.cols * this.rows;
+    /* ONE GRID PER STOREY LEVEL, stacked. A town has bedrooms over
+       kitchens (see TOWN.txt) and a flat grid cannot hold a fire in one
+       without holding it in the other. The planes are the storey index
+       and not a height band, so plane 0 is the ground everywhere and is
+       exactly the grid this used to be — every consumer that indexes by
+       cy*cols+cx is reading the ground floor and does not know the rest
+       is there, Game.ticBurnGrid among them. */
+    this.levels = 1;
+    for (const sec of lv.sectors) if (sec.storey + 1 > this.levels) this.levels = sec.storey + 1;
+    this.plane = this.cols * this.rows;
+    const n = this.plane * this.levels;
 
     /* Floats, so a cell of bare lino can eat a third of a unit a tic —
        see burnFrac. As integers the smallest expressible burn rate was
@@ -318,7 +343,7 @@ export class FireSystem {
     this._linkCells();
   }
 
-  idx(cx, cy) { return cy * this.cols + cx; }
+  idx(cx, cy, lv = 0) { return lv * this.plane + cy * this.cols + cx; }
   cellX(x) { return clamp(Math.floor((x - this.originX) / CELL), 0, this.cols - 1); }
   cellY(y) { return clamp(Math.floor((y - this.originY) / CELL), 0, this.rows - 1); }
   worldX(cx) { return this.originX + cx * CELL + CELL / 2; }
@@ -340,12 +365,14 @@ export class FireSystem {
   _seed() {
     const lv = this.game.level;
     for (const s of lv.sectors) {
-      /* the ground storey only, which is what sectorAt answers with */
-      if (s.colBase !== s.index) continue;
+      /* EVERY STOREY, each into its own plane. A column of one — which
+         is the store, the car park, the road and the wood — lands in
+         plane 0 and nothing above it is touched. */
       const cx0 = this.cellX(s.bbox[0]), cx1 = this.cellX(s.bbox[2]);
       const cy0 = this.cellY(s.bbox[1]), cy1 = this.cellY(s.bbox[3]);
       const open = (s.outdoor || s.forest || s.outside) ? 1 : 0;
       const f = s.fuel | 0;
+      const lvl = s.storey;
       /* a plain rectangle is its own bounding box, so every cell of it
          is inside and the query is a formality — which over a town is
          three hundred thousand formalities */
@@ -354,7 +381,7 @@ export class FireSystem {
         const wy = this.worldY(cy);
         const inRow = rect && wy > s.bbox[1] && wy < s.bbox[3];
         for (let cx = cx0; cx <= cx1; cx++) {
-          const i = this.idx(cx, cy);
+          const i = this.idx(cx, cy, lvl);
           if (this.sectorOf[i] >= 0) continue;
           const wx = this.worldX(cx);
           if (!(inRow && wx > s.bbox[0] && wx < s.bbox[2]) && !pointInPoly(s.poly, wx, wy)) continue;
@@ -376,16 +403,69 @@ export class FireSystem {
   _linkCells() {
     const lv = this.game.level;
     const DIRS = [[1, 0, 1, 4], [0, 1, 2, 8], [-1, 0, 4, 1], [0, -1, 8, 2]];
+    /* WHERE FIRE CAN CLIMB. Not a bit but a list, because the cell it
+       goes to is not always the one directly overhead: a stairwell
+       lights the LANDING BESIDE IT, which is the correct and horrible
+       answer — the first floor of a house catches from the stairs and
+       not from the room under it. Rare enough to be a Map and looked at
+       only for cells that have the bit. */
+    this.up = new Map();
+    /* AND PARTY WALLS. A terrace burns end to end through the sixteen
+       units of void between two houses, slowly, and that is the
+       difference between burning a house and burning a street. Only
+       between two regions that both say they are a party wall, so the
+       supermarket's own partitions are untouched by it. */
+    this.party = new Uint8Array(this.link.length);
+    for (let lvl = 0; lvl < this.levels; lvl++) {
     for (let cy = 0; cy < this.rows; cy++) {
       for (let cx = 0; cx < this.cols; cx++) {
-        const i = this.idx(cx, cy);
+        const i = this.idx(cx, cy, lvl);
         const si = this.sectorOf[i];
         if (si < 0) continue;
         const x1 = this.worldX(cx), y1 = this.worldY(cy);
+        /* up: the cell overhead and the four beside it, wherever the two
+           storeys share any air at all */
+        if (lvl + 1 < this.levels && !this.open[i]) {
+          /* indoors only, which is the gate that makes this affordable:
+             the car park, the road and nine thousand units of wood have
+             nothing over them and asking is a million questions */
+          const A = lv.sectors[si];
+          let ups = null;
+          for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [-1, 0], [0, -1]]) {
+            const nx = cx + dx, ny = cy + dy;
+            if (nx < 0 || ny < 0 || nx >= this.cols || ny >= this.rows) continue;
+            const j = this.idx(nx, ny, lvl + 1);
+            const sj = this.sectorOf[j];
+            if (sj < 0) continue;
+            const B = lv.sectors[sj];
+            const share = Math.min(A.ceil, B.ceil) - Math.max(A.floor, B.floor);
+            if (share > 0) {
+              /* THE STAIRWELL. Two storeys that share air — the top
+                 tread of a flight reaching into the landing beside it —
+                 and the wall is asked about at the height they share. */
+              const zm = (Math.max(A.floor, B.floor) + Math.min(A.ceil, B.ceil)) / 2;
+              if ((dx || dy) && this._fireBlocked(x1, y1, this.worldX(nx), this.worldY(ny), zm)) continue;
+              (ups || (ups = [])).push(j, UP_SPREAD);
+              continue;
+            }
+            /* AND THE CEILING, which is the slow way. A deck is sixteen
+               units of joist and board and a fire under one gets through
+               it in the end — straight up, same cell, and forty times
+               less willing than the stairs. Which is what makes the
+               stairwell the answer and not merely an answer: by the time
+               the kitchen ceiling has gone the landing has been alight
+               for a minute. */
+            if (dx || dy) continue;
+            if (B.floor - A.ceil > 24) continue;
+            if (!A.fuel || !B.fuel) continue;
+            (ups || (ups = [])).push(j, CEIL_SPREAD);
+          }
+          if (ups) { this.up.set(i, ups); this.link[i] |= 16; }
+        }
         for (const [dx, dy, bit] of DIRS) {
           const nx = cx + dx, ny = cy + dy;
           if (nx < 0 || ny < 0 || nx >= this.cols || ny >= this.rows) continue;
-          const j = this.idx(nx, ny);
+          const j = this.idx(nx, ny, lvl);
           const sj = this.sectorOf[j];
           if (sj < 0) continue;
           /* TWO CELLS OF ONE CONVEX REGION ARE ALWAYS LINKED. A wall in
@@ -416,15 +496,27 @@ export class FireSystem {
               }
             }
           }
-          if (!this._fireBlocked(x1, y1, this.worldX(nx), this.worldY(ny))) this.link[i] |= bit;
+          const zi = lv.sectors[si].floor + 8;
+          if (!this._fireBlocked(x1, y1, this.worldX(nx), this.worldY(ny), zi)) { this.link[i] |= bit; continue; }
+          /* blocked — unless it is a party wall, which is a wall fire
+             gets through eventually and is what makes a terrace a
+             terrace rather than eight separate fires */
+          if (lv.sectors[si].party && lv.sectors[sj].party) this.party[i] |= bit;
         }
       }
+    }
     }
   }
 
   /** Walls stop fire. Gaps do not — a shut door is the only two-sided
-   *  line that counts as a wall here. */
-  _fireBlocked(x1, y1, x2, y2) {
+   *  line that counts as a wall here.
+   *
+   *  AT A HEIGHT, because a town has bedrooms over kitchens: the wall
+   *  between two first floors is not the wall between the two rooms
+   *  under them, and asking the ground sectors gets both of them wrong.
+   *  For a column of one — the store, the lot, the wood — spanIn hands
+   *  back the sector it was given and this is the check it always was. */
+  _fireBlocked(x1, y1, x2, y2, z = 8) {
     const lv = this.game.level;
     const lines = lv.linesInBox(Math.min(x1, x2), Math.min(y1, y2), Math.max(x1, x2), Math.max(y1, y2),
       this._blockScratch || (this._blockScratch = []));
@@ -432,7 +524,7 @@ export class FireSystem {
       const t = segCross(x1, y1, x2, y2, l.x1, l.y1, l.x2, l.y2);
       if (t < 0) continue;
       if (l.front === null || l.back === null) return true;
-      const a = lv.sectors[l.front], b = lv.sectors[l.back];
+      const a = lv.spanIn(lv.sectors[l.front], z), b = lv.spanIn(lv.sectors[l.back], z);
       /* A door is judged on what it will be, not on what it is right
          now. These links are worked out once at startup, with every door
          still shut, and a link that said "no" then would keep saying no
@@ -654,6 +746,20 @@ export class FireSystem {
         if (lk & 2) this._trySpread(i + cols, toIgnite, windy ? mN : 1, rain, sectors);
         if (lk & 4) this._trySpread(i - 1, toIgnite, windy ? mW : 1, rain, sectors);
         if (lk & 8) this._trySpread(i - cols, toIgnite, windy ? mS : 1, rain, sectors);
+        /* UP THE STAIRS, and readily: heat goes up, and a stairwell is
+           a chimney with a handrail. */
+        if (lk & 16) {
+          const ups = this.up.get(i);
+          for (let u = 0; u < ups.length; u += 2) this._trySpread(ups[u], toIgnite, ups[u + 1], rain, sectors);
+        }
+        /* and through the party wall, slowly */
+        const pw = this.party[i];
+        if (pw) {
+          if (pw & 1) this._trySpread(i + 1, toIgnite, PARTY_SPREAD, rain, sectors);
+          if (pw & 2) this._trySpread(i + cols, toIgnite, PARTY_SPREAD, rain, sectors);
+          if (pw & 4) this._trySpread(i - 1, toIgnite, PARTY_SPREAD, rain, sectors);
+          if (pw & 8) this._trySpread(i - cols, toIgnite, PARTY_SPREAD, rain, sectors);
+        }
       }
       next.push(i);
     }
@@ -747,7 +853,8 @@ export class FireSystem {
       const i = this.active[k];
       const h = this.heat[i];
       if (h < 60) continue;
-      const x = this.worldX(i % this.cols), y = this.worldY((i / this.cols) | 0);
+      const c = i % this.plane;
+      const x = this.worldX(c % this.cols), y = this.worldY((c / this.cols) | 0);
       const d2 = dist2(x, y, p.x, p.y);
       if (d2 > 900 * 900) continue;
       const w = h / 255;
@@ -905,7 +1012,8 @@ export class FireSystem {
       const i = this.active[k];
       const h = this.heat[i];
       if (h < 6) continue;
-      const x = this.worldX(i % this.cols), y = this.worldY((i / this.cols) | 0);
+      const c = i % this.plane;
+      const x = this.worldX(c % this.cols), y = this.worldY((c / this.cols) | 0);
       const d2 = dist2(x, y, camX, camY);
       if (d2 > 2000 * 2000 || d2 < NEAR2) continue;
       if (seeInto) { const si = this.sectorOf[i]; if (si >= 0 && !lv.isVisible(sectors[si])) continue; }

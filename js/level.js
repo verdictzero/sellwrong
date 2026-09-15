@@ -291,6 +291,9 @@ export class MapBuilder {
          like the lot, but not the store's business for the fuel grid. */
       outside: !!props.outside,
       special: props.special ?? null,
+      /* a wall this region shares with the one next door, which fire
+         gets through in the end — see _linkCells in js/fire.js */
+      party: !!props.party,
       bbox: null,
     };
     let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
