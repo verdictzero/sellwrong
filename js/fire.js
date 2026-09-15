@@ -346,12 +346,18 @@ export class FireSystem {
       const cy0 = this.cellY(s.bbox[1]), cy1 = this.cellY(s.bbox[3]);
       const open = (s.outdoor || s.forest || s.outside) ? 1 : 0;
       const f = s.fuel | 0;
+      /* a plain rectangle is its own bounding box, so every cell of it
+         is inside and the query is a formality — which over a town is
+         three hundred thousand formalities */
+      const rect = s.isRect;
       for (let cy = cy0; cy <= cy1; cy++) {
         const wy = this.worldY(cy);
+        const inRow = rect && wy > s.bbox[1] && wy < s.bbox[3];
         for (let cx = cx0; cx <= cx1; cx++) {
           const i = this.idx(cx, cy);
           if (this.sectorOf[i] >= 0) continue;
-          if (!pointInPoly(s.poly, this.worldX(cx), wy)) continue;
+          const wx = this.worldX(cx);
+          if (!(inRow && wx > s.bbox[0] && wx < s.bbox[2]) && !pointInPoly(s.poly, wx, wy)) continue;
           this.sectorOf[i] = s.index;
           this.sectorCells[s.index]++;
           if (open) this.open[i] = 1;

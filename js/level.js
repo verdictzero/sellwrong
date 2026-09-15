@@ -200,6 +200,7 @@ export class MapBuilder {
     this.sectors = [];
     this.lines = [];
     this._edges = new Map();
+    this._sectorLines = new Map();
     this.things = [];
     /* Three columns meeting on one edge, which is a map error with no
        honest answer. Counted rather than thrown so a bad rect cannot
@@ -339,6 +340,7 @@ export class MapBuilder {
       };
       this.lines.push(line);
       this._edges.set(key, line);
+      this._own(sectorOnLeft).push(line);
       return line;
     }
     /* WHICH SIDE. A ring reaching this edge as a->b has its sector on
@@ -351,11 +353,13 @@ export class MapBuilder {
     if (sameWay) {
       if (existing.frontBase !== base) { this.edgeConflicts++; return existing; }
       existing.frontCol.push(sectorOnLeft);
+      this._own(sectorOnLeft).push(existing);
       return existing;
     }
     if (existing.backBase === null) { existing.backBase = base; existing.back = sectorOnLeft; }
     else if (existing.backBase !== base) { this.edgeConflicts++; return existing; }
     existing.backCol.push(sectorOnLeft);
+    this._own(sectorOnLeft).push(existing);
 
     /* A two-sided line is a hole, so the middle texture goes away unless
        somebody deliberately puts one back (a grating, a shop window).
@@ -400,16 +404,27 @@ export class MapBuilder {
     return out;
   }
 
+  /** Every line that touches a sector. Kept as it goes, because the map
+   *  file reaches in a few hundred times to put a door special or a
+   *  shop window on a specific opening, and a filter over every line in
+   *  the map was fine at a thousand lines and is a tenth of a second at
+   *  twenty-three thousand. */
+  _own(si) {
+    let a = this._sectorLines.get(si);
+    if (!a) this._sectorLines.set(si, a = []);
+    return a;
+  }
+
   /** Find lines between two given sectors — how the map file reaches in to
    *  put a door special or a shop window on a specific opening. */
   linesBetween(sa, sb) {
-    return this.lines.filter(l =>
+    return this._own(sa).filter(l =>
       (l.front === sa && l.back === sb) || (l.front === sb && l.back === sa));
   }
 
   /** Every line of a sector that has nothing on the other side. */
   outerLines(s) {
-    return this.lines.filter(l => (l.front === s || l.back === s) && (l.front === null || l.back === null));
+    return this._own(s).filter(l => (l.front === s || l.back === s) && (l.front === null || l.back === null));
   }
 
   finishTextures() { assignLineTextures(this.lines, this.sectors); }
@@ -480,7 +495,26 @@ export class Level {
        not, because they are drawn round a hole. The fuel grid uses it:
        two cells inside one CONVEX region can never have a wall between
        them, so the ray that would prove it is not cast. */
-    for (const s of this.sectors) s.convex = convexPoly(s.poly);
+    for (const s of this.sectors) {
+      /* ONCE PER COLUMN. Every storey of one shares an outline, so the
+         answer is the ground storey's and asking three times is asking
+         twice too often. */
+      if (s.colBase !== s.index) {
+        const g = this.sectors[s.colBase];
+        s.convex = g.convex; s.isRect = g.isRect;
+        continue;
+      }
+      s.convex = convexPoly(s.poly);
+      /* AND IS IT JUST ITS BOUNDING BOX. A convex polygon whose every
+         edge is axis-aligned is a rectangle with extra vertices along
+         its sides, which is what RectMap makes and what nearly every
+         region in this map is. The fuel grid uses it to fill a region
+         without asking point-in-polygon half a million times. */
+      s.isRect = s.convex && s.poly.every((p, i) => {
+        const q = s.poly[(i + 1) % s.poly.length];
+        return Math.abs(p[0] - q[0]) < 1e-9 || Math.abs(p[1] - q[1]) < 1e-9;
+      });
+    }
 
     this._buildBounds();
     this._buildBlockmap();
@@ -543,7 +577,14 @@ export class Level {
         for (let c = c0; c <= c1; c++)
           this.blockLines[r * this.cols + c].push(l);
     }
+    /* THE GROUND STOREYS ONLY. sectorAt answers with the ground sector
+       of a column and the storeys over it share its outline, so putting
+       them in as well is the same rectangle two and three times over —
+       four thousand of them across the town, in a grid that is walked
+       every time anything moves. Whoever wants the storeys walks the
+       column with spanIn. */
     for (const s of this.sectors) {
+      if (s.colBase !== s.index) continue;
       const c0 = this._col(s.bbox[0]), c1 = this._col(s.bbox[2]);
       const r0 = this._row(s.bbox[1]), r1 = this._row(s.bbox[3]);
       for (let r = r0; r <= r1; r++)
@@ -948,8 +989,8 @@ export class Level {
    *  crosses it. */
   isVisible(s) { return s._vis >= this._visStamp - 1; }
 
-  /** Every sector whose polygon overlaps a circle — how a fire finds the
-   *  regions it is allowed to spread into. */
+  /** Every GROUND sector whose polygon overlaps a circle. Walk the
+   *  column from one if the storeys are wanted too. */
   sectorsNear(x, y, radius, out = []) {
     out.length = 0;
     const c0 = this._col(x - radius), c1 = this._col(x + radius);
