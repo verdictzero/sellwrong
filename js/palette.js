@@ -14,7 +14,14 @@
 
    These are ramps, not somebody's curated palette. A palette is a piece
    of work with a person's name on it; a ramp is arithmetic. So this file
-   generates its 256 out of fourteen ramps and owes nobody anything.
+   generates its 256 out of fifteen ramps and owes nobody anything.
+
+   ONE THING DEPENDS ON THE ORDER OF THEM. The two pictures in art/ are
+   kept as palette INDICES — js/art-data.js, baked by tools/bake-art.mjs
+   — so adding a ramp, resizing one or moving one moves every index in
+   both. After any change to the list below: node tools/bake-art.mjs,
+   and commit what it writes. CI re-bakes and fails if that was missed,
+   which is how the sky ramp got found out.
 
    A ramp is three colours, not two. Interpolating a light brown straight
    down to black gives you a dead grey-brown that no real material does —
