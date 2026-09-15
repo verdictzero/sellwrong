@@ -478,6 +478,7 @@ export class Game {
       /* A slider whose entrance has burned is not a door any more. */
       for (const d of this.slideDoors)
         if (d.spec.sector && f.newlyCharred.includes(d.spec.sector.index)) d.jam();
+      this._markDirty(f.newlyCharred);
       f.newlyCharred.length = 0;
       this._geoDirty = true;
       this._geoAt = this.tics + 20;
@@ -518,6 +519,7 @@ export class Game {
         for (const lamp of this.lamps)
           if (!lamp.removed && lamp.sector === s) { lamp.dead = true; lamp.remove(); }
       }
+      this._markDirty(f.newlyGutted);
       f.newlyGutted.length = 0;
       this._geoDirty = true;
       this._geoAt = this.tics + 20;
@@ -526,8 +528,26 @@ export class Game {
       this._geoDirty = false;
       this.relight();
       assignLineTextures(this.level.lines, this.level.sectors);
-      this.geo.rebuildStatic();
+      /* ONLY THE BLOCKS THAT CHANGED. A whole-level rebuild was a few
+         thousand triangles when the level was a supermarket; over a
+         town it is a hundred thousand and a visible hitch, twenty
+         times, during the exact moments the game is at its best. The
+         blocks whose regions charred are the ones that moved. */
+      const blocks = this._dirtyBlocks && this._dirtyBlocks.size ? this._dirtyBlocks : null;
+      this.geo.rebuildStatic(blocks);
+      this._dirtyBlocks = null;
       this.geo.rebuild();
+    }
+  }
+
+  /** Note which drawing blocks some regions are in, so the rebuild can
+   *  leave the rest of the town alone. */
+  _markDirty(sectorIndices) {
+    if (!sectorIndices.length) return;
+    if (!this._dirtyBlocks) this._dirtyBlocks = new Set();
+    for (const si of sectorIndices) {
+      const s = this.level.sectors[si];
+      if (s && s.drawBlock) this._dirtyBlocks.add(s.drawBlock);
     }
   }
 
@@ -1124,6 +1144,10 @@ export class Game {
     const vfov = (this.camera.fov || 72) * Math.PI / 180;
     const halfFov = Math.atan(Math.tan(vfov / 2) * (this.camera.aspect || 1.6)) + 0.25;
     this.level.visibleSectors(ex, ey, yaw, halfFov, climate.airFar);
+    /* AND THE STATIC GEOMETRY TAKES IT TOO. The flood says which regions
+       are visible; the blocks those regions are in are the ones drawn,
+       and the rest of the town is not submitted at all. */
+    this.geo.applyVisibility(this.level, ex, ey);
     /* AND HOW MUCH OF THE CROWD TO DRAW. Off the actor's own id rather
        than off a counter, so the same people are the ones left out from
        frame to frame — a crowd that reshuffles which half of it exists

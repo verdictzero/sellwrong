@@ -99,7 +99,7 @@ class BatchSet {
     const group = new THREE.Group();
     for (const [name, b] of this.map) {
       if (b.empty) continue;
-      const entry = bank.get(name);
+      const entry = bank.get(name.split('|').pop());
       const mat = createWallMaterial(entry.texture, { alphaTest: entry.masked ? 0.5 : 0.0, ...opts });
       const mesh = new THREE.Mesh(b.geometry(), mat);
       mesh.frustumCulled = true;
@@ -109,6 +109,39 @@ class BatchSet {
     return group;
   }
 }
+
+/* --------------------------------------------------------------------
+   THE BLOCK IS THE UNIT OF DRAWING
+
+   Everything with the same texture used to go into one buffer, so a
+   whole supermarket was about twenty draw calls and every one of them
+   had a bounding sphere the size of the store. That is fine for a store
+   and it is nothing at all for a town: a batch whose bounds are the
+   entire town is never culled, so every brick wall in it is submitted
+   every frame whichever way you are facing.
+
+   So a batch is one texture IN ONE BLOCK. Twenty-five blocks by twenty
+   textures is more draw calls than twenty — and it is the only way the
+   frustum means anything, and it is what lets the portal flood turn a
+   block off outright (see applyVisibility below, and SIGHT.txt). It is
+   also what makes the char rebuild affordable: when a region finishes
+   burning, the block it is in is rebuilt and the other twenty-four are
+   left alone.
+
+   The grid is the town's own block pitch, anchored at the world origin,
+   which the mall already sits on — see THE GRID in TOWN.txt.
+   ------------------------------------------------------------------ */
+export const BATCH_BLOCK = 3648;
+/* How near you have to be for a block's insides to be drawn. Two block
+   pitches: far enough that you never see one arrive, near enough that
+   twenty-two of the town's twenty-five blocks are outsides only. */
+export const INTERIOR_DIST = BATCH_BLOCK * 2;
+const blockOf = (x, y) => Math.floor(x / BATCH_BLOCK) + ',' + Math.floor(y / BATCH_BLOCK);
+/** Which block a sector is drawn in: the one its middle lands in. */
+export function sectorBlock(s) {
+  return blockOf((s.bbox[0] + s.bbox[2]) / 2, (s.bbox[1] + s.bbox[3]) / 2);
+}
+function lineBlock(l) { return blockOf((l.x1 + l.x2) / 2, (l.y1 + l.y2) / 2); }
 
 /* --------------------------------------------------------------------
    Vertical texture coordinates
@@ -128,7 +161,15 @@ const vAt = (z, peg, texH) => (z - peg) / texH;
  * @returns { group, dynamic } — dynamic.rebuild() after a door moves
  */
 export function buildLevelGeometry(level, bank) {
-  const statics = new BatchSet();
+  /* the roofs read their texture sizes from here, being geometry rather
+     than a surface any sector owns */
+  for (const s of level.sectors) {
+    if (!s.roof) continue;
+    for (const n of [s.roof.tex || 'SHINGLE', s.roof.gableTex || s.roof.tex || 'SHINGLE']) {
+      const e = bank.get(n);
+      if (e) noteTextureSize(n, e.w, e.h);
+    }
+  }
 
   /* A line is dynamic if either sector it touches can move, because the
      wall above a door changes height every tic the door is opening. */
@@ -153,21 +194,128 @@ export function buildLevelGeometry(level, bank) {
      milliseconds; it happens perhaps twenty times in a level, debounced,
      and it is far simpler than tracking which vertices belong to which
      sector so that a subset could be patched. */
-  function rebuildStatic() {
-    for (const child of staticGroup.children)
-      child.traverse(o => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
-    staticGroup.clear();
-    const set = new BatchSet();
-    for (const s of staticSectors) addFlats(set, level, s, bank);
-    for (const l of staticLines) addLine(set, level, l, bank);
+  /* WHAT IS IN EACH BLOCK, worked out once. A sector is drawn in the
+     block its middle lands in and a line in the block its midpoint
+     lands in, so every triangle belongs to exactly one of them and a
+     rebuild of one block is complete on its own. */
+  const blockSectors = new Map(), blockLines = new Map();
+  const push = (m, k, v) => { let a = m.get(k); if (!a) m.set(k, a = []); a.push(v); };
+  for (const s of staticSectors) { s.drawBlock = sectorBlock(s); push(blockSectors, s.drawBlock, s); }
+  for (const l of staticLines) { const k = lineBlock(l); l.drawBlock = k; push(blockLines, k, l); }
+  const blockKeys = [...new Set([...blockSectors.keys(), ...blockLines.keys()])];
+
+  /* AND THE INTERIORS ARE LOD. The buffer is two to four hundred rows
+     tall. You cannot see through a forty-eight-unit window at forty
+     metres at that resolution — there is nothing there to see. So a
+     block's indoor surfaces go in a second group of their own and are
+     submitted only when you are near enough to look through a door;
+     the shell — the outside walls, the street, the roofs — is always
+     there. It is the same trick js/forest.js plays on fifty thousand
+     trees.
+
+     A surface is indoors if every region it belongs to is. The wall
+     between a hall and the street belongs to both and is shell, which
+     is what keeps the house a house from the far end of the block. */
+  const indoor = s => !(s.outdoor || s.forest || s.outside);
+  const lineIndoor = l => {
+    for (const i of l.frontCol) if (!indoor(level.sectors[i])) return false;
+    for (const i of l.backCol) if (!indoor(level.sectors[i])) return false;
+    return true;
+  };
+
+  /* one Group per block with a shell and an inner child, so a block can
+     be hidden in one flag and its insides in another */
+  const blockGroups = new Map(), blockMid = new Map();
+  for (const k of blockKeys) {
+    const g = new THREE.Group();
+    g.name = 'block ' + k;
+    const shell = new THREE.Group(); shell.name = 'shell';
+    const inner = new THREE.Group(); inner.name = 'inner';
+    g.add(shell); g.add(inner);
+    /* where the block is, for the distance the insides come in at */
+    const [bx, by] = k.split(',').map(Number);
+    blockMid.set(k, [(bx + 0.5) * BATCH_BLOCK, (by + 0.5) * BATCH_BLOCK]);
+    blockGroups.set(k, g);
+    staticGroup.add(g);
+  }
+
+  function rebuildBlock(k) {
+    const g = blockGroups.get(k);
+    if (!g) return;
+    const [shellG, innerG] = g.children;
+    for (const child of [shellG, innerG])
+      for (const o of child.children)
+        o.traverse(m => { if (m.isMesh) { m.geometry.dispose(); m.material.dispose(); } });
+    shellG.clear(); innerG.clear();
+    const set = new BatchSet(), inner = new BatchSet();
+    for (const s of blockSectors.get(k) || []) addFlats(indoor(s) ? inner : set, level, s, bank);
+    for (const l of blockLines.get(k) || []) addLine(lineIndoor(l) ? inner : set, level, l, bank);
     /* AND THE STEEL, over whichever regions have lost their deck. It
        goes in the same BatchSet as everything else, so the whole ruined
        roof of a burnt-out store is one more draw call and not one per
-       region — and it is rebuilt with the rest of the level, which is
+       region — and it is rebuilt with the rest of its block, which is
        what keeps it in step with a fire that is still spreading. */
-    for (const s of staticSectors) if (s.ruinRoof) roofFraming(set, s);
-    staticGroup.add(set.toGroup(bank));
+    for (const s of blockSectors.get(k) || []) if (s.ruinRoof) roofFraming(set, s);
+    /* AND THE ROOFS, which no sector can hold: a sector engine cannot
+       slope a ceiling and a flat-roofed house is not an American house.
+       See roofGeometry. A roof is the most shell thing there is. */
+    for (const s of blockSectors.get(k) || []) if (s.roof) roofGeometry(set, s);
+    shellG.add(set.toGroup(bank));
+    if (inner.map.size) innerG.add(inner.toGroup(bank));
   }
+
+  /**
+   * Rebuild the static geometry.
+   *
+   * With no argument, all of it — which is what startup and a relight
+   * want. With a set of block keys, only those: when a region finishes
+   * burning, the block it charred in is rebuilt and the rest of the
+   * town is left alone. At town scale that is the difference between a
+   * hundred thousand triangles and four, twenty times over, during the
+   * exact moments the game is at its best.
+   */
+  function rebuildStatic(blocks = null) {
+    for (const k of blocks || blockKeys) rebuildBlock(k);
+  }
+
+  /** Which blocks these sectors are drawn in — what to hand rebuildStatic
+   *  after a fire has changed some regions' skins. */
+  function blocksOf(sectors) {
+    const out = new Set();
+    for (const s of sectors) if (s.drawBlock) out.add(s.drawBlock);
+    return out;
+  }
+
+  /**
+   * TURN OFF THE BLOCKS YOU CANNOT SEE.
+   *
+   * The portal flood (Level.visibleSectors, and SIGHT.txt) already says
+   * which regions are visible, and this plan's unit of drawing is the
+   * block those regions are in — so a block with nothing visible in it
+   * is not submitted at all. It is the exact cull rather than the
+   * frustum's guess, and on a street grid that is the whole difference:
+   * the frustum keeps every block in front of you whether or not a
+   * house is standing in the way.
+   */
+  function applyVisibility(lv, ex = null, ey = null, innerDist = INTERIOR_DIST) {
+    const d2 = innerDist * innerDist;
+    for (const [k, g] of blockGroups) {
+      const list = blockSectors.get(k);
+      let on = false;
+      if (!list || !list.length) on = true;
+      else for (let i = 0; i < list.length; i++) if (lv.isVisible(list[i])) { on = true; break; }
+      g.visible = on;
+      if (!on || ex === null) continue;
+      /* the block's own corner, not its middle: you are close enough to
+         see into a house at the near end of a block long before you are
+         close to the block */
+      const mid = blockMid.get(k);
+      const dx = Math.max(0, Math.abs(ex - mid[0]) - BATCH_BLOCK / 2);
+      const dy = Math.max(0, Math.abs(ey - mid[1]) - BATCH_BLOCK / 2);
+      g.children[1].visible = dx * dx + dy * dy <= d2;
+    }
+  }
+
   rebuildStatic();
 
   /* Doors and lifts get their own buffers, thrown away and rebuilt when
@@ -189,8 +337,73 @@ export function buildLevelGeometry(level, bank) {
   }
   rebuild();
 
-  return { group, rebuild, rebuildStatic, dynamicSectors, dynamicLines };
+  return { group, rebuild, rebuildStatic, blocksOf, applyVisibility,
+           blockGroups, dynamicSectors, dynamicLines };
 }
+
+/* --------------------------------------------------------------------
+   THE ROOF IS NOT A SECTOR
+
+   A sector engine cannot slope a ceiling, and a flat-roofed house is not
+   an American house. So a pitched roof is GEOMETRY, generated from the
+   building's footprint and pushed into the same BatchSet as everything
+   else: two sloped planes and two gable triangles. There is precedent
+   for this in the project and it is load-bearing — roofFraming in
+   js/ruin.js puts a steel frame over a burnt-out region without any
+   sector knowing, and the logo over the entrance is geometry for the
+   same reason.
+
+   You never get on a roof. It does not need to be walkable. It needs to
+   be a SILHOUETTE, and from the far end of a street the silhouette is
+   the entire difference between a town and a row of boxes.
+
+   A sector carries the whole building's roof, not its own share of one:
+   `s.roof = { x0, y0, x1, y1, base, rise, tex, gableTex, along }`, where
+   `along` is the axis the RIDGE runs down.
+   ------------------------------------------------------------------ */
+export function roofGeometry(set, s) {
+  const r = s.roof;
+  if (!r) return 0;
+  const { x0, y0, x1, y1, base, rise } = r;
+  const tex = r.tex || 'SHINGLE', gtex = r.gableTex || tex;
+  const t = bank_h(set, tex), gt = bank_h(set, gtex);
+  const b = set.get(tex), gb = set.get(gtex);
+  const light = r.light ?? 0.66;
+  const sk = r.sky ?? 1;
+  const ch = charOf(s);
+  const top = base + rise;
+
+  /* the slope length, so the shingles are not stretched up the pitch */
+  const halfW = (r.along === 'x' ? (y1 - y0) : (x1 - x0)) / 2;
+  const slope = Math.hypot(halfW, rise);
+
+  if (r.along === 'x') {
+    const ym = (y0 + y1) / 2;
+    /* south face and north face. The map's y is the renderer's minus z. */
+    b.quad([[x0, base, -y0], [x1, base, -y0], [x1, top, -ym], [x0, top, -ym]],
+           [[0, 0], [(x1 - x0) / t.w, 0], [(x1 - x0) / t.w, slope / t.h], [0, slope / t.h]], light, sk, ch);
+    b.quad([[x1, base, -y1], [x0, base, -y1], [x0, top, -ym], [x1, top, -ym]],
+           [[0, 0], [(x1 - x0) / t.w, 0], [(x1 - x0) / t.w, slope / t.h], [0, slope / t.h]], light * 0.92, sk, ch);
+    /* the gables, east and west */
+    gb.tri(x0, base, -y0, 0, 0, x0, top, -ym, halfW / gt.w, rise / gt.h, x0, base, -y1, 2 * halfW / gt.w, 0, light * 0.96, sk, ch);
+    gb.tri(x1, base, -y1, 0, 0, x1, top, -ym, halfW / gt.w, rise / gt.h, x1, base, -y0, 2 * halfW / gt.w, 0, light * 0.96, sk, ch);
+  } else {
+    const xm = (x0 + x1) / 2;
+    b.quad([[x0, base, -y1], [x0, base, -y0], [xm, top, -y0], [xm, top, -y1]],
+           [[0, 0], [(y1 - y0) / t.w, 0], [(y1 - y0) / t.w, slope / t.h], [0, slope / t.h]], light, sk, ch);
+    b.quad([[x1, base, -y0], [x1, base, -y1], [xm, top, -y1], [xm, top, -y0]],
+           [[0, 0], [(y1 - y0) / t.w, 0], [(y1 - y0) / t.w, slope / t.h], [0, slope / t.h]], light * 0.92, sk, ch);
+    gb.tri(x1, base, -y0, 0, 0, xm, top, -y0, halfW / gt.w, rise / gt.h, x0, base, -y0, 2 * halfW / gt.w, 0, light * 0.96, sk, ch);
+    gb.tri(x0, base, -y1, 0, 0, xm, top, -y1, halfW / gt.w, rise / gt.h, x1, base, -y1, 2 * halfW / gt.w, 0, light * 0.96, sk, ch);
+  }
+  return 1;
+}
+/* the bank is not handed to roofGeometry, so sizes come off the batch's
+   own record of them — set by buildLevelGeometry before any roof is
+   drawn. See ROOF_SIZES. */
+const ROOF_SIZES = new Map();
+export function noteTextureSize(name, w, h) { ROOF_SIZES.set(name, { w, h }); }
+function bank_h(set, name) { return ROOF_SIZES.get(name) || { w: 64, h: 64 }; }
 
 /* --------------------------------------------------------------------
    Floors and ceilings
@@ -209,7 +422,7 @@ function addFlats(set, level, s, bank) {
 
   if (s.floorTex && s.floorTex !== 'NONE') {
     const t = bank.get(s.floorTex);
-    const b = set.get(s.floorTex);
+    const b = set.get(s.floorTex);   // one set per block, so the name is enough
     /* Floors tile from the world origin unless the sector says
        otherwise; see floorAnchor in js/level.js for the one that does. */
     const ax = s.floorAnchor ? s.floorAnchor[0] : 0;

@@ -40,7 +40,7 @@
 import * as THREE from 'three';
 import { createSpriteMaterial } from './material.js';
 import { world } from './material.js';
-import { pRandom, pChance, clamp, dist2, TICRATE } from './util.js';
+import { pRandom, pChance, clamp, dist2, TICRATE, pointInPoly } from './util.js';
 import { climate } from './weather.js';
 
 const CELL = 32;
@@ -326,25 +326,43 @@ export class FireSystem {
 
   /* Every cell takes its fuel from the sector it lands in. A sector with
      fuel 0 — the car park, the tiled corridor — will never burn, and
-     that is how the map author draws firebreaks. */
+     that is how the map author draws firebreaks.
+   *
+   * RASTERISED, NOT QUERIED. This used to ask sectorAt once per cell,
+   * which is a point-in-polygon query against the blockmap and is fine
+   * for a store: ninety-five thousand cells, a few milliseconds. Over a
+   * town eighteen thousand units across it is half a million of them,
+   * and half a million of anything is the difference between three
+   * hundred milliseconds and thirty. So each sector fills its own
+   * bounding box once instead, first one wins, which is the same answer
+   * sectorAt gives because it is the same order and the polygons do not
+   * overlap. The smoke test runs both and compares, cell for cell. */
   _seed() {
     const lv = this.game.level;
-    for (let cy = 0; cy < this.rows; cy++) {
-      for (let cx = 0; cx < this.cols; cx++) {
-        const i = this.idx(cx, cy);
-        const s = lv.sectorAt(this.worldX(cx), this.worldY(cy));
-        if (!s) continue;
-        this.sectorOf[i] = s.index;
-        this.sectorCells[s.index]++;
-        if (s.outdoor || s.forest || s.outside) this.open[i] = 1;
-        const f = s.fuel | 0;
-        if (f <= 0) continue;
-        /* a little variation, so the burn front is ragged rather than a
-           expanding rectangle */
-        const v = Math.max(1, Math.round(f * (0.75 + (pRandom() / 255) * 0.5)));
-        this.fuel[i] = v; this.fuel0[i] = v;
-        this.totalFuel += v;
-        this.sectorFuel[s.index] += v;
+    for (const s of lv.sectors) {
+      /* the ground storey only, which is what sectorAt answers with */
+      if (s.colBase !== s.index) continue;
+      const cx0 = this.cellX(s.bbox[0]), cx1 = this.cellX(s.bbox[2]);
+      const cy0 = this.cellY(s.bbox[1]), cy1 = this.cellY(s.bbox[3]);
+      const open = (s.outdoor || s.forest || s.outside) ? 1 : 0;
+      const f = s.fuel | 0;
+      for (let cy = cy0; cy <= cy1; cy++) {
+        const wy = this.worldY(cy);
+        for (let cx = cx0; cx <= cx1; cx++) {
+          const i = this.idx(cx, cy);
+          if (this.sectorOf[i] >= 0) continue;
+          if (!pointInPoly(s.poly, this.worldX(cx), wy)) continue;
+          this.sectorOf[i] = s.index;
+          this.sectorCells[s.index]++;
+          if (open) this.open[i] = 1;
+          if (f <= 0) continue;
+          /* a little variation, so the burn front is ragged rather than
+             an expanding rectangle */
+          const v = Math.max(1, Math.round(f * (0.75 + (pRandom() / 255) * 0.5)));
+          this.fuel[i] = v; this.fuel0[i] = v;
+          this.totalFuel += v;
+          this.sectorFuel[s.index] += v;
+        }
       }
     }
   }
@@ -355,13 +373,43 @@ export class FireSystem {
     for (let cy = 0; cy < this.rows; cy++) {
       for (let cx = 0; cx < this.cols; cx++) {
         const i = this.idx(cx, cy);
-        if (this.sectorOf[i] < 0) continue;
+        const si = this.sectorOf[i];
+        if (si < 0) continue;
         const x1 = this.worldX(cx), y1 = this.worldY(cy);
         for (const [dx, dy, bit] of DIRS) {
           const nx = cx + dx, ny = cy + dy;
           if (nx < 0 || ny < 0 || nx >= this.cols || ny >= this.rows) continue;
           const j = this.idx(nx, ny);
-          if (this.sectorOf[j] < 0) continue;
+          const sj = this.sectorOf[j];
+          if (sj < 0) continue;
+          /* TWO CELLS OF ONE CONVEX REGION ARE ALWAYS LINKED. A wall in
+             this map is the GAP between two regions, so a convex region
+             has no line strictly inside it and the ray cast below can
+             only come back clear. Skipping it is the difference between
+             two million blockmap queries over a town and the forty
+             thousand that are actually a boundary.
+
+             CONVEX and not merely "the same region", which is a thing I
+             got wrong and the check caught: the wood is one region
+             drawn round the hole the store stands in, and two of its
+             cells either side of that hole are in it and have the whole
+             back wall of the building between them. */
+          if (sj === si) {
+            const s0 = lv.sectors[si], bb = s0.bbox;
+            /* and both centres STRICTLY inside it. A centre that lands
+               exactly on the region's own edge sits on a one-sided line
+               and the honest ray calls that a wall, which is a
+               degeneracy rather than a fact about the map — but it is
+               the answer the ray gives, so the shortcut declines to
+               guess and lets the ray have it. */
+            if (s0.convex
+                && x1 > bb[0] + 0.5 && x1 < bb[2] - 0.5 && y1 > bb[1] + 0.5 && y1 < bb[3] - 0.5) {
+              const nxw = this.worldX(nx), nyw = this.worldY(ny);
+              if (nxw > bb[0] + 0.5 && nxw < bb[2] - 0.5 && nyw > bb[1] + 0.5 && nyw < bb[3] - 0.5) {
+                this.link[i] |= bit; continue;
+              }
+            }
+          }
           if (!this._fireBlocked(x1, y1, this.worldX(nx), this.worldY(ny))) this.link[i] |= bit;
         }
       }
@@ -372,7 +420,8 @@ export class FireSystem {
    *  line that counts as a wall here. */
   _fireBlocked(x1, y1, x2, y2) {
     const lv = this.game.level;
-    const lines = lv.linesInBox(Math.min(x1, x2), Math.min(y1, y2), Math.max(x1, x2), Math.max(y1, y2), []);
+    const lines = lv.linesInBox(Math.min(x1, x2), Math.min(y1, y2), Math.max(x1, x2), Math.max(y1, y2),
+      this._blockScratch || (this._blockScratch = []));
     for (const l of lines) {
       const t = segCross(x1, y1, x2, y2, l.x1, l.y1, l.x2, l.y2);
       if (t < 0) continue;

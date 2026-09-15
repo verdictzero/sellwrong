@@ -428,6 +428,21 @@ export class MapBuilder {
 
 const BLOCK = 128;      // Doom's blockmap cell, and still the right size
 
+/** Same turn at every corner, collinear vertices allowed. */
+function convexPoly(pts) {
+  const n = pts.length;
+  let sign = 0;
+  for (let i = 0; i < n; i++) {
+    const a = pts[i], b = pts[(i + 1) % n], c = pts[(i + 2) % n];
+    const cr = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+    if (Math.abs(cr) < 1e-9) continue;
+    const sg = cr > 0 ? 1 : -1;
+    if (sign === 0) sign = sg;
+    else if (sg !== sign) return false;
+  }
+  return true;
+}
+
 export class Level {
   constructor(mb) {
     this.name = mb.name;
@@ -458,6 +473,14 @@ export class Level {
          shading at all. Worth every one of the four lines. */
       l.contrast = Math.abs(l.dy) < 0.01 ? 0.055 : Math.abs(l.dx) < 0.01 ? -0.055 : 0;
     }
+
+    /* IS THE POLYGON CONVEX. Every rect-derived region is — a rectangle
+       with extra vertices along its edges where a neighbour starts and
+       stops is still a rectangle — and the wood and the road out are
+       not, because they are drawn round a hole. The fuel grid uses it:
+       two cells inside one CONVEX region can never have a wall between
+       them, so the ray that would prove it is not cast. */
+    for (const s of this.sectors) s.convex = convexPoly(s.poly);
 
     this._buildBounds();
     this._buildBlockmap();

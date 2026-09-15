@@ -32,8 +32,49 @@
    the corners are and a column has one set of corners.
    ===================================================================== */
 
+/* A BUCKET GRID OVER THE RECTS, because both loops below are otherwise
+   every rect against every other rect. Eleven shop units and a car park
+   is a thousand rects and a million comparisons, which nobody notices.
+   A town is fifteen thousand rects and two hundred and twenty-five
+   million, which is ten seconds of a half-second budget. Bucketing turns
+   both into a scan of the few rects that are actually nearby, and it
+   changes no answer — it only stops asking rects on the other side of
+   the town whether they abut this doorway. */
+const CELL = 512;
+
 export class RectMap {
-  constructor(mb) { this.mb = mb; this.rects = []; }
+  constructor(mb) { this.mb = mb; this.rects = []; this._buckets = null; this._stamp = 0; }
+
+  _index() {
+    this._buckets = new Map();
+    for (const r of this.rects) {
+      r._stamp = 0;
+      for (let cy = Math.floor(r.y0 / CELL); cy <= Math.floor((r.y1 - 1e-9) / CELL); cy++)
+        for (let cx = Math.floor(r.x0 / CELL); cx <= Math.floor((r.x1 - 1e-9) / CELL); cx++) {
+          const k = cx + ',' + cy;
+          let b = this._buckets.get(k);
+          if (!b) this._buckets.set(k, b = []);
+          b.push(r);
+        }
+    }
+  }
+
+  /** Every rect whose bucket touches this box, each once. */
+  _near(x0, y0, x1, y1, out) {
+    out.length = 0;
+    const st = ++this._stamp;
+    for (let cy = Math.floor(y0 / CELL); cy <= Math.floor(y1 / CELL); cy++)
+      for (let cx = Math.floor(x0 / CELL); cx <= Math.floor(x1 / CELL); cx++) {
+        const b = this._buckets.get(cx + ',' + cy);
+        if (!b) continue;
+        for (let i = 0; i < b.length; i++) {
+          if (b[i]._stamp === st) continue;
+          b[i]._stamp = st;
+          out.push(b[i]);
+        }
+      }
+    return out;
+  }
 
   /** x0<x1, y0<y1. Props go straight through to MapBuilder.sector. */
   add(x0, y0, x1, y1, props = {}) {
@@ -57,7 +98,16 @@ export class RectMap {
   /** Split points along one edge of `r`, from every rect that abuts it. */
   _splits(r, side) {
     const out = new Set();
-    for (const o of this.rects) {
+    /* a hair either side of the edge in question, and nothing else on
+       the map can possibly abut it */
+    const E = 1;
+    const near = this._near(
+      side === 'left' ? r.x0 - E : side === 'right' ? r.x1 - E : r.x0,
+      side === 'bottom' ? r.y0 - E : side === 'top' ? r.y1 - E : r.y0,
+      side === 'left' ? r.x0 + E : side === 'right' ? r.x1 + E : r.x1,
+      side === 'bottom' ? r.y0 + E : side === 'top' ? r.y1 + E : r.y1,
+      this._splitScratch || (this._splitScratch = []));
+    for (const o of near) {
       if (o === r) continue;
       if (side === 'bottom') {
         if (o.y1 !== r.y0 || !this._overlap(r.x0, r.x1, o.x0, o.x1)) continue;
@@ -86,12 +136,15 @@ export class RectMap {
     /* An overlap is always a mistake and always produces a level with a
        room you can stand in two of at once. Cheap to check, miserable to
        find later. */
-    for (let i = 0; i < this.rects.length; i++)
-      for (let j = i + 1; j < this.rects.length; j++) {
-        const a = this.rects[i], b = this.rects[j];
+    this._index();
+    const hits = [];
+    for (const a of this.rects) {
+      for (const b of this._near(a.x0, a.y0, a.x1, a.y1, hits)) {
+        if (b === a) continue;
         if (this._overlap(a.x0, a.x1, b.x0, b.x1) && this._overlap(a.y0, a.y1, b.y0, b.y1))
           throw new Error(`rects overlap: [${a.x0},${a.y0},${a.x1},${a.y1}] and [${b.x0},${b.y0},${b.x1},${b.y1}]`);
       }
+    }
 
     for (const r of this.rects) {
       const poly = [];
