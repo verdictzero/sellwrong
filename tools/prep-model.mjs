@@ -2,7 +2,7 @@
    Prepare a GLB for the game
    =====================================================================
 
-     node tools/prep-model.mjs <in.glb> <out.glb>
+     node tools/prep-model.mjs <in.glb> <out.glb> [--texture N]
 
    The flamethrower arrives from Blender with two things in it that are
    not part of the gun: a pair of spheres named CLAUDE_delete_this_and_
@@ -30,14 +30,36 @@
    ignores the rest, so on that model the file was carrying forty
    bytes a vertex — 1.6 megabytes — that nothing would ever bind.
 
+   AND `--texture N` CRUNCHES THE ONE TEXTURE THAT IS LEFT, which is the
+   other half of the download and, on the gunship, was nearly all of it.
+   Six megabytes of a model's seven were a 2048-square colour map on a
+   thing that is four hundred units long and usually three hundred units
+   over your head: at the size it is ever drawn, most of those texels
+   have never been sampled. Halved to 1024 it is a megabyte and a half,
+   and there is nothing on screen to tell the two apart.
+
+   It is HALVES, not a resample to an arbitrary size — see halvePNG in
+   tools/png-read.mjs for why a box average is the right filter for
+   exactly this and for nothing else — repeated until the sheet is N or
+   smaller. A texture already that size is left alone. Without the flag
+   nothing happens to it at all, which is what the other four models
+   get: this is a knob, not a policy, because the guns are held at arm's
+   length where a texel IS a centimetre and the trade goes the other
+   way.
+
    Nothing else is understood or needed: one buffer, no animations, no
    skins, no extensions. Anything fancier throws rather than guessing.
    ===================================================================== */
 
 import fs from 'node:fs';
+import { readPNG, writePNG, halvePNG } from './png-read.mjs';
 
-const [,, inFile, outFile] = process.argv;
-if (!inFile || !outFile) { console.error('usage: prep-model.mjs <in.glb> <out.glb>'); process.exit(2); }
+const args = process.argv.slice(2);
+const flag = name => { const i = args.indexOf(name); return i < 0 ? null : args.splice(i, 2)[1]; };
+const maxTexture = Number(flag('--texture')) || 0;
+const [inFile, outFile] = args;
+if (!inFile || !outFile) { console.error('usage: prep-model.mjs <in.glb> <out.glb> [--texture N]'); process.exit(2); }
+if (maxTexture && (maxTexture & (maxTexture - 1))) throw new Error('--texture wants a power of two, since it halves');
 
 /* ---- read ---------------------------------------------------------- */
 const buf = fs.readFileSync(inFile);
@@ -266,11 +288,28 @@ for (const a of accessors) {
     }
   }
 }
+const crunched = [];
 for (const im of images) {
   const bv = json.bufferViews[im.bufferView];
   const start = bv.byteOffset || 0;
+  let bytes = bin.subarray(start, start + bv.byteLength);
+  if (maxTexture) {
+    if (im.mimeType && im.mimeType !== 'image/png')
+      throw new Error(`--texture can only crunch a PNG, and this one is ${im.mimeType}`);
+    let img = readPNG(Buffer.from(bytes));
+    const was = `${img.w}x${img.h}`;
+    while (img.w > maxTexture || img.h > maxTexture) img = halvePNG(img);
+    if (`${img.w}x${img.h}` !== was) {
+      /* FILTERED, which is the difference between crunching and
+         crunching usefully: see writePNG. A model's sheet is a
+         photograph of a thing, not flat pixel art. */
+      const out = writePNG(img.w, img.h, img.data, { filter: true });
+      crunched.push(`${was} -> ${img.w}x${img.h}, ${(bytes.length / 1024).toFixed(0)}K -> ${(out.length / 1024).toFixed(0)}K`);
+      bytes = out;
+    }
+  }
   im.bufferView = bufferViews.length;
-  bufferViews.push({ buffer: 0, byteOffset: place(bin.subarray(start, start + bv.byteLength)), byteLength: bv.byteLength });
+  bufferViews.push({ buffer: 0, byteOffset: place(bytes), byteLength: bytes.length });
 }
 const binOut = Buffer.concat(parts);
 
@@ -304,6 +343,7 @@ const kb = n => (n / 1024).toFixed(0) + 'K';
 console.log(`${outFile}: ${kb(buf.length)} -> ${kb(fs.statSync(outFile).size)}`);
 console.log(`  nodes ${json.nodes.length} -> ${nodes.length}, meshes ${json.meshes.length} -> ${meshes.length}, images ${json.images.length} -> ${images.length}`);
 if (dropped.size) console.log(`  attributes nothing binds: ${[...dropped].map(([k, n]) => `${k} (${n} vertices)`).join(', ')}`);
+for (const c of crunched) console.log(`  texture crunched: ${c}`);
 if (anchors.nozzle) console.log(`  anchors: ${anchors.pilot ? 'pilot ' + anchors.pilot.join(', ') + '  ' : ''}nozzle ${anchors.nozzle.join(', ')}`);
 for (const [k, m] of Object.entries(markers)) console.log(`  marker ${k}: ${m.at.join(', ')} in ${m.node}`);
 if (spinName) console.log(`  spins: ${spinName}`);

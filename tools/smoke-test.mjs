@@ -6272,8 +6272,88 @@ section('the gunship');
      extras and takes them out of the mesh — so what is asserted here is
      that the markers are FACTS IN THE FILE and not geometry anybody can
      render by mistake. */
+  const vtolMB = fs.statSync('assets/models/vtol.glb').size / 1048576;
   note('what is in the file', `${json.nodes.length} nodes, ${json.meshes.length} meshes, ` +
-    `${json.images.length} image, ${(fs.statSync('assets/models/vtol.glb').size / 1048576).toFixed(1)} MB`);
+    `${json.images.length} image, ${vtolMB.toFixed(1)} MB`);
+
+  /* --- AND ITS SHEET IS CRUNCHED, at the user's request -------------
+     Six of the model's seven megabytes were a 2048-square colour map on
+     a thing that is four hundred units long and usually three hundred
+     units over your head. tools/prep-model.mjs --texture 1024 halves it
+     — a box average, which is the correct downsample for exactly the
+     halving case, and then PNG's own adaptive filtering, which is what
+     a photograph needs and flat pixel art does not. */
+  {
+    const { readPNG: rp, writePNG: wp, halvePNG: hp } = await import('./png-read.mjs');
+    const zlibM = await import('node:zlib');
+    /* the IDAT of a PNG, concatenated, for the two checks below that
+       read a written file back rather than trusting it */
+    const idatOf = png => {
+      const parts = [];
+      let at = 8;
+      while (at < png.length) {
+        const len = png.readUInt32BE(at), type = png.toString('ascii', at + 4, at + 8);
+        if (type === 'IDAT') parts.push(png.subarray(at + 8, at + 8 + len));
+        at += 12 + len;
+      }
+      return Buffer.concat(parts);
+    };
+    const bvI = json.bufferViews[json.images[0].bufferView];
+    const sheet = rp(Buffer.from(bin.subarray(bvI.byteOffset || 0, (bvI.byteOffset || 0) + bvI.byteLength)));
+    note('its sheet', `${sheet.w}x${sheet.h}, ${(bvI.byteLength / 1024).toFixed(0)}K of the ${(vtolMB * 1024).toFixed(0)}K file`);
+    check('the gunship\'s sheet is crunched to 1024, at the user\'s request',
+      sheet.w === 1024 && sheet.h === 1024, `${sheet.w}x${sheet.h}`);
+    check('and the whole model is under two megabytes because of it',
+      vtolMB < 2, `${vtolMB.toFixed(2)} MB`);
+
+    /* the two pieces that did it, on their own. A box halve is four
+       texels averaged into one and nothing else; a filtered PNG is a
+       different file from an unfiltered one and reads back the same
+       pixels; and the UNFILTERED path has to be untouched, because
+       every PNG already committed out of the other tools was written
+       by it. */
+    const tiny = { w: 2, h: 2, data: new Uint8ClampedArray([0,0,0,255, 10,20,30,255, 20,40,60,255, 30,60,90,255]) };
+    const half = hp(tiny);
+    check('halving averages the four texels it covers, and nothing else',
+      half.w === 1 && half.h === 1 &&
+      [...half.data].join(',') === `${(0+10+20+30+2)>>2},${(0+20+40+60+2)>>2},${(0+30+60+90+2)>>2},255`,
+      [...half.data].join(','));
+    check('and an odd size throws rather than being stretched',
+      (() => { try { hp({ w: 3, h: 2, data: new Uint8ClampedArray(24) }); return false; } catch { return true; } })());
+    const W = 64, H = 40, px = new Uint8ClampedArray(W * H * 4);
+    for (let i = 0; i < W * H; i++) { px[i*4] = (i*7)&255; px[i*4+1] = (i*13)&255; px[i*4+2] = (i*29)&255; px[i*4+3] = 255; }
+    const plain = wp(W, H, px), filt = wp(W, H, px, { filter: true });
+    const backF = rp(filt);
+    check('a filtered PNG is a different file that reads back the same pixels, smaller',
+      Buffer.compare(plain, filt) !== 0 && filt.length < plain.length &&
+      backF.w === W && backF.h === H && [...backF.data].every((v, i) => v === px[i]),
+      `${plain.length} unfiltered against ${filt.length} filtered`);
+    /* AND THE UNFILTERED PATH IS UNTOUCHED, which is the check that
+       actually protects something: every PNG already committed out of
+       tools/prep-people.mjs, tools/prep-troops.mjs, tools/bake-sky.mjs
+       and tools/bake-icons.mjs was written by it, and a filter quietly
+       turned on for all of them would rewrite files nobody asked to
+       have rewritten. Read out of the file rather than trusted: the
+       IDAT inflated, and every row's filter byte still zero. */
+    check('and every row of an unfiltered PNG still says filter none',
+      (() => {
+        const zl = zlibM.inflateSync(idatOf(plain));
+        const stride = W * 4;
+        for (let y = 0; y < H; y++) if (zl[y * (stride + 1)] !== 0) return false;
+        return true;
+      })(), 'the default path is what every committed PNG was written by');
+    check('while a filtered one actually filters, rather than writing none five times',
+      (() => {
+        const zl = zlibM.inflateSync(idatOf(filt));
+        const stride = W * 4, seen = new Set();
+        for (let y = 0; y < H; y++) seen.add(zl[y * (stride + 1)]);
+        /* WHICH of the five it settles on is the picture's business —
+           a smooth ramp is Sub for every row of it and a photograph is
+           a mix — so what is asserted is that something other than
+           `none` won, which is the whole of the claim being made. */
+        return [...seen].some(t => t !== 0);
+      })(), 'every row wrote filter none, so nothing was filtered');
+  }
   const EX = json.asset?.extras || {};
   check('the gunship is prepared: its markers are in the extras, not in the mesh',
     !!EX.markers?.muzzle && !!EX.markers?.lamp &&

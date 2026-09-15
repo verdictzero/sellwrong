@@ -51,6 +51,9 @@ somewhere else: the people, the trees, the sky, and the gun.
                           the user's fourth and the only one that never
                           touches the road, with the two marker spheres
                           the user drew inside it read into its extras
+                          and its sheet crunched from 2048 to 1024 —
+                          six megabytes of its seven, at the user's
+                          request
   assets/fonts/         Michroma (SIL OFL), the title face
   assets/music/         the user's three E1M1 remixes, mixed on the beat
                           by js/music.js
@@ -63,7 +66,10 @@ somewhere else: the people, the trees, the sky, and the gun.
   tools/prep-model.mjs  a .glb down to what this renderer binds: the colour
                           map, four attributes, one tight view an accessor
                           — and marker spheres out of the mesh and into
-                          the file's extras, for a model that has them
+                          the file's extras, for a model that has them.
+                          --texture N halves the colour map until it is
+                          N or smaller, which is the gunship's six
+                          megabytes down to one and a half
   tools/build-site.sh   assembles public/ — what actually gets published
   tools/bake-icons.mjs  the home-screen icon, out of the game's own fire
   tools/smoke-test.mjs  node tools/smoke-test.mjs — no install, no browser
@@ -93,7 +99,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         1264 checks, no install and no browser
+  the smoke test         1271 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -3506,7 +3512,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-1264 checks. Every one of them earns its place by having caught something
+1271 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -4171,8 +4177,17 @@ WHAT IS NOT DONE
     the bridge
   the trees are 128 and 256 pixels, the sky 1024, all three guns' paint
     1024, the van's sheet 512x256, the police van's 1024: art that came
-    from outside was left as it came, and the 64-pixel rule stands for
-    everything the game draws itself
+    from outside is left as it came unless it is absurd, and the
+    64-pixel rule stands for everything the game draws itself. The one
+    that was absurd is the gunship, whose 2048-square sheet was six of
+    its seven megabytes for a thing usually three hundred units over
+    your head; it is halved to 1024 by tools/prep-model.mjs --texture
+    1024, and side by side at the range you ever see one, four in a
+    thousand pixels of the frame differ at all
+  the APC and the three guns are still as they came, at 1024 and 2048.
+    The same flag would crunch any of them and nobody has asked: a gun
+    is held at arm's length, where a texel IS a centimetre and the
+    trade goes the other way
   three of the five models are Vaportrash's, off Sketchfab. The fire
     extinguisher rifle and the cerebral bore are CC-BY-4.0 and want the
     credit above kept wherever the game goes; the flamethrower's own
