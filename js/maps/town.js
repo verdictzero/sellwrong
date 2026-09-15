@@ -65,8 +65,8 @@ const CARRIAGE = STREET - 2 * (WALK + VERGE);       // 384
 /* how the lots sit on a block face */
 const FACE = BLOCK / 2;             // 1536, one row of lots back to back
 const LOT_W = 512;                  // 52 ft, a house lot
-const HOUSE_W = 448, HOUSE_D = 512;
-const FRONT_YARD = 288;             // from the sidewalk to the front wall
+const HOUSE_W = 448, HOUSE_D = 768;
+const FRONT_YARD = 192;             // from the sidewalk to the front wall
 const ROW_W = 192;                  // 20 ft, a townhouse lot
 const ROW_HOUSE_W = 176;
 
@@ -182,12 +182,19 @@ export function buildTown(rm, mb, opts = {}) {
     wallTex: 'BRICKRED', upperTex: 'BRICKRED', lowerTex: 'KERBSTON',
     fuel: TOWN_FUEL.none, name, ...extra,
   });
+  /* A SIDEWALK IS THE LIT PART OF A STREET, because that is where the
+     lamps are pointed. The carriageway is darker than the walk and the
+     yards behind the houses are darker than either, which is the whole
+     of what a street reads like at two in the morning — and it is done
+     with ambient rather than with lamps because relight() does not
+     light outdoor regions and a hundred street lamps against four
+     thousand indoor sectors is a startup cost for nothing. */
   const walkProps = (name, extra = {}) => open(name, {
-    floor: KERB_H, floorTex: 'SIDEWALK', light: 0.34, ambient: 0.34,
+    floor: KERB_H, floorTex: 'SIDEWALK', light: 0.46, ambient: 0.46,
     lowerTex: 'KERBSTON', fuel: TOWN_FUEL.walk, ...extra,
   });
   const vergeProps = (name, extra = {}) => open(name, {
-    floor: KERB_H, floorTex: 'GRASSVRG', light: 0.30, ambient: 0.30,
+    floor: KERB_H, floorTex: 'GRASSVRG', light: 0.40, ambient: 0.40,
     lowerTex: 'KERBSTON', fuel: TOWN_FUEL.yard, ...extra,
   });
 
@@ -199,7 +206,7 @@ export function buildTown(rm, mb, opts = {}) {
   const L = 6, H = 3;
   function carriage(x0, y0, x1, y1, along, tag) {
     const road = (a, b, c, d, tex, n) => rm.add(a, b, c, d,
-      open(n, { floorTex: tex, light: 0.20, ambient: 0.20, fuel: TOWN_FUEL.road }));
+      open(n, { floorTex: tex, light: 0.30, ambient: 0.30, fuel: TOWN_FUEL.road }));
     if (along === 'x') {
       const m = (y0 + y1) / 2;
       road(x0, y0, x1, y0 + L, 'ROADEDGE', `street edge, ${tag}`);
@@ -246,7 +253,7 @@ export function buildTown(rm, mb, opts = {}) {
     rm.add(x0, y1 - w, x0 + w, y1, walkProps(`corner, ${tag}`));
     rm.add(x1 - w, y1 - w, x1, y1, walkProps(`corner, ${tag}`));
     const road = (a, b, c, d, tex, n) => rm.add(a, b, c, d,
-      open(n, { floorTex: tex, light: 0.20, ambient: 0.20, fuel: TOWN_FUEL.road }));
+      open(n, { floorTex: tex, light: 0.30, ambient: 0.30, fuel: TOWN_FUEL.road }));
     /* the mouths, with the crossing bars painted across them */
     road(x0 + w, y0, x1 - w, y0 + 24, 'CROSSWLK', `crossing, ${tag}`);
     road(x0 + w, y1 - 24, x1 - w, y1, 'CROSSWLK', `crossing, ${tag}`);
@@ -324,7 +331,7 @@ export function buildTown(rm, mb, opts = {}) {
     const stairY0 = Math.round((d * 0.28) / 16) * 16;
     const stairY1 = stairY0 + 7 * 32;
     const inside = k => ({
-      light: lit[k] ? 0.52 : 0.10, ambient: lit[k] ? 0.52 : 0.10,
+      light: lit[k] ? 0.54 : 0.17, ambient: lit[k] ? 0.54 : 0.17,
       ceilTex: 'PLASTER', wallTex: 'WALLPAPR', upperTex: 'PLASTER', lowerTex: 'SKIRTING',
     });
 
@@ -407,7 +414,7 @@ export function buildTown(rm, mb, opts = {}) {
          starts and the step up to the open sky above it draws nothing —
          both are sky, and a step between two patches of sky is two
          different heights of nothing */
-      ceil: eaves, floorTex: 'GRASSVRG', light: 0.24, ambient: 0.24,
+      ceil: eaves, floorTex: 'GRASSVRG', light: 0.36, ambient: 0.36,
       wallTex: windows || dress.wall, upperTex: windows || dress.wall,
       lowerTex: 'KERBSTON', fuel: TOWN_FUEL.yard,
     }));
@@ -473,8 +480,8 @@ export function buildTown(rm, mb, opts = {}) {
       const dress = DRESS[face === 0 ? 0 : 3];
       const n = shops ? 3 : (face === 0 ? 3 : 2);
       const eaves = n * STOREY;
-      const D = 512;
-      const setback = shops ? 48 : 192;
+      const D = 768;
+      const setback = shops ? 48 : 128;
       const gy = north ? y1 - setback : y0 + setback;
       const hy0 = north ? gy - D : gy;
       const hy1 = north ? gy : gy + D;

@@ -2546,6 +2546,13 @@ const SIZES = {
   HOUSDOOR: { w: 64, h: 128 },  // one repeat is one door
   SHOPFRNT: { w: 64, h: 128 },
   STAINGLS: { w: 64, h: 128 },
+  /* ONE REPEAT IS ONE STOREY, which is 112. Worn at the default 64 a
+     three-storey terrace came out with five and a quarter rows of
+     windows up it, and a house with more window rows than floors is the
+     one thing on a street nobody has to be told is wrong. */
+  WINDOWDK: { w: 64, h: 112 },
+  WINDOWLT: { w: 64, h: 112 },
+  WINDOWWD: { w: 64, h: 112 },
   PEWEND:   { w: 64, h: 40 },
   CHAINLNK: { w: 64, h: 64, masked: true },
   FENCEPIK: { w: 64, h: 48, masked: true },
