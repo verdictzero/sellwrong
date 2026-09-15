@@ -47,7 +47,10 @@ somewhere else: the people, the trees, the sky, and the gun.
                           are the user's three — the APC stripped by the
                           same tool, two megabytes of normal and
                           metal-rough off a renderer that has no lighting
-                          model to spend them on
+                          model to spend them on; and the VTOL gunship,
+                          the user's fourth and the only one that never
+                          touches the road, with the two marker spheres
+                          the user drew inside it read into its extras
   assets/fonts/         Michroma (SIL OFL), the title face
   assets/music/         the user's three E1M1 remixes, mixed on the beat
                           by js/music.js
@@ -90,7 +93,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         976 checks, no install and no browser
+  the smoke test         1253 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -551,11 +554,24 @@ js/decals.js:
            core inside a ragged pale lip — the chipped plaster, which
            is what you actually see, because the shop is dark at night
            and a dark spot on a dark wall is nothing — a hand across,
-           turned at random, and it stays. FIVE HUNDRED AND TWELVE of
-           them in a ring — the MAX COUNT, at the user's request — so a
-           thousand rounds into one wall are still one pool and the
-           oldest hole is the next one overwritten; the scorches share
-           the ring. The troopers' rifles leave them too. AND THEY ARE
+           turned at random. A HUNDRED of them in a ring — the MAX
+           COUNT, at the user's request, down from five hundred and
+           twelve, because the accumulation was costing a frame it
+           should not have — and when the ring is full THE OLDEST FADE
+           OUT, IN ORDER, at the user's request. Not on a clock of
+           their own: the two dozen slots at the old end are held down
+           to their PLACE IN THE QUEUE, nothing for the one about to be
+           overwritten and nearly full for the one at the back of the
+           band, so a hole fades as the cursor comes round to it
+           however fast the trigger is being held. Under the minigun
+           that is a tail of dissolving holes behind the burst; with
+           the trigger up it is the oldest few going out and the rest
+           standing. Nothing is ever cut off the wall at full strength,
+           which is what the old ring did four times a tic. The heat
+           and the frost are rings on the same rule, capped at the same
+           hundred, on top of their own cooling and thaw; the scorches
+           share the holes' ring. The troopers' rifles leave them too,
+           and so does the gunship's vulcan. AND THEY ARE
            CULLED: a hole past DRAW_RANGE (2600 units) from the eye, or
            behind the plane the eye looks along, is not written into
            the buffer at all, so a shop shot to pieces costs nothing
@@ -2183,6 +2199,130 @@ escalation is written and tested and still records a wave and returns;
 the forces have a trigger of their own and do not wait for it.
 
 
+AND THE AIR SUPPORT THAT COMES WITH THEM
+----------------------------------------
+
+At the user's request, and it is the user's model: a VTOL GUNSHIP, close
+air support for the army, and the fourth vehicle up the road — the only
+one that never touches it. It is js/vtol.js, and it arrived with the
+answers drawn into it: two marker spheres named for what they mark, and
+the nodes NAMED for what they do (a left-right rotation parent, an
+up-down one, a gun to spin). tools/prep-model.mjs reads spheres like
+those out of the mesh and into the file's own extras, which it already
+did for the flamethrower and the minigun; the new part is that these two
+are NESTED, inside the parts they belong to, because where a muzzle is
+only means anything relative to the gun that turns. So a marker with a
+parent is written down as a point AND a part, and the game hangs the
+effect off the node the file names.
+
+IT IS NOT A VEHICLE, though it borrows the vehicles' paint, their pieces
+and their arithmetic. A vehicle is one mesh with one transform; this is
+a TREE of eight of them — the turret yaws on the fuselage, the gun
+pitches in the turret and spins on its own axis, the searchlight pitches
+with the gun, the two wing nacelles tilt on the wing and the tail engine
+tilts with them — because everything the user asked it to do is a part
+moving against another part. Each part is drawn in the vans' own
+material, so it is lit, fogged, sooted and charred by the same shader
+they are. Eight draw calls and two more for the flares. Four hundred and
+twenty units nose to tail against the APC's two hundred and sixty, three
+hundred and seventy-three across: an aircraft over a car park of vans.
+
+THE NACELLES TILT PHYSICALLY, which is the request underneath all the
+others. A tilt-engine aircraft hovers on thrust pointed down and moves
+by pointing some of it backward, so the angle each tic is the angle of
+the THRUST VECTOR the flight controller has just asked for — lift under
+the weight, forward whatever it is accelerating with plus the drag it is
+pushing against — and they tilt back to brake, forward to cruise, and
+DIFFERENTIALLY when it yaws, one forward and one back, because that is
+how a machine with no tail rotor turns. The tail engine tilts with them
+and leads the pitch. The body answers it the way the APC's does, both
+signs turned over from a van's: nose down against the tilt, banked INTO
+the turn, because it is held up by thrust and not by springs.
+
+THE JET WASH is the exhaust arriving, at the user's request. Each
+engine's exhaust is a ray from the nacelle down the way its thrust is
+not pointing, and where that ray meets something — the tarmac, a wall,
+the roof of a van under it — is where the grit is thrown: outward ALONG
+whatever it landed on, fast and low and gone inside a second, harder the
+nearer the engine. AND IT IS HOT. Anybody standing in a pool of it while
+the aircraft is low CATCHES — and it is the PERSON that is lit and never
+the floor under them, which is the call that would light a van, because
+the user asked for people and not cars. The two wing engines' pools are
+a hundred and ninety across and a hundred and sixty either side of the
+centreline, so they MEET underneath it: hover over somebody and they are
+in one. Cruising at three hundred and thirty up it lights nobody; the
+one thing that puts it low enough is coming down over a crowd, which it
+goes looking for every eleven seconds and walks across when it finds
+one, taking the next the moment the one it is over is alight.
+
+THE SEARCHLIGHT IS AN ACTUAL LIGHT, at the user's request, AND CASTS NO
+SHADOWS, at the user's request. A cone in the world shader — spotPos and
+its five friends in js/material.js — added on top of the banded light
+the way the fire glow is, on every surface that shades with worldShade:
+the walls, the floor, the cars, the trees, the crowd, the smoke. Twenty
+degrees to the outer edge and ten to the inner, so the pool on the
+tarmac is about two hundred and forty units across with a soft rim, and
+it goes where the turret goes, which is at you when it can see you and
+sweeping ahead when it cannot. Its brightness is a number that came off
+a screenshot rather than off paper: at the one and a half it was first
+set to, the lift did not survive Doom's thirty-two light steps and the
+256-colour palette on top of them — it quantised straight back to the
+colour it started as, so the beam was arithmetic nobody could see. At
+three and a half it is a pale pool you can watch cross the lot. The
+colour stays near-white, because a properly blue lamp comes out of the
+palette as a splash of flat blue paint, which reads as a fault.
+
+AND A MASSIVE ANAMORPHIC FLARE AT THE LAMP, at the user's request: a
+screen-facing quad whose shader draws a horizontal streak eight times
+as wide as it is tall, thin and blue-white, WITH A GRADIENT SPHERE AT
+THE CENTRE of it — brightest when the beam is pointed at you and falling
+off as it swings away. Over everything, depth test off, the way a lens
+flare is, and hidden the moment a wall is between you and the lamp or
+the lamp is behind your shoulder. That second test is not tidiness: a
+flare is sized by its own distance so it stays the same size on the
+screen, and a lamp behind the eye has a negative one — the corners then
+project through infinity and what lands on the screen is a white bowtie
+across the whole frame, which is exactly what the first build did.
+
+THE VULCAN is three rounds a tic through the same hitscan the player's
+minigun uses, in bursts of about a second with a second between them,
+each round its own scatter, each with the minigun's own long tracer
+drawn from the muzzle marker to wherever it landed. NO MUZZLE FLASH, the
+same answer the user gave for the minigun in their hands, and in its
+place the searchlight's flare again at a fifth the size and a warm
+colour, flickering at the barrels while they fire. Standing under one in
+the open costs about sixty a second, so most of a minute of your health
+and armour together.
+
+AND IT CAN BE SHOT DOWN, at the user's request. Three shootable
+cylinders ride under it at its altitude — AIRBODY in js/states.js, the
+same trick the vans use on the ground — so the minigun's pitched rounds
+land on it the way they land on a van: about four hundred and eighty of
+them, three and a half seconds of the trigger held on one. Then it GOES
+UP. A bang in the air, fourteen fireballs over the airframe, a cloud of
+sparks and smoke, the light of it thrown across the whole lot for a
+second, ten pieces of its own skin cut out of its own geometry and flung
+off it — and then THE TAIL SPIN, which is the part the user asked for by
+name. It lurches upward as it is hit, because what is left of the lift
+goes into it; then the yaw winds up, the nose goes over thirty degrees
+down, the engines are thrown to nothing, and it falls for two seconds
+through a turn and a half, trailing fire and smoke and banging every
+third of a second. The tarmac is the second bang, and a bigger one: a
+blast, eighteen more fireballs, fourteen more pieces, a pool of fire
+under it that takes the nearest bay with it, and a wreck that is in the
+way, charred on the vans' own two knobs, smouldering for a minute.
+
+WHEN IT COMES: with the army, which is what "accompanies" means here.
+Ordered the tic the army is called and overhead eight seconds later —
+it comes into being four thousand two hundred units out along the line
+to whichever end of the road is nearer, for the same reason the vans do
+(see runIn in js/responders.js), rather than at the end of the world,
+which was eighteen seconds of empty sky. One of them until the army's
+own curve has doubled twice and then two, and one lost is replaced fifty
+seconds later. Without the model the army comes alone, which is the same
+bargain every other asset in this game makes.
+
+
 THE SKY AND THE NAME
 --------------------
 
@@ -3327,7 +3467,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-976 checks. Every one of them earns its place by having caught something
+1253 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -3969,6 +4109,23 @@ WHAT IS NOT DONE
     them are not. The SWAT's table in js/states.js is the one to copy
     when the time comes, and the smoke test pins the boundary so that it
     is crossed on purpose
+  the gunship's searchlight goes THROUGH WALLS, which is asked for —
+    no shadows — and is worth writing down anyway: stand inside the
+    shop with one overhead and the beam lights the aisle it is pointed
+    at through the roof. A shadow map is a renderer this is not, and
+    nobody has yet minded it from the ground
+  and there is exactly ONE of it in the world shader, so when two
+    gunships are up only the nearer one's lamp lights anything. Both
+    draw their own flare, so what you see from a distance is two lamps
+    and one beam
+  a gunship in the air ignores everything but the ground under it. It
+    does not hit the building — it climbs over the parapet rather than
+    avoiding it — it does not hit another gunship, and the wreck lands
+    wherever it lands, in somebody's bay or on the fire lane
+  a hole in a gunship is not drawn. A round into a van leaves one on
+    whichever face of its box it came in through; the gunship is a
+    tree of parts with no single box, so a round into it makes its
+    puff and its sparks and nothing else
   nothing follows you into the wood, and the wood's fire and the
     store's do not cross the car park to each other; the flamethrower is
     the bridge

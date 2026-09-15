@@ -34,10 +34,14 @@
    EACH KIND IS ONE DRAW CALL: a pool of quads in a single geometry,
    positions written when a decal is placed and an intensity written
    every tic as it cools or thaws, and a slot that has faded to nothing
-   is free again. The holes are a ring: when the pool is full the
-   oldest hole is the next one overwritten, which is how a thousand
-   rounds into one wall stay a thousand rounds into one wall without
-   the frame ever paying for more than the pool.
+   is free again. EVERY POOL IS A RING, and a small one, at the user's
+   request: a hundred of each kind, and when a pool is full the OLDEST
+   IN IT FADE OUT, IN ORDER, rather than being cut — the ten at the
+   old end of the ring lose an eighth a tic until they are gone, and
+   the cursor arrives on slots that are already empty. A thousand
+   rounds into one wall are the last hundred of them, the earliest
+   dissolving as the latest land, which reads as a wall being shot
+   rather than as a wall with a budget.
 
    A DECAL SITS ON ITS SURFACE: it is placed a hair off the wall along
    the wall's normal and drawn with a polygon offset, which between
@@ -57,15 +61,38 @@ import { WORLD_UNIFORMS_GLSL, WORLD_SHADE_GLSL, worldUniforms } from './material
 import { pRandom, TICRATE } from './util.js';
 
 /* the pools, and the numbers that make each kind what it is */
-export const POOLS = { hole: 512, heat: 240, frost: 240 };
-/* HOW MANY HOLES, AND HOW FAR. The hole pool is the MAX COUNT: five
-   hundred and twelve on the walls at once, the oldest overwritten by
-   the next, which a minigun reaches in about eight seconds of holding
-   the trigger — the scorches share it. And a hole is CULLED when it
-   cannot be seen: past DRAW_RANGE from the eye, or behind the plane
-   the eye is looking along, it is not written into the buffer at all,
-   so a wall you have shot to pieces costs nothing until you turn round
-   and look at it. The heat and the frost are culled the same way. */
+export const POOLS = { hole: 100, heat: 100, frost: 100 };
+/* HOW MANY HOLES, AND HOW FAR. The hole pool is the MAX COUNT: a
+   hundred on the walls at once, at the user's request (it was five
+   hundred and twelve, and the accumulation was a cost), which a
+   minigun reaches in under a second of holding the trigger — the
+   scorches share it. WHEN IT IS FULL THE OLDEST FADE, IN ORDER, and
+   the order is the ring's own: the FADE_AHEAD slots at the old end
+   are held to a strength that is their PLACE IN THE QUEUE — the one
+   about to be overwritten at nothing, the one two dozen from it at
+   nearly full, and every step between — so a hole does not fade on a
+   clock of its own, it fades as the cursor comes round to it. Under
+   the minigun that is a tail of dissolving holes behind the burst;
+   with the trigger up it is the oldest few going out and the rest
+   standing. Either way nothing is ever cut off the wall. The heat and
+   the frost are rings on the same rule, on top of their own cooling
+   and thaw.
+   And a hole is CULLED when it cannot be seen: past DRAW_RANGE from
+   the eye, or behind the plane the eye is looking along, it is not
+   written into the buffer at all, so a wall you have shot to pieces
+   costs nothing until you turn round and look at it. */
+export const FADE_AHEAD = 24;                 // how many slots at the old end of a full ring are fading
+export const FADE_RATE = 1 / 4;               // and the most one may lose in a tic: gone in four
+/** How bright a decal is allowed to be, `k` slots ahead of the cursor
+ *  that is going to overwrite it. SQUARED rather than straight, and
+ *  that is the difference between a hole that fades and a hole that is
+ *  still a third lit when it vanishes: the ring moves in JUMPS — four
+ *  slots a tic under the minigun — so what matters is the value at the
+ *  last slot before the cursor arrives, and a square curve puts the
+ *  bottom eighth of the band inside a fiftieth of full while leaving
+ *  the top of it near enough untouched to not dim a wall nobody has
+ *  finished shooting. Pure, for the test. */
+export const fadeTarget = k => { const t = k / FADE_AHEAD; return t * t; };
 export const DRAW_RANGE = 2600;               // world units from the eye
 export const HOLE_SIZE = [5, 9];              // world units across, min..max
 export const SCORCH_SIZE = 46;                // the blot a hot spot leaves
@@ -139,16 +166,28 @@ class Pool {
     this.mesh = null;
   }
 
-  /** A free slot, or — for a ring — the oldest one. */
-  alloc(ring) {
-    if (ring) {
-      const i = this.next;
-      this.next = (this.next + 1) % this.max;
-      if (this.strength[i] <= 0) this.count++;
-      return i;
+  /** The next slot round the ring, which is the oldest one if it is
+   *  still live — every pool is a ring now, so the cursor is the age
+   *  order and the fade in Decals.tic knows where the old end is. The
+   *  argument is kept for the callers that still say which they
+   *  wanted; both get the same answer. */
+  alloc(ring = true) {
+    const i = this.next;
+    this.next = (this.next + 1) % this.max;
+    if (this.strength[i] <= 0) this.count++;
+    else if (this.owner[i]) { this.owner[i] = null; this.owned--; }
+    return i;
+  }
+
+  /** The oldest live slots, from the cursor forward: `n` of them, or
+   *  as many as there are. Written into `out`, no allocation. */
+  oldest(n, out) {
+    out.length = 0;
+    for (let k = 0; k < this.max && out.length < n; k++) {
+      const i = (this.next + k) % this.max;
+      if (this.strength[i] > 0) out.push(i);
     }
-    for (let i = 0; i < this.max; i++) if (this.strength[i] <= 0) { this.count++; return i; }
-    return -1;
+    return out;
   }
 
   /** The nearest live decal on the same surface within r, or -1. */
@@ -333,6 +372,14 @@ export class Decals {
    *  came in through, at that point pushed out onto the face, and it
    *  rides with the vehicle from then on. Pure but for the pool. */
   vehicleHole(v, hx, hy, hz, dx, dy, dz) {
+    /* ONLY A THING THAT IS A BOX. A hole rides in a vehicle's own
+       frame, off the bottom of its body — `bodyZ` — and on one face of
+       the box its model space describes. The gunship (js/vtol.js) is
+       shot through the same blockers and is not one of those: it is a
+       tree of parts that turn against each other, with no single box
+       and no bodyZ, so a round into it throws its puff and its sparks
+       and leaves nothing hanging in the air where a face would be. */
+    if (!v.whole || v.bodyZ === undefined || !v.def?.box) return;
     const L = v.def.length, hw = v.def.box.half * L, H = v.def.box.height * L;
     const c = Math.cos(v.yaw), s = Math.sin(v.yaw);
     /* into the vehicle's own frame */
@@ -385,8 +432,14 @@ export class Decals {
   _feed(P, x, y, z, n, amount, size) {
     let i = P.nearest(x, y, z, n, MERGE_RADIUS);
     if (i < 0) {
-      i = P.alloc(false);
-      if (i < 0) return;
+      /* the ring's next slot: a free one, or the oldest spot if the
+         pool is full — which the fade in tic() has usually already
+         emptied by the time the cursor reaches it */
+      i = P.alloc(true);
+      /* a live spot overwritten is a spot that has ended — a hot one
+         leaves its scorch — and the slot is then live again as this */
+      if (P.strength[i] > 0) { this._expire(P, i); P.count++; }
+      P.strength[i] = 0;
       const { light, sky } = this._surface(x, y);
       P.place(i, x, y, z, n, size, (pRandom() / 255) * Math.PI * 2, 0, light, sky, 0);
     }
@@ -413,6 +466,7 @@ export class Decals {
    *  and darkened by how hot it got; nothing else leaves anything. */
   _expire(P, i) {
     P.count--;
+    if (P.owner[i]) { P.owner[i] = null; P.owned--; }
     if (P.kind === 'heat' && P.peak[i] > 0.25) {
       const H = this.pools.hole;
       const j = H.alloc(true);
@@ -431,6 +485,39 @@ export class Decals {
       for (let i = 0; i < P.max; i++) {
         if (P.strength[i] <= 0) continue;
         P.strength[i] -= rate;
+        if (P.strength[i] <= 0) { P.strength[i] = 0; this._expire(P, i); }
+      }
+      P.dirtyStrength = true;
+    }
+    /* AND THE OLD END OF A FULL RING DISSOLVES, at the user's request.
+       Not on a clock of its own: each of the FADE_AHEAD oldest is held
+       DOWN TO ITS PLACE IN THE QUEUE — nothing for the one the cursor
+       is about to take, nearly full for the one sixteen behind it — so
+       a hole fades as the ring comes round to it, however fast the
+       trigger is being held. Which is the whole reason it is written
+       this way: a fixed rate is either too slow for a minigun (holes
+       pop off the wall at four a tic) or too fast with the trigger up.
+       FADE_RATE is only a speed LIMIT on the way down, so a hole never
+       jumps to its place, it slides.
+
+       A pool that has stopped filling settles into the gradient it is
+       left holding: the oldest gone, and the dozen behind it
+       progressively fainter, which reads as the earliest holes
+       weathering. */
+    for (const P of Object.values(this.pools)) {
+      if (!P.count || P.count <= P.max - FADE_AHEAD) continue;
+      /* RAW SLOTS from the cursor, not live ones: a dead slot still
+         takes up its place in the queue. Walking the LIVE ones instead
+         slides the whole band forward every time one of them expires,
+         which cascades — the first tic kills the oldest, the second
+         promotes its neighbour to the front and kills that, and a pool
+         nobody is adding to empties itself a slot at a time. */
+      for (let k = 0; k < FADE_AHEAD; k++) {
+        const i = (P.next + k) % P.max;
+        if (P.strength[i] <= 0) continue;
+        const want = fadeTarget(k);
+        if (P.strength[i] <= want) continue;
+        P.strength[i] = Math.max(want, P.strength[i] - FADE_RATE);
         if (P.strength[i] <= 0) { P.strength[i] = 0; this._expire(P, i); }
       }
       P.dirtyStrength = true;

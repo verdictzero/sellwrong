@@ -41,6 +41,7 @@ import { FrostStream } from './frost.js';
 import { Effects, SMOKE_PUFFS } from './effects.js';
 import { Giblets } from './people.js';
 import { Responders } from './responders.js';
+import { Gunships } from './vtol.js';
 import { Vehicles } from './vehicles.js';
 import { BoreSystem } from './bore.js';
 
@@ -58,7 +59,7 @@ const LAMP_RANGE = 340;
 const LAMP_GAIN = 0.30;
 
 export class Game {
-  constructor({ level, scene, camera, textures, sprites, hud, audio, input, sky, flameAtlas, bodyAtlas, fxAtlases, gibAtlases, fleet, police, apc }) {
+  constructor({ level, scene, camera, textures, sprites, hud, audio, input, sky, flameAtlas, bodyAtlas, fxAtlases, gibAtlases, fleet, police, apc, vtol }) {
     this.level = level;
     this.scene = scene;
     this.camera = camera;
@@ -152,6 +153,11 @@ export class Game {
     this.police = police || null;
     this.apc = apc || null;
     this.responders = new Responders(this);
+    /* AND THE AIR SUPPORT THAT COMES WITH THE ARMY: the user's VTOL
+       gunship, sent by the wing the tic the army is called — see
+       js/vtol.js. Without the model there is no air support, which is
+       the same bargain every other asset makes. */
+    this.gunships = new Gunships(this, vtol || null);
     this.idle = false;                 // the title: the world stands still and the eye wanders
     this._nozzle = { x: 0, y: 0, z: 0 };
     this._scared = [];                 // scratch for Game.scare
@@ -424,6 +430,7 @@ export class Game {
       if (this.actors[i].removed) this.actors.splice(i, 1);
 
     this.responders.tic();
+    this.gunships.tic();
 
     if (this.sound) {
       this.sound.listener = this.player;
@@ -1104,6 +1111,7 @@ export class Game {
     this.giblets.render(billboardRot);
     this.decals.render(ex, ey, vx, vy);
     this.tracers.render(ex, ey, ez);
+    this.gunships.render(ex, ey, ez, vx, vy);
     this.renderProjectiles(billboardRot);
     this.bore.render(billboardRot);
 

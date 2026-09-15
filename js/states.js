@@ -514,6 +514,15 @@ export const ACTORS = {
      a hatchback and an APC are not the same cylinder. */
   CARBODY: { name: 'Vehicle', radius: 38, height: 86, solid: true,
              shootable: true, flammable: true, health: 100000 },
+  /* AND THE SAME THING IN THE AIR: what a round has to cross to hit the
+     gunship (js/vtol.js). Three of these ride under it at its
+     altitude, each with a pointer back to the aircraft, so a shot that
+     crosses any of them at the height it is at damages the aircraft
+     — hitscan already asks the height. NOT solid: nobody walks round
+     thin air, and the blockmap is for things on the ground. Not
+     flammable either: the fire is a long way below it. */
+  AIRBODY: { name: 'Aircraft', radius: 120, height: 90, solid: false,
+             shootable: true, flammable: false, health: 100000 },
 };
 
 export function stateOf(name) {

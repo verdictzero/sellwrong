@@ -5970,7 +5970,83 @@ section('the decals');
   /* THE RING: a thousand rounds into one wall are still one pool */
   for (let k = 0; k < D.POOLS.hole + 50; k++) g.decals.hole(q.x, q.y, 0, D.UP);
   check('the holes are a ring, so the pool never overflows', g.decals.pools.hole.count === D.POOLS.hole && g.decals.holes === D.POOLS.hole + 52);
-  check('and the ring is the MAX COUNT, five hundred and twelve, at the user\'s request', D.POOLS.hole === 512);
+  check('and the ring is the MAX COUNT, a hundred, at the user\'s request',
+    D.POOLS.hole === 100 && D.POOLS.heat === 100 && D.POOLS.frost === 100,
+    `${D.POOLS.hole}, ${D.POOLS.heat}, ${D.POOLS.frost}`);
+
+  /* --- AND A FULL POOL FADES ITS OLDEST OUT, IN ORDER -----------------
+     At the user's request: the cap is not a guillotine. Once the pool
+     is within FADE_AHEAD of full, that many of its oldest lose
+     FADE_RATE a tic and are gone in eight, so the hole a new round
+     takes the slot of has already dissolved. What is asserted is the
+     ORDER — the fading ones are the oldest ones, which is the cursor's
+     own next few — and that the pool drains rather than sitting full. */
+  {
+    const gF = mk();
+    const dF = gF.decals, H = dF.pools.hole;
+    const fx = gF.player.x, fy = gF.player.y;
+    /* fill it exactly, in order, each hole a step along the wall so
+       they can be told apart */
+    for (let k = 0; k < D.POOLS.hole; k++) dF.hole(fx + k, fy, 40, D.UP);
+    check('a hundred rounds fill the pool and no more than fill it',
+      H.count === D.POOLS.hole && H.next === 0, `${H.count} live, cursor ${H.next}`);
+    const oldest = [];
+    H.oldest(D.FADE_AHEAD, oldest);
+    check('and the oldest of them are the first ones laid, in order',
+      oldest.length === D.FADE_AHEAD && oldest.every((i, k) => i === k),
+      oldest.join(','));
+    const before = H.strength[0];
+    dF.tic();
+    check('a tic with the pool full fades the oldest and touches nothing outside the band',
+      H.strength[0] < before - 1e-9 && Math.abs(H.strength[0] - (before - D.FADE_RATE)) < 1e-6 &&
+      H.strength[D.FADE_AHEAD] === before && H.strength[D.POOLS.hole - 1] === before,
+      `${H.strength[0].toFixed(3)} against ${H.strength[D.FADE_AHEAD].toFixed(3)}`);
+    /* and they settle into the QUEUE: each held down to its place in
+       it, so what is drawn at the old end is a gradient running from
+       nothing up to full — a hole fading as the ring comes round to
+       it rather than on a clock of its own */
+    for (let k = 0; k < 10; k++) dF.tic();
+    check('and the oldest is gone in four tics, and the band is a gradient in order',
+      H.strength[0] === 0 && H.count === D.POOLS.hole - 1 &&
+      [...Array(D.FADE_AHEAD - 1)].every((_, k) => H.strength[k + 1] > H.strength[k]),
+      `${H.count} left, band ${[0, 1, 2, 8, 16, 23].map(k => H.strength[k].toFixed(2)).join(' ')}`);
+    check('and the queue is where a decal\'s brightness comes from: nothing at the cursor, full at the back',
+      D.fadeTarget(0) === 0 && D.fadeTarget(D.FADE_AHEAD) === 1 && D.fadeTarget(D.FADE_AHEAD / 8) < 0.02);
+    check('and the newest are untouched: a cap that fades is not a cap that cuts',
+      H.strength[D.POOLS.hole - 1] > 0.5 && H.strength[D.FADE_AHEAD] > 0.5);
+    /* and it holds there rather than emptying itself out */
+    for (let k = 0; k < 400; k++) dF.tic();
+    check('and a pool that has stopped filling holds what it has rather than emptying',
+      H.count === D.POOLS.hole - 1, `${H.count} left`);
+    /* AND THE FADE KEEPS AHEAD OF THE MINIGUN, which is the whole
+       reason it is a queue and not a clock: four holes a tic for a
+       second, and every slot the cursor takes was already faded to
+       nothing rather than cut off the wall at full strength. */
+    {
+      let worst = 0;
+      for (let t = 0; t < 35; t++) {
+        for (let k = 0; k < 4; k++) {
+          worst = Math.max(worst, H.strength[H.next]);
+          dF.hole(fx + (t * 4 + k) % 90, fy + 90, 40, D.UP);
+        }
+        dF.tic();
+      }
+      check('and under a held minigun every hole the ring reaches has already faded out',
+        worst < 0.05, `the brightest overwritten was ${worst.toFixed(3)}`);
+      check('and the wall still holds a hundred of them', H.count <= D.POOLS.hole && H.count > D.POOLS.hole * 0.8, `${H.count}`);
+    }
+    /* AND THE SAME FOR THE OTHER KINDS, at the user's request: they
+       are one system and one rule. A hundred separate hot spots, far
+       enough apart that none of them merges. */
+    const HT = dF.pools.heat;
+    for (let k = 0; k < D.POOLS.heat; k++) dF.heat(fx + k * (D.MERGE_RADIUS * 3), fy + 400, 40, D.UP, 1);
+    check('the heat pool is a ring on the same rule', HT.count === D.POOLS.heat, `${HT.count}`);
+    const s0 = HT.strength[HT.next], s9 = HT.strength[(HT.next + D.POOLS.heat - 1) % D.POOLS.heat];
+    dF.tic();
+    check('and its oldest fades faster than its cooling alone',
+      (s0 - HT.strength[HT.next]) > (s9 - HT.strength[(HT.next + D.POOLS.heat - 1) % D.POOLS.heat]) + 1e-9,
+      `${(s0 - HT.strength[HT.next]).toFixed(4)} against ${(s9 - HT.strength[(HT.next + D.POOLS.heat - 1) % D.POOLS.heat]).toFixed(4)}`);
+  }
   /* --- the cull: drawn only in range and in front of the eye ------------ */
   {
     const gC = mk();
@@ -6167,6 +6243,373 @@ section('the vans under fire');
     check('the minigun\'s recordings are turned down so the music stands out',
       au.SAMPLE_GAIN.minigun_fire <= 0.4 && au.SAMPLE_GAIN.minigun_start <= 0.5 && au.SAMPLE_GAIN.minigun_stop <= 0.5 &&
       /this\._gainFor\(from\) \* \(SAMPLE_GAIN\[key\] \?\? 1\)/.test(fs.readFileSync('js/audio.js', 'utf8')));
+  }
+}
+
+/* ---------- the gunship ---------- */
+section('the gunship');
+{
+  const fs = await import('node:fs');
+  const V = await import('../js/vtol.js');
+  const glbG = await import('../js/glb.js');
+  const carG = await import('../js/car.js');
+  const { Game } = await import('../js/game.js');
+  const MAPG = await import('../js/maps/sellwrong.js');
+  const THREEG = await import('three');
+  const { world } = await import('../js/material.js');
+
+  const readGLB = f => {
+    const b = fs.readFileSync(f);
+    return glbG.parseGLB(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
+  };
+  const { json, bin } = readGLB('assets/models/vtol.glb');
+
+  /* --- THE FILE, AS PREPARED ---------------------------------------
+     The user drew the answers into the model: small spheres named for
+     what they mark, NESTED inside the parts they belong to, because
+     where a muzzle is only means anything relative to the gun that
+     turns. tools/prep-model.mjs reads those out into the file's own
+     extras and takes them out of the mesh — so what is asserted here is
+     that the markers are FACTS IN THE FILE and not geometry anybody can
+     render by mistake. */
+  note('what is in the file', `${json.nodes.length} nodes, ${json.meshes.length} meshes, ` +
+    `${json.images.length} image, ${(fs.statSync('assets/models/vtol.glb').size / 1048576).toFixed(1)} MB`);
+  const EX = json.asset?.extras || {};
+  check('the gunship is prepared: its markers are in the extras, not in the mesh',
+    !!EX.markers?.muzzle && !!EX.markers?.lamp &&
+    !json.nodes.some(n => /^Claude.*Delete/i.test(n.name || '')),
+    Object.keys(EX.markers || {}).join(', '));
+  check('and each marker says which part it is in, so the point turns with that part',
+    EX.markers.muzzle.node === 'ClaudeSpinThisThisIsTheVulcanGun' &&
+    EX.markers.lamp.node === 'SpotlightModule' && EX.spin === EX.markers.muzzle.node);
+  check('and the maps an unlit renderer cannot use are gone: one image, the colour',
+    json.images.length === 1 && !json.materials.some(m => m.normalTexture || m.emissiveTexture));
+
+  /* --- THE PARTS ---------------------------------------------------
+     A vehicle is one mesh with one transform; this is a TREE of them,
+     because everything the user asked it to do is a part moving against
+     another part. Each node comes out in a frame of its own — x
+     forward, y up, z right — with the offset of its pivot from its
+     parent's, which is what the groups are hung on. */
+  const model = V.buildVtolModel(json, bin);
+  const P = model.parts;
+  note('the aircraft', `${V.VTOL_LENGTH} long, ${(model.box.half * 2 * V.VTOL_LENGTH).toFixed(0)} across, ` +
+    `${(model.box.height * V.VTOL_LENGTH).toFixed(0)} tall, ${Object.keys(P).length} moving parts, ` +
+    `${Object.values(P).reduce((n, q) => n + q.tris, 0)} triangles`);
+  check('every part of it has triangles in it', Object.values(P).every(q => q.tris > 50),
+    Object.entries(P).map(([k, q]) => `${k} ${q.tris}`).join(', '));
+  check('and the tree is the one the file names: the gun and the lamp on the pitch, on the turret, on the fuselage',
+    P.gun.parent === P.pitch && P.lamp.parent === P.pitch && P.pitch.parent === P.turret &&
+    P.turret.parent === P.fuselage && P.fuselage.parent === null &&
+    P.nacelleL.parent === P.fuselage && P.aux.parent === P.fuselage);
+  /* THE NACELLES ARE ONE MESH AND TWO ENGINES. The file draws them
+     together; an aircraft that tilts them differentially to turn cannot
+     have them as one part, so the mesh is cut down its own middle. What
+     proves the cut is right is that it is EVEN and that the two halves
+     end up on opposite sides. */
+  check('the one nacelle mesh comes out as two engines, one either side, the same size',
+    P.nacelleL.tris === P.nacelleR.tris &&
+    Math.sign(P.nacelleL.offset[2]) === -Math.sign(P.nacelleR.offset[2]) &&
+    Math.abs(P.nacelleL.offset[2] + P.nacelleR.offset[2]) < 1e-6 &&
+    Math.abs(P.nacelleL.offset[2]) > 100,
+    `${P.nacelleL.tris} each, ${P.nacelleL.offset[2].toFixed(0)} and ${P.nacelleR.offset[2].toFixed(0)} across`);
+  check('and the tail engine is behind the wing and on the centreline',
+    P.aux.offset[0] < P.nacelleL.offset[0] && Math.abs(P.aux.offset[2]) < 1e-6);
+  /* AND THE MUZZLE IS AT THE END OF THE BARRELS, which is the whole
+     point of the marker: the user put the sphere there so that nobody
+     would have to guess a number. Down the gun's own +x, and as far
+     forward as the model goes. */
+  const nose = V.VTOL_LENGTH / 2;
+  const muzzleFwd = P.fuselage.offset[0] + P.turret.offset[0] + P.pitch.offset[0] + P.gun.offset[0] + model.muzzle[0];
+  check('the muzzle marker is at the end of the barrels, at the very nose of the thing',
+    model.muzzle[0] > 20 && Math.abs(model.muzzle[1]) < 8 && Math.abs(model.muzzle[2]) < 1 &&
+    Math.abs(muzzleFwd - nose) < 6,
+    `${muzzleFwd.toFixed(0)} forward of the middle, the nose is ${nose}`);
+  check('and the lamp marker is out in front of the lamp module, off to one side of the gun',
+    model.lamp[0] > 0 && Math.abs(P.lamp.offset[2]) > 8);
+
+  /* --- ONE, FLOWN ---------------------------------------------------- */
+  const vanG = (() => { const v = readGLB('assets/models/van.glb'); return carG.modelVehicle(v.json, v.bin); })();
+  const texG = tex.bakeTextures(), sprG = spr.bakeSprites();
+  const mkG = () => new Game({
+    level: MAPG.buildSellWrong(), scene: new THREEG.Scene(), camera: {},
+    textures: texG, sprites: sprG,
+    hud: { message() {}, ticMessages() {} }, audio: null,
+    input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
+             attack: false, use: false, run: false, jump: false, sample() {}, sensitivity: 0 },
+    fleet: { texture: {}, def: vanG },
+    vtol: { json, bin, texture: {} },
+  });
+  const gg = mkG();
+  const pg = gg.player;
+  pg.invincible = true;                     // it is lethal, and that is measured below rather than survived
+  check('a game with the model in it has a wing, with nothing in the air yet',
+    !!gg.gunships && gg.gunships.ships.length === 0 && gg.gunships.cap === 0);
+
+  /* IT COMES WITH THE ARMY, at the user's request: nothing before the
+     army is called, and the first one ordered the tic it is. */
+  {
+    const gA = mkG();
+    gA.player.shotsFired = 1;
+    let calledAt = -1, sentAt = -1;
+    for (let t = 0; t < 200 * 35 && sentAt < 0; t++) {
+      gA.tic();
+      if (calledAt < 0 && gA.responders.army.called) calledAt = gA.tics;
+      if (gA.gunships.ships.length && sentAt < 0) sentAt = gA.tics;
+    }
+    note('when it comes', `the army at ${(calledAt / 35).toFixed(0)}s, the gunship at ${(sentAt / 35).toFixed(0)}s`);
+    check('it is ordered the tic the army is called and arrives a few seconds later',
+      calledAt > 0 && sentAt > calledAt && sentAt - calledAt === V.VTOL.firstDelay,
+      `${sentAt - calledAt} tics after`);
+    check('and one of them until the army has doubled twice, then two',
+      gA.gunships.cap === 1 && V.VTOL.max === 2 && V.VTOL.secondAt > 1);
+  }
+
+  const ship = gg.gunships.send();
+  check('it comes into being out of sight rather than at the end of the road',
+    !!ship && Math.abs(Math.hypot(ship.x - pg.x, ship.y - pg.y) - V.VTOL.runIn) < 40 &&
+    ship.cz > 500, `${Math.hypot(ship.x - pg.x, ship.y - pg.y).toFixed(0)} out at ${ship.cz.toFixed(0)}`);
+  check('and the thing you can shoot comes with it: three of them, in the air, at its height',
+    ship.bodies.length === 3 && ship.bodies.every(a => a.shootable && !a.solid && a.vehicle === ship));
+
+  let onStation = -1, lowest = 1e9, highest = 0, maxBank = 0, diffSeen = 0;
+  for (let t = 1; t <= 900; t++) {
+    gg.tic();
+    if (onStation < 0 && ship.state === 'station') onStation = t;
+    if (ship.state === 'station') {
+      lowest = Math.min(lowest, ship.altitude); highest = Math.max(highest, ship.altitude);
+      maxBank = Math.max(maxBank, Math.abs(ship.rx));
+      diffSeen = Math.max(diffSeen, Math.abs(ship.tiltL - ship.tiltR));
+    }
+  }
+  note('the flight', `on station in ${(onStation / 35).toFixed(1)}s, holding ${lowest.toFixed(0)}-${highest.toFixed(0)} up, ` +
+    `banking ${(maxBank * 57.3).toFixed(0)} degrees, ${ship.rounds} rounds fired`);
+  check('it flies in and takes up a station over the lot in a few seconds',
+    onStation > 0 && onStation < 8 * 35, `${onStation} tics`);
+  check('and holds its altitude there, under the lot\'s own ceiling so it can be shot at',
+    Math.abs(lowest - V.VTOL.alt) < 30 && highest < 480, `${lowest.toFixed(0)}..${highest.toFixed(0)}`);
+  /* THE NACELLES TILT, PHYSICALLY, which is what the user asked for:
+     the angle is the thrust vector's own — lift under the weight,
+     forward whatever it is accelerating with — and they go
+     DIFFERENTIALLY when it yaws, one forward and one back, because
+     that is how a machine with no tail rotor turns. */
+  check('the nacelles tilt, and differentially when it turns: one forward, one back',
+    diffSeen > 0.1 && Math.abs(ship.tiltL - ship.tiltR) >= 0, `${diffSeen.toFixed(2)} radians apart`);
+  check('and the tail engine tilts with them rather than sitting still',
+    Math.abs(ship.tiltAux) > 0.01);
+  check('and it BANKS INTO its turns, like a thing held up by thrust',
+    maxBank > 0.05, `${(maxBank * 57.3).toFixed(1)} degrees`);
+
+  /* THE GUN. Three rounds a tic through the same hitscan the player's
+     minigun uses, in bursts, each one with a tracer off the muzzle
+     marker — and it only shoots what it can see. */
+  {
+    check('it shoots at you, in bursts rather than continuously',
+      ship.rounds > 200 && ship.rounds < 900 * V.VTOL.gun.rounds * 0.8,
+      `${ship.rounds} in 900 tics, against ${900 * V.VTOL.gun.rounds} if it never stopped`);
+    check('and every round leaves the muzzle, which is the marker the user drew',
+      (() => {
+        const m = ship.muzzle, before = gg.tracers.liveCount;
+        ship.seen = true; ship.aimed = true; ship.firing = 1; ship.burstLeft = 4;
+        ship.gunTic();
+        const T = gg.tracers;
+        let ok = false;
+        /* the origins are a Float32Array, so this is as close as a
+           double ever gets to coming back out of one */
+        for (let i = 0; i < T.ox.length; i++)
+          if (Math.abs(T.ox[i] - m.x) < 0.05 && Math.abs(T.oz[i] - m.z) < 0.05) ok = true;
+        return ok && T.liveCount > before;
+      })());
+    /* WHAT IT DOES TO YOU, measured rather than survived: the debug
+       invincibility this test flies with is taken off for four seconds
+       and put straight back, because everything after this needs a
+       player who is alive to be circled and shot at. */
+    const a2 = pg.armour2, a1 = pg.armour1, hp0 = pg.health;
+    pg.invincible = false;
+    for (let t = 0; t < 4 * 35; t++) gg.tic();
+    const hurt = (a2 + a1 + hp0) - (pg.armour2 + pg.armour1 + pg.health);
+    pg.invincible = true; pg.armour2 = a2; pg.armour1 = a1; pg.health = hp0;
+    note('what it does to you', `${hurt.toFixed(0)} in four seconds, about ${(hurt / 4).toFixed(0)} a second — ` +
+      `${((a2 + a1 + hp0) / Math.max(1, hurt / 4)).toFixed(0)} seconds of standing under one in the open`);
+    check('and it hurts: a gunship overhead is a clock running', hurt > 30, `${hurt}`);
+  }
+
+  /* THE SEARCHLIGHT IS A LIGHT, at the user's request: one cone in the
+     world shader (js/material.js), pointed where the turret points, no
+     shadows. And the flare at the lamp is the other half of it. */
+  {
+    world.spotLight.value = 0;
+    gg.gunships.render(pg.x, pg.y, pg.viewZ);
+    const lamp = ship.lamp, beam = ship.beam;
+    check('the searchlight lights the world: a cone from the lamp, pointed where the turret is',
+      world.spotLight.value > 0 &&
+      Math.abs(world.spotPos.value.x - lamp.x) < 1e-3 && Math.abs(world.spotPos.value.y - lamp.z) < 1e-3 &&
+      Math.abs(world.spotDir.value.x - beam.x) < 1e-3,
+      `${world.spotLight.value.toFixed(2)} bright, ${world.spotRange.value} far`);
+    check('and it is a cone with a soft edge rather than a circle of paint',
+      world.spotCos.value < world.spotSoft.value && world.spotCos.value > 0.8);
+    check('and the beam points down out of the sky rather than along it', beam.z < -0.05, `${beam.z.toFixed(2)}`);
+    check('there is a flare at the lamp, and a smaller one at the muzzle',
+      !!ship.lampFlare.mesh && !!ship.muzzleFlare.mesh &&
+      ship.lampFlare.size[0] > ship.lampFlare.size[1] * 4 &&
+      ship.lampFlare.size[0] > ship.muzzleFlare.size[0],
+      `${ship.lampFlare.size.join(' by ')} against ${ship.muzzleFlare.size.join(' by ')}`);
+    check('and the flare is anamorphic: far wider than it is tall, with a sphere at the middle',
+      ship.lampFlare.ball > 0 && ship.lampFlare.ball < 1);
+    /* and no gunship in the air is no spotlight, rather than a beam
+       left pointing wherever the last one died */
+    const gN = mkG();
+    gN.gunships.render(0, 0, 0);
+    check('and with nothing in the air the world has no spotlight in it', world.spotLight.value === 0);
+    gg.gunships.render(pg.x, pg.y, pg.viewZ);
+  }
+
+  /* THE JET WASH. Where an engine's exhaust lands is a ray from the
+     nacelle down the way its thrust is not pointing; the grit is thrown
+     outward along whatever it lands on, and anybody standing in it
+     while the aircraft is LOW catches. People, at the user's request,
+     and never a car. */
+  {
+    const hitG = { x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 1, t: 0 };
+    const origin = { x: ship.x, y: ship.y, z: ship.cz };
+    check('an engine\'s exhaust lands on the ground under it, facing up',
+      ship.exhaustHit(origin, { x: 0, y: 0, z: -1 }, hitG) && hitG.nz === 1 &&
+      Math.abs(hitG.t - (ship.cz - ship.ground)) < 40, `${hitG.t.toFixed(0)} down`);
+    check('and an exhaust pointing at the sky lands nowhere at all',
+      !ship.exhaustHit(origin, { x: 0, y: 0, z: 0.5 }, hitG));
+    check('and it blows the car park about the whole time it is up there', ship.washed > 100, `${ship.washed}`);
+    check('but at cruising height nothing it blows about is hot enough to light anybody',
+      ship.ignited === 0 && V.VTOL.wash.hot < V.VTOL.alt && V.VTOL.wash.hot > V.VTOL.lowAlt,
+      `${ship.ignited} lit, hot within ${V.VTOL.wash.hot} of the ground`);
+    /* AND IT SETS PEOPLE ON FIRE IF IT HOVERS OVER THEM. A handful of
+       shoppers put out in the car park, and the aircraft sent down over
+       them — which is the mode it looks for on its own every eleven
+       seconds. A CAR in the same wash is untouched, which is the half
+       of the request that is a "not". */
+    /* A PERSON AND A VAN IN THE SAME WASH, held down at the height the
+       aircraft comes to when it is over a crowd, and ticked. Both are
+       in the pool of grit; one of them catches. That is the whole of
+       the user's "not cars", and it is checked side by side rather than
+       waited for, because a car park where a burning shopper has just
+       run past is a car park where a van catching proves nothing. */
+    {
+      const gW = mkG();
+      const sw = gW.gunships.send();
+      sw.state = 'station';
+      const car0 = gW.vehicles.all.find(v => v.whole);
+      const one = gW.actors.find(a => a.type === 'SHOPPER' && !a.dead);
+      check('there is a van and a shopper to hold under it', !!car0 && !!one);
+      if (car0 && one) {
+        /* the aircraft parked directly over the van, as low as it ever
+           gets, with the shopper beside it */
+        sw.x = car0.x; sw.y = car0.y; sw.vx = sw.vy = sw.vz = 0;
+        sw.cz = gW.level.sectorAt(sw.x, sw.y).floor + V.VTOL.lowAlt;
+        sw.ground = gW.level.sectorAt(sw.x, sw.y).floor;
+        sw.tilt = sw.tiltL = sw.tiltR = sw.tiltAux = 0;
+        one.x = car0.x + 40; one.y = car0.y + 40;
+        gW.blockmap.moved(one); one.updateSector();
+        for (let t = 0; t < 80; t++) { sw.tick++; sw.washTic(); }
+        check('the wash off it sets a person under it on fire, at the user\'s request',
+          one.burning > 0 && sw.ignited > 0, `${sw.ignited} lit, ${one.burning} tics of it`);
+        check('and NOT the van in the same wash: it is the person that catches, never the floor under them',
+          car0.whole && car0.burning === 0 && gW.fire.burningCells === 0,
+          `van burning ${car0.burning}, ${gW.fire.burningCells} cells of floor alight`);
+        /* and put it back up at its cruising height and nothing catches */
+        const two = gW.actors.find(a => a.type === 'SHOPPER' && !a.dead && a !== one && !a.burning);
+        if (two) {
+          two.x = car0.x + 40; two.y = car0.y - 40;
+          gW.blockmap.moved(two); two.updateSector();
+          sw.cz = sw.ground + V.VTOL.alt;
+          const lit0 = sw.ignited;
+          for (let t = 0; t < 80; t++) { sw.tick++; sw.washTic(); }
+          check('and from its cruising height it blows the tarmac about and lights nobody',
+            sw.ignited === lit0 && two.burning === 0 && sw.washed > 0, `${sw.ignited - lit0} lit`);
+        }
+      }
+    }
+
+    /* AND IT GOES LOOKING FOR THEM ON ITS OWN, which is the half of it
+       that is not a mechanic but a behaviour: every so often it picks a
+       knot of people in the open, comes down over them, and walks
+       across the crowd — taking the next one the moment the one it is
+       over is alight. */
+    const crowd = gg.actors.filter(a => a.type === 'SHOPPER' && !a.dead && !a.burning).slice(0, 24);
+    crowd.forEach((a, k) => {
+      /* a ring of them under it, laid out rather than rolled, so the
+         run is the same run every time the test is run */
+      const ang = k * 2.39996, r = 40 + k * 9;
+      a.x = ship.x + Math.cos(ang) * r; a.y = ship.y + Math.sin(ang) * r;
+      gg.blockmap.moved(a); a.updateSector();
+    });
+    const wasLit = ship.ignited;
+    ship.mode = 'orbit'; ship.torchAt = gg.tics; ship.state = 'station';
+    let low = 1e9, torchTics = 0;
+    for (let t = 0; t < 400; t++) {
+      gg.tic();
+      if (ship.mode === 'torch') { torchTics++; low = Math.min(low, ship.altitude); }
+    }
+    note('a torch run', `${torchTics} tics over them at ${low < 1e9 ? low.toFixed(0) : '-'} up, ` +
+      `${ship.ignited - wasLit} of ${crowd.length} alight`);
+    check('it goes looking for a knot of people on its own and comes DOWN over them',
+      torchTics > 0 && low < V.VTOL.alt - 20, `${low.toFixed(0)} against ${V.VTOL.alt} on station`);
+    check('and a pass lights several of them rather than chasing one',
+      ship.ignited > wasLit + 1, `${ship.ignited - wasLit} lit`);
+  }
+
+  /* --- SHOT DOWN ----------------------------------------------------
+     At the user's request. The same pitched hitscan that puts holes in
+     a van lands on it, and enough of them end it. */
+  {
+    check('the minigun\'s rounds reach it through its own bodies, and the armour is a vehicle\'s',
+      (() => { const h = ship.health; ship.bodies[0].damage(90, gg.player, { shot: true }); return ship.health === h - 90 / V.VTOL.shotArmour; })());
+    check('and a round into it leaves no hole hanging in the air: it is not a box',
+      (() => { const H = gg.decals.pools.hole, n = H.count; gg.decals.vehicleHole(ship, ship.x, ship.y, ship.cz, 1, 0, 0); return H.count === n; })());
+    check('and fire cannot reach it', (() => { const h = ship.health; ship.damage(500, null, { fire: true, stream: true }); return ship.health === h; })());
+    let rounds = 0;
+    while (ship.whole && rounds < 5000) { ship.damage(30, gg.player, { shot: true }); rounds++; }
+    note('shooting one down', `${rounds} rounds of the minigun, which is ${(rounds / 4 / 35).toFixed(1)}s of the trigger held on it`);
+    check('enough of them and it is hit: three to five seconds of the minigun',
+      ship.state === 'dying' && rounds > 200 && rounds < 900, `${rounds}`);
+    /* THE TAIL SPIN. Still flying, in the sense that the air is still
+       under it: the yaw winds up, the nose goes down, and it trails
+       fire all the way to the tarmac. */
+    const yaw0 = ship.yaw, z0 = ship.cz;
+    let fell = 0, rose = false, dive = 0, flung = 0;
+    while (ship.state === 'dying' && fell < 600) {
+      gg.tic(); fell++;
+      if (ship.cz > z0) rose = true;
+      dive = Math.min(dive, ship.rz);
+      flung = Math.max(flung, Math.abs(ship.tiltL - ship.tiltR));
+    }
+    const turns = Math.abs(ship.yaw - yaw0) / (2 * Math.PI);
+    note('and what it does then', `${(fell / 35).toFixed(1)}s of tail spin through ` +
+      `${turns.toFixed(1)} turns, nose ${(dive * 57.3).toFixed(0)} degrees down, ${ship.pops} bangs on the way down`);
+    check('it lurches up as it is hit and then falls, spinning, for a good few seconds',
+      rose && fell > 2 * 35 && turns > 1, `${fell} tics, ${turns.toFixed(1)} turns`);
+    /* measured ON THE WAY DOWN rather than where it came to rest: the
+       crash puts it at whatever crooked angle it ended up lying at */
+    check('and the nose goes down and the engines are thrown to nothing',
+      dive < -0.3 && flung > 0.5,
+      `nose ${dive.toFixed(2)}, engines ${flung.toFixed(2)} apart`);
+    check('and it bangs the whole way down rather than falling quietly', ship.pops > 1, `${ship.pops}`);
+    /* AND THE GROUND. The bigger bang, the fire, the pieces, and a
+       wreck that is in the way from then on. */
+    check('it arrives on the tarmac and is a wreck rather than a thing still flying',
+      ship.state === 'wreck' && Math.abs(ship.cz - ship.ground) < V.VTOL_LENGTH,
+      `${ship.state} at ${ship.cz.toFixed(0)} over ${ship.ground.toFixed(0)}`);
+    check('and the thing you shoot at goes with it, and something you cannot walk through takes its place',
+      ship.bodies.length === 0 && ship.blockers.length === 3 && ship.blockers.every(b => b.solid));
+    check('and it threw pieces of its own skin off, painted with its own sheet',
+      gg.vehicles.flying.length + gg.vehicles.resting.length > 8 &&
+      [...gg.vehicles.flying, ...gg.vehicles.resting].some(c => c.own));
+    check('and it is burning on the tarmac where it landed', gg.fire.burningCells > 0, `${gg.fire.burningCells} cells`);
+    check('and the searchlight goes out with it',
+      (() => { gg.gunships.render(pg.x, pg.y, pg.viewZ); return world.spotLight.value === 0; })());
+    /* it lies there smouldering rather than vanishing, and the night
+       goes on round it */
+    for (let t = 0; t < 200; t++) gg.tic();
+    check('and it lies there afterwards, smouldering, without anything falling over',
+      ship.state === 'wreck' && ship.smoulder > 0 && gg.actors.length > 0);
   }
 }
 

@@ -26,8 +26,11 @@ export class Vector4 extends Vector2 { constructor(x = 0, y = 0, z = 0, w = 0) {
 export class Sphere { constructor(c, r) { this.center = c; this.radius = r; } }
 export class Vector3 extends Vector2 { constructor(x = 0, y = 0, z = 0) { super(x, y); this.z = z; } set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; } multiplyScalar(k) { this.x *= k; this.y *= k; this.z *= k; return this; } }
 export class Color { constructor() {} setRGB() { return this; } setHex() { return this; } }
+/* A group has a place and a turn, because the gunship (js/vtol.js) is a
+   tree of them — the turret on the nose, the gun on the turret — and
+   the test flies one. Nothing reads a matrix back. */
 export class Group {
-  constructor() { this.children = []; }
+  constructor() { this.children = []; this.position = new Vector3(); this.scale = new Vector3(1, 1, 1); this.rotation = new Vector3(); this.rotation.order = 'XYZ'; this.visible = true; this.name = ''; }
   add(o) { this.children.push(o); }
   remove(o) { const i = this.children.indexOf(o); if (i >= 0) this.children.splice(i, 1); }
   clear() { this.children.length = 0; }
@@ -37,7 +40,16 @@ export class Object3D extends Group {}
 /* rotation is a Vector3 rather than an Euler, which is enough: the
    game only ever sets x, y, z and an order, and nothing headless reads
    a matrix back out of it. */
-export class Mesh extends Stub { constructor(g, m) { super(); this.geometry = g; this.material = m; this.position = new Vector3(); this.scale = new Vector3(1, 1, 1); this.rotation = new Vector3(); this.rotation.order = 'XYZ'; this.userData = {}; this.visible = true; } }
+/* A MESH IS AN OBJECT3D, which is what lets one be hung off another:
+   the gunship (js/vtol.js) is a tree of meshes — the turret on the
+   fuselage, the gun on the turret — and without `add` here the whole
+   aircraft is untestable headless. */
+export class Mesh extends Stub {
+  constructor(g, m) { super(); this.geometry = g; this.material = m; this.position = new Vector3(); this.scale = new Vector3(1, 1, 1); this.rotation = new Vector3(); this.rotation.order = 'XYZ'; this.userData = {}; this.visible = true; this.children = []; this.name = ''; }
+  add(o) { this.children.push(o); return this; }
+  remove(o) { const i = this.children.indexOf(o); if (i >= 0) this.children.splice(i, 1); return this; }
+  traverse(fn) { if (fn) fn(this); for (const c of this.children) c.traverse?.(fn); }
+}
 /* It keeps its attributes, because things that read one back —
    js/slidedoor.js relights a door by rewriting its light attribute —
    cannot be exercised headless otherwise, and because it lets a test
@@ -63,6 +75,7 @@ export class BufferAttribute extends Float32BufferAttribute {}
 export class InstancedBufferGeometry extends BufferGeometry { constructor() { super(); this.instanceCount = 0; } }
 export class InstancedBufferAttribute extends Float32BufferAttribute { setUsage() { return this; } }
 export class ShaderMaterial extends Stub { dispose() {} }
+export const AdditiveBlending = 2, NormalBlending = 1;
 export class RawShaderMaterial extends ShaderMaterial {}
 export class MeshBasicMaterial extends Stub { constructor(o) { super(o); this.color = new Color(); } dispose() {} }
 export class Scene extends Group { }

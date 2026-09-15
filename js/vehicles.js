@@ -810,6 +810,9 @@ class Vehicle {
         vx: Math.cos(a) * sp + this.vx, vy: Math.sin(a) * sp + this.vy,
         vz: between(CHUNK_LIFT) + Math.max(0, this.vz) * 0.4,
         light: this.light, sky: this.sky, paint: this.paint,
+        /* a piece of a vehicle on its own sheet is painted with that
+           sheet — see Chunk; it used to be handed the lot's */
+        texture: this.own ? this.texture : null,
       }));
     }
   }
@@ -842,11 +845,21 @@ class Chunk {
     for (const x of [cut.x0, cut.x1]) for (const y of [cut.y0, cut.y1]) for (const z of [cut.z0, cut.z1])
       this.corners.push(toMesh([x, y, z], mid, L));
 
-    this.mesh = carMesh(fleet.texture, this.local);
+    /* ITS OWN SHEET, if the thing it came off had one. A piece of the
+       police van, the APC or the gunship is painted with that model's
+       own texture — the UVs are that model's — and so it can never go
+       into the wrecks' slab, which is built on the lot's sheet: it
+       keeps its mesh when it lands. Pieces of the lot's vans go into
+       the slab as they always have. */
+    this.texture = o.texture || null;
+    this.mesh = carMesh(this.texture || fleet.texture, this.local);
     this.mesh.name = 'debris';
     fleet.game.scene.add(this.mesh);
     this.place();
   }
+
+  /** Whether it stays a mesh of its own on the ground. */
+  get own() { return !!this.texture; }
 
   place() {
     this.mesh.position.set(this.x, this.z, -this.y);
@@ -892,11 +905,21 @@ class Chunk {
     this.rx = snap(this.rx); this.rz = snap(this.rz);
     this.z = this.ground - lowestOf(this.corners, this.rx, this.rz);
     g.fire?.ignite(this.x, this.y, 70, 26);
+    if (this.own) { this.place(); this.slab = null; return; }
     g.scene.remove(this.mesh);
     this.mesh.geometry.dispose(); this.mesh.material.dispose();
     this.mesh = null;
     this.slab = bake(this.local, this.yaw, this.rx, this.rz, this.x, this.y, this.z);
     this.local = null;
+  }
+
+  /** Off the ground and out of the scene, for a piece with its own
+   *  mesh that the lot has no more room for. */
+  discard() {
+    if (!this.mesh) return;
+    this.fleet.game.scene.remove(this.mesh);
+    this.mesh.geometry.dispose(); this.mesh.material.dispose();
+    this.mesh = null;
   }
 
   /** Lying there going out. The particles stop after twenty seconds; the
@@ -1562,12 +1585,14 @@ export class Vehicles {
       if (!c.resting) continue;
       this.flying.splice(i, 1);
       this.resting.push(c);
-      this.restOf(c.slab);
+      if (c.slab) this.restOf(c.slab);
       /* and if the tarmac is knee deep in it, the oldest piece goes */
       if (this.resting.length > MAX_RESTING_CHUNKS) {
         const old = this.resting.shift();
-        const at = this.restSlabs.indexOf(old.slab);
-        if (at >= 0) { this.restSlabs.splice(at, 1); this.restDirty = true; }
+        if (old.slab) {
+          const at = this.restSlabs.indexOf(old.slab);
+          if (at >= 0) { this.restSlabs.splice(at, 1); this.restDirty = true; }
+        } else old.discard();
       }
     }
     for (const c of this.resting) c.smoulderTic();
@@ -1596,4 +1621,4 @@ export class Vehicles {
   get count() { return this.all.length; }
 }
 
-export { GRAVITY, extentOf, lowestOf, turn };
+export { GRAVITY, extentOf, lowestOf, turn, Chunk };

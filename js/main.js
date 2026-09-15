@@ -25,6 +25,7 @@ import { bakeTextures } from './textures.js';
 import { bakeSprites, bakeWeapons } from './sprites.js';
 import { fireFrames } from './fireart.js';
 import { loadVehicleModel, POLICE_LENGTH, APC_LENGTH } from './car.js';
+import { loadVtolModel } from './vtol.js';
 import { addStrip, imageData } from './spriteload.js';
 import { CELLS, GIBLETS, BLAST_SPRITE, addStandees, addSplats, addTroops } from './people.js';
 import { buildSellWrong } from './maps/sellwrong.js';
@@ -262,6 +263,12 @@ async function boot() {
   const apcP = loadVehicleModel('assets/models/apc.glb',
       { length: APC_LENGTH, id: 'apc', name: 'Hover APC', use: 'army' })
     .catch(e => { console.warn('no APC, the army stays home:', e.message); return null; });
+  /* and the AIR SUPPORT that comes with it: the user's VTOL gunship,
+     the fourth model up the road and the first that never touches it.
+     Its own loader, because it is not one mesh but a tree of them —
+     see js/vtol.js. Without it the army comes alone. */
+  const vtolP = loadVtolModel('assets/models/vtol.glb')
+    .catch(e => { console.warn('no gunship, the army comes alone:', e.message); return null; });
   /* and the troops themselves: the user's two sheets, cut by
      tools/prep-troops.mjs. Either one missing costs that force its
      faces and nothing else — js/sprites.js has already baked a body of
@@ -337,13 +344,14 @@ async function boot() {
   const fleet = await fleetP;
   const police = await policeP;
   const apc = await apcP;
+  const vtol = await vtolP;
 
   status('THE FLAMETHROWER', 0.78);
   const hud = new Hud(null);
   const input = new Input(renderer.domElement);
   const game = new Game({ level, scene, camera, textures, sprites, hud, audio, input, sky: skyImage,
                          flameAtlas: streamAtlas, bodyAtlas: flameAtlas, fxAtlases, gibAtlases,
-                         fleet, police, apc });
+                         fleet, police, apc, vtol });
   hud.game = game;
   const touch = new TouchControls(input, { root: $('touch'), prefs, onPause: () => pause(true) });
 

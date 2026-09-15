@@ -69,8 +69,20 @@ if (json.extensionsRequired?.length) throw new Error('required extensions: ' + j
    mesh's box centre goes through the node's own scale, rotation and
    translation, and the answer is the point the user actually drew. */
 const anchors = {};
-const isMarker = n => /^CLAUDE_delete_this/i.test(n.name || '') || /^ClaudeThisIs/i.test(n.name || '');
-const isSpin = n => /^ClaudeRotateThis/i.test(n.name || '');
+/* AND A THIRD SPELLING, off the gunship: ClaudeThisIsWhereThe3Barrel
+   VulcanShootsFrom_DeleteThisAfterAssessingPlacement, and the same for
+   the spotlight — small spheres again, but NESTED this time, inside
+   the part they belong to (the gun, the lamp module), because where
+   the muzzle is only means anything relative to the gun that turns.
+   So a marker with a parent is read into `markers` rather than
+   `anchors`: its point in ITS PARENT'S frame, and the parent's name,
+   which is the node js/vtol.js finds and hangs the effect off. */
+const markers = {};
+const isMarker = n => /^CLAUDE_delete_this/i.test(n.name || '') || /^ClaudeThisIs.*(Delete|delete)/.test(n.name || '')
+  || /^ClaudeThisIsTheWeaponFiringEffectEmissionPoint/i.test(n.name || '');
+/* the part that turns: the minigun's barrels (RotateThis) and the
+   gunship's (SpinThis), the same instruction in two spellings */
+const isSpin = n => /^Claude(RotateThis|SpinThis)/i.test(n.name || '');
 const ITEMS0 = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16 };
 const markerPoint = n => {
   let p = [0, 0, 0];
@@ -104,11 +116,19 @@ let spinName = null;
 json.nodes.forEach((n, i) => {
   if (isSpin(n)) spinName = n.name;
   if (!isMarker(n)) { keepNode.push(i); return; }
-  const key = /pilot/i.test(n.name) ? 'pilot' : /output|flame|nozzle|muzzle|emission|firing/i.test(n.name) ? 'nozzle' : n.name;
-  /* A root node's transform IS its place. If somebody parents one of
-     these later, that is the moment to add a matrix walk here. */
-  if (n.children?.length || json.nodes.some(o => o.children?.includes(i))) throw new Error('marker ' + n.name + ' is not a root node');
-  anchors[key] = markerPoint(n);
+  if (n.children?.length) throw new Error('marker ' + n.name + ' has children');
+  const parent = json.nodes.find(o => o.children?.includes(i));
+  if (!parent) {
+    /* A root node's transform IS its place. */
+    const key = /pilot/i.test(n.name) ? 'pilot' : /output|flame|nozzle|muzzle|emission|firing/i.test(n.name) ? 'nozzle' : n.name;
+    anchors[key] = markerPoint(n);
+    return;
+  }
+  /* nested: the point in the parent's own frame, and which parent */
+  const key = /shoots|muzzle|firing|emission|nozzle/i.test(n.name) ? 'muzzle'
+            : /spot ?light|lamp|torch/i.test(n.name) ? 'lamp' : n.name;
+  if (markers[key]) throw new Error('two markers for ' + key);
+  markers[key] = { node: parent.name, at: markerPoint(n) };
 });
 /* A MODEL WITH NO MARKERS IS ALLOWED THROUGH, as of the cerebral bore:
    it arrived as a mesh and a diffuse and nothing else, and the only
@@ -120,7 +140,7 @@ json.nodes.forEach((n, i) => {
    with no nozzle is half a set, and half a set is a mistake. */
 if (anchors.pilot && !anchors.nozzle)
   throw new Error('expected a nozzle marker to go with the pilot, found ' + Object.keys(anchors).join());
-if (!Object.keys(anchors).length) console.warn('no marker spheres: stripping the maps only, the anchors are the game\'s business');
+if (!Object.keys(anchors).length && !Object.keys(markers).length) console.warn('no marker spheres: stripping the maps only, the anchors are the game\'s business');
 
 const nodeMap = new Map(keepNode.map((old, i) => [old, i]));
 const nodes = keepNode.map(i => {
@@ -259,6 +279,7 @@ const out = {
     ...json.asset,
     generator: (json.asset.generator || '') + ' + tools/prep-model.mjs',
     extras: { ...(json.asset.extras || {}), ...(Object.keys(anchors).length ? { anchors } : {}),
+            ...(Object.keys(markers).length ? { markers } : {}),
             ...(spinName ? { spin: spinName } : {}), source: inFile.split('/').pop() },
   },
   scene: json.scene ?? 0,
@@ -284,4 +305,5 @@ console.log(`${outFile}: ${kb(buf.length)} -> ${kb(fs.statSync(outFile).size)}`)
 console.log(`  nodes ${json.nodes.length} -> ${nodes.length}, meshes ${json.meshes.length} -> ${meshes.length}, images ${json.images.length} -> ${images.length}`);
 if (dropped.size) console.log(`  attributes nothing binds: ${[...dropped].map(([k, n]) => `${k} (${n} vertices)`).join(', ')}`);
 if (anchors.nozzle) console.log(`  anchors: ${anchors.pilot ? 'pilot ' + anchors.pilot.join(', ') + '  ' : ''}nozzle ${anchors.nozzle.join(', ')}`);
+for (const [k, m] of Object.entries(markers)) console.log(`  marker ${k}: ${m.at.join(', ')} in ${m.node}`);
 if (spinName) console.log(`  spins: ${spinName}`);

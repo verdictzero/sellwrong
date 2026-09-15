@@ -346,6 +346,59 @@ export class Effects {
   }
 
   /* ------------------------------------------------------------------
+     JET WASH
+
+     What the gunship's engines do to whatever their exhaust lands on
+     (js/vtol.js): grit thrown OUTWARD along the surface, fast and low,
+     and gone inside a second — nothing of it rises, because it is not
+     smoke, it is the car park being blown about. The smoke pool's
+     frames, pale, small to wide, at three to five units a tic across
+     the ground where a puff drifts at half a unit up. `k` is how hard
+     the engine is blowing on this spot, which is how near it is; the
+     surface's normal says which way "along" is — across the tarmac for
+     the ground, up and along the wall for a wall.
+     ------------------------------------------------------------------ */
+  wash(x, y, z, k = 1, nx = 0, ny = 0, nz = 1) {
+    const a = (pRandom() / 255) * Math.PI * 2;
+    const sp = (1.8 + (pRandom() / 255) * 2.8) * (0.5 + 0.5 * k);
+    /* two unit directions across the normal, the decals' own choice of
+       them: x and y on a floor, along and up on a wall */
+    let ux, uy, uz, vx, vy, vz;
+    if (Math.abs(nz) > 0.5) { ux = 1; uy = 0; uz = 0; vx = 0; vy = 1; vz = 0; }
+    else { ux = -ny; uy = nx; uz = 0; vx = 0; vy = 0; vz = 1; }
+    const c = Math.cos(a), s = Math.sin(a);
+    const pale = 0.55 + (pRandom() / 255) * 0.25;
+    this.smoke.spawn({
+      x: x + (pRandom() / 255 - 0.5) * 30, y: y + (pRandom() / 255 - 0.5) * 30, z: z + 3,
+      vx: (ux * c + vx * s) * sp + nx * 0.4, vy: (uy * c + vy * s) * sp + ny * 0.4, vz: (uz * c + vz * s) * sp * 0.6 + nz * 0.5,
+      life: 16 + (pRandom() % 14),
+      size0: 14 + 10 * k, size1: 46 + 30 * k,
+      c0: [0.50 * pale, 0.47 * pale, 0.44 * pale], c1: [0.30, 0.29, 0.28],
+      a0: 0.34 * (0.4 + 0.6 * k), a1: 0,
+      frame: pRandom() % SMOKE_PUFFS, frameRate: 0.25,
+      drag: 0.91, gravity: -0.03,
+    });
+  }
+
+  /** A FIREBALL, for an aircraft going up: the body-fire pool's
+   *  additive frames at many times the size a shopper carries, rising
+   *  slowly and dying to orange. One call is one ball; a bang is a
+   *  dozen of them over the thing that banged. */
+  fireball(x, y, z, size = 90, life = 22) {
+    this.bodyFlames.spawn({
+      x: x + (pRandom() / 255 - 0.5) * size * 0.6, y: y + (pRandom() / 255 - 0.5) * size * 0.6,
+      z: z + (pRandom() / 255 - 0.5) * size * 0.5,
+      vx: (pRandom() / 255 - 0.5) * 2.2, vy: (pRandom() / 255 - 0.5) * 2.2, vz: 0.8 + (pRandom() / 255) * 1.6,
+      life: life + (pRandom() % 12),
+      size0: size * 0.55, size1: size * 1.35,
+      c0: [1, 1, 1], c1: [1, 0.45, 0.12],
+      a0: 1, a1: 0,
+      frame: pRandom() % (this.bodyFlames.opts.frames || 1), frameRate: 0.45,
+      drag: 0.94, gravity: -0.01,
+    });
+  }
+
+  /* ------------------------------------------------------------------
      One tic
      ------------------------------------------------------------------ */
   tic() {

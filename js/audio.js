@@ -100,6 +100,16 @@ const DEFS = {
   armysee:   { kind: 'sweep', dur: 0.19, f0: 300,  f1: 200,  gain: 0.26, wave: 'triangle' },
   armypain:  { kind: 'sweep', dur: 0.16, f0: 260,  f1: 150,  gain: 0.26, wave: 'triangle' },
   armydie:   { kind: 'sweep', dur: 0.58, f0: 270,  f1: 62,   gain: 0.32, wave: 'triangle' },
+  /* THE GUNSHIP (js/vtol.js): its turbines are the APC's sawtooth an
+     octave up and longer, two notes on a clock of its own; the vulcan
+     is the minigun's crack with more bottom in it, and its rate limit
+     turns three a tic into the buzz; and it going down is the big
+     boom with a longer tail, the loudest thing in the game bar the
+     one below it. */
+  gunship:   { kind: 'sweep', dur: 1.10, f0: 210,  f1: 300,  gain: 0.16, wave: 'sawtooth' },
+  gunship2:  { kind: 'sweep', dur: 1.10, f0: 300,  f1: 210,  gain: 0.16, wave: 'sawtooth' },
+  vulcan:    { kind: 'noise', dur: 0.07, f0: 1900, f1: 400,  gain: 0.36 },
+  shipdie:   { kind: 'boom',  dur: 1.90, f0: 220,  f1: 26,   gain: 0.92 },
   /* the bang a vehicle ends on now, which is four of the old one: the
      same boom, longer and lower, with the master gain it needs to be
      the loudest thing in the game */
