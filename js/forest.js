@@ -785,7 +785,13 @@ export class Forest {
           m.name = `forest-${k.name}-L${L}-${c.cx}-${c.cy}`;
           m.visible = false;
           m.userData.chunk = { x: wx, y: wy, far: A.far + CH, level: L, cx: c.cx, cy: c.cy };
-          const ch = { burn, burnAttr, mesh: m, cx: c.cx, cy: c.cy, x: wx, y: wy, level: L, band: 0, drawn: false };
+          const ch = { burn, burnAttr, mesh: m, cx: c.cx, cy: c.cy, x: wx, y: wy, level: L, band: 0, drawn: false,
+                       /* WHICH REGIONS THE CHUNK STANDS IN, for the portal flood:
+                          nine points across it. The wood's regions are
+                          fourteen big rectangles, so nine is plenty, and a
+                          chunk none of whose points is in a visible region is
+                          not drawn — see render() */
+                       sectors: this._chunkSectors(wx, wy, CH) };
           level.chunks.push(ch);
           level.byKey.set(c.cy * 4096 + c.cx, ch);
           this.mesh.add(m);
@@ -828,6 +834,26 @@ export class Forest {
     for (const ch of touched) ch.burnAttr.needsUpdate = true;
   }
 
+  /** The distinct sectors under a chunk's nine sample points. */
+  _chunkSectors(wx, wy, ch) {
+    const out = [];
+    for (let j = -1; j <= 1; j++)
+      for (let i = -1; i <= 1; i++) {
+        const s = this.level.sectorAt(wx + i * ch * 0.42, wy + j * ch * 0.42);
+        if (s && !out.includes(s)) out.push(s);
+      }
+    return out;
+  }
+
+  /** Can the eye see into any region this chunk stands in? A chunk
+   *  standing in no region at all is off the map and always can. */
+  _chunkSeen(ch) {
+    const lv = this.level;
+    if (!lv.isVisible || !ch.sectors || !ch.sectors.length) return true;
+    for (let i = 0; i < ch.sectors.length; i++) if (lv.isVisible(ch.sectors[i])) return true;
+    return false;
+  }
+
   render(camX, camY, camZ, billboardRot, time, reach = 1) {
     if (!this.mesh) { if (this._dirty.length > 4096) this._flush(); return; }
     this.uRot.value = billboardRot;
@@ -845,11 +871,15 @@ export class Forest {
         for (const ch of A.chunks) {
           const dx = ch.x - camX, dy = ch.y - camY;
           const far = (A.far + CHUNK) * reach;
-          ch.mesh.visible = dx * dx + dy * dy < far * far;
+          ch.mesh.visible = dx * dx + dy * dy < far * far && this._chunkSeen(ch);
         }
         continue;
       }
       this._pickLevels(A, camX, camY, reach);
+      /* and, whichever size was picked, not through a wall: the flood's
+         answer is laid over the LOD's, so a coarse chunk behind the
+         store goes the same way a fine one does */
+      for (const L of A.levels) for (const ch of L.chunks) if (ch.mesh.visible && !this._chunkSeen(ch)) ch.mesh.visible = false;
     }
     if (this.flames) { this._placeFlames(camX, camY, camZ); this.flames.render(billboardRot); }
   }

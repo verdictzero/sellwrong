@@ -1104,7 +1104,14 @@ export class Actor {
     const dx = this.x - camX, dy = this.y - camY;
     const d2 = dx * dx + dy * dy;
     const far = Math.min(CULL_FAR, climate.airFar);
+    /* AND NOT IN A REGION THE EYE CANNOT SEE INTO, which is the exact
+       test where the cone below is the generous one: the portal flood
+       (Level.visibleSectors) has already been run this frame, and a
+       standee in the stockroom is not drawn from the car park however
+       squarely you face the wall between. */
+    const lv = this.game.level;
     if (d2 > far * far ||
+        (d2 > CULL_NEAR * CULL_NEAR && this.sector && lv.isVisible && !lv.isVisible(this.sector)) ||
         (d2 > CULL_NEAR * CULL_NEAR && (viewX !== 0 || viewY !== 0) &&
          dx * viewX + dy * viewY < Math.sqrt(d2) * CULL_COS)) {
       if (this.mesh) this.mesh.visible = false;

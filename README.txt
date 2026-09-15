@@ -15,7 +15,8 @@ thousand firs and bushes, and that burns too.
 Open index.html in a browser. No install, no build step. Every texture,
 every sprite, every sound and the whole level are generated in the page
 at start-up, in about half a second. What it loads is what was made
-somewhere else: the people, the trees, the sky, and the gun.
+somewhere else: the people, the trees, and the gun. The sky was a
+photograph and is generated now, for the hour and the weather.
 
   TOWN.txt              the plan for the town round the mall: a street
                           grid, a school, a church, townhouses of two
@@ -36,8 +37,11 @@ somewhere else: the people, the trees, the sky, and the gun.
   manifest.webmanifest  what a phone calls it when it is added to a home screen
   icon.png              and what it draws there — node tools/bake-icons.mjs
   vendor/three.module.js  three r160, local so the game runs off a memory stick
-  js/                   the game — js/ruin.js is the newest of it: the
-                          steel frame a burnt-out roof leaves behind
+  js/                   the game — js/weather.js, js/skyart.js and
+                          js/rain.js are the newest of it: the hour, the
+                          weather and the wind; the sky baked in the page
+                          for them; and what falls out of it. See THE AIR,
+                          THE HOUR AND THE WEATHER, and WHAT YOU CAN SEE
   art/                  the logo, the old sprite weapon, the seven four-view
                           vehicle sheets and the atlas packed out of them —
                           which nothing loads any more — and art/people/,
@@ -48,7 +52,9 @@ somewhere else: the people, the trees, the sky, and the gun.
                           the squad, fifty-one cells of SWAT; and the army,
                           fifty-one cells cut the same way
   assets/forest/        the wood: ten plants with their burn maps, two grounds
-  assets/sky/night.png  the night, baked from a Polyhaven panorama
+  assets/sky/night.png  the night as a Polyhaven photograph, which the game
+                          wore until the sky was generated (js/skyart.js);
+                          kept, no longer loaded, no longer shipped
   assets/models/        the flamethrower, the fire extinguisher rifle and
                           the cerebral bore, all three Vaportrash's and all
                           three stripped by tools/prep-model.mjs; the
@@ -74,7 +80,9 @@ somewhere else: the people, the trees, the sky, and the gun.
   tools/prep-troops.mjs a troops sheet — the SWAT's or the army's — found
                           cell by cell and cut into a strip
   tools/prep-forest.sh  copies the wood's art over from the golf project
-  tools/bake-sky.mjs    the sky: 8k panorama to 1024 palette pixels
+  tools/bake-sky.mjs    the sky as it used to be made: 8k panorama to 1024
+                          palette pixels. Its reasoning about dither is
+                          what js/skyart.js is built on
   tools/prep-model.mjs  a .glb down to what this renderer binds: the colour
                           map, four attributes, one tight view an accessor
                           — and marker spheres out of the mesh and into
@@ -2420,12 +2428,13 @@ bargain every other asset in this game makes.
 THE SKY AND THE NAME
 --------------------
 
-The sky is a Polyhaven panorama (moonless_golf, CC0), baked by
+The sky WAS a Polyhaven panorama (moonless_golf, CC0), baked by
 tools/bake-sky.mjs to 1024 palette pixels round the horizon, on a sphere
-that follows the camera. Stars survive the 8:1 downsample because a
-block that holds a pixel far brighter than its average is pulled toward
-that pixel — and only then, because doing it everywhere turns a night
-into speckle.
+that follows the camera; stars survived the 8:1 downsample because a
+block that held a pixel far brighter than its average was pulled toward
+that pixel. It is generated now — the same sphere, the same 1024, the
+same dither, for whatever hour and weather it is. See THE AIR, THE HOUR
+AND THE WEATHER below; the photograph stays in assets/sky, unloaded.
 
 The name is set in Michroma — the open-licensed cousin of the extended
 square sans the Flight Simulator wordmark uses, bundled in assets/fonts
@@ -2766,7 +2775,14 @@ what they are worth, measured:
 NONE OF THEM TOUCHES THE SIMULATION. The shop is the same shop at every
 setting: the same seven hundred and thirty-six people, walking the same
 way, running from the same fire and getting out of the same doors. Only
-the drawing is cheaper. A crowd setting that spawned fewer people would
+the drawing is cheaper.
+
+TIME AND WEATHER sit under them and are not settings of that kind: the
+weather is the night's, remembered, and the time button steps the clock
+to the next keyframe for looking at the dawn without waiting for it.
+The weather DOES touch the simulation — rain puts fires out and the
+wind leans them — which is what it is for. See THE AIR, THE HOUR AND
+THE WEATHER. A crowd setting that spawned fewer people would
 change who gets out of the building alive, and the smoke test holds that
 line — four hundred tics at the lowest setting, and the cast list is
 unchanged.
@@ -2980,6 +2996,209 @@ burning down and does not get brighter as it burns is not really burning. It
 parks itself at the centre of mass of whatever is alight nearest you, and it
 is added after the light is quantised, so the glow slides smoothly over the
 banding instead of fighting it.
+
+
+THE AIR, THE HOUR AND THE WEATHER
+---------------------------------
+
+SIGHT.txt is the plan and this is what was built of it. Four things,
+and they are one thing: the sky, the fog, the hour and the weather.
+
+THE FOG EXISTED AND WAS SWITCHED OFF. fogDensity sat at zero and only
+js/fire.js turned it up, as smoke. What hid the far end of the world
+was the far plane at sixteen thousand cutting the forest floor, with
+the night panorama's own black ground showing through the cut — fine
+at two in the morning against black, and not a system. It is two
+terms now (worldShade in js/material.js): THE AIR, always on, that
+every surface fades into with distance; and THE SMOKE after it, still
+warm, still lit by the fire under it, still the fire's.
+
+THE AIR IS A TEXEL OF THE SKY. Not a colour tuned to look like the
+horizon: the world shader fetches the sky texture's horizon row in the
+fragment's own azimuth — atan2(z, x) over a turn in the renderer's
+axes, which was measured against three's SphereGeometry with the
+mesh's x mirrored rather than derived, because a derivation that is
+mirrored puts the dawn in the west — and fades toward that. A wall at
+the end of the parade goes into precisely what is behind it and the
+join is invisible because there is no join. At dawn the east end of
+the lot is rose and the west end is blue-grey, and nobody wrote that
+down. The sky sphere takes the smoke and not the air, which is a proof
+and not a preference: the air IS the sky's horizon, so mixing the sky
+toward the air is the identity. Both are in the test.
+
+THE SKY IS BAKED IN THE PAGE, js/skyart.js, on the GPU, into the same
+1024 by 256 equirect the photograph was, for the hour and the weather:
+a ramp, horizon to zenith, and a ground below that starts as the
+horizon's own colour so the far plane's cut has nothing to show; the
+sun as a disc with a tight corona, and a glow along the horizon on
+its side that under a dozen degrees of sun is the whole dawn; the
+moon two degrees across, four times life size and the smallest thing
+that reads as a moon at three texels a degree; stars one texel each
+off a hash of the texel, thinned by the cosine of the elevation
+because an equirect has as many texels round the zenith as round the
+horizon and the sky does not, and a band across them with more in it;
+clouds of value noise on a plane over your head, big overhead and
+crowding to the horizon the way clouds do, drifting with the wind,
+lit by the dawn from the side and by the town from below, and taking
+the stars away; and the sodium glow of the town, low in the west.
+
+IT IS STILL A PICTURE AND NOT A SHADER ON THE SPHERE, and that was
+decided by one sentence in tools/bake-sky.mjs: baking is "what makes
+the dither pattern sit still instead of crawling as you turn". The
+post pass dithers in grid space, so a sky computed per fragment gets a
+pattern nailed to the screen that crawls across the stars with every
+mouse movement. A picture is dithered once, in its own texels, with
+the same Bayer and the same palette snap the post pass uses — exported
+from js/lofi.js so there is one definition — and the pattern is nailed
+to the sky. It is re-baked when the hour has moved enough to show or
+the cloud has drifted, at most twice a second; a quarter of a
+megapixel, which is nothing.
+
+THE HOUR IS ONE NUMBER, js/weather.js, and seven keyframes from ten at
+night to eight in the morning are a table it interpolates: the three
+sky colours, the sun's altitude and colour and how much it glows along
+the horizon, the moon's place, the town's glow, how much starfield
+survives, what the sky lights an outdoor surface to, and how dark
+anything gets by distance. The judgement — what colour civil dawn is —
+is in the table, in Javascript, where the headless test reads it; the
+shader gets uniforms. The game is a night, so the clock is a night: it
+starts at two in the morning, the hour the game was always set at, and
+runs at four tenths of an hour a minute of play, which puts the sun up
+in nine minutes. YOU HAVE UNTIL DAWN. Every hour the fire is worth
+more of the light in the world and at first light the thing that made
+you the only source of it is just weather. The clock stops at eight,
+past sunrise, where the table is flat.
+
+THE OUTDOOR LIGHT STOPPED BEING BAKED, which was the one piece of
+engine work that was not optional. Game.relight sets every outdoor
+sector's light to its ambient and js/mapgeo.js bakes that into a
+vertex attribute, so a dawn would have meant rebuildStatic forty times
+a night. The vertex already carries `sky` — how much of this surface's
+light arrives from the sky — and that is exactly the weight: one
+uniform lifts the vertex's own light toward the sky's, by that much.
+Indoors it is the identity and two in the morning is the same two in
+the morning; in the car park the dawn arrives in full; under the
+canopy it arrives by half. A dawn is one uniform write a frame and no
+rebuild at all.
+
+THE PALETTE GOT A SKY RAMP. It was exactly full, fourteen ramps
+summing to 256, and a dawn fills half the frame with a gradient no
+ramp ran through — night blue, violet, rose, cold gold, the pale blue
+of a morning. The first screenshot was that gradient snapped into blue
+and pink and dithered into crosshatch. Twenty entries came out of
+grey, cyan, purple and pink, and the test that says whether they are
+enough is the one that snaps every colour in the table and measures
+the miss.
+
+THE WEATHER IS A ROW multiplied over the hour's: clear, overcast, rain
+and mist. Each says how far the air lets you see — WHICH IS THE DRAW
+DISTANCE, because past where the air is opaque there is provably
+nothing to draw, so the far plane, the crowd's cull and the wood's
+range all follow airFar in, and bad weather makes the frame CHEAPER,
+which means the cost ceiling to measure is a clear night — how much
+of the hour's sky survives the cloud, how much cloud there is and how
+dark, whether the sky is one flat colour to the zenith, a wind, and a
+haze the air adds to the sky itself, because night mist is GREY and
+not black, being lit by every lamp in the car park, and the first
+screenshot of night mist was a black sky over a car park with the far
+cars simply gone.
+
+THE WIND WAS WIND_X = 0.28 in js/effects.js, read by three smoke
+emitters and nothing else, under a comment that said the forest leaned
+with it, which it did not — the wood had its own fixed pair. It is a
+vector everybody reads now: the smoke, the rain's slant, the wood's
+fire and the store's fire, as four multipliers on the four directions
+a cell can light, so a fire runs downwind and creeps against it. ON
+CELLS UNDER THE SKY ONLY. The first cut leaned every fire in the
+building, and the squad's night in the test — which no weather touches
+— came out with five wrecked vans instead of one and a spawn that
+stalled. There is no wind in aisle six.
+
+RAIN FIGHTS THE FIRE, which is the only reason weather earns its place
+in a game that is about watching one thing burn. Two thousand streaks
+in one draw in a box round the eye (js/rain.js), spawned only where
+the sector has the sky for a ceiling, dying at the floor, leaning with
+the wind, shaded like everything else so a drop in front of the fire
+is lit by it. And on the fuel grid: a cell under the sky loses heat
+faster than its fuel can put it back, so a burning car park in the
+rain goes out with its fuel still in it and never lights a neighbour;
+and the ember clock is cleared, which is the difference between a fire
+that is out and one that is sulking. IT DOES NOTHING UNDER A ROOF,
+UNTIL THE ROOF GOES: a gutted region is a region the rain gets into,
+so burn the roof off a store and the weather starts putting the rest
+of it out. The headless check lights the same match on the same roll
+dry, in the rain under a roof, and with the roof gone: the first two
+burn identically, to the tic, and the third is out in nine seconds.
+
+THE ROLLS CAN BE SEEDED NOW — pSeed in js/util.js — because a
+comparison of a fire dry against the same fire in the rain is a
+comparison of nothing if the dice differ. It exists for the test.
+
+
+WHAT YOU CAN SEE
+----------------
+
+There was no occlusion culling. The frustum kept what was in front of
+you, and what was in front of you, from the stockroom, was the whole
+car park through two walls: seven hundred billboards culled by an
+eighty-degree cone, and every chunk of wood within range.
+
+THE MAP IS REGIONS JOINED BY TWO-SIDED LINES, and a two-sided line is a
+portal — an opening between two rooms. A region can be seen if you are
+in it, or if you can see it through an opening of a region you can
+see, and that is the whole algorithm (Level.visibleSectors in
+js/level.js). Build's renderer did it in 1996 and the data model here
+was already its input: start in the region under the eye with the
+field of view as a window of angle; for each opening of the region,
+take the angle it spans from the eye and cut it to the window; empty
+means nothing through it can be seen, so stop; otherwise the region
+beyond is visible, and the flood goes on into it with the NARROWED
+window. A one-sided line is a wall and not an opening, and that is the
+entire occlusion test. Occlusion is not computed here. It is the
+absence of a portal.
+
+THE WINDOW IS A HORIZONTAL ANGLE, not a screen rectangle. Everything
+that hides anything in a sector world is vertical, so an interval is
+enough, and an interval is two numbers and a compare. It is
+CONSERVATIVE, and conservative the safe way round: an opening only
+visible above or below the window still lets the flood through, so it
+draws things it need not and never hides a thing it should have drawn.
+A region reached through several openings keeps the hull of them and
+is walked again only when a new opening widens it, and after a few
+widenings it is handed the whole window and left alone — which is
+what stops the car park's hundreds of openings each re-walking the
+lot. A region seen last frame counts this frame too, so nothing pops
+the instant a doorway's edge crosses it.
+
+WHAT IT COSTS is proportional to what you can see, once a frame: half
+a millisecond from the car park into the store, nothing from the
+stockroom. WHAT IT BUYS: the crowd asks it before the cone (a standee
+in a region you cannot see into is not drawn however squarely you face
+the wall), the wood asks it for every chunk (nine points across the
+chunk, and a chunk none of whose points is in a visible region is not
+drawn, whichever LOD size was picked), and the fire's sprite pool asks
+it before sorting. From the stockroom with its door shut it draws the
+stockroom: 98 draw calls where the cone left about five hundred.
+Facing the wood from the car park, 179, the store behind you gone
+entirely. Facing the store from the car park it is still nine hundred,
+because you can see seven hundred shoppers through the glass and every
+one of them is a draw call, which is a different problem.
+
+THE TEST CASTS RAYS AT IT. sightBlocked already walks a real ray, so
+from five standing positions, every hundredth of a radian across the
+field and every forty-eight units out to six thousand, a region a ray
+reaches has to be in the flood's set — eighty thousand ray points,
+zero misses — and then the other half, without which the first is
+worthless: from the stockroom the set is one region, from the car park
+facing the wood it is fourteen of 327 and none of them indoors, and
+raising the stockroom's door takes it from one to fourteen.
+
+WHAT IS NOT DONE OF THE PLAN: the level's own geometry is still one
+batch per texture for the whole map, so the flood does not cull a
+single wall — it culls what stands in front of them. Batching per
+block, so that the flood's visible regions become the drawn blocks, is
+TOWN.txt's phase two and the place the two plans meet. And the LOD
+ladder for buildings is meaningless until there are buildings.
 
 
 THE ART
@@ -4114,6 +4333,28 @@ that had already reached a screenshot:
 WHAT IS NOT DONE
 ----------------
 
+  the sky is generated and the wood, the people and the gun still
+    arrive as files; the sky's stars are a hash and not the Milky Way
+    the photograph had, and the band drawn across them is a gesture at
+    it. The photograph is still in assets/sky if anyone wants it as a
+    star layer under the bake
+  the level's walls are one batch per texture for the whole map, so
+    the portal flood culls the crowd, the wood and the fire in front of
+    them and not a single wall. Per-block batching is TOWN.txt's
+    business and the flood is ready for it
+  the flood is horizontal: an opening you can only see above or below
+    the window still lets it through, which draws more than it need
+    and never less
+  the weather does not change during a night, and nothing in the
+    world is wet: no puddle, no wet tarmac, no drip off a canopy. Rain
+    falls, damps fuel, and stops
+  the sun lights nothing and casts no shadow; dawn is the sky's colour
+    and the ambient coming up, and nothing else. Doing better would
+    mean normals, and normals would mean this stops being the renderer
+    it is
+  the clock stops at eight and there is no day: seven keyframes from
+    ten at night, and a daytime level is more rows in the same table
+    and a different game
   the people, the wood, the sky, the logo and the weapon are the art a
     person made; every other surface in the game is still procedural and
     still provisional

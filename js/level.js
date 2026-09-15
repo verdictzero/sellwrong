@@ -39,7 +39,7 @@
    who ever lived had to do the same thing.
    ===================================================================== */
 
-import { pointInPoly, polyArea2, closestOnSeg, segIntersect, dist2, MAX_STEP } from './util.js';
+import { pointInPoly, polyArea2, closestOnSeg, segIntersect, dist2, MAX_STEP, angleNorm } from './util.js';
 
 /* Vertices that land within this of each other are the same vertex. Map
    coordinates are integers in practice, so this only ever catches float
@@ -286,6 +286,18 @@ export class Level {
 
     this._buildBounds();
     this._buildBlockmap();
+
+    /* EVERY SECTOR KNOWS ITS LINES, for the portal flood below: a
+       sector's two-sided lines are its doors to the sectors next to
+       it, and the flood walks them. */
+    for (const s of this.sectors) { s.lines = []; s._vis = 0; s._vlo = 0; s._vhi = 0; s._vn = 0; }
+    for (const l of this.lines) {
+      if (l.front !== null) this.sectors[l.front].lines.push(l);
+      if (l.back !== null) this.sectors[l.back].lines.push(l);
+    }
+    this._visStamp = 1;
+    this.visList = [];
+    this._visStack = [];
 
     /* Where the STORE is, for the systems that only care about the
        store: the fuel grid is laid over this and not over nine thousand
@@ -542,6 +554,134 @@ export class Level {
       z: az + (bz - az) * bestT,
     };
   }
+
+  /* --------------------------------------------------------------------
+     WHAT CAN BE SEEN FROM HERE — the portal flood
+
+     There was no occlusion culling. The frustum kept what was in front
+     of you, and what was in front of you, from the stockroom, was the
+     whole car park through two walls.
+
+     The map is regions joined by two-sided lines, and a two-sided line
+     is a PORTAL: an opening between two rooms. A region can be seen if
+     you are in it or if you can see it through an opening of a region
+     you can see, and that is the whole algorithm — Build's renderer did
+     it in 1996 and the data model here is already its input:
+
+       start in the region under the eye, with the field of view as a
+         window of ANGLE, left edge to right edge
+       for each two-sided line of the region, take the angle it spans
+         from the eye and cut it down to the window; empty means that
+         opening cannot be seen from here, so nothing through it can
+         be either — stop
+       otherwise the region on the far side is visible: go into it,
+         with the NARROWED window
+       a one-sided line is a wall and not an opening, and that is the
+         entire occlusion test. Occlusion here is not something worked
+         out; it is the absence of a portal
+
+     THE WINDOW IS A HORIZONTAL ANGLE and not a screen rectangle. The
+     world is a sector world and everything that hides anything in it
+     is vertical, so an interval is enough, and an interval is two
+     numbers. It is CONSERVATIVE — an opening only visible above or
+     below the window still lets the flood through — and conservative
+     the safe way round: it draws things it need not and never hides a
+     thing it should have drawn. The headless check holds exactly that,
+     against sightBlocked, which casts a real ray.
+
+     A REGION CAN BE REACHED THROUGH SEVERAL OPENINGS. It keeps one
+     interval, the hull of everything it has been reached through, and
+     is walked again only when a new opening widens the hull; after a
+     few widenings it is given the whole window and left alone. That
+     is conservative again and it is what bounds the work: the car park
+     has hundreds of openings along its edges and this is what stops
+     each one of them re-walking the lot.
+
+     WHAT IT COSTS is proportional to what you can see: tens of regions
+     in an aisle, a couple of hundred down the parade, once a FRAME and
+     not once a tic. What it buys is that the crowd, the wood's chunks
+     and the fire's sprites in regions you cannot see are not drawn —
+     see Actor.render, Forest.render and FireSystem.render.
+     ------------------------------------------------------------------ */
+  /**
+   * Flood from an eye at (ex, ey) looking along `yaw`, `halfFov` either
+   * side of it, no further than `maxDist`. Marks every visible sector
+   * and returns them; isVisible() then answers for any sector for this
+   * frame and the last one.
+   */
+  visibleSectors(ex, ey, yaw, halfFov, maxDist = Infinity) {
+    const stamp = ++this._visStamp;
+    const list = this.visList;
+    list.length = 0;
+    const sectors = this.sectors;
+    const start = this.sectorAt(ex, ey);
+    /* off the map — in the wood past the last sector, say — there is
+       nothing to flood from, so everything in reach is visible */
+    if (!start) {
+      const md2 = maxDist * maxDist;
+      for (const s of sectors) {
+        const cx = Math.max(s.bbox[0], Math.min(s.bbox[2], ex)), cy = Math.max(s.bbox[1], Math.min(s.bbox[3], ey));
+        if ((cx - ex) * (cx - ex) + (cy - ey) * (cy - ey) > md2) continue;
+        s._vis = stamp; s._vlo = -halfFov; s._vhi = halfFov; s._vn = 0; list.push(s);
+      }
+      return list;
+    }
+    const md2 = maxDist * maxDist;
+    const stack = this._visStack;
+    stack.length = 0;
+    const enter = (s, lo, hi) => {
+      if (s._vis !== stamp) {
+        s._vis = stamp; s._vlo = lo; s._vhi = hi; s._vn = 1; list.push(s);
+        stack.push(s, lo, hi);
+        return;
+      }
+      if (lo >= s._vlo && hi <= s._vhi) return;          // seen through a wider opening already
+      if (++s._vn > 6) { lo = -halfFov; hi = halfFov; }   // enough: the whole window, once
+      else { lo = Math.min(lo, s._vlo); hi = Math.max(hi, s._vhi); }
+      s._vlo = lo; s._vhi = hi;
+      stack.push(s, lo, hi);
+    };
+    enter(start, -halfFov, halfFov);
+    while (stack.length) {
+      const hi = stack.pop(), lo = stack.pop(), s = stack.pop();
+      const lines = s.lines;
+      for (let i = 0; i < lines.length; i++) {
+        const l = lines[i];
+        const oi = l.front === s.index ? l.back : l.front;
+        if (oi === null || l.blockSight) continue;
+        const o = sectors[oi];
+        /* shut: a door with its ceiling on the floor, or a step that
+           has closed the gap — the same rule sightBlocked uses */
+        if (Math.min(s.ceil, o.ceil) - Math.max(s.floor, o.floor) <= 0) continue;
+        /* too far: the nearest point of the opening is past the air */
+        if (maxDist !== Infinity) {
+          const [qx, qy] = closestOnSeg(l.x1, l.y1, l.x2, l.y2, ex, ey);
+          if ((qx - ex) * (qx - ex) + (qy - ey) * (qy - ey) > md2) continue;
+        }
+        /* the angle the opening spans, as seen from the eye, relative
+           to where the eye is looking */
+        const a1 = angleNorm(Math.atan2(l.y1 - ey, l.x1 - ex) - yaw);
+        const a2 = angleNorm(Math.atan2(l.y2 - ey, l.x2 - ex) - yaw);
+        let plo = a1 < a2 ? a1 : a2, phi = a1 < a2 ? a2 : a1;
+        if (phi - plo > Math.PI) {
+          /* it goes round behind the eye: two pieces, either side */
+          const c1 = Math.max(lo, -Math.PI), h1 = Math.min(hi, plo);
+          if (h1 > c1) enter(o, c1, h1);
+          const c2 = Math.max(lo, phi), h2 = Math.min(hi, Math.PI);
+          if (h2 > c2) enter(o, c2, h2);
+          continue;
+        }
+        const clo = plo > lo ? plo : lo, chi = phi < hi ? phi : hi;
+        if (chi > clo) enter(o, clo, chi);
+      }
+    }
+    return list;
+  }
+
+  /** Was this sector in the flood this frame, or the last? The last
+   *  frame too, so a region does not pop the instant a doorway's edge
+   *  crosses it. */
+  isVisible(s) { return s._vis >= this._visStamp - 1; }
 
   /** Every sector whose polygon overlaps a circle — how a fire finds the
    *  regions it is allowed to spread into. */

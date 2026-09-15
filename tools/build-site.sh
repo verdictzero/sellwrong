@@ -41,7 +41,9 @@ cp -r css js vendor "$OUT/"
 # the other source art, and waits there for the responders' riot van and
 # APC. Half a megabyte nobody downloads until they turn up.
 # and the music: the user's three tracks, played in a loop by js/music.js
-cp -r assets/forest assets/people assets/sky assets/models assets/fonts assets/music assets/sfx "$OUT/assets/"
+# assets/sky is not in this list: the sky is baked in the page now
+# (js/skyart.js) and the photograph in there is kept, not shipped.
+cp -r assets/forest assets/people assets/models assets/fonts assets/music assets/sfx "$OUT/assets/"
 
 printf 'built %s: ' "$OUT"
 find "$OUT" -type f | wc -l | tr -d ' '

@@ -1117,6 +1117,13 @@ export class Game {
        whether it is worth drawing — see the culling note on
        Actor.render, and why three.js is not allowed to do it */
     const vx = Math.cos(p.angle), vy = Math.sin(p.angle);
+    /* AND WHAT THE EYE CAN SEE AT ALL: the portal flood (Level.
+       visibleSectors), once a frame, out to the air. The window is the
+       camera's horizontal field with a margin either side, because a
+       sprite is as wide as it is and the title's camera breathes. */
+    const vfov = (this.camera.fov || 72) * Math.PI / 180;
+    const halfFov = Math.atan(Math.tan(vfov / 2) * (this.camera.aspect || 1.6)) + 0.25;
+    this.level.visibleSectors(ex, ey, yaw, halfFov, climate.airFar);
     /* AND HOW MUCH OF THE CROWD TO DRAW. Off the actor's own id rather
        than off a counter, so the same people are the ones left out from
        frame to frame — a crowd that reshuffles which half of it exists

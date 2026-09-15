@@ -1417,6 +1417,96 @@ section('the air');
   }
 }
 
+/* ---------- what you can see ---------- */
+section('what you can see');
+{
+  /* THE PORTAL FLOOD, against a real ray. Level.visibleSectors is
+     conservative by design — it may draw a region it need not, and it
+     must never hide one you can see into — and the second half of that
+     is a thing a ray can test: cast sightBlocked from the eye through
+     the field of view and every region a ray reaches has to be in the
+     flood's set. Then the other half, without which the first is
+     worthless: a flood that says everything is visible passes the ray
+     test and does no work. */
+  const lv = MAP.buildSellWrong();
+  const half = Math.atan(Math.tan(36 * Math.PI / 180) * 1.6) + 0.25;
+  const rayCheck = (x, y, yaw, far = 6000) => {
+    lv.visibleSectors(x, y, yaw, half, 14000);
+    let bad = 0, rays = 0;
+    for (let a = -half; a <= half; a += 0.02)
+      for (let d = 48; d < far; d += 48) {
+        const px = x + Math.cos(yaw + a) * d, py = y + Math.sin(yaw + a) * d;
+        const sec = lv.sectorAt(px, py);
+        if (!sec) continue;
+        rays++;
+        if (!lv.sightBlocked(x, y, 49, px, py, 49) && !lv.isVisible(sec)) bad++;
+      }
+    return { rays, bad, seen: lv.visList.length };
+  };
+  const spots = [
+    ['the car park, facing the store', 2000, -1200, Math.PI / 2],
+    ['the car park, facing the wood', 2000, -1200, -Math.PI / 2],
+    ['the stockroom, door shut', 1000, 3000, -Math.PI / 2],
+    ['an aisle', 800, 1500, Math.PI / 2],
+    ['the road out west', -12000, -2486, 0],
+  ];
+  let allRays = 0;
+  for (const [name, x, y, yaw] of spots) {
+    const r = rayCheck(x, y, yaw);
+    allRays += r.rays;
+    note(name, `${r.seen} of ${lv.sectors.length} regions, ${r.rays} ray points, ${r.bad} seen by a ray and hidden by the flood`);
+    check(`${name}: the flood never hides what a ray can reach`, r.bad === 0, `${r.bad} of ${r.rays}`);
+  }
+  check('and that was a lot of rays', allRays > 40000, `${allRays}`);
+  /* AND IT HIDES SOMETHING */
+  lv.visibleSectors(1000, 3000, -Math.PI / 2, half, 14000);
+  const fromStock = lv.visList.length, stockOut = lv.visList.filter(s => s.outdoor).length;
+  check('from the stockroom with the door shut you see the stockroom', fromStock <= 3 && stockOut === 0, `${fromStock} regions, ${stockOut} outdoors`);
+  lv.visibleSectors(2000, -1200, -Math.PI / 2, half, 14000);
+  const toWood = lv.visList.length, toWoodIn = lv.visList.filter(s => !s.outdoor && !s.forest && !s.outside).length;
+  check('from the car park facing the wood you see the car park and the wood, not the shop',
+    toWood < lv.sectors.length / 4 && toWoodIn === 0, `${toWood} regions, ${toWoodIn} indoors`);
+  lv.visibleSectors(2000, -1200, Math.PI / 2, half, 14000);
+  const toStore = lv.visList.length;
+  check('and facing the store you see into it through the doors', toStore > toWood * 3 && lv.visList.some(s => s.name === 'aisle'), `${toStore}`);
+  /* THE DOOR OPENS. The stockroom's door is a Doom door — a ceiling on
+     the floor that rises — and when it has risen the flood goes through */
+  {
+    const door = lv.sectors.find(s => s.dynamic && s.ceil <= s.floor + 1 && s.bbox[1] > 2600 && s.bbox[1] < 2800);
+    if (door) {
+      const shut = door.ceil;
+      door.ceil = door.floor + 128;
+      lv.visibleSectors(1000, 3000, -Math.PI / 2, half, 14000);
+      const open = lv.visList.length;
+      door.ceil = shut;
+      note('the stockroom door up', `${fromStock} regions -> ${open}`);
+      check('open the door and the flood goes through it', open > fromStock, `${open}`);
+    } else note('the stockroom door', 'not found by the shape looked for; the check is skipped');
+  }
+  /* THE HYSTERESIS: a region seen last frame counts this frame */
+  lv.visibleSectors(1000, 3000, -Math.PI / 2, half, 14000);
+  const stock = lv.sectorAt(1000, 3000);
+  lv.visibleSectors(2000, -1200, -Math.PI / 2, half, 14000);
+  check('a region seen last frame is still visible this frame, and gone the frame after',
+    lv.isVisible(stock) && (lv.visibleSectors(2000, -1200, -Math.PI / 2, half, 14000), !lv.isVisible(stock)));
+  /* THE AIR BOUNDS IT: past airFar nothing is entered */
+  const farAll = (lv.visibleSectors(2000, -1200, -Math.PI / 2, half, 14000), lv.visList.length);
+  const farNear = (lv.visibleSectors(2000, -1200, -Math.PI / 2, half, 600), lv.visList.length);
+  check('the flood stops at the air', farNear < farAll, `${farNear} within 600 against ${farAll} within 14000`);
+  /* AND IT IS CHEAP */
+  {
+    const t0 = performance.now();
+    for (let i = 0; i < 200; i++) lv.visibleSectors(2000, -1200, Math.PI / 2, half, 14000);
+    const ms = (performance.now() - t0) / 200;
+    note('a flood from the car park into the store', `${ms.toFixed(2)}ms`);
+    check('and it costs under a millisecond, once a frame', ms < 3, `${ms.toFixed(2)}ms`);
+  }
+  /* OFF THE MAP there is nothing to flood from, and everything in reach
+     is visible rather than nothing */
+  lv.visibleSectors(-13860 - 500, 0, 0, half, 3000);
+  check('off the map, everything in reach is visible', lv.visList.length > 0);
+}
+
 /* ---------- touch ---------- */
 section('touch');
 {

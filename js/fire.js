@@ -842,6 +842,10 @@ export class FireSystem {
        units off is one pixel and there can be thousands of them. */
     const EMBER_RANGE2 = 760 * 760;
 
+    /* and nothing in a region the eye cannot see into — the portal
+       flood has run this frame (Level.visibleSectors); a fire behind a
+       wall throws its light and its smoke and not its sprites */
+    const lv = this.game.level, sectors = lv.sectors, seeInto = !!lv.isVisible;
     for (let k = 0; k < this.active.length; k++) {
       const i = this.active[k];
       const h = this.heat[i];
@@ -849,6 +853,7 @@ export class FireSystem {
       const x = this.worldX(i % this.cols), y = this.worldY((i / this.cols) | 0);
       const d2 = dist2(x, y, camX, camY);
       if (d2 > 2000 * 2000 || d2 < NEAR2) continue;
+      if (seeInto) { const si = this.sectorOf[i]; if (si >= 0 && !lv.isVisible(sectors[si])) continue; }
       if (h < SPREAD_AT && d2 > EMBER_RANGE2) continue;
       /* Nearest first, but weight by heat so a big fire further off
          still gets drawn ahead of an ember at your feet. */

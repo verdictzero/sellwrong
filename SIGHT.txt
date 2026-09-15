@@ -17,7 +17,16 @@ This is the companion to TOWN.txt and neither waits on the other.
 Everything here is worth doing to the strip mall as it stands; all of
 it is REQUIRED before twenty-five blocks of town can be drawn at all.
 
-Nothing here is built.
+WHAT IS BUILT OF IT, as of the commit that carries this line: phases 1
+to 6 — the air and the smoke as two terms, the sky baked in the page
+(js/skyart.js), the outdoor light as a uniform, the clock and the
+keyframes (js/weather.js), the four weathers, the wind as a vector,
+the rain (js/rain.js) and what it does to the two fires, the sky ramp
+in the palette, and the portal flood (Level.visibleSectors) with the
+crowd, the wood and the fire pool reading it. Phase 7, the LOD ladder,
+waits on TOWN.txt's per-block batching, as it says below. The README
+has the account of what was built and what the screenshots said; the
+rest of this file is the plan as it was written, kept as written.
 
 
 WHAT IS THERE NOW
