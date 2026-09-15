@@ -3213,6 +3213,170 @@ LOD ladder, and it stopped being meaningless the day there were
 buildings. See THE BLOCK IS THE UNIT OF DRAWING in js/mapgeo.js.
 
 
+THE TOWN
+--------
+
+A strip mall in a wood is a firebreak with a shop in it. You burn one
+building and then you burn some trees: the car park is two hundred and
+eighty units of tarmac and the ring road is another three hundred, and
+for a long time nothing crossed either. That was the ceiling on the
+whole game and it is gone. There is a town on the other side of the
+road.
+
+Five by five blocks of 3072 on a pitch of 3648 — 588 metres, a bit over
+a third of a mile, which is a small town's whole built-up core. The plan
+is TOWN.txt and it is worth reading for the one fact that made the rest
+of it cheap: THE MALL WAS ALREADY ON THE GRID. The clearing is 14,000
+across and four block pitches less one street is 13,968; it is 6,992
+deep and two pitches less one street is 6,720. The supermarket, its car
+park and its ring road are a four-by-two superblock on a grid nobody had
+drawn, to within thirty-two units. Nothing had to be reconciled with
+anything.
+
+Main Street is 768 where every other street is 576, and its centre lands
+on 2112 against a supermarket entrance at 2140. From the far end of the
+town the street points at the doors, which is what a street like that is
+for and is also what happened when the arithmetic was done.
+
+A SECTOR IS A COLUMN OF STOREYS
+- - - - - - - - - - - - - - - -
+
+Doom's model has one floor at any x,y. `Level.sectorAt` returns one
+sector and `Actor.setSector` says `this.z = s.floor`, and a townhouse
+with a bedroom over a kitchen cannot be expressed in it at all. So a
+sector may name the sector ABOVE it, over the same polygon:
+`mb.column(poly, [ground, first, second])` is three sectors sharing one
+outline. Every sector that existed before was already a column of one,
+so the store did not change by a character.
+
+AND A WALL IS WHERE TWO COLUMNS DISAGREE. Doom had two sectors on a line
+and therefore two surfaces and called them the upper and the lower. With
+columns there can be three storeys on one side and open air on the
+other, and the honest statement is: take the open spans of each column;
+the wall is every interval of z where exactly ONE of them is open; where
+both are open is a hole and where neither is there is nothing to draw.
+The texture comes from the column that is SHUT, which is Doom's own rule
+about whose face a step is, said so that it survives having more than
+one thing to be raised above.
+
+Run that over a column of one against a column of one and the upper and
+the lower fall back out of it. That is checked rather than asserted: all
+six hundred-odd two-sided lines of the supermarket come out with the
+same textures and the same quads they had before any of this, and the
+smoke test holds it there.
+
+Collision, sight, hitscan and the portal flood take the SPAN at the
+height of whoever is asking — the same arithmetic with `spanIn` in front
+of it. Standing in a hall you may walk out of the front door; standing
+on the landing over it you may not, and it is the same line.
+
+A HOUSE
+- - - -
+
+One floor plan, turned, with four dressings on it. A hall down one side
+with the stair in it, a front room, a kitchen, and the same again
+upstairs as bedrooms. It is a terrace: they are SUPPOSED to be the same
+house eight times, and the eye reads the roofline and the paint.
+
+THE STAIR IS A COLUMN OF STEPPED BOXES. Tread i has its floor at 16i and
+its ceiling at 16i + 96, which walks up at sixteen a step under the
+twenty-four the engine allows and has ninety-six of headroom over every
+tread — a stepped soffit, which is what a staircase has. The next flight
+stacks over the same treads with the deck between them. No special case
+anywhere: a staircase is a column, and it is also exactly what a
+staircase is.
+
+The first cut of it had no door between the front room and the kitchen,
+and the check that walks every storey of every house from its own front
+hall found what that meant: the stair rises from the front of the hall
+to the back, so you arrive on the rear landing, and the next flight
+starts at the front again. Two landings in one house with a staircase
+between them and no way from one to the other. A house has a door
+between its front room and its kitchen. It has one now.
+
+THE SKIN BELONGS TO THE YARD, which is this engine's own idiom and not a
+compromise: a one-sided line takes its texture from whichever side has a
+sector on it, and outside a house that side is the yard. So a yard
+carries its own house's brick, the yards on the street side carry a wall
+with windows in it, and one repeat of that wall is one STOREY — 112, not
+the default 64, because worn at 64 a three-storey terrace came out with
+five and a quarter rows of windows up it and a house with more window
+rows than floors is the one thing on a street nobody has to be told is
+wrong.
+
+A yard's ceiling is the EAVES, so the brick stops where the roof starts.
+The step from there up to the open sky draws nothing, because both are
+sky and a step between two patches of sky is two different heights of
+nothing.
+
+AND THE ROOF IS NOT A SECTOR. A sector engine cannot slope a ceiling and
+a flat-roofed house is not an American house, so a pitched roof is
+GEOMETRY over a footprint — two slopes and two gable triangles, pushed
+into the same batch as everything else. There is precedent and it is
+load-bearing: `roofFraming` already hangs steel over a burnt-out region
+without any sector knowing.
+
+FIRE THAT CLIMBS
+- - - - - - - - -
+
+The fuel grid has a plane per storey now. Plane 0 is the ground
+everywhere and is exactly the grid it always was, which is why nothing
+that indexes it by cy*cols+cx knows the rest is there.
+
+A fire on a ground floor finds the stairwell. The top tread of a flight
+reaches into the landing beside it — the one place in a house where two
+storeys share any air — and goes up it FOUR TIMES as readily as it goes
+along, because a staircase is a chimney with a handrail. The ceiling is
+the slow way, a tenth of that, straight up and same cell: by the time
+the kitchen ceiling has gone the landing has been alight for a minute.
+Both are needed. With only the stairs, one cell of one tread has to win
+a race against its own fuel running out, and it loses, and a house burns
+to the ceiling and stops.
+
+AND A PARTY WALL IS A WALL FIRE GETS THROUGH. Sixteen units of void and
+two skins of plasterboard, at a tenth of the ordinary chance, between
+two regions that both say they are one — so the supermarket's own
+partitions are untouched by it. That is the difference between burning a
+house and burning a street.
+
+WHAT IT COST, AND WHAT WAS DONE ABOUT IT
+- - - - - - - - - - - - - - - - - - - - -
+
+Eleven thousand regions against 327, and twenty-five thousand lines
+against a thousand. Four things break at that size and all four break
+quietly, so all four were fixed against the map that existed, before
+there was a town to find them with:
+
+  RECTMAP WAS EVERY RECT AGAINST EVERY OTHER RECT, twice — once for the
+    overlap check and once for the edge splitting. A thousand rects is a
+    million comparisons and nobody notices; fifteen thousand is two
+    hundred and twenty-five million and is ten seconds of a half-second
+    budget. Both are bucketed on a 512 grid now.
+  THE FUEL GRID ASKED SECTORAT ONCE PER CELL. Over a town that is half a
+    million point-in-polygon queries. Each sector fills its own bounding
+    box instead, first one wins, and a plain rectangle does not ask at
+    all. The two agree on all 97,902 cells of the store, which the test
+    checks by running both.
+  THE GEOMETRY WAS ONE BATCH PER TEXTURE for the whole map, which gives
+    every batch a bounding sphere the size of the world. A batch is one
+    texture in one BLOCK now; the portal flood's visible regions decide
+    which blocks are drawn, and a block's indoor surfaces are a group of
+    their own that comes in at two block pitches.
+  AND THE CHAR REBUILD REBUILT EVERYTHING. It rebuilds the block that
+    charred.
+
+The startup is about a second and a half where it was half a second, and
+most of what remains is honest: ten thousand polygons have to be
+triangulated and a blockmap has to be built over them. The promise was
+always about there being no install and no build step, and there is
+still neither.
+
+WHAT IS NOT IN IT is at the end of this file, and the short version is
+that nobody lives there. No residents, no cars moving, no crowd on the
+streets. Two in the morning is the excuse and it is a good one for a
+first pass; it will not survive a second.
+
+
 THE ART
 -------
 
