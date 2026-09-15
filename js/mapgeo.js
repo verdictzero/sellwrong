@@ -134,9 +134,8 @@ export function buildLevelGeometry(level, bank) {
      wall above a door changes height every tic the door is opening. */
   const dynamicLines = new Set();
   for (const l of level.lines) {
-    const f = l.front !== null ? level.sectors[l.front] : null;
-    const b = l.back !== null ? level.sectors[l.back] : null;
-    if ((f && f.dynamic) || (b && b.dynamic)) dynamicLines.add(l);
+    for (const i of l.frontCol) if (level.sectors[i].dynamic) dynamicLines.add(l);
+    for (const i of l.backCol) if (level.sectors[i].dynamic) dynamicLines.add(l);
   }
   const staticLines = level.lines.filter(l => !dynamicLines.has(l));
   const dynamicSectors = level.sectors.filter(s => s.dynamic);
@@ -250,53 +249,49 @@ function addFlats(set, level, s, bank) {
    Walls
    ------------------------------------------------------------------ */
 function addLine(set, level, l, bank) {
-  const front = l.front !== null ? level.sectors[l.front] : null;
-  const back  = l.back  !== null ? level.sectors[l.back]  : null;
+  const oneSided = !l.frontCol.length || !l.backCol.length;
+  if (oneSided && !l.frontCol.length && !l.backCol.length) return;
 
-  if (!front && !back) return;
-
-  /* One-sided: a plain wall, floor to ceiling, seen from the sector that
-     owns it. */
-  if (!back || !front) {
-    const s = front || back;
-    const facingFront = !!front;
+  /* One-sided: a plain wall, floor to ceiling, seen from the column that
+     owns it — a storey at a time, so the outside of a three-storey house
+     that happens to back onto nothing is still three bands of brick. */
+  if (oneSided) {
+    const col = l.frontCol.length ? l.frontCol : l.backCol;
+    const facingFront = l.frontCol.length > 0;
     const tex = l.middle || 'WALL';
     if (tex === 'NONE') return;
-    addQuad(set, l, bank, tex, s.floor, s.ceil, facingFront,
-            pegOf(l, 'middle', s.floor, s.ceil, s, bank.get(tex).h),
-            s.light + l.contrast, skyOf(s), charOf(s));
+    for (let i = 0; i < col.length; i++) {
+      const s = level.sectors[col[i]];
+      addQuad(set, l, bank, tex, s.floor, s.ceil, facingFront,
+              pegOf(l, 'middle', s.floor, s.ceil, s, bank.get(tex).h),
+              s.light + l.contrast, skyOf(s), charOf(s));
+    }
     return;
   }
 
-  const skyBoth = front.ceilTex === 'SKY' && back.ceilTex === 'SKY';
-
-  /* Front side. Standing in the front sector looking at the line: the
-     upper is what hangs down from your ceiling to theirs, the lower is
-     what rises from your floor to theirs. */
-  if (front.ceil > back.ceil && l.upper && l.upper !== 'NONE' && !skyBoth)
-    addQuad(set, l, bank, l.upper, back.ceil, front.ceil, true,
-            pegOf(l, 'upper', back.ceil, front.ceil, front, bank.get(l.upper).h),
-            front.light + l.contrast, skyOf(front), charOf(front));
-
-  if (back.floor > front.floor && l.lower && l.lower !== 'NONE')
-    addQuad(set, l, bank, l.lower, front.floor, back.floor, true,
-            pegOf(l, 'lower', front.floor, back.floor, front, bank.get(l.lower).h),
-            front.light + l.contrast, skyOf(front), charOf(front));
-
-  /* Back side — the same two pieces, seen the other way round. */
-  if (back.ceil > front.ceil && l.upper && l.upper !== 'NONE' && !skyBoth)
-    addQuad(set, l, bank, l.upper, front.ceil, back.ceil, false,
-            pegOf(l, 'upper', front.ceil, back.ceil, back, bank.get(l.upper).h),
-            back.light + l.contrast, skyOf(back), charOf(back));
-
-  if (front.floor > back.floor && l.lower && l.lower !== 'NONE')
-    addQuad(set, l, bank, l.lower, back.floor, front.floor, false,
-            pegOf(l, 'lower', back.floor, front.floor, back, bank.get(l.lower).h),
-            back.light + l.contrast, skyOf(back), charOf(back));
+  /* TWO-SIDED: every interval of z where exactly one of the two columns
+     is open, which is Doom's upper and lower for a column of one and
+     three bands of brick with two ribbons of glass between them for a
+     terrace. See lineBands in js/level.js — this function only draws
+     what that decided. */
+  const bands = l.bands || [];
+  for (let i = 0; i < bands.length; i++) {
+    const bd = bands[i];
+    if (!bd.tex || bd.tex === 'NONE') continue;
+    /* A step between two patches of sky draws nothing: there is no
+       surface there, only two different heights of nothing. */
+    if (bd.kind === 'upper' && bd.open.ceilTex === 'SKY' && bd.from.ceilTex === 'SKY') continue;
+    const s = bd.open;
+    addQuad(set, l, bank, bd.tex, bd.z0, bd.z1, bd.openFront,
+            pegOf(l, bd.kind, bd.z0, bd.z1, s, bank.get(bd.tex).h),
+            s.light + l.contrast, skyOf(s), charOf(s));
+  }
 
   /* A middle texture on a two-sided line is the thing IN the hole: a
      grating, a shop window, a wire shelf you can see through. Drawn both
-     ways, masked, spanning the open gap.
+     ways, masked, spanning the open gap — and once per hole, because a
+     house against a street has one hole per storey and each of them is
+     a window.
 
      UNLESS IT IS SHORTER THAN THE HOLE, which is what `midHeight` is
      for. A grating fills its opening and a shop window fills its
@@ -308,13 +303,16 @@ function addLine(set, level, l, bank) {
      the thing standing in it is, measured up from the floor it stands
      on, and the opening stays the LIMIT rather than the answer. */
   if (l.middle && l.middle !== 'NONE') {
-    const bot = Math.max(front.floor, back.floor);
-    const top = Math.min(front.ceil, back.ceil, bot + (l.midHeight ?? Infinity));
-    if (top > bot) {
+    const holes = l.holes || [];
+    for (let i = 0; i < holes.length; i++) {
+      const h = holes[i];
+      const bot = h.z0;
+      const top = Math.min(h.z1, bot + (l.midHeight ?? Infinity));
+      if (top <= bot) continue;
       const th = bank.get(l.middle).h;
       const peg = l.pegMiddle === 'bottom' ? bot + th : top;
-      addQuad(set, l, bank, l.middle, bot, top, true,  peg + l.yoff, front.light + l.contrast, skyOf(front), charOf(front));
-      addQuad(set, l, bank, l.middle, bot, top, false, peg + l.yoff, back.light + l.contrast, skyOf(back), charOf(back));
+      addQuad(set, l, bank, l.middle, bot, top, true,  peg + l.yoff, h.front.light + l.contrast, skyOf(h.front), charOf(h.front));
+      addQuad(set, l, bank, l.middle, bot, top, false, peg + l.yoff, h.back.light + l.contrast, skyOf(h.back), charOf(h.back));
     }
   }
 }

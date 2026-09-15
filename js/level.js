@@ -46,14 +46,107 @@ import { pointInPoly, polyArea2, closestOnSeg, segIntersect, dist2, MAX_STEP, an
    drift from a computed polygon. */
 const WELD = 0.25;
 
+/* --------------------------------------------------------------------
+   A WALL IS WHERE TWO COLUMNS DISAGREE
+
+   A COLUMN is a stack of sectors over one polygon — a ground floor, a
+   first floor, a second — and every sector in the map that is not part
+   of a house is a column of ONE, which is how the whole of the existing
+   store keeps working without knowing the word.
+
+   Doom had two sectors on a line and therefore exactly two surfaces,
+   and called them the upper and the lower. With columns there can be
+   three storeys on one side and open air on the other, and the honest
+   statement of what to draw is:
+
+     TAKE THE OPEN SPANS OF EACH COLUMN. THE WALL IS EVERY INTERVAL OF Z
+     WHERE EXACTLY ONE OF THEM IS OPEN. WHERE BOTH ARE OPEN IS A HOLE
+     AND WHERE NEITHER IS, THERE IS NOTHING TO DRAW.
+
+   Run that over a column of one against a column of one and Doom's two
+   surfaces fall out of it, because the interval above the lower ceiling
+   IS the upper and the interval below the higher floor IS the lower.
+   The smoke test holds exactly that, line by line, over the whole store.
+
+   THE TEXTURE COMES FROM THE COLUMN THAT IS SHUT. You are looking at
+   the face of whatever is in the way, not at the room you are standing
+   in — which is Doom's own rule ("a step's face belongs to the thing
+   that is raised") stated so that it survives having more than one
+   thing to be raised above.
+   ------------------------------------------------------------------ */
+
+const ZEPS = 1e-6;
+
+/** The open spans of a column, bottom-up. A storey with its ceiling on
+ *  its floor — a shut door — is open nowhere and contributes nothing. */
+function openSpans(col) {
+  const out = [];
+  for (let i = 0; i < col.length; i++) if (col[i].ceil - col[i].floor > ZEPS) out.push(col[i]);
+  out.sort((a, b) => a.floor - b.floor);
+  return out;
+}
+
+/** Which span of this column covers z, or null if none does. */
+function spanCovering(spans, z) {
+  for (let i = 0; i < spans.length; i++)
+    if (z >= spans[i].floor && z <= spans[i].ceil) return spans[i];
+  return null;
+}
+
+/**
+ * The bands of one line: every interval where exactly one column is
+ * open, and every interval where both are (a hole, for the middle
+ * texture to stand in).
+ *
+ * `kind` is which of Doom's two names the band would have had. A band
+ * whose top is some storey's FLOOR is that storey's lower — the face of
+ * the step up into it. A band whose bottom is some storey's CEILING is
+ * that storey's upper — the header hanging under it. The deck between
+ * two storeys of a house answers to both and is taken as a lower, which
+ * is the same answer Doom gives for a kerb.
+ */
+export function lineBands(Fall, Ball) {
+  const F = openSpans(Fall), B = openSpans(Ball);
+  const cuts = [];
+  for (let i = 0; i < F.length; i++) { cuts.push(F[i].floor, F[i].ceil); }
+  for (let i = 0; i < B.length; i++) { cuts.push(B[i].floor, B[i].ceil); }
+  cuts.sort((a, b) => a - b);
+  const bands = [], holes = [];
+  for (let i = 0; i + 1 < cuts.length; i++) {
+    const z0 = cuts[i], z1 = cuts[i + 1];
+    if (z1 - z0 <= ZEPS) continue;
+    const m = (z0 + z1) / 2;
+    const f = spanCovering(F, m), b = spanCovering(B, m);
+    if (f && b) { holes.push({ z0, z1, front: f, back: b }); continue; }
+    if (!f && !b) continue;
+    /* THE FACE OF WHATEVER IS IN THE WAY. Searched over the shut
+       column's whole stack and not over its open spans, because the
+       commonest thing in the way is a SHUT DOOR — a storey with its
+       ceiling on its floor, open nowhere, and still the surface you
+       are looking at. */
+    const open = f || b, shut = f ? Ball : Fall;
+    let from = null, kind = 'lower';
+    for (let k = 0; k < shut.length; k++) if (Math.abs(shut[k].floor - z1) <= ZEPS) { from = shut[k]; kind = 'lower'; break; }
+    if (!from) for (let k = 0; k < shut.length; k++) if (Math.abs(shut[k].ceil - z0) <= ZEPS) { from = shut[k]; kind = 'upper'; break; }
+    if (!from) {
+      /* the band is clear of the shut column altogether — below all of
+         it or above all of it, which is what a one-storey shed next to
+         a three-storey house gives above the shed's own roof */
+      let lowest = shut[0], highest = shut[0];
+      for (let k = 1; k < shut.length; k++) {
+        if (shut[k].floor < lowest.floor) lowest = shut[k];
+        if (shut[k].ceil > highest.ceil) highest = shut[k];
+      }
+      if (z1 <= lowest.floor + ZEPS) { from = lowest; kind = 'lower'; }
+      else { from = highest; kind = 'upper'; }
+    }
+    bands.push({ z0, z1, open, from, kind, openFront: !!f });
+  }
+  return { bands, holes };
+}
+
 /**
  * Decide every wall's texture from the geometry.
- *
- * The rule is that a step's face belongs to the thing that is raised and
- * a header's face belongs to the thing that is lowered. So the LOWER
- * texture comes from whichever sector has the higher floor — the shelf,
- * the counter, the kerb — and the UPPER from whichever has the lower
- * ceiling.
  *
  * Doing this from the heights rather than as each line is created is not
  * tidying. The first version took the texture from whichever sector
@@ -64,19 +157,38 @@ const WELD = 0.25;
  * It runs again at RUNTIME whenever a sector changes its skin, which is
  * what lets a gondola that has burnt out turn charred on both faces
  * without the map having to know anything about fire.
+ *
+ * `l.upper` and `l.lower` survive as the names the map file reaches in
+ * by — a shop window locks its upper to glass — and are the first band
+ * of each kind. `l.bands` is what actually gets drawn.
  */
 export function assignLineTextures(lines, sectors) {
   for (const l of lines) {
-    if (l.texLocked) continue;
-    const f = l.front !== null ? sectors[l.front] : null;
-    const b = l.back !== null ? sectors[l.back] : null;
-    if (!f || !b) {
-      const s = f || b;
-      if (s && l.middle !== null) l.middle = s.wallTex;
+    const fc = l.frontCol, bc = l.backCol;
+    if (!fc.length || !bc.length) {
+      const s = sectors[(fc.length ? fc : bc)[0]];
+      l.bands = null; l.holes = null;
+      if (s && l.middle !== null && !l.texLocked) l.middle = s.wallTex;
       continue;
     }
-    l.upper = (f.ceil <= b.ceil ? f : b).upperTex;
-    l.lower = (f.floor >= b.floor ? f : b).lowerTex;
+    const F = fc.map(i => sectors[i]), B = bc.map(i => sectors[i]);
+    const { bands, holes } = lineBands(F, B);
+    l.bands = bands; l.holes = holes;
+    for (let i = 0; i < bands.length; i++) {
+      const bd = bands[i];
+      bd.tex = l.texLocked
+        ? (bd.kind === 'upper' ? l.upper : l.lower)
+        : (bd.kind === 'upper' ? bd.from.upperTex : bd.from.lowerTex);
+    }
+    if (l.texLocked) continue;
+    /* The summary, for the map file and for everything written before
+       there were columns. With no band of a kind the surface has no
+       height and nothing draws it, so the old formula stands in — it is
+       this rule's two-sectors-of-one-storey case. */
+    const f = sectors[fc[0]], b = sectors[bc[0]];
+    const up = bands.find(x => x.kind === 'upper'), lo = bands.find(x => x.kind === 'lower');
+    l.upper = up ? up.tex : (f.ceil <= b.ceil ? f : b).upperTex;
+    l.lower = lo ? lo.tex : (f.floor >= b.floor ? f : b).lowerTex;
   }
 }
 
@@ -89,6 +201,10 @@ export class MapBuilder {
     this.lines = [];
     this._edges = new Map();
     this.things = [];
+    /* Three columns meeting on one edge, which is a map error with no
+       honest answer. Counted rather than thrown so a bad rect cannot
+       stop the level building; the smoke test holds it at zero. */
+    this.edgeConflicts = 0;
   }
 
   vertex(x, y) {
@@ -122,6 +238,13 @@ export class MapBuilder {
     const idx = this.sectors.length;
     const s = {
       index: idx,
+      /* WHICH COLUMN THIS IS A STOREY OF — the ground sector's index, and
+         its own for the thousand sectors that are a column of one. Set
+         before the ring below is walked, because _edge sorts the storeys
+         of one column onto one side of a line by it. */
+      colBase: props.__colBase ?? idx,
+      storey: props.__storey ?? 0,
+      above: null, below: null,
       floor: props.floor ?? 0,
       ceil: props.ceil ?? 128,
       light: props.light ?? props.ambient ?? 0.75,
@@ -193,14 +316,21 @@ export class MapBuilder {
    * first and this one is the back.
    */
   _edge(a, b, sectorOnLeft, props) {
+    const base = this.sectors[sectorOnLeft].colBase;
     const key = a < b ? a + ':' + b : b + ':' + a;
     const existing = this._edges.get(key);
     if (!existing) {
       const line = {
         index: this.lines.length,
         v1: b, v2: a,
+        /* front and back are the GROUND sectors, which is what they
+           always were; frontCol and backCol are the whole columns,
+           bottom-up, and are a list of one nearly everywhere. */
         front: sectorOnLeft, back: null,
+        frontCol: [sectorOnLeft], backCol: [],
+        frontBase: base, backBase: null,
         upper: null, middle: props.wallTex ?? 'WALL', lower: null,
+        bands: null, holes: null,
         blocking: false,        // forced solid even when two-sided
         blockSight: false,      // stops monsters seeing through a two-sided line
         unpegUpper: false, unpegLower: false,
@@ -211,18 +341,63 @@ export class MapBuilder {
       this._edges.set(key, line);
       return line;
     }
-    /* Second sector on this edge. It goes on whichever side is free. */
-    if (existing.v1 === a && existing.v2 === b) existing.back = sectorOnLeft;
-    else if (existing.front === null) existing.front = sectorOnLeft;
-    else existing.back = sectorOnLeft;
+    /* WHICH SIDE. A ring reaching this edge as a->b has its sector on
+       the left, and whoever got here first stored the line as v1,v2 =
+       b,a — so the same orientation is the front and the opposite is
+       the back. Every storey of one column walks the same ring, so they
+       all arrive the same way round and pile onto the same side, which
+       is the whole of what makes a column a column down here. */
+    const sameWay = existing.v1 === b && existing.v2 === a;
+    if (sameWay) {
+      if (existing.frontBase !== base) { this.edgeConflicts++; return existing; }
+      existing.frontCol.push(sectorOnLeft);
+      return existing;
+    }
+    if (existing.backBase === null) { existing.backBase = base; existing.back = sectorOnLeft; }
+    else if (existing.backBase !== base) { this.edgeConflicts++; return existing; }
+    existing.backCol.push(sectorOnLeft);
 
     /* A two-sided line is a hole, so the middle texture goes away unless
        somebody deliberately puts one back (a grating, a shop window).
-       The upper and lower skins are NOT decided here — see
-       finishTextures, which decides them from the heights once both
-       sectors are known. */
+       The skins are NOT decided here — see finishTextures, which decides
+       them from the heights once both columns are known. */
     existing.middle = null;
     return existing;
+  }
+
+  /**
+   * A COLUMN: one outline, several storeys, bottom-up.
+   *
+   * `mb.column(poly, [ground, first, second])` is three sectors sharing
+   * an outline, each knowing the one above and below it. Every sector
+   * made by `sector()` is already a column of one, so nothing that
+   * exists changes and no existing map file gains a character.
+   *
+   * The storeys must STACK: each one's floor at or above the ceiling of
+   * the one under it, with the gap between them the deck. Overlapping
+   * storeys are a map error and are thrown here rather than found later
+   * as a room you can stand in two of at once.
+   */
+  column(poly, storeys) {
+    if (!storeys.length) throw new Error('a column of no storeys');
+    const base = this.sectors.length;
+    const out = [];
+    for (let k = 0; k < storeys.length; k++) {
+      const p = storeys[k];
+      if (k > 0) {
+        const under = storeys[k - 1];
+        const top = under.ceil ?? 128, bot = p.floor ?? 0;
+        if (bot < top - 1e-6)
+          throw new Error(`storey ${k} starts at ${bot}, under the ${top} of the one below it`);
+      }
+      out.push(this.sector(poly, { ...p, __colBase: base, __storey: k }));
+    }
+    for (let k = 0; k < out.length; k++) {
+      const s = this.sectors[out[k]];
+      s.above = k + 1 < out.length ? out[k + 1] : null;
+      s.below = k > 0 ? out[k - 1] : null;
+    }
+    return out;
   }
 
   /** Find lines between two given sectors — how the map file reaches in to
@@ -380,14 +555,65 @@ export class Level {
     return out;
   }
 
-  /** Which sector is (x,y) in? null if it is off the map. */
+  /** Which sector is (x,y) in? null if it is off the map.
+   *
+   *  THE GROUND ONE, always, whatever is stacked over it. Everything
+   *  written before there were columns asked this question meaning "what
+   *  region is this point in" and got one answer, and it still does; the
+   *  storey you are actually standing on is spanAt's business. */
   sectorAt(x, y, hint = null) {
     /* Almost every call is "still in the same sector as last frame", so
        try that first and skip the grid entirely. */
-    if (hint && this._inSector(hint, x, y)) return hint;
+    if (hint) {
+      const g = hint.colBase === hint.index ? hint : this.sectors[hint.colBase];
+      if (this._inSector(g, x, y)) return g;
+    }
     const cell = this.blockSectors[this._row(y) * this.cols + this._col(x)];
-    for (let i = 0; i < cell.length; i++) if (this._inSector(cell[i], x, y)) return cell[i];
+    for (let i = 0; i < cell.length; i++) {
+      const s = cell[i];
+      if (s.colBase !== s.index) continue;
+      if (this._inSector(s, x, y)) return s;
+    }
     return null;
+  }
+
+  /**
+   * WHICH STOREY. Walk the column from any sector of it and return the
+   * one whose floor..ceiling contains z, or the highest one below it.
+   *
+   * It never returns null for a real sector, which is the property the
+   * whole of the old collision code was written against: a mover at the
+   * bottom of a lift shaft is in the bottom storey and a mover above a
+   * roof is in the top one, and neither is nowhere. For a column of one
+   * — the store, the car park, the road, the wood — it returns the
+   * sector it was handed, in one comparison.
+   */
+  spanIn(s, z) {
+    if (!s) return null;
+    let cur = this.sectors[s.colBase];
+    if (cur.above === null) return cur;
+    let best = cur;
+    while (cur) {
+      if (z >= cur.floor - ZEPS && z <= cur.ceil + ZEPS) return cur;
+      if (cur.floor <= z) best = cur;
+      cur = cur.above === null ? null : this.sectors[cur.above];
+    }
+    return best;
+  }
+
+  /** The storey at (x, y, z). */
+  spanAt(x, y, z, hint = null) {
+    const g = this.sectorAt(x, y, hint ? this.sectors[hint.colBase] : null);
+    return g ? this.spanIn(g, z) : null;
+  }
+
+  /** Every storey over (x, y), bottom-up. */
+  columnAt(x, y) {
+    const g = this.sectorAt(x, y);
+    if (!g) return [];
+    const out = [];
+    for (let c = g; c; c = c.above === null ? null : this.sectors[c.above]) out.push(c);
+    return out;
   }
 
   _inSector(s, x, y) {
@@ -413,7 +639,13 @@ export class Level {
     if (line.back === null || line.front === null) return 'solid';
     if (line.blocking) return 'blocking';
     if (isMonster && line.blockMonsters) return 'blockmonsters';
-    const a = this.sectors[line.front], b = this.sectors[line.back];
+    /* THE OPENING IS BETWEEN THE TWO SPANS AT THE MOVER'S OWN HEIGHT,
+       which is the same arithmetic as before with spanIn in front of it.
+       Standing in a hall you may walk through the front door; standing
+       on the landing over it you may not, and the line is the same
+       line. */
+    const a = this.spanIn(this.sectors[line.front], fromZ);
+    const b = this.spanIn(this.sectors[line.back], fromZ);
     const openTop = Math.min(a.ceil, b.ceil);
     const openBottom = Math.max(a.floor, b.floor);
     if (openTop - openBottom < height) return 'toolow';
@@ -515,11 +747,11 @@ export class Level {
       const t = segIntersect(ax, ay, bx, by, l.x1, l.y1, l.x2, l.y2);
       if (t < 0) continue;
       if (l.front === null || l.back === null || l.blockSight) return true;
-      const fs = this.sectors[l.front], bs = this.sectors[l.back];
+      const z = az + (bz - az) * t;
+      const fs = this.spanIn(this.sectors[l.front], z), bs = this.spanIn(this.sectors[l.back], z);
       const openTop = Math.min(fs.ceil, bs.ceil);
       const openBottom = Math.max(fs.floor, bs.floor);
       if (openTop <= openBottom) return true;
-      const z = az + (bz - az) * t;
       if (z < openBottom || z > openTop) return true;
     }
     return false;
@@ -538,10 +770,10 @@ export class Level {
       if (t < 0 || t >= bestT) continue;
       let solid = (l.front === null || l.back === null || l.blocking);
       if (!solid) {
-        const fs = this.sectors[l.front], bs = this.sectors[l.back];
+        const z = az + (bz - az) * t;
+        const fs = this.spanIn(this.sectors[l.front], z), bs = this.spanIn(this.sectors[l.back], z);
         const openTop = Math.min(fs.ceil, bs.ceil);
         const openBottom = Math.max(fs.floor, bs.floor);
-        const z = az + (bz - az) * t;
         solid = (z < openBottom || z > openTop);
       }
       if (solid) { bestT = t; best = l; }
@@ -647,9 +879,18 @@ export class Level {
       const lines = s.lines;
       for (let i = 0; i < lines.length; i++) {
         const l = lines[i];
-        const oi = l.front === s.index ? l.back : l.front;
-        if (oi === null || l.blockSight) continue;
-        const o = sectors[oi];
+        if (l.blockSight) continue;
+        /* THE OTHER COLUMN, and every storey of it that this one's own
+           span reaches. A hall sees the street through its door and the
+           landing above it does not, because their spans do not
+           overlap; for a column of one this is the one sector on the
+           far side and the same shut test as before. */
+        const other = s.colBase === l.frontBase ? l.backCol : l.frontCol;
+        if (!other.length) continue;
+        const outCount = other.length;
+        for (let k = 0; k < outCount; k++) {
+        const o = sectors[other[k]];
+        if (o === s) continue;
         /* shut: a door with its ceiling on the floor, or a step that
            has closed the gap — the same rule sightBlocked uses */
         if (Math.min(s.ceil, o.ceil) - Math.max(s.floor, o.floor) <= 0) continue;
@@ -673,6 +914,7 @@ export class Level {
         }
         const clo = plo > lo ? plo : lo, chi = phi < hi ? phi : hi;
         if (chi > clo) enter(o, clo, chi);
+        }
       }
     }
     return list;

@@ -231,6 +231,11 @@ export class Actor {
     this.spriteOverride = opts.sprite || null;
 
     this.sector = game.level.sectorAt(x, y);
+    /* WHICH STOREY, for the places that have more than one. `z` may
+       have been handed in (a thing on a landing); the span under it is
+       what the actor stands on, and for the thousand columns of one in
+       the store it is the sector itself. */
+    if (this.sector && opts.z !== undefined) this.sector = game.level.spanIn(this.sector, opts.z);
     this.z = this.sector ? this.sector.floor : 0;
     /* things that hang measure down from the ceiling, not up from the
        floor — a light over a shelf is at the same height as one over the
@@ -388,8 +393,12 @@ export class Actor {
   }
 
   updateSector() {
-    const s = this.game.level.sectorAt(this.x, this.y, this.sector);
-    if (s) { this.sector = s; this.z = s.floor; }
+    const lv = this.game.level;
+    const g = lv.sectorAt(this.x, this.y, this.sector);
+    if (!g) return;
+    /* the storey under the feet, not the ground under the building */
+    const s = g.above === null ? g : lv.spanIn(g, this.z);
+    this.sector = s; this.z = s.floor;
   }
 
   /** Doom's P_NewChaseDir. See the note at the top of the file. */

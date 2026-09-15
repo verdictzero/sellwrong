@@ -24,6 +24,12 @@
 
    Everything below follows from that one rule, and it is the rule that
    makes the shop layout in sellwrong.js readable as a floor plan.
+
+   AND A RECT MAY BE A COLUMN. Give it `storeys: [ground, first, second]`
+   and it becomes that many sectors over one outline instead of one — the
+   townhouse, the school, the choir loft over the narthex. The splitting
+   below does not change by a character, because splitting is about where
+   the corners are and a column has one set of corners.
    ===================================================================== */
 
 export class RectMap {
@@ -97,7 +103,19 @@ export class RectMap {
       for (const x of this._splits(r, 'top').slice().reverse()) poly.push([x, r.y1]);
       poly.push([r.x0, r.y1]);
       for (const y of this._splits(r, 'left').slice().reverse()) poly.push([r.x0, y]);
-      r.sector = this.mb.sector(poly, r.props);
+      if (r.props.storeys) {
+        /* A COLUMN: one outline, several storeys. The overlap check
+           above and the edge splitting here are untouched by it,
+           because both are about x and y and a column lives at one x,y.
+           `sector` stays the GROUND one, so a rect reads the same to
+           everything that was written before there were storeys. */
+        const { storeys, ...common } = r.props;
+        r.column = this.mb.column(poly, storeys.map(st => ({ ...common, ...st })));
+        r.sector = r.column[0];
+      } else {
+        r.sector = this.mb.sector(poly, r.props);
+        r.column = [r.sector];
+      }
       r.props.__index = r.sector;
     }
     return this.rects;

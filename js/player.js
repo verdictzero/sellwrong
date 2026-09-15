@@ -463,7 +463,11 @@ export class Player {
     forest?.clampInside(this);
 
     const sec = lv.sectorAt(this.x, this.y, this.sector);
-    if (sec) this.sector = sec;
+    /* WHICH STOREY YOU ARE ON. The ground sector says which column you
+       are standing over; your own z says which of its storeys you are
+       standing in, and for everything in the store that is a column of
+       one the second question costs a comparison. */
+    if (sec) this.sector = sec.above === null ? sec : lv.spanIn(sec, this.z);
     const floor = this.sector ? this.sector.floor : this.z;
     const ceil = this.sector ? this.sector.ceil : Infinity;
 
