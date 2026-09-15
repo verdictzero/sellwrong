@@ -468,8 +468,12 @@ export class Player {
        standing in, and for everything in the store that is a column of
        one the second question costs a comparison. */
     if (sec) this.sector = sec.above === null ? sec : lv.spanIn(sec, this.z);
-    const floor = this.sector ? this.sector.floor : this.z;
-    const ceil = this.sector ? this.sector.ceil : Infinity;
+    /* AT THE POINT YOU ARE STANDING, where the region is sloped. A
+       loft's ceiling is 336 at the eaves and 464 on the ridge, and the
+       flat number is the ridge — so without this you can walk to the
+       edge of a roof with your head through it. */
+    const floor = this.sector ? lv.floorAt(this.sector, this.x, this.y) : this.z;
+    const ceil = this.sector ? lv.ceilAt(this.sector, this.x, this.y) : Infinity;
 
     /* UP AND DOWN, which used to be one line: z is the floor. It is
        still the floor for as long as you are standing on it — a step up

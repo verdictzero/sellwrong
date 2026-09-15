@@ -37,6 +37,8 @@
    units to the metre, rounded to a multiple of 16 and usually of 64 so
    that a texture lands on a corner.
    ------------------------------------------------------------------ */
+import { gableSlope } from '../level.js';
+
 export const PITCH = 3648;          // a block and the street after it
 export const BLOCK = 3072;          // a block face, 315 ft
 export const STREET = 576;          // a residential street, 60 ft
@@ -313,6 +315,30 @@ export function buildTown(rm, mb, opts = {}) {
    * @param lit     which storeys have a light on
    */
   function house(x0, y0, w, d, n, facing, dress, tag, lit) {
+    /* THE ROOF IS A STOREY NOW, and not a picture hung over the house.
+       Every rect of the house gets one more sector on top of its column
+       whose CEILING is the building's gable — see A SLOPE in
+       js/level.js — so the engine knows it is there: you cannot walk
+       through it, you cannot shoot through it, and the gunship clears
+       it. The ridge is shared by every rect of the house, which is what
+       makes a terrace one roof and not sixteen.
+
+       The ridge runs ALONG the row, so a house shows its eaves to the
+       street and its gable to the house next door, and a terrace comes
+       out with one roof down its whole length and a triangle at each
+       end. That triangle is not drawn: it is the one-sided wall of the
+       roof storey, which runs from the top of the brick up to the
+       ceiling above it, and is of no height at all where the ceiling
+       comes down to meet the wall. */
+    const eaves = n * STOREY;
+    const ridge = gableSlope('x', y0 + d / 2, d / 2, eaves, RIDGE);
+    const roofStorey = () => ({
+      floor: eaves, ceil: eaves + RIDGE, slopeCeil: ridge,
+      floorTex: 'NONE', ceilTex: 'NONE',        // the loft, which nobody is in
+      roofTex: dress.roof, roofLight: 0.40,
+      wallTex: dress.gable, upperTex: dress.gable, lowerTex: dress.gable,
+      light: 0.16, ambient: 0.16, fuel: 0, name: `${tag} roof`,
+    });
     /* THE PLAN IS DRAWN FACING NORTH and then turned, so there is one
        floor plan in this file and not four. `put` takes local
        coordinates with the front door at the bottom and the hall on the
@@ -344,10 +370,10 @@ export function buildTown(rm, mb, opts = {}) {
 
     /* the hall, which runs the depth of the house with the stair in it */
     put(0, 0, HALL, stairY0, { ...inside(0), floorTex: 'FLOORBRD', fuel: TOWN_FUEL.hall,
-      name: `${tag} hall`, storeys: storeys(n, k => ({
+      name: `${tag} hall`, storeys: [...storeys(n, k => ({
         ...inside(k), floorTex: 'FLOORBRD', fuel: TOWN_FUEL.hall,
         name: `${tag} ${k ? 'landing' : 'hall'}`,
-      })) });
+      })), roofStorey()] });
     /* SEVEN TREADS. A column of stepped boxes is a staircase and it is
        also, exactly, what a staircase is. */
     for (let i = 0; i < 7; i++) {
@@ -355,30 +381,31 @@ export function buildTown(rm, mb, opts = {}) {
       for (let k = 0; k + 1 < n; k++)
         st.push({ floor: floorOf(k) + 16 * i, ceil: floorOf(k) + 16 * i + CLEAR });
       if (!st.length) st.push({ floor: 0, ceil: CLEAR });
+      st.push(roofStorey());
       put(0, stairY0 + i * 32, HALL, stairY0 + (i + 1) * 32, {
         ...inside(0), floorTex: 'STAIRTRD', lowerTex: 'STAIRTRD',
         fuel: TOWN_FUEL.stair, name: `${tag} stair`, storeys: st,
       });
     }
     put(0, stairY1, HALL, d, { ...inside(0), floorTex: 'FLOORBRD', fuel: TOWN_FUEL.hall,
-      name: `${tag} back hall`, storeys: storeys(n, k => ({
+      name: `${tag} back hall`, storeys: [...storeys(n, k => ({
         ...inside(k), floorTex: 'FLOORBRD', fuel: TOWN_FUEL.hall,
         name: `${tag} ${k ? 'landing rear' : 'back hall'}`,
-      })) });
+      })), roofStorey()] });
 
     /* the rooms: one at the front, one at the back */
     put(ROOMX, 0, w, front, { ...inside(0), floorTex: 'FLOORBRD', fuel: TOWN_FUEL.room,
-      name: `${tag} front room`, storeys: storeys(n, k => ({
+      name: `${tag} front room`, storeys: [...storeys(n, k => ({
         ...inside(k), floorTex: k ? 'CARPETDM' : 'FLOORBRD',
         fuel: k ? TOWN_FUEL.bed : TOWN_FUEL.room,
         name: `${tag} ${k ? 'front bedroom' : 'front room'}`,
-      })) });
+      })), roofStorey()] });
     put(ROOMX, front + WALL, w, d, { ...inside(0), floorTex: 'KITCHTIL', fuel: TOWN_FUEL.kitchen,
-      name: `${tag} kitchen`, storeys: storeys(n, k => ({
+      name: `${tag} kitchen`, storeys: [...storeys(n, k => ({
         ...inside(k), floorTex: k ? 'CARPETDM' : 'KITCHTIL',
         fuel: k ? TOWN_FUEL.bed : TOWN_FUEL.kitchen,
         name: `${tag} ${k ? 'back bedroom' : 'kitchen'}`,
-      })) });
+      })), roofStorey()] });
 
     /* the doors, which are the rectangles that bridge the walls. A door
        head is 64, so the band above it is the lintel and wears the
@@ -386,7 +413,8 @@ export function buildTown(rm, mb, opts = {}) {
     const door = (lx0, ly0, lx1, ly1, name, upper) => put(lx0, ly0, lx1, ly1, {
       ...inside(0), floorTex: 'FLOORBRD', fuel: TOWN_FUEL.hall, name,
       upperTex: upper, lowerTex: 'SKIRTING',
-      storeys: Array.from({ length: n }, (_, k) => ({ floor: floorOf(k), ceil: floorOf(k) + 64 })),
+      storeys: [...Array.from({ length: n }, (_, k) => ({ floor: floorOf(k), ceil: floorOf(k) + 64 })),
+                roofStorey()],
     });
     door(HALL, 48, ROOMX, 112, `${tag} front door way`, 'PLASTER');
     door(HALL, front + WALL + 32, ROOMX, front + WALL + 96, `${tag} kitchen door`, 'PLASTER');
@@ -461,14 +489,12 @@ export function buildTown(rm, mb, opts = {}) {
           yard(lx, fy1 + WALL, lx + LOT_W, y1, dress, `${tagI} front yard`, eaves, dress.win);
           house(hx, hy0, HOUSE_W, HOUSE_D, n, 'N', dress, tagI, lit);
           yard(lx, y1 - FACE, lx + LOT_W, hy0 - WALL, dress, `${tagI} back yard`, eaves, null);
-          roofOver(hx, hy0, hx + HOUSE_W, fy1, eaves, dress, 'x');
         } else {
           const fy0 = y0 + FRONT_YARD;
           const hy1 = fy0 + HOUSE_D;
           yard(lx, y0, lx + LOT_W, fy0 - WALL, dress, `${tagI} front yard`, eaves, dress.win);
           house(hx, fy0, HOUSE_W, HOUSE_D, n, 'S', dress, tagI, lit);
           yard(lx, hy1 + WALL, lx + LOT_W, y0 + FACE, dress, `${tagI} back yard`, eaves, null);
-          roofOver(hx, fy0, hx + HOUSE_W, hy1, eaves, dress, 'x');
         }
       }
     }
@@ -516,7 +542,6 @@ export function buildTown(rm, mb, opts = {}) {
         const lit = Array.from({ length: n }, (_, k) => (k > 0 || !shops) && R() < 0.30);
         house(lx, hy0, ROW_HOUSE_W, D, n, north ? 'N' : 'S', dress, `${tag} no ${i + 1 + face * lots}`, lit);
       }
-      roofOver(x0, hy0, x1, hy1, eaves, dress, 'x');
     }
   }
 

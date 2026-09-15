@@ -397,8 +397,8 @@ export class Actor {
     const g = lv.sectorAt(this.x, this.y, this.sector);
     if (!g) return;
     /* the storey under the feet, not the ground under the building */
-    const s = g.above === null ? g : lv.spanIn(g, this.z);
-    this.sector = s; this.z = s.floor;
+    const s = g.above === null ? g : lv.spanIn(g, this.z, this.x, this.y);
+    this.sector = s; this.z = lv.floorAt(s, this.x, this.y);
   }
 
   /** Doom's P_NewChaseDir. See the note at the top of the file. */

@@ -129,7 +129,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         1436 checks, no install and no browser
+  the smoke test         1456 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -3309,12 +3309,39 @@ The step from there up to the open sky draws nothing, because both are
 sky and a step between two patches of sky is two different heights of
 nothing.
 
-AND THE ROOF IS NOT A SECTOR. A sector engine cannot slope a ceiling and
-a flat-roofed house is not an American house, so a pitched roof is
-GEOMETRY over a footprint — two slopes and two gable triangles, pushed
-into the same batch as everything else. There is precedent and it is
-load-bearing: `roofFraming` already hangs steel over a burnt-out region
-without any sector knowing.
+AND THE ROOF IS A STOREY. It was geometry first — two slopes and two
+gable triangles over a footprint, pushed into a batch, with nothing in
+the engine knowing it was there. You could walk through one. You could
+shoot through one. It was a picture of a roof.
+
+So a sector's floor or ceiling may be a HEIGHT OVER THE SECTOR rather
+than a number, in two kinds and no more: a PLANE, and a GABLE, which is
+two planes meeting at a ridge and is the one shape a plane cannot do.
+Every rect of a house gets one more sector on top of its column whose
+ceiling is the building's gable, shared by every rect so that a terrace
+is one roof and not sixteen.
+
+`floor` and `ceil` survive as the numbers they always were, and they are
+the SAFE end of the slope: a sloped floor's `floor` is its lowest point
+and a sloped ceiling's `ceil` is its highest. Everything written before
+there were slopes reads those and gets the answer that never claims more
+room than there is — which is what a fire grid, a light and a sound all
+want. The code that has to be exact asks floorAt and ceilAt, and that is
+collision, sight, hitscan, and where your head is.
+
+TWO THINGS IN THE DRAWING HAD TO GIVE. A flat is triangulated with its
+corners at their own heights, and a triangle that straddles the ridge is
+cut in two first, because three corners on a roof do not put the middle
+of the triangle on it. And a wall under a gable is a TRIANGLE and not a
+trapezium — the end wall of a house goes from eaves up over the ridge
+and down to the other eaves — so the line is cut where the ridge crosses
+it and each piece is a quad again. At most one cut per slope and none at
+all for every wall in the supermarket.
+
+There is precedent for geometry-over-a-footprint and it is still there:
+`roofFraming` hangs steel over a burnt-out region without any sector
+knowing, and the school and the church still wear a drawn roof rather
+than a built one.
 
 FIRE THAT CLIMBS
 - - - - - - - - -
@@ -3956,7 +3983,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-1436 checks. Every one of them earns its place by having caught something
+1456 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -4523,6 +4550,13 @@ WHAT IS NOT DONE
     houses. A bed is a sector forty up wearing a bed picture and the
     machinery for it is the same machinery the produce bins use, so
     this is content and not a problem
+  a roof does not burn off. A sloped ceiling is a surface the engine
+    knows about but not one the fuel grid has a cell for, so a house
+    that burns out keeps its roof on. js/ruin.js already drops a deck
+    and leaves its steel, and a gable is the obvious next thing to drop
+  the school and the church still wear a DRAWN roof rather than a built
+    one — roofGeometry, two quads and two triangles over a footprint,
+    which is what every roof was before there were slopes
   a burnt-out first floor does not fall into the kitchen. js/ruin.js
     drops a roof and leaves its steel; a storey landing on the one
     below it is the same idea one level down and is the best thing this

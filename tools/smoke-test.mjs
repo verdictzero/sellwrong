@@ -7541,6 +7541,12 @@ section('the town');
       checked++;
       for (const s of secs) {
         if (s.storey === 0 || seen.has(s.index)) continue;
+        /* A ROOF IS NOT A ROOM. The top of every column is the space
+           under the tiles — a sloped ceiling, no floor, no fuel and no
+           hatch — and a loft you cannot get into is a loft and not a
+           defect. What this claim is about is storeys people are meant
+           to stand in. */
+        if (s.roofTex) continue;
         unreachable++;
         if (!worst) worst = `${s.name} (storey ${s.storey})`;
       }
@@ -7555,6 +7561,126 @@ section('the town');
      contain it cannot be built at all — getting this far is the check,
      and it is worth saying so rather than leaving the reader to
      wonder where it went. */
+}
+
+/* ---------- sloped roofs ---------- */
+section('sloped roofs');
+{
+  const L = await import('../js/level.js');
+  const T2 = await import('../js/maps/town.js');
+
+  /* THE SLOPE ITSELF, before any map uses one. */
+  const g = L.gableSlope('x', 0, 100, 300, 128);
+  check('a gable is at its base at the eaves', Math.abs(L.slopeAt(g, 0, -100) - 300) < 1e-6);
+  check('and at its full rise on the ridge', Math.abs(L.slopeAt(g, 0, 0) - 428) < 1e-6);
+  check('and halfway up halfway along', Math.abs(L.slopeAt(g, 0, -50) - 364) < 1e-6);
+  check('it does not go on falling past the eaves', Math.abs(L.slopeAt(g, 0, -400) - 300) < 1e-6);
+  check('and it does not care which side of the ridge you are',
+    Math.abs(L.slopeAt(g, 0, 50) - L.slopeAt(g, 0, -50)) < 1e-6);
+  const pl = L.planeSlope(0, 0, 100, 0.5, 0);
+  check('a plane is a plane', Math.abs(L.slopeAt(pl, 200, 0) - 200) < 1e-6);
+
+  /* THE FLAT MAP IS UNMOVED. Every region that has no slope must answer
+     with the number it always did, which is the regression that matters:
+     there are eleven thousand of them and six that are not. */
+  let moved = 0, flat = 0;
+  for (const s2 of level.sectors) {
+    if (s2.slopeFloor || s2.slopeCeil) continue;
+    flat++;
+    const x = (s2.bbox[0] + s2.bbox[2]) / 2, y = (s2.bbox[1] + s2.bbox[3]) / 2;
+    if (level.floorAt(s2, x, y) !== s2.floor || level.ceilAt(s2, x, y) !== s2.ceil) moved++;
+  }
+  check('a region with no slope answers exactly as it did', moved === 0, `${moved} of ${flat}`);
+
+  /* AND THE ROOFS THE TOWN IS WEARING. */
+  const roofs = level.sectors.filter(s2 => s2.roofTex);
+  note('roof storeys', `${roofs.length}, over ${new Set(roofs.map(s2 => /^(.*) roof$/.exec(s2.name)?.[1])).size} buildings`);
+  check('the houses have roofs', roofs.length > 2000, `${roofs.length}`);
+  check('every one of them is a sloped ceiling', roofs.every(s2 => s2.slopeCeil && s2.slopeCeil.kind === 'gable'));
+  check('and it sits on top of the walls, not through them',
+    roofs.every(s2 => s2.floor === s2.slopeCeil.base), `${roofs.filter(s2 => s2.floor !== s2.slopeCeil.base).length} do not`);
+  check('a roof\'s ceil is the HIGHEST it gets, so nothing flat is told there is less room than there is',
+    roofs.every(s2 => Math.abs(s2.ceil - (s2.slopeCeil.base + s2.slopeCeil.rise)) < 1e-6));
+  check('a three-storey house tops out at 464, sixteen under the mall\'s parapet',
+    roofs.some(s2 => Math.abs(s2.ceil - 464) < 1e-6) && 464 < 480);
+
+  /* IT VARIES ACROSS ITS OWN FOOTPRINT — which is the whole point, and
+     is what a flat number cannot say. */
+  {
+    const r = roofs.find(s2 => {
+      const zs = s2.poly.map(p2 => level.ceilAt(s2, p2[0], p2[1]));
+      return Math.max(...zs) - Math.min(...zs) > 32;
+    });
+    check('a roof is higher in the middle of the house than at its edge', !!r);
+  }
+
+  /* SOLID. This is what "the engine knows it is there" means and it is
+     the reason for the whole change: a roof used to be a picture and
+     you could walk and shoot straight through one. */
+  {
+    const r = roofs.find(s2 => s2.slopeCeil.rise > 0 && (s2.bbox[2] - s2.bbox[0]) > 24);
+    const x = (r.bbox[0] + r.bbox[2]) / 2, y = (r.bbox[1] + r.bbox[3]) / 2;
+    /* THE OPENING NARROWS AS THE ROOF COMES DOWN, which is the whole of
+       what a sloped ceiling does to anything trying to move under it:
+       the same doorway, at the same height, is open in the middle of
+       the house and shut at the eaves. Doom asked the ceiling once per
+       region; this asks it where you are. */
+    const zRidge = level.ceilAt(r, x, y);
+    const eave = r.slopeCeil.axis === 'x'
+      ? [x, r.slopeCeil.mid + r.slopeCeil.half] : [r.slopeCeil.mid + r.slopeCeil.half, y];
+    check('a roof is lower at the eaves than on the ridge',
+      level.ceilAt(r, eave[0], eave[1]) < zRidge - 32,
+      `${level.ceilAt(r, eave[0], eave[1]).toFixed(0)} against ${zRidge.toFixed(0)}`);
+    const shared = r.lines.find(l => l.frontCol.length && l.backCol.length);
+    if (shared) {
+      const open = (px, py) => {
+        const a = level.spanIn(level.sectors[shared.front], r.floor + 8, px, py);
+        const b = level.spanIn(level.sectors[shared.back], r.floor + 8, px, py);
+        return Math.min(level.ceilAt(a, px, py), level.ceilAt(b, px, py))
+             - Math.max(level.floorAt(a, px, py), level.floorAt(b, px, py));
+      };
+      check('and the opening under it is the height of the roof there, not of the ridge',
+        open(x, y) >= open(eave[0], eave[1]),
+        `${open(x, y).toFixed(0)} in the middle, ${open(eave[0], eave[1]).toFixed(0)} at the edge`);
+    }
+    const hit = level.rayHitWall(x, y, r.floor + 8, x + 4000, y, r.floor + 8);
+    check('and a shot fired along the loft hits the house rather than the next county',
+      !!hit && Math.hypot(hit.x - x, hit.y - y) < 4000, hit ? `${Math.hypot(hit.x - x, hit.y - y).toFixed(0)} units` : 'nothing');
+    /* and the storey under it is not: standing in the top bedroom you
+       can see across your own room */
+    const room = level.sectors[r.below];
+    check('the room under the roof is a room you can see across',
+      !level.sightBlocked(room.bbox[0] + 8, (room.bbox[1] + room.bbox[3]) / 2, room.floor + 40,
+                          room.bbox[2] - 8, (room.bbox[1] + room.bbox[3]) / 2, room.floor + 40));
+  }
+
+  /* SPANAT PICKS THE ROOF WHERE THE ROOF IS, and does it at the point
+     rather than from the safe end — which is the difference between
+     standing in a loft and standing in the bedroom under it. */
+  {
+    const r = roofs[0];
+    const x = (r.bbox[0] + r.bbox[2]) / 2, y = (r.bbox[1] + r.bbox[3]) / 2;
+    check('a storey up under the ridge you are in the roof', level.spanAt(x, y, r.floor + 8) === r);
+    check('and on the floor below you are not', level.spanAt(x, y, 8) !== r);
+  }
+
+  /* THE WALL UNDER A GABLE IS A TRIANGLE, which is one quad's worth of
+     geometry that no single quad can hold — see emitWall in
+     js/mapgeo.js, which cuts the line at the ridge. */
+  {
+    let sloping = 0;
+    for (const l of level.lines) {
+      if (!l.frontCol.length || l.backCol.length) continue;
+      for (const i of l.frontCol) {
+        const s2 = level.sectors[i];
+        if (!s2.slopeCeil) continue;
+        const a = level.ceilAt(s2, l.x1, l.y1), b = level.ceilAt(s2, l.x2, l.y2);
+        if (Math.abs(a - b) > 1) sloping++;
+      }
+    }
+    note('walls whose top is not level', sloping);
+    check('a gable end has a wall under it that slopes', sloping > 500, `${sloping}`);
+  }
 }
 
 /* ---------- the town on fire ---------- */

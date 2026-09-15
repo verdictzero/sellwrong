@@ -77,6 +77,71 @@ const WELD = 0.25;
 
 const ZEPS = 1e-6;
 
+/* --------------------------------------------------------------------
+   A SLOPE
+
+   A sector engine cannot slope a floor, which is the sentence TOWN.txt
+   wrote its roofs around: a pitched roof was GEOMETRY over a footprint,
+   two quads and two triangles pushed into a batch, and nothing in the
+   engine knew it was there. You could walk through one. You could shoot
+   through one. The gunship flew through one.
+
+   So a sector's floor or ceiling may be a HEIGHT OVER THE SECTOR rather
+   than a number. Two kinds and no more:
+
+     PLANE   z = az + dzdx (x - ax) + dzdy (y - ay)
+     GABLE   two planes meeting at a ridge — which is a roof, and is the
+               one shape a plane cannot do
+
+   `floor` and `ceil` survive as the numbers they always were, and they
+   are the SAFE end of the slope: a sloped floor's `floor` is its lowest
+   point and a sloped ceiling's `ceil` is its highest. Everything written
+   before there were slopes reads those, and what it gets is the answer
+   that never claims more room than there is — which is what a fire
+   grid, a light, a sprite and a sound all want. The code that has to be
+   exact asks floorAt and ceilAt.
+   ------------------------------------------------------------------ */
+
+/** z = az at (ax, ay), sloping by dzdx and dzdy. */
+export function planeSlope(ax, ay, az, dzdx, dzdy) {
+  return { kind: 'plane', ax, ay, az, dzdx, dzdy,
+           lo: null, hi: null };
+}
+
+/**
+ * A ROOF. `axis` is the one the ridge RUNS ALONG, `mid` is where the
+ * ridge is on the other axis, `half` is how far the eaves are from it,
+ * `base` is the height at the eaves and `rise` how much higher the
+ * ridge is. Outside the eaves it stays at base, so a sector that
+ * overhangs its own roof does not go on falling for ever.
+ */
+export function gableSlope(axis, mid, half, base, rise) {
+  return { kind: 'gable', axis, mid, half: Math.max(1, half), base, rise,
+           lo: base, hi: base + rise };
+}
+
+/** The height of a slope at a point. */
+export function slopeAt(sl, x, y) {
+  if (sl.kind === 'gable') {
+    const u = sl.axis === 'x' ? y : x;          // across the ridge
+    const d = Math.min(1, Math.abs(u - sl.mid) / sl.half);
+    return sl.base + sl.rise * (1 - d);
+  }
+  return sl.az + sl.dzdx * (x - sl.ax) + sl.dzdy * (y - sl.ay);
+}
+
+/** The lowest and highest a slope gets over a polygon. */
+function slopeRange(sl, poly) {
+  if (sl.lo !== null && sl.hi !== null) return [sl.lo, sl.hi];
+  let lo = Infinity, hi = -Infinity;
+  for (const [x, y] of poly) {
+    const z = slopeAt(sl, x, y);
+    if (z < lo) lo = z;
+    if (z > hi) hi = z;
+  }
+  return [lo, hi];
+}
+
 /** The open spans of a column, bottom-up. A storey with its ceiling on
  *  its floor — a shut door — is open nowhere and contributes nothing. */
 function openSpans(col) {
@@ -294,6 +359,16 @@ export class MapBuilder {
       /* a wall this region shares with the one next door, which fire
          gets through in the end — see _linkCells in js/fire.js */
       party: !!props.party,
+      /* A SLOPE, if this region has one. See the block above: `floor`
+         and `ceil` are corrected below to the safe end of it. */
+      slopeFloor: props.slopeFloor ?? null,
+      slopeCeil: props.slopeCeil ?? null,
+      /* AND WHAT A SLOPED CEILING LOOKS LIKE FROM ABOVE. A ceiling is
+         drawn facing down and nothing else in this engine has ever
+         wanted otherwise, because nothing else was the top of a
+         building. A roof is: one more pass over the same triangles,
+         wound the other way, wearing this. */
+      roofTex: props.roofTex ?? null,
       bbox: null,
     };
     let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
@@ -302,6 +377,12 @@ export class MapBuilder {
       if (y < miny) miny = y; if (y > maxy) maxy = y;
     }
     s.bbox = [minx, miny, maxx, maxy];
+    /* THE SAFE END OF EACH SLOPE. A sloped floor is at its LOWEST where
+       anything flat asks, and a sloped ceiling at its HIGHEST, so
+       nothing that was written before slopes existed can be told there
+       is less room than there is. */
+    if (s.slopeFloor) s.floor = slopeRange(s.slopeFloor, pts)[0];
+    if (s.slopeCeil) s.ceil = slopeRange(s.slopeCeil, pts)[1];
     this.sectors.push(s);
 
     /* Walk the ring. The sector is on the LEFT of every edge, because the
@@ -393,7 +474,11 @@ export class MapBuilder {
       const p = storeys[k];
       if (k > 0) {
         const under = storeys[k - 1];
-        const top = under.ceil ?? 128, bot = p.floor ?? 0;
+        /* the HIGHEST the one below gets against the LOWEST this one
+           gets, because a slope is a range and a roof over a flat
+           ceiling has to clear all of it */
+        const top = under.slopeCeil ? slopeRange(under.slopeCeil, poly)[1] : (under.ceil ?? 128);
+        const bot = p.slopeFloor ? slopeRange(p.slopeFloor, poly)[0] : (p.floor ?? 0);
         if (bot < top - 1e-6)
           throw new Error(`storey ${k} starts at ${bot}, under the ${top} of the one below it`);
       }
@@ -660,14 +745,17 @@ export class Level {
    * — the store, the car park, the road, the wood — it returns the
    * sector it was handed, in one comparison.
    */
-  spanIn(s, z) {
+  spanIn(s, z, x = null, y = null) {
     if (!s) return null;
     let cur = this.sectors[s.colBase];
     if (cur.above === null) return cur;
     let best = cur;
+    const exact = x !== null;
     while (cur) {
-      if (z >= cur.floor - ZEPS && z <= cur.ceil + ZEPS) return cur;
-      if (cur.floor <= z) best = cur;
+      const f = exact ? this.floorAt(cur, x, y) : cur.floor;
+      const c = exact ? this.ceilAt(cur, x, y) : cur.ceil;
+      if (z >= f - ZEPS && z <= c + ZEPS) return cur;
+      if (f <= z) best = cur;
       cur = cur.above === null ? null : this.sectors[cur.above];
     }
     return best;
@@ -676,8 +764,14 @@ export class Level {
   /** The storey at (x, y, z). */
   spanAt(x, y, z, hint = null) {
     const g = this.sectorAt(x, y, hint ? this.sectors[hint.colBase] : null);
-    return g ? this.spanIn(g, z) : null;
+    return g ? this.spanIn(g, z, x, y) : null;
   }
+
+  /** How high this region's floor is at a point, and its ceiling. For
+   *  the thousands of regions that are flat — every one of them until
+   *  there were roofs — this is the number it always was. */
+  floorAt(s, x, y) { return s.slopeFloor ? slopeAt(s.slopeFloor, x, y) : s.floor; }
+  ceilAt(s, x, y) { return s.slopeCeil ? slopeAt(s.slopeCeil, x, y) : s.ceil; }
 
   /** Every storey over (x, y), bottom-up. */
   columnAt(x, y) {
@@ -707,7 +801,7 @@ export class Level {
 
      Returns null if you may pass, otherwise the reason.
      ------------------------------------------------------------------ */
-  lineBlocks(line, fromZ, height, isMonster) {
+  lineBlocks(line, fromZ, height, isMonster, atX = null, atY = null) {
     if (line.back === null || line.front === null) return 'solid';
     if (line.blocking) return 'blocking';
     if (isMonster && line.blockMonsters) return 'blockmonsters';
@@ -715,11 +809,18 @@ export class Level {
        which is the same arithmetic as before with spanIn in front of it.
        Standing in a hall you may walk through the front door; standing
        on the landing over it you may not, and the line is the same
-       line. */
-    const a = this.spanIn(this.sectors[line.front], fromZ);
-    const b = this.spanIn(this.sectors[line.back], fromZ);
-    const openTop = Math.min(a.ceil, b.ceil);
-    const openBottom = Math.max(a.floor, b.floor);
+       line.
+     *
+       AND AT THE POINT IT IS CROSSED, where either side is sloped. The
+       middle of the line is the honest place to ask when the caller has
+       not said where — a roof's opening is different at the eaves from
+       at the ridge. */
+    const px = atX === null ? (line.x1 + line.x2) / 2 : atX;
+    const py = atY === null ? (line.y1 + line.y2) / 2 : atY;
+    const a = this.spanIn(this.sectors[line.front], fromZ, px, py);
+    const b = this.spanIn(this.sectors[line.back], fromZ, px, py);
+    const openTop = Math.min(this.ceilAt(a, px, py), this.ceilAt(b, px, py));
+    const openBottom = Math.max(this.floorAt(a, px, py), this.floorAt(b, px, py));
     if (openTop - openBottom < height) return 'toolow';
     if (openBottom - fromZ > MAX_STEP) return 'toohigh';
     if (isMonster && fromZ - openBottom > 96) return 'toofar';   // monsters do not jump off things
@@ -793,7 +894,7 @@ export class Level {
         touching = dist2(px, py, tx, ty) < r2;
       }
       if (!touching) continue;
-      if (this.lineBlocks(l, z, height, isMonster)) return false;
+      if (this.lineBlocks(l, z, height, isMonster, tx, ty)) return false;
     }
     return true;
   }
@@ -820,9 +921,11 @@ export class Level {
       if (t < 0) continue;
       if (l.front === null || l.back === null || l.blockSight) return true;
       const z = az + (bz - az) * t;
-      const fs = this.spanIn(this.sectors[l.front], z), bs = this.spanIn(this.sectors[l.back], z);
-      const openTop = Math.min(fs.ceil, bs.ceil);
-      const openBottom = Math.max(fs.floor, bs.floor);
+      const hx = ax + (bx - ax) * t, hy = ay + (by - ay) * t;
+      const fs = this.spanIn(this.sectors[l.front], z, hx, hy);
+      const bs = this.spanIn(this.sectors[l.back], z, hx, hy);
+      const openTop = Math.min(this.ceilAt(fs, hx, hy), this.ceilAt(bs, hx, hy));
+      const openBottom = Math.max(this.floorAt(fs, hx, hy), this.floorAt(bs, hx, hy));
       if (openTop <= openBottom) return true;
       if (z < openBottom || z > openTop) return true;
     }
@@ -843,9 +946,11 @@ export class Level {
       let solid = (l.front === null || l.back === null || l.blocking);
       if (!solid) {
         const z = az + (bz - az) * t;
-        const fs = this.spanIn(this.sectors[l.front], z), bs = this.spanIn(this.sectors[l.back], z);
-        const openTop = Math.min(fs.ceil, bs.ceil);
-        const openBottom = Math.max(fs.floor, bs.floor);
+        const hx = ax + (bx - ax) * t, hy = ay + (by - ay) * t;
+        const fs = this.spanIn(this.sectors[l.front], z, hx, hy);
+        const bs = this.spanIn(this.sectors[l.back], z, hx, hy);
+        const openTop = Math.min(this.ceilAt(fs, hx, hy), this.ceilAt(bs, hx, hy));
+        const openBottom = Math.max(this.floorAt(fs, hx, hy), this.floorAt(bs, hx, hy));
         solid = (z < openBottom || z > openTop);
       }
       if (solid) { bestT = t; best = l; }

@@ -218,7 +218,11 @@ export function buildLevelGeometry(level, bank) {
      A surface is indoors if every region it belongs to is. The wall
      between a hall and the street belongs to both and is shell, which
      is what keeps the house a house from the far end of the block. */
-  const indoor = s => !(s.outdoor || s.forest || s.outside);
+  /* A ROOF IS THE MOST SHELL THING THERE IS. It is not outdoors — you
+     could not stand in one — but it is the part of a house you see from
+     the far end of the street, and putting it in with the wallpaper
+     meant a town whose roofs arrived two blocks away. */
+  const indoor = s => !(s.outdoor || s.forest || s.outside || s.roofTex);
   const lineIndoor = l => {
     for (const i of l.frontCol) if (!indoor(level.sectors[i])) return false;
     for (const i of l.backCol) if (!indoor(level.sectors[i])) return false;
@@ -250,8 +254,13 @@ export function buildLevelGeometry(level, bank) {
         o.traverse(m => { if (m.isMesh) { m.geometry.dispose(); m.material.dispose(); } });
     shellG.clear(); innerG.clear();
     const set = new BatchSet(), inner = new BatchSet();
-    for (const s of blockSectors.get(k) || []) addFlats(indoor(s) ? inner : set, level, s, bank);
-    for (const l of blockLines.get(k) || []) addLine(lineIndoor(l) ? inner : set, level, l, bank);
+    /* WHICH GROUP A SURFACE GOES IN is a question about the surface and
+       not about the line it is on: one line carries a kitchen wall and
+       the roof over it, and they do not come in at the same distance.
+       So the pick is handed down and asked per storey and per band. */
+    const pick = sec => (sec && indoor(sec) ? inner : set);
+    for (const s of blockSectors.get(k) || []) addFlats(pick(s), level, s, bank);
+    for (const l of blockLines.get(k) || []) addLine(lineIndoor(l) ? inner : set, level, l, bank, pick);
     /* AND THE STEEL, over whichever regions have lost their deck. It
        goes in the same BatchSet as everything else, so the whole ruined
        roof of a burnt-out store is one more draw call and not one per
@@ -415,6 +424,44 @@ function bank_h(set, name) { return ROOF_SIZES.get(name) || { w: 64, h: 64 }; }
    Doom floors run continuously through a doorway instead of restarting
    at every threshold. u = x/64, v = y/64, and nothing else to decide.
    ------------------------------------------------------------------ */
+/* --------------------------------------------------------------------
+   A TRIANGLE CUT BY THE RIDGE
+
+   A gable is two planes meeting along a line, and a triangle that
+   straddles that line cannot be drawn as one triangle at any height:
+   its three corners are on the roof and its middle is not. So it is cut
+   into the pieces either side, which is one or three triangles, and
+   every corner of every piece then lands on the surface exactly.
+
+   For the rectangles this map is made of it fires twice per roof and
+   the rest of the time not at all.
+   ------------------------------------------------------------------ */
+function splitAtRidge(tri, axis, mid) {
+  const u = p => (axis === 'x' ? p[1] : p[0]);
+  const side = p => (u(p) > mid ? 1 : u(p) < mid ? -1 : 0);
+  const sg = tri.map(side);
+  if (sg[0] * sg[1] >= 0 && sg[1] * sg[2] >= 0 && sg[0] * sg[2] >= 0) return [tri];
+  /* the lone corner on its own side, and the two crossings */
+  let k = 0;
+  for (let i = 0; i < 3; i++) if (sg[i] !== 0 && sg[(i + 1) % 3] !== sg[i] && sg[(i + 2) % 3] !== sg[i]) k = i;
+  const a = tri[k], b = tri[(k + 1) % 3], c = tri[(k + 2) % 3];
+  const cut = (p, q) => {
+    const t = (mid - u(p)) / (u(q) - u(p));
+    return [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t];
+  };
+  const ab = cut(a, b), ac = cut(a, c);
+  return [[a, ab, ac], [ab, b, c], [ab, c, ac]];
+}
+
+/** The triangles of a surface, cut at the ridge if it has one. */
+function surfaceTris(pts, tris, slope) {
+  const flat = tris.map(([a, b, c]) => [[pts[a].x, pts[a].y], [pts[b].x, pts[b].y], [pts[c].x, pts[c].y]]);
+  if (!slope || slope.kind !== 'gable') return flat;
+  const out = [];
+  for (const t of flat) for (const piece of splitAtRidge(t, slope.axis, slope.mid)) out.push(piece);
+  return out;
+}
+
 function addFlats(set, level, s, bank) {
   const pts = s.poly.map(p => new THREE.Vector2(p[0], p[1]));
   let tris;
@@ -422,6 +469,7 @@ function addFlats(set, level, s, bank) {
   catch (e) { console.warn('sector', s.index, 'would not triangulate', e); return; }
 
   const sky = s.ceilTex === 'SKY';
+  const lit = s.light, sk = skyOf(s), ch = charOf(s);
 
   if (s.floorTex && s.floorTex !== 'NONE') {
     const t = bank.get(s.floorTex);
@@ -430,33 +478,55 @@ function addFlats(set, level, s, bank) {
        otherwise; see floorAnchor in js/level.js for the one that does. */
     const ax = s.floorAnchor ? s.floorAnchor[0] : 0;
     const ay = s.floorAnchor ? s.floorAnchor[1] : 0;
-    for (const [a, bb, c] of tris) {
+    /* and its height is a number until it is a slope, in which case it
+       is a number PER CORNER — see A SLOPE in js/level.js */
+    const zf = (x, y) => level.floorAt(s, x, y);
+    for (const [p0, p1, p2] of surfaceTris(pts, tris, s.slopeFloor)) {
       /* Reversed relative to the map winding: the ring is
          counter-clockwise in map space, and the map's y becomes the
          renderer's MINUS z (see addQuad), which reverses it again. A
          floor you can only see from underneath is a floor you will spend
          an hour debugging. */
-      const p0 = pts[a], p1 = pts[bb], p2 = pts[c];
       b.tri(
-        p0.x, s.floor, -p0.y, (p0.x - ax) / t.w, -(p0.y - ay) / t.h,
-        p1.x, s.floor, -p1.y, (p1.x - ax) / t.w, -(p1.y - ay) / t.h,
-        p2.x, s.floor, -p2.y, (p2.x - ax) / t.w, -(p2.y - ay) / t.h,
-        s.light, skyOf(s), charOf(s));
+        p0[0], zf(p0[0], p0[1]), -p0[1], (p0[0] - ax) / t.w, -(p0[1] - ay) / t.h,
+        p1[0], zf(p1[0], p1[1]), -p1[1], (p1[0] - ax) / t.w, -(p1[1] - ay) / t.h,
+        p2[0], zf(p2[0], p2[1]), -p2[1], (p2[0] - ax) / t.w, -(p2[1] - ay) / t.h,
+        lit, sk, ch);
     }
   }
 
   /* A sky ceiling is a hole, not a surface — nothing is drawn and the
      background shows through. */
+  const zc = (x, y) => level.ceilAt(s, x, y);
+  const ceilTris = surfaceTris(pts, tris, s.slopeCeil);
   if (!sky && s.ceilTex && s.ceilTex !== 'NONE') {
     const t = bank.get(s.ceilTex);
     const b = set.get(s.ceilTex);
-    for (const [a, bb, c] of tris) {
-      const p0 = pts[c], p1 = pts[bb], p2 = pts[a];
+    for (const [p0, p1, p2] of ceilTris) {
       b.tri(
-        p0.x, s.ceil, -p0.y, p0.x / t.w, -p0.y / t.h,
-        p1.x, s.ceil, -p1.y, p1.x / t.w, -p1.y / t.h,
-        p2.x, s.ceil, -p2.y, p2.x / t.w, -p2.y / t.h,
-        s.light, skyOf(s), charOf(s));
+        p2[0], zc(p2[0], p2[1]), -p2[1], p2[0] / t.w, -p2[1] / t.h,
+        p1[0], zc(p1[0], p1[1]), -p1[1], p1[0] / t.w, -p1[1] / t.h,
+        p0[0], zc(p0[0], p0[1]), -p0[1], p0[0] / t.w, -p0[1] / t.h,
+        lit, sk, ch);
+    }
+  }
+
+  /* AND THE SAME SURFACE FROM ABOVE, which is a roof. A ceiling is
+     drawn facing down and nothing in this engine ever wanted otherwise,
+     because nothing else was the top of a building. One more pass over
+     the same triangles wound the other way, wearing the roof's own
+     skin, and the shingle you see from the street is the underside of
+     the attic you would see from inside it. */
+  if (s.roofTex && s.roofTex !== 'NONE') {
+    const t = bank.get(s.roofTex);
+    const b = set.get(s.roofTex);
+    const rl = Math.min(1.2, (s.roofLight ?? s.light));
+    for (const [p0, p1, p2] of ceilTris) {
+      b.tri(
+        p0[0], zc(p0[0], p0[1]), -p0[1], p0[0] / t.w, -p0[1] / t.h,
+        p1[0], zc(p1[0], p1[1]), -p1[1], p1[0] / t.w, -p1[1] / t.h,
+        p2[0], zc(p2[0], p2[1]), -p2[1], p2[0] / t.w, -p2[1] / t.h,
+        rl, 1, ch);
     }
   }
 }
@@ -464,7 +534,8 @@ function addFlats(set, level, s, bank) {
 /* --------------------------------------------------------------------
    Walls
    ------------------------------------------------------------------ */
-function addLine(set, level, l, bank) {
+function addLine(set, level, l, bank, pick = null) {
+  const into = pick || (() => set);
   const oneSided = !l.frontCol.length || !l.backCol.length;
   if (oneSided && !l.frontCol.length && !l.backCol.length) return;
 
@@ -474,13 +545,27 @@ function addLine(set, level, l, bank) {
   if (oneSided) {
     const col = l.frontCol.length ? l.frontCol : l.backCol;
     const facingFront = l.frontCol.length > 0;
-    const tex = l.middle || 'WALL';
-    if (tex === 'NONE') return;
     for (let i = 0; i < col.length; i++) {
       const s = level.sectors[col[i]];
-      addQuad(set, l, bank, tex, s.floor, s.ceil, facingFront,
-              pegOf(l, 'middle', s.floor, s.ceil, s, bank.get(tex).h),
-              s.light + l.contrast, skyOf(s), charOf(s));
+      /* EACH STOREY IN ITS OWN SKIN. The line carries one middle
+         texture, decided from the GROUND sector — which is the right
+         answer for the thousand walls that are a column of one, and is
+         the only answer that was ever needed. A roof is not made of
+         what the kitchen under it is made of, so a storey above the
+         ground wears its own; the ground keeps the line's, which is
+         what a map file reaches in and sets by hand. */
+      const tex = i === 0 ? (l.middle || 'WALL') : (s.wallTex || l.middle || 'WALL');
+      if (!tex || tex === 'NONE') continue;
+      const dst = into(s);
+      const peg = pegOf(l, 'middle', s.floor, s.ceil, s, bank.get(tex).h);
+      if (s.slopeCeil || s.slopeFloor) {
+        emitWall(dst, l, bank, tex, (x, y) => [level.floorAt(s, x, y), level.ceilAt(s, x, y)],
+                 facingFront, peg, s.light + l.contrast, skyOf(s), charOf(s),
+                 [s.slopeCeil, s.slopeFloor]);
+      } else {
+        addQuad(dst, l, bank, tex, s.floor, s.ceil, facingFront, peg,
+                s.light + l.contrast, skyOf(s), charOf(s));
+      }
     }
     return;
   }
@@ -498,9 +583,21 @@ function addLine(set, level, l, bank) {
        surface there, only two different heights of nothing. */
     if (bd.kind === 'upper' && bd.open.ceilTex === 'SKY' && bd.from.ceilTex === 'SKY') continue;
     const s = bd.open;
-    addQuad(set, l, bank, bd.tex, bd.z0, bd.z1, bd.openFront,
-            pegOf(l, bd.kind, bd.z0, bd.z1, s, bank.get(bd.tex).h),
-            s.light + l.contrast, skyOf(s), charOf(s));
+    /* a band between a roof and anything is the roof's, so a gable end
+       is shell even where the wall under it is not */
+    const dst = (bd.open.roofTex || bd.from.roofTex) ? into(bd.open.roofTex ? bd.open : bd.from) : into(s);
+    const peg = pegOf(l, bd.kind, bd.z0, bd.z1, s, bank.get(bd.tex).h);
+    /* WHERE A SLOPE IS IN PLAY the band is not an interval, it is an
+       interval AT A POINT. Asked of the same two sectors the band was
+       worked out from, so the flat case gives back the same numbers. */
+    if (bd.open.slopeCeil || bd.open.slopeFloor || bd.from.slopeCeil || bd.from.slopeFloor) {
+      emitWall(dst, l, bank, bd.tex, (x, y) => bandEdges(level, bd, x, y), bd.openFront, peg,
+               s.light + l.contrast, skyOf(s), charOf(s),
+               [bd.open.slopeCeil, bd.open.slopeFloor, bd.from.slopeCeil, bd.from.slopeFloor]);
+    } else {
+      addQuad(dst, l, bank, bd.tex, bd.z0, bd.z1, bd.openFront, peg,
+              s.light + l.contrast, skyOf(s), charOf(s));
+    }
   }
 
   /* A middle texture on a two-sided line is the thing IN the hole: a
@@ -531,6 +628,51 @@ function addLine(set, level, l, bank) {
       addQuad(set, l, bank, l.middle, bot, top, false, peg + l.yoff, h.back.light + l.contrast, skyOf(h.back), charOf(h.back));
     }
   }
+}
+
+/**
+ * A WALL, IN AS MANY PIECES AS THE SLOPES OVER IT NEED.
+ *
+ * A quad's top edge is a straight line between its two ends, and a
+ * gable is not: the ridge is a crease, and a wall that runs under one —
+ * the end wall of a house, which goes from eaves up over the ridge and
+ * down to the other eaves — is a TRIANGLE and not a trapezium. So the
+ * line is cut where the ridge crosses it and each piece is a quad
+ * again. At most one cut per slope and none at all for every wall in
+ * the supermarket.
+ */
+function emitWall(set, l, bank, tex, zAt, facingFront, peg, light, sk, ch, slopes) {
+  const cuts = [];
+  for (const sl of slopes) {
+    if (!sl || sl.kind !== 'gable') continue;
+    const a = sl.axis === 'x' ? l.y1 : l.x1;
+    const b = sl.axis === 'x' ? l.y2 : l.x2;
+    if ((a - sl.mid) * (b - sl.mid) >= 0 || Math.abs(b - a) < 1e-9) continue;
+    const t = (sl.mid - a) / (b - a);
+    if (t > 1e-4 && t < 1 - 1e-4) cuts.push(t);
+  }
+  cuts.sort((p, q) => p - q);
+  let prev = 0;
+  const at = t => {
+    const x = l.x1 + (l.x2 - l.x1) * t, y = l.y1 + (l.y2 - l.y1) * t;
+    return zAt(x, y);
+  };
+  for (const c of [...cuts, 1]) {
+    const e0 = at(prev), e1 = at(c);
+    addQuad(set, l, bank, tex, [e0[0], e1[0]], [e0[1], e1[1]], facingFront, peg, light, sk, ch,
+            prev === 0 && c === 1 ? null : [prev, c]);
+    prev = c;
+  }
+}
+
+/** The bottom and top of a band at a point. An UPPER hangs from the
+ *  shut storey's ceiling up to the open one's; a LOWER rises from the
+ *  open storey's floor to the shut one's. Flat, these are the numbers
+ *  lineBands already worked out. */
+function bandEdges(level, bd, x, y) {
+  if (bd.kind === 'upper')
+    return [level.ceilAt(bd.from, x, y), Math.max(bd.z1, level.ceilAt(bd.open, x, y))];
+  return [level.floorAt(bd.open, x, y), level.floorAt(bd.from, x, y)];
 }
 
 /* Where the top edge of the texture sits, in world height. */
@@ -570,18 +712,41 @@ function skyOf(s) { return s ? (s.sky ?? (s.outdoor ? 1 : 0)) : 0; }
    of it still alight. */
 export function charOf(s) { return s ? (s.gutted ? 1 : s.charred ? 0.55 : 0) : 0; }
 
-function addQuad(set, l, bank, texName, zBot, zTop, facingFront, peg, light, sk = 0, ch = 0) {
-  if (zTop <= zBot) return;
+/**
+ * One wall quad.
+ *
+ * `zBot` and `zTop` may each be a number or a PAIR — the height at v1
+ * and the height at v2 — which is what a wall under a sloped ceiling
+ * needs and is the whole of what a gable end is. A pair collapses to
+ * the flat case the moment both of its ends agree, which for every wall
+ * built before there were roofs they do.
+ */
+function addQuad(set, l, bank, texName, zBot, zTop, facingFront, peg, light, sk = 0, ch = 0, span = null) {
+  const b1 = Array.isArray(zBot) ? zBot[0] : zBot, b2 = Array.isArray(zBot) ? zBot[1] : zBot;
+  const t1 = Array.isArray(zTop) ? zTop[0] : zTop, t2 = Array.isArray(zTop) ? zTop[1] : zTop;
+  /* nothing at either end is nothing; a wall that is a triangle — the
+     gable at the end of a terrace — has one end of no height at all and
+     is still a wall */
+  if (t1 - b1 <= 1e-6 && t2 - b2 <= 1e-6) return;
   const t = bank.get(texName);
   const b = set.get(texName);
-  const { x1, y1, x2, y2, len } = l;
+  /* PART OF A LINE, where a ridge crosses it. See emitWall: a gable is
+     two slopes and a quad is one, so the wall under one is drawn in the
+     two pieces either side of the ridge. `span` is where along the line
+     this piece runs, and the u it wears keeps running from the line's
+     own start so the two pieces are one length of brick. */
+  const s0 = span ? span[0] : 0, s1 = span ? span[1] : 1;
+  const x1 = l.x1 + (l.x2 - l.x1) * s0, y1 = l.y1 + (l.y2 - l.y1) * s0;
+  const x2 = l.x1 + (l.x2 - l.x1) * s1, y2 = l.y1 + (l.y2 - l.y1) * s1;
+  const len = l.len;
 
   /* u runs from whichever end this side measures from. Doom starts the
      front side's texture at v1 and the back side's at v2, so a two-sided
      line's two faces both read left-to-right from their own viewpoint. */
-  const u0 = l.xoff / t.w;
-  const u1 = (l.xoff + len) / t.w;
-  const vB = vAt(zBot, peg, t.h), vT = vAt(zTop, peg, t.h);
+  const u0 = (l.xoff + len * s0) / t.w;
+  const u1 = (l.xoff + len * s1) / t.w;
+  const vB1 = vAt(b1, peg, t.h), vT1 = vAt(t1, peg, t.h);
+  const vB2 = vAt(b2, peg, t.h), vT2 = vAt(t2, peg, t.h);
   const lit = Math.max(0.02, Math.min(1.4, light));
 
   /* THE MAP'S Y IS THE RENDERER'S MINUS Z, and it has to be, everywhere.
@@ -602,13 +767,13 @@ function addQuad(set, l, bank, texName, zBot, zTop, facingFront, peg, light, sk 
      change. */
   if (facingFront) {
     b.quad(
-      [[x2, zTop, -y2], [x1, zTop, -y1], [x1, zBot, -y1], [x2, zBot, -y2]],
-      [[u1, vT],        [u0, vT],        [u0, vB],        [u1, vB]],
+      [[x2, t2, -y2], [x1, t1, -y1], [x1, b1, -y1], [x2, b2, -y2]],
+      [[u1, vT2],     [u0, vT1],     [u0, vB1],     [u1, vB2]],
       lit, sk, ch);
   } else {
     b.quad(
-      [[x1, zTop, -y1], [x2, zTop, -y2], [x2, zBot, -y2], [x1, zBot, -y1]],
-      [[u1, vT],        [u0, vT],        [u0, vB],        [u1, vB]],
+      [[x1, t1, -y1], [x2, t2, -y2], [x2, b2, -y2], [x1, b1, -y1]],
+      [[u1, vT1],     [u0, vT2],     [u0, vB2],     [u1, vB1]],
       lit, sk, ch);
   }
 }

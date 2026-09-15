@@ -37,6 +37,14 @@ WHERE IT DEPARTS FROM THE PLAN, and why:
     with flights inside it. Tread i is floor 16i and ceiling 16i + 96,
     and the next flight stacks over it with the deck between — which is
     a staircase, and needs no special case anywhere.
+  AND THE ROOF IS A SECTOR AFTER ALL. THE ROOF IS NOT A SECTOR below
+    was written because a sector engine cannot slope a ceiling, and the
+    first cut of the town took it at its word: the roofs were geometry
+    and you could walk through one. A sector's floor or ceiling may now
+    be a PLANE or a GABLE, so a roof is the top storey of a house's
+    column and the engine knows where it is. WHAT THIS PLAN DOES NOT DO
+    still stands on the ground being flat — there are no hills — but it
+    no longer stands on the roofs being a picture.
   FIRE CLIMBS BY TWO PATHS. The plan gives it the stairwell; it has the
     stairwell, four times as willing as going along, and the CEILING as
     the slow way at a tenth of that. One flight reaches into the floor
@@ -686,7 +694,7 @@ order by anybody.
 THE TEST
 --------
 
-1436 checks pass today in about three minutes, with no install and no
+1456 checks pass today in about three minutes, with no install and no
 browser, and every one of them is there because something reached a
 screenshot. The column breaks assumptions that nothing currently
 asserts, so these come first, in phase 1, before the code they check:
@@ -720,10 +728,11 @@ in every test run and nobody has to go looking for the day it doubled.
 WHAT THIS PLAN DOES NOT DO
 --------------------------
 
-  It does not slope a floor or a ceiling. Roofs are geometry and the
-    ground is flat, so the town has no hills. A flat American town is
-    common enough that this is a choice and not a defect, but it is a
-    choice.
+  It does not slope THE GROUND. A floor or a ceiling may be a plane or
+    a gable now — see the note at the top of this file — and the roofs
+    are built out of that, but no street rises and no block sits above
+    another. A flat American town is common enough that this is a
+    choice and not a defect, but it is a choice.
   It does not collapse a storey onto the one below. `js/ruin.js` drops
     a roof and leaves its steel; a gutted first floor landing in the
     kitchen is the same idea one level down and is deliberately left

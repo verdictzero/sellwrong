@@ -304,8 +304,13 @@ export class FireSystem {
        exactly the grid this used to be — every consumer that indexes by
        cy*cols+cx is reading the ground floor and does not know the rest
        is there, Game.ticBurnGrid among them. */
+    /* AS MANY PLANES AS THERE IS FUEL TO PUT IN THEM. A roof storey is
+       a shell — it has no fuel and nothing in it can catch — so a house
+       with a roof over its second floor is still three planes and not
+       four, and half a million cells of nothing are not allocated,
+       seeded and linked to find that out. */
     this.levels = 1;
-    for (const sec of lv.sectors) if (sec.storey + 1 > this.levels) this.levels = sec.storey + 1;
+    for (const sec of lv.sectors) if (sec.fuel > 0 && sec.storey + 1 > this.levels) this.levels = sec.storey + 1;
     this.plane = this.cols * this.rows;
     const n = this.plane * this.levels;
 
@@ -373,6 +378,13 @@ export class FireSystem {
       const open = (s.outdoor || s.forest || s.outside) ? 1 : 0;
       const f = s.fuel | 0;
       const lvl = s.storey;
+      if (lvl >= this.levels) continue;      // a storey with no fuel anywhere
+      /* AND NO CELL FOR A STOREY THAT CANNOT BURN. Plane 0 is seeded
+         whatever its fuel, because a region with none is a firebreak
+         and the grid has to know where the firebreaks are. A roof
+         above a house is not a firebreak, it is a shell — nothing can
+         be alight in it and nothing about it is worth a cell. */
+      if (lvl > 0 && f <= 0) continue;
       /* a plain rectangle is its own bounding box, so every cell of it
          is inside and the query is a formality — which over a town is
          three hundred thousand formalities */
