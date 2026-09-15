@@ -2540,7 +2540,7 @@ export function guttedSurfaces(s, opts = {}) {
 const SIZES = {
   KERB:     { w: 64, h: 16 },
   /* the town */
-  KERBSTON: { w: 64, h: 16 },
+  KERBSTON: { w: 64, h: 24 },   // one repeat is one kerb, which is 24 now
   STAIRTRD: { w: 64, h: 16 },   // one repeat is one step
   SKIRTING: { w: 64, h: 16 },
   HOUSDOOR: { w: 64, h: 128 },  // one repeat is one door

@@ -7431,6 +7431,38 @@ section('the town');
     Math.abs((G.main[0] + G.main[1]) / 2 - 2140) < 64, `${((G.main[0] + G.main[1]) / 2).toFixed(0)} against 2140`);
   check('the town starts where the lot stops', G.y1 === -3096, `${G.y1}`);
 
+  /* THE STREET IN CROSS-SECTION, at the user's request: the sidewalk is
+     three times the plan's 48 and the kerb twice its 12, and both came
+     out of the carriageway because the block pitch is what puts the
+     supermarket on the grid. */
+  {
+    const U3 = await import('../js/util.js');
+    const walk = level.sectors.find(s2 => /^sidewalk,/.test(s2.name));
+    const road = level.sectors.find(s2 => /^street centre,/.test(s2.name));
+    const width = s2 => Math.min(s2.bbox[2] - s2.bbox[0], s2.bbox[3] - s2.bbox[1]);
+    note('the street', `sidewalk ${width(walk)} wide, kerb ${walk.floor} tall, carriageway ${T.STREET - 2 * (width(walk) + 24)}`);
+    check('a sidewalk is three times the plan\'s forty-eight', width(walk) === 144, `${width(walk)}`);
+    check('and the kerb twice its twelve', walk.floor === 24, `${walk.floor}`);
+    check('the street is still 576, so the block pitch is still 3648',
+      T.STREET === 576 && T.PITCH === 3648);
+    check('and main street still points at the supermarket doors',
+      Math.abs((G.main[0] + G.main[1]) / 2 - 2140) < 64);
+    /* AND YOU CAN STILL GET ON IT. Twenty-four is exactly MAX_STEP, so
+       this is the check that stands between a town with sidewalks and a
+       town with a kerb you can see and not stand on. */
+    check('a kerb of twenty-four is exactly the tallest step there is',
+      walk.floor === U3.MAX_STEP, `${walk.floor} against ${U3.MAX_STEP}`);
+    /* THE KERB IS AT THE VERGE, which is the band the plan puts between
+       the walking and the parking: road, then the step up, then grass,
+       then concrete. So the line to ask about is the verge's. */
+    const verge = level.sectors.find(s2 => /^verge,/.test(s2.name));
+    const shared = verge && verge.lines.find(l => l.frontCol.length && l.backCol.length &&
+      [l.front, l.back].some(i => /^(street|street edge|street centre),/.test(level.sectors[i].name)));
+    if (check('the kerb is a step from the carriageway up to the verge', !!shared && verge.floor === 24))
+      check('and you can step up it', level.lineBlocks(shared, 0, 56, false) === null,
+        `${level.lineBlocks(shared, 0, 56, false)}`);
+  }
+
   const townSecs = level.sectors.filter(inTown);
   note('what is in it', `${townSecs.length} regions, ${level.roofs.length} roofs, ${level.sectors.filter(s => s.storey > 0).length} storeys over a ground floor`);
   check('the town is most of the map now', townSecs.length > level.sectors.length * 0.8, `${townSecs.length} of ${level.sectors.length}`);

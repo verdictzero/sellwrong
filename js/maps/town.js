@@ -42,7 +42,12 @@ import { gableSlope } from '../level.js';
 export const PITCH = 3648;          // a block and the street after it
 export const BLOCK = 3072;          // a block face, 315 ft
 export const STREET = 576;          // a residential street, 60 ft
-export const MAIN_W = 768;          // main street, 80 ft
+/* MAIN STREET, and it is 1024 rather than the plan's 768 because the
+   sidewalks are three times what they were and 768 less two sidewalks
+   of 336 is ninety-six units of road. It is still the one irregularity
+   in the grid; it is just a wider one. The block pitch is untouched,
+   so the mall is still on the grid — see THE GRID. */
+export const MAIN_W = 1024;
 const WALL = 16;                    // the void between two rooms IS the wall
 
 /* A STOREY is 96 of clear and 16 of deck. Three of them is 336 and a
@@ -58,11 +63,29 @@ const ceilOf = k => k * STOREY + CLEAR;
    mall's 480 and they are the only things that do. */
 export const SKY = 768;
 
-/* the street, as nine bands: 48 walk | 48 verge | 384 of carriageway |
-   48 verge | 48 walk. The carriageway is 80 of parking, 112 of lane,
-   112 of lane and 80 of parking, which is where the 384 comes from. */
-const WALK = 48, VERGE = 48, KERB_H = 12;
-const CARRIAGE = STREET - 2 * (WALK + VERGE);       // 384
+/* the street, as five bands: 144 of walk | 24 of verge | 240 of
+   carriageway | 24 verge | 144 walk, and the carriageway is two travel
+   lanes with the centre line between them */
+/* THE SIDEWALK IS THREE TIMES THE PLAN'S and the kerb is twice, at the
+   user's request, and both come out of the carriageway because the
+   block pitch is load-bearing: 3648 is what puts the supermarket's own
+   clearing on the grid, and a wider street would take it off.
+
+   What that buys and what it costs. A hundred and forty-four units is
+   four and a half feet of walking either side, which is a sidewalk you
+   notice rather than a kerbstone with a line behind it. What goes is
+   the on-street parking: 48 | 24 | 240 | 24 | 48 in the plan's own
+   terms is two travel lanes of about eleven feet and nowhere to leave a
+   car. Nothing was parked on them, so nothing is lost but the number.
+
+   THE KERB IS TWENTY-FOUR, which is exactly the tallest step the engine
+   will let anything walk up (MAX_STEP in js/util.js). One more unit and
+   the sidewalks of an entire town would be a place you could see and
+   not stand on, which is the kind of number that wants saying out loud
+   rather than being found. */
+const WALK = 144, VERGE = 24, KERB_H = 24;
+const MAIN_WALK = 336;
+const CARRIAGE = STREET - 2 * (WALK + VERGE);       // 240
 
 /* how the lots sit on a block face */
 const FACE = BLOCK / 2;             // 1536, one row of lots back to back
@@ -117,7 +140,7 @@ function rng(seed) {
  * doors, which are at 2140. It comes out at 2112 — a metre off, and
  * from the far end of the town the street points at the entrance.
  */
-export function townGrid(x0 = -9216, yTop = -3096) {
+export function townGrid(x0 = -9344, yTop = -3096) {
   const sx = [], bx = [];
   let x = x0;
   for (let k = 0; k <= 5; k++) {
@@ -228,7 +251,7 @@ export function buildTown(rm, mb, opts = {}) {
 
   /** One run of street between two junctions, with its sidewalks. */
   function streetRun(sx0, sx1, y0, y1, along, tag, main = false) {
-    const w = main ? MAIN_W * 0.146 : WALK;     // 112 on main street
+    const w = main ? MAIN_WALK : WALK;
     const v = main ? 0 : VERGE;
     if (along === 'x') {
       rm.add(sx0, y0, sx1, y0 + w, walkProps(`sidewalk, ${tag}`));
@@ -245,27 +268,37 @@ export function buildTown(rm, mb, opts = {}) {
     }
   }
 
-  /** A junction: no centre line through it, and the sidewalk corners. */
-  function junction(x0, y0, x1, y1, tag, main = false) {
-    const w = main ? 112 : WALK + VERGE;
+  /**
+   * A junction: no centre line through it, and the sidewalk corners.
+   *
+   * THE TWO WIDTHS ARE NOT THE SAME WIDTH. A corner is as deep as the
+   * sidewalk of the street it belongs to, and where Main Street crosses
+   * a residential one those are 336 and 168 — so a square corner of the
+   * larger ate the whole 576 of the smaller and left the middle of the
+   * junction with a negative width. The corner is a rectangle.
+   */
+  function junction(x0, y0, x1, y1, tag, mainAcross = false) {
+    const wx = mainAcross ? MAIN_WALK : WALK + VERGE;   // down the column
+    const wy = WALK + VERGE;                            // along the row
     /* the four corners of sidewalk, which is what makes a crossing a
        crossing — the carriageways run right through the middle */
-    rm.add(x0, y0, x0 + w, y0 + w, walkProps(`corner, ${tag}`));
-    rm.add(x1 - w, y0, x1, y0 + w, walkProps(`corner, ${tag}`));
-    rm.add(x0, y1 - w, x0 + w, y1, walkProps(`corner, ${tag}`));
-    rm.add(x1 - w, y1 - w, x1, y1, walkProps(`corner, ${tag}`));
+    rm.add(x0, y0, x0 + wx, y0 + wy, walkProps(`corner, ${tag}`));
+    rm.add(x1 - wx, y0, x1, y0 + wy, walkProps(`corner, ${tag}`));
+    rm.add(x0, y1 - wy, x0 + wx, y1, walkProps(`corner, ${tag}`));
+    rm.add(x1 - wx, y1 - wy, x1, y1, walkProps(`corner, ${tag}`));
     const road = (a, b, c, d, tex, n) => rm.add(a, b, c, d,
       open(n, { floorTex: tex, light: 0.30, ambient: 0.30, fuel: TOWN_FUEL.road }));
+    const B = 24;                                       // how deep a crossing bar is
     /* the mouths, with the crossing bars painted across them */
-    road(x0 + w, y0, x1 - w, y0 + 24, 'CROSSWLK', `crossing, ${tag}`);
-    road(x0 + w, y1 - 24, x1 - w, y1, 'CROSSWLK', `crossing, ${tag}`);
-    road(x0, y0 + w, x0 + 24, y1 - w, 'CROSSWLK', `crossing, ${tag}`);
-    road(x1 - 24, y0 + w, x1, y1 - w, 'CROSSWLK', `crossing, ${tag}`);
-    road(x0 + w, y0 + 24, x1 - w, y0 + w, 'ASPHOLD', `junction, ${tag}`);
-    road(x0 + w, y1 - w, x1 - w, y1 - 24, 'ASPHOLD', `junction, ${tag}`);
-    road(x0 + 24, y0 + w, x0 + w, y1 - w, 'ASPHOLD', `junction, ${tag}`);
-    road(x1 - w, y0 + w, x1 - 24, y1 - w, 'ASPHOLD', `junction, ${tag}`);
-    road(x0 + w, y0 + w, x1 - w, y1 - w, 'ASPHOLD', `junction, ${tag}`);
+    road(x0 + wx, y0, x1 - wx, y0 + B, 'CROSSWLK', `crossing, ${tag}`);
+    road(x0 + wx, y1 - B, x1 - wx, y1, 'CROSSWLK', `crossing, ${tag}`);
+    road(x0, y0 + wy, x0 + B, y1 - wy, 'CROSSWLK', `crossing, ${tag}`);
+    road(x1 - B, y0 + wy, x1, y1 - wy, 'CROSSWLK', `crossing, ${tag}`);
+    road(x0 + wx, y0 + B, x1 - wx, y0 + wy, 'ASPHOLD', `junction, ${tag}`);
+    road(x0 + wx, y1 - wy, x1 - wx, y1 - B, 'ASPHOLD', `junction, ${tag}`);
+    road(x0 + B, y0 + wy, x0 + wx, y1 - wy, 'ASPHOLD', `junction, ${tag}`);
+    road(x1 - wx, y0 + wy, x1 - B, y1 - wy, 'ASPHOLD', `junction, ${tag}`);
+    road(x0 + wx, y0 + wy, x1 - wx, y1 - wy, 'ASPHOLD', `junction, ${tag}`);
   }
 
   /* ---- the whole grid of them ------------------------------------- */

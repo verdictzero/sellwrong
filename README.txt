@@ -129,7 +129,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         1456 checks, no install and no browser
+  the smoke test         1463 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -3233,10 +3233,21 @@ park and its ring road are a four-by-two superblock on a grid nobody had
 drawn, to within thirty-two units. Nothing had to be reconciled with
 anything.
 
-Main Street is 768 where every other street is 576, and its centre lands
-on 2112 against a supermarket entrance at 2140. From the far end of the
-town the street points at the doors, which is what a street like that is
-for and is also what happened when the arithmetic was done.
+Main Street is 1024 where every other street is 576, and its centre
+lands on 2112 against a supermarket entrance at 2140. From the far end
+of the town the street points at the doors, which is what a street like
+that is for and is also what happened when the arithmetic was done.
+
+THE STREET IS FIVE BANDS: 144 of sidewalk, 24 of verge, 240 of
+carriageway, and the same back out. The sidewalk is three times what the
+plan asked for and the kerb, at 24, is twice — both at the user's
+request, and both taken out of the carriageway rather than out of the
+street, because 3648 is the pitch that puts the supermarket's clearing
+on the grid and a wider street would take it off. What goes is the
+on-street parking; nothing was parked on it. Twenty-four is exactly the
+tallest step the engine will let anything walk up, which makes a
+sidewalk the highest thing in the town you can still get onto and is a
+number worth saying out loud rather than finding.
 
 A SECTOR IS A COLUMN OF STOREYS
 - - - - - - - - - - - - - - - -
@@ -3983,7 +3994,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-1456 checks. Every one of them earns its place by having caught something
+1463 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

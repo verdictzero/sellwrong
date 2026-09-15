@@ -581,7 +581,7 @@ one.
 THE TEST
 --------
 
-1456 checks pass headless in about three minutes. These are the ones this
+1463 checks pass headless in about three minutes. These are the ones this
 work makes possible, and several of them are the kind that only a
 system built this way can state at all:
 
