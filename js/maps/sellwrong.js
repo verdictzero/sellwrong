@@ -379,7 +379,17 @@ const FUEL = {
   unit: 240, kitchen: 330,
 };
 
-export function buildSellWrong() {
+/**
+ * @param opts.town  build the town on the other side of the ring road.
+ *   Default yes. The smoke test turns it off for the dozen checks that
+ *   are about the SHOP — a Game with a town in it is ten thousand
+ *   regions and a fuel grid of a million and a half cells, and holding
+ *   a dozen of those at once is how a test runner runs out of memory.
+ *   With it off the map is the one this file built before there was a
+ *   town: nine thousand units of wood where the streets are.
+ */
+export function buildSellWrong(opts = {}) {
+  const withTown = opts.town !== false;
   const mb = new MapBuilder('SELLWRONG');
   const rm = new RectMap(mb);
   const carSlots = [];
@@ -1025,13 +1035,17 @@ export function buildSellWrong() {
      its own sightlines and fifty thousand trees behind a terrace are
      fifty thousand trees nobody can see.
      ================================================================= */
-  const town = buildTown(rm, mb, { yTop: LOT_Y0 });
+  const town = withTown ? buildTown(rm, mb, { yTop: LOT_Y0 }) : null;
   const TOWN_REACH = 4000;
-  const OY0 = town.grid.y0 - TOWN_REACH;
-  /* the wood that is left: west of the town, east of it, and behind it */
-  woodRect(OX0, town.grid.y0, town.grid.x0, LOT_Y0, 'wood, west of the town');
-  woodRect(town.grid.x1, town.grid.y0, OX1, LOT_Y0, 'wood, east of the town');
-  woodRect(OX0, OY0, OX1, town.grid.y0, 'wood, beyond the town');
+  const OY0 = town ? town.grid.y0 - TOWN_REACH : LOT_Y0 - FOREST_REACH;
+  if (town) {
+    /* the wood that is left: west of the town, east of it, and behind it */
+    woodRect(OX0, town.grid.y0, town.grid.x0, LOT_Y0, 'wood, west of the town');
+    woodRect(town.grid.x1, town.grid.y0, OX1, LOT_Y0, 'wood, east of the town');
+    woodRect(OX0, OY0, OX1, town.grid.y0, 'wood, beyond the town');
+  } else {
+    woodRect(OX0, OY0, OX1, LOT_Y0, 'wood, behind you');
+  }
   /* THE THROUGH ROAD carries on past both T-junctions and out through
      the wood until the forest ends. It is the same five strips as the
      traversal road it continues, so the lines run on across the junction
@@ -1601,9 +1615,9 @@ export function buildSellWrong() {
   /* THE ROOFS, which belong to no sector: a sector engine cannot slope a
      ceiling, so a pitched roof is geometry over a footprint. See
      roofGeometry in js/mapgeo.js. */
-  level.roofs = town.roofPending;
+  level.roofs = town ? town.roofPending : [];
   /* and where the town is, for whoever wants to drive into it */
-  level.town = { grid: town.grid, stations: town.stations, school: town.school, church: town.church };
+  level.town = town ? { grid: town.grid, stations: town.stations, school: town.school, church: town.church } : null;
   /* Position, heading and which one it is, for whatever draws the cars. */
   level.carSlots = carSlots;
   /* the road, and where it leaves the map: whoever comes, comes from

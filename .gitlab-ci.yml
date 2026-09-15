@@ -34,7 +34,9 @@ smoke test:
   stage: test
   script:
     - node --version
-    - node tools/smoke-test.mjs
+    # the heap: see the same step in .github/workflows — the map is a
+    # town now and the suite builds it three times
+    - node --max-old-space-size=4096 tools/smoke-test.mjs
 
 # The art in art/ is baked into js/art-data.js by hand, deliberately, so
 # that the game has no build step. That is only safe if something checks
