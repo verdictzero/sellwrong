@@ -31,7 +31,14 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '22' }
       - name: smoke test
-        run: node tools/smoke-test.mjs
+        # A TOWN-SIZED MAP NEEDS THE ROOM. The suite builds the whole map
+        # three times with the town on it — eleven thousand regions and a
+        # fuel grid of a million and a half cells each — and eight more
+        # times with { town: false }, which is the shop as it was. Node's
+        # default heap on a runner is under what that needs and the job
+        # died with FatalProcessOutOfMemory rather than a failing check,
+        # which is the kind of red that teaches nobody anything.
+        run: node --max-old-space-size=4096 tools/smoke-test.mjs
       - name: art is in step with art/
         run: |
           cp js/art-data.js /tmp/art-data.committed.js

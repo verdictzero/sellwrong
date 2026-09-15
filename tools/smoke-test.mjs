@@ -374,7 +374,20 @@ const MAP = await import('../js/maps/sellwrong.js');
 const { PLAYER_EYE } = await import('../js/util.js');
 const { buildSellWrong } = MAP;
 const level = buildSellWrong();
-/* WHICH HALF OF THE MAP. There is a town on the other side of the ring
+/* THE TOWN IS BUILT THREE TIMES IN THIS FILE and no more: here, in the
+   portal flood's section and in the town's own. Everywhere else the map
+   is built with { town: false }, which is the map this file built
+   before there was a town — nine thousand units of wood where the
+   streets are.
+
+   It is not tidiness. A Game holds a Level of eleven thousand regions
+   and a fuel grid of a million and a half cells, and a dozen of those
+   alive at once is how a test runner runs out of memory, which is
+   exactly what it did. The checks that build one are about the SHOP —
+   the frost, the lamps, the decals, the gun — and a town four thousand
+   units away across the ring road is not part of any of them.
+
+   WHICH HALF OF THE MAP. There is a town on the other side of the ring
    road now (TOWN.txt), so a test that says "the shop" or "the store"
    has to say which sectors it means — the filters below used to catch
    every indoor region on the map because every indoor region on the map
@@ -1056,7 +1069,7 @@ section('fire');
     const THREE3 = await import('three');
     const { Game } = await import('../js/game.js');
     const mat = await import('../js/material.js');
-    const lv3 = MAP.buildSellWrong();
+    const lv3 = MAP.buildSellWrong({ town: false });
     const scene3 = new THREE3.Scene();
     const g3 = new Game({
       level: lv3, scene: scene3, camera: {},
@@ -1325,7 +1338,7 @@ section('the air');
      the shared level's gondolas and the sim has marked those regions
      charred and gutted on the sectors themselves — which is right, and
      which would make a gutted gondola a gondola the rain gets into. */
-  const freshLevel = () => MAP.buildSellWrong();
+  const freshLevel = () => MAP.buildSellWrong({ town: false });
   {
     const [e, n, ww, ss] = F.windMultipliers(0.9, 0);
     check('a wind of 0.9 runs the fire downwind and holds it upwind', e > 1.5 && ww < 0.5 && n === 1 && ss === 1, `${e} ${ww}`);
@@ -2028,7 +2041,7 @@ section('the cold');
   const hudStub = { message() {}, ticMessages() {}, resize() {}, update() {} };
   const inputStub = { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
                       attack: false, use: false, run: false, sample() {}, sensitivity: 0 };
-  const mk = () => new Game({ level: MAP.buildSellWrong(), scene: new THREE.Scene(), camera: {},
+  const mk = () => new Game({ level: MAP.buildSellWrong({ town: false }), scene: new THREE.Scene(), camera: {},
     textures: tex.bakeTextures(), sprites: spr.bakeSprites(), hud: hudStub, audio: null, input: inputStub });
 
   /* --- IT IS A SHORTER ARM THAN THE FLAME -------------------------
@@ -3200,7 +3213,7 @@ section('the lights');
      painted fitting and the light in js/maps/sellwrong.js are the same
      light and not two things 128 units apart. */
   {
-    const lampsHere = MAP.buildSellWrong().things.filter(t => t.type === 'LAMP');
+    const lampsHere = MAP.buildSellWrong({ town: false }).things.filter(t => t.type === 'LAMP');
     const off = (v) => ((v % 256) + 256) % 256;
     const offs = new Set(lampsHere.map(t => `${off(t.x)},${off(t.y)}`));
     note('the light in the picture / the light in the map',
@@ -3243,7 +3256,7 @@ section('the lights');
   {
     const THREE4 = await import('three');
     const { Game } = await import('../js/game.js');
-    const lv4 = MAP.buildSellWrong();
+    const lv4 = MAP.buildSellWrong({ town: false });
     const g4 = new Game({
       level: lv4, scene: new THREE4.Scene(), camera: {},
       textures: tbank, sprites: bank,
@@ -3479,7 +3492,7 @@ await (async () => {
   /* --- AND THE SIMULATION CANNOT SEE THEM --- */
   const THREE5 = await import('three');
   const { Game } = await import('../js/game.js');
-  const lv5 = MAP.buildSellWrong();
+  const lv5 = MAP.buildSellWrong({ town: false });
   const g5 = new Game({
     level: lv5, scene: new THREE5.Scene(), camera: {},
     textures: tex.bakeTextures(), sprites: spr.bakeSprites(),
@@ -3622,7 +3635,7 @@ section('the way out');
   const THREE = await import('three');
   const hudStub = { message() {}, ticMessages() {}, resize() {}, update() {} };
   const inputStub = { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 }, attack: false, use: false, run: false, sample() {}, sensitivity: 0 };
-  const lv = MAP.buildSellWrong();
+  const lv = MAP.buildSellWrong({ town: false });
   const g = new Game({ level: lv, scene: new THREE.Scene(), camera: {}, textures: tex.bakeTextures(), sprites: spr.bakeSprites(), hud: hudStub, audio: null, input: inputStub });
 
   /* --- the doors are there, and they are doors --- */
@@ -4946,7 +4959,7 @@ section('the van');
        is dead in nine seconds — which is correct, and is not what this
        is measuring. */
     const gs = new Game({
-      level: MAP.buildSellWrong(), scene: new THREE2.Scene(), camera: {},
+      level: MAP.buildSellWrong({ town: false }), scene: new THREE2.Scene(), camera: {},
       textures: gm.textures, sprites: spr.bakeSprites(),
       hud: { message() {}, ticMessages() {} }, audio: null,
       input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
@@ -5611,7 +5624,7 @@ section('the van');
        night, one shot, and the clock runs until a van is standing. */
     {
       const fresh = new Game({
-        level: MAP.buildSellWrong(), scene: new THREE2.Scene(), camera: {},
+        level: MAP.buildSellWrong({ town: false }), scene: new THREE2.Scene(), camera: {},
         textures: gm.textures, sprites: spr.bakeSprites(),
         hud: { message() {}, ticMessages() {} }, audio: null,
         input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
@@ -5676,7 +5689,7 @@ section('the van');
 
       /* --- a night of its own ---------------------------------------- */
       const ga = new Game({
-        level: MAP.buildSellWrong(), scene: new THREE2.Scene(), camera: {},
+        level: MAP.buildSellWrong({ town: false }), scene: new THREE2.Scene(), camera: {},
         textures: gm.textures, sprites: spr.bakeSprites(),
         hud: { message() {}, ticMessages() {} }, audio: null,
         input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
@@ -5955,7 +5968,7 @@ section('the cerebral bore');
   const MAPB = await import('../js/maps/sellwrong.js');
   const THREEB = await import('three');
   const mk = () => new Game({
-    level: MAPB.buildSellWrong(), scene: new THREEB.Scene(), camera: {},
+    level: MAPB.buildSellWrong({ town: false }), scene: new THREEB.Scene(), camera: {},
     textures: tex.bakeTextures(), sprites: spr.bakeSprites(),
     hud: { message() {}, ticMessages() {} }, audio: null,
     input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
@@ -6119,7 +6132,7 @@ section('the minigun, the jump and the van');
   const MAPM = await import('../js/maps/sellwrong.js');
   const THREEM = await import('three');
   const mk = () => new Game({
-    level: MAPM.buildSellWrong(), scene: new THREEM.Scene(), camera: {},
+    level: MAPM.buildSellWrong({ town: false }), scene: new THREEM.Scene(), camera: {},
     textures: tex.bakeTextures(), sprites: spr.bakeSprites(),
     hud: { message() {}, ticMessages() {} }, audio: null,
     input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
@@ -6301,7 +6314,7 @@ section('the minigun, the jump and the van');
       const MAPS = await import('../js/maps/sellwrong.js');
       const THREES = await import('three');
       const calls = { play: [], loops: 0, stops: 0 };
-      const gS = new Game({ level: MAPS.buildSellWrong(), scene: new THREES.Scene(), camera: {},
+      const gS = new Game({ level: MAPS.buildSellWrong({ town: false }), scene: new THREES.Scene(), camera: {},
         textures: tex.bakeTextures(), sprites: spr.bakeSprites(), hud: { message() {}, ticMessages() {} },
         audio: { play(n) { calls.play.push(n); }, loop(n) { calls.loops++; return { stop() { calls.stops++; } }; }, listener: { x: 0, y: 0 }, setAmbience() {} },
         input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 }, attack: false, use: false, run: false, jump: false, sample() {}, sensitivity: 0 } });
@@ -6347,7 +6360,7 @@ section('the decals');
   const MAPD = await import('../js/maps/sellwrong.js');
   const THREED = await import('three');
   const mk = () => new Game({
-    level: MAPD.buildSellWrong(), scene: new THREED.Scene(), camera: {},
+    level: MAPD.buildSellWrong({ town: false }), scene: new THREED.Scene(), camera: {},
     textures: tex.bakeTextures(), sprites: spr.bakeSprites(),
     hud: { message() {}, ticMessages() {} }, audio: null,
     input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
@@ -6542,7 +6555,7 @@ section('the vans under fire');
     return carV.modelVehicle(json, bin);
   })();
   const mk = () => new Game({
-    level: MAPV.buildSellWrong(), scene: new THREEV.Scene(), camera: {},
+    level: MAPV.buildSellWrong({ town: false }), scene: new THREEV.Scene(), camera: {},
     textures: tex.bakeTextures(), sprites: spr.bakeSprites(),
     hud: { message() {}, ticMessages() {} }, audio: null,
     input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
@@ -6822,7 +6835,7 @@ section('the gunship');
   const vanG = (() => { const v = readGLB('assets/models/van.glb'); return carG.modelVehicle(v.json, v.bin); })();
   const texG = tex.bakeTextures(), sprG = spr.bakeSprites();
   const mkG = () => new Game({
-    level: MAPG.buildSellWrong(), scene: new THREEG.Scene(), camera: {},
+    level: MAPG.buildSellWrong({ town: false }), scene: new THREEG.Scene(), camera: {},
     textures: texG, sprites: sprG,
     hud: { message() {}, ticMessages() {} }, audio: null,
     input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
