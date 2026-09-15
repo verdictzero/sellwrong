@@ -67,34 +67,23 @@ export const world = {
   fireLight:      { value: 0.0 },
   fireLightColor: { value: new THREE.Color(1.0, 0.55, 0.18) },
 
-  /* THE SPOTLIGHT, which is the second light in the game and the first
-     that is a lamp: the gunship's searchlight (js/vtol.js), a cone of
-     cold white from a point in the sky, pointed wherever its turret is
-     pointed — at you, when it can see you. An actual lit light, at the
-     user's request, and NO SHADOWS, at the user's request: it is a cone
-     test and a falloff in the fragment shader, added on top of the
-     banded light the way the fire glow is, on every surface that
-     shades with worldShade — the walls, the floor, the cars, the trees,
-     the crowd, the smoke. It goes through walls, because a shadow map
-     is a renderer this is not, and a beam that lights the inside of the
-     shop from over the car park is a beam nobody has minded yet.
+  /* THERE WAS A SECOND LIGHT HERE FOR AN AFTERNOON, and it is worth a
+     paragraph because the reasoning is the file's: the gunship's
+     searchlight (js/vtol.js) was a lit cone — spotPos, spotDir, two
+     cone cosines, a range and a colour — added on top of the banded
+     light the way the fire glow is, on every surface that shades with
+     worldShade. It worked. It is gone at the user's request, and what
+     is kept instead is the LENS FLARE at the lamp, which is the part
+     you actually read a searchlight by at night.
 
-       spotPos      where the lamp is, renderer coordinates
-       spotDir      which way it points, unit
-       spotCos      the cosine of the cone's outer half-angle, where the
-                    light has gone to nothing
-       spotSoft     and of the inner one, inside which it is full
-       spotRange    how far it reaches before the falloff has it
-       spotLight    how bright; 0 is off, and costs one branch */
-  spotPos:   { value: new THREE.Vector3(0, -10000, 0) },
-  spotDir:   { value: new THREE.Vector3(0, -1, 0) },
-  spotCos:   { value: 0.955 },
-  spotSoft:  { value: 0.985 },
-  spotRange: { value: 1500.0 },
-  spotLight: { value: 0.0 },
-  spotColor: { value: new THREE.Color(0.80, 0.90, 1.0) },
+     What it cost while it was here was a branch and a normalize in
+     every fragment of every wall, floor, car, tree, sprite and puff in
+     the game, for a pool of light on the tarmac that a beam with no
+     shadow map put through the roof of the shop as readily as onto the
+     lot. One light in this file is the right number, and it is the
+     fire.
 
-  /* THE COALS. One clock for everything in the game that is still
+     THE COALS. One clock for everything in the game that is still
      glowing after the flame has gone — the burning trees run on it, and
      so does every charred and gutted surface in the store. Seconds. */
   emberTime: { value: 0.0 },
@@ -151,13 +140,6 @@ uniform vec3  fireLightPos;
 uniform float fireLightRange;
 uniform float fireLight;
 uniform vec3  fireLightColor;
-uniform vec3  spotPos;
-uniform vec3  spotDir;
-uniform float spotCos;
-uniform float spotSoft;
-uniform float spotRange;
-uniform float spotLight;
-uniform vec3  spotColor;
 uniform float emberTime;
 uniform vec3  emberRamp[8];
 uniform sampler2D burnGrid;
@@ -455,22 +437,6 @@ vec3 worldShade(vec3 albedo, float l, float depth, vec3 world, float fullbright)
     float fa = clamp(1.0 - fd / fireLightRange, 0.0, 1.0);
     fa *= fa;
     c += albedo * fireLightColor * (fa * fireLight * (1.0 - fullbright * 0.7));
-  }
-
-  /* The searchlight, the same way: a cone from the lamp, full inside
-     spotSoft, gone at spotCos, falling off with distance, and no
-     shadow. A surface facing away from the beam takes it as well as one
-     facing into it — there is no normal here to ask — which on a floor
-     or a wall in the beam is the right answer and on the back of a van
-     is a small lie nobody sees from the ground. */
-  if (spotLight > 0.0) {
-    vec3 sv = world - spotPos;
-    float sd = length(sv);
-    float cone = smoothstep(spotCos, spotSoft, dot(sv / max(sd, 1.0), spotDir));
-    if (cone > 0.0) {
-      float sa = clamp(1.0 - sd / spotRange, 0.0, 1.0);
-      c += albedo * spotColor * (cone * sa * sa * spotLight * (1.0 - fullbright * 0.7));
-    }
   }
 
   /* Smoke. Multiplied by fogDensity so a store that is not yet on fire has
@@ -878,13 +844,6 @@ export function worldUniforms() {
     fireLightRange: world.fireLightRange,
     fireLight:      world.fireLight,
     fireLightColor: world.fireLightColor,
-    spotPos:      world.spotPos,
-    spotDir:      world.spotDir,
-    spotCos:      world.spotCos,
-    spotSoft:     world.spotSoft,
-    spotRange:    world.spotRange,
-    spotLight:    world.spotLight,
-    spotColor:    world.spotColor,
     fogColor:     world.fogColor,
     fogNear:      world.fogNear,
     fogFar:       world.fogFar,

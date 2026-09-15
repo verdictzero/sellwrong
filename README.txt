@@ -93,7 +93,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         1253 checks, no install and no browser
+  the smoke test         1264 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -2255,34 +2255,73 @@ one thing that puts it low enough is coming down over a crowd, which it
 goes looking for every eleven seconds and walks across when it finds
 one, taking the next the moment the one it is over is alight.
 
-THE SEARCHLIGHT IS AN ACTUAL LIGHT, at the user's request, AND CASTS NO
-SHADOWS, at the user's request. A cone in the world shader — spotPos and
-its five friends in js/material.js — added on top of the banded light
-the way the fire glow is, on every surface that shades with worldShade:
-the walls, the floor, the cars, the trees, the crowd, the smoke. Twenty
-degrees to the outer edge and ten to the inner, so the pool on the
-tarmac is about two hundred and forty units across with a soft rim, and
-it goes where the turret goes, which is at you when it can see you and
-sweeping ahead when it cannot. Its brightness is a number that came off
-a screenshot rather than off paper: at the one and a half it was first
-set to, the lift did not survive Doom's thirty-two light steps and the
-256-colour palette on top of them — it quantised straight back to the
-colour it started as, so the beam was arithmetic nobody could see. At
-three and a half it is a pale pool you can watch cross the lot. The
-colour stays near-white, because a properly blue lamp comes out of the
-palette as a splash of flat blue paint, which reads as a fault.
+THE SEARCHLIGHT IS A FLARE AND NOTHING ELSE, at the user's request. It
+was an actual lit cone for an afternoon — spotPos and its five friends
+in js/material.js, added on top of the banded light the way the fire
+glow is, on every surface that shades with worldShade, with no shadows —
+and it worked: a pale pool about two hundred and forty units across that
+you could watch cross the lot. The user has had the beam taken out, and
+that is the right call twice over. What it cost while it was there was a
+branch and a normalize in every fragment of every wall, floor, car,
+tree, sprite and puff in the game; and what it bought was a pool of
+light that a beam with no shadow map put through the roof of the shop as
+readily as onto the tarmac. One light in that file is the right number,
+and it is the fire.
 
-AND A MASSIVE ANAMORPHIC FLARE AT THE LAMP, at the user's request: a
-screen-facing quad whose shader draws a horizontal streak eight times
-as wide as it is tall, thin and blue-white, WITH A GRADIENT SPHERE AT
-THE CENTRE of it — brightest when the beam is pointed at you and falling
-off as it swings away. Over everything, depth test off, the way a lens
-flare is, and hidden the moment a wall is between you and the lamp or
-the lamp is behind your shoulder. That second test is not tidiness: a
-flare is sized by its own distance so it stays the same size on the
-screen, and a lamp behind the eye has a negative one — the corners then
-project through infinity and what lands on the screen is a white bowtie
-across the whole frame, which is exactly what the first build did.
+WHAT IS KEPT IS THE LAMP ITSELF, which is what you actually read a
+searchlight by at night: A MASSIVE ANAMORPHIC FLARE, at the user's
+request. A screen-facing quad whose shader draws a horizontal streak
+eight times as wide as it is tall, thin and blue-white, WITH A GRADIENT
+SPHERE AT THE CENTRE of it — brightest when the reflector is pointed at
+you and falling off as it swings away. The gun has the same thing at a
+fifth the size and a warm colour, which is the small flare that stands
+in for the muzzle flash.
+
+AND IT IS OCCLUSION AWARE, at the user's request. A flare is drawn over
+the top of the frame with the depth test off, so nothing in the renderer
+is going to hide it: the three tests are made by hand, every frame, for
+each flare, cheapest first.
+
+  BEHIND THE EYE   a flare is sized by its own DISTANCE so that it stays
+                   the same size on the screen wherever the lamp is, and
+                   a lamp behind your shoulder has a negative one. Left
+                   in, the corners project through infinity and what
+                   lands on the screen is a white bowtie across the whole
+                   frame — which is exactly what the first build did, and
+                   the screenshot that found it was blamed on the flare
+                   being too big for half an hour before the cause turned
+                   out to be the sign of a number.
+  ITS OWN HULL     and this is the one that is actually about an
+                   aircraft. The lamp hangs under the NOSE, so the
+                   fuselage is between you and it from above, from
+                   behind and from abeam — most of the sky the thing
+                   flies in. The hull is a box in the aircraft's own
+                   frame, the EYE is moved into that frame rather than
+                   the box out of it (`unturn`, which is js/vehicles.js's
+                   `turn` solved for its input, and the test holds the
+                   pair against each other), and the sight line is walked
+                   against the box. So the flare goes out as it banks
+                   over the top of you and comes back as it rolls out.
+                   The lamp sits INSIDE that box — four units up off its
+                   floor — so every sight line crosses the box just
+                   before it arrives, and what separates the hull being
+                   in the way from the lamp's own bracket being in the
+                   way is how FAR from the lamp the crossing happens.
+                   Measured on the model: four to nine units from below,
+                   in front or dead ahead; seventy-seven to a hundred and
+                   fifty-nine from above, behind or abeam. The clearance
+                   is twenty-six, with room on both sides of it.
+  THE WORLD        one sight line from the eye to the lamp — the same
+                   call a trooper uses to decide whether it can see you —
+                   so a wall, a shut door or the shop between you and the
+                   aircraft takes the flare away.
+
+None of the three is a hard switch. A flare that pops off at a wall edge
+is worse than one that is a few frames late, so what the tests decide is
+a TARGET and the flare eases onto it over about a sixth of a second. The
+easing is per FRAME rather than per tic, which is allowed here and
+nowhere else in this game: nothing downstream of a flare is simulation,
+so nothing is made non-deterministic by it.
 
 THE VULCAN is three rounds a tic through the same hitscan the player's
 minigun uses, in bursts of about a second with a second between them,
@@ -3467,7 +3506,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-1253 checks. Every one of them earns its place by having caught something
+1264 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -4109,15 +4148,16 @@ WHAT IS NOT DONE
     them are not. The SWAT's table in js/states.js is the one to copy
     when the time comes, and the smoke test pins the boundary so that it
     is crossed on purpose
-  the gunship's searchlight goes THROUGH WALLS, which is asked for —
-    no shadows — and is worth writing down anyway: stand inside the
-    shop with one overhead and the beam lights the aisle it is pointed
-    at through the roof. A shadow map is a renderer this is not, and
-    nobody has yet minded it from the ground
-  and there is exactly ONE of it in the world shader, so when two
-    gunships are up only the nearer one's lamp lights anything. Both
-    draw their own flare, so what you see from a distance is two lamps
-    and one beam
+  the gunship's lamp lights nothing. It threw a lit cone into the world
+    shader for an afternoon and the user has had the beam out, so the
+    searchlight is now a flare and a turret that points at you — which
+    is most of what one reads as at night, and is not the pool of light
+    on the tarmac that was there for an afternoon
+  the flare's occlusion is the aircraft's own hull and the level's
+    walls, and nothing else. A van between you and a gunship's lamp
+    does not take the flare away, and neither does a tree: the wall
+    walk does not know about either of them, and both are small enough
+    at the range a gunship is usually at that nobody has minded
   a gunship in the air ignores everything but the ground under it. It
     does not hit the building — it climbs over the parapet rather than
     avoiding it — it does not hit another gunship, and the wreck lands

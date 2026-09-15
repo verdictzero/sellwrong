@@ -6434,21 +6434,17 @@ section('the gunship');
     check('and it hurts: a gunship overhead is a clock running', hurt > 30, `${hurt}`);
   }
 
-  /* THE SEARCHLIGHT IS A LIGHT, at the user's request: one cone in the
-     world shader (js/material.js), pointed where the turret points, no
-     shadows. And the flare at the lamp is the other half of it. */
+  /* THE SEARCHLIGHT IS A FLARE AND NOTHING ELSE, at the user's request:
+     it lit the world through a cone in the world shader for an
+     afternoon and the beam is out, so the first thing asserted is that
+     nothing in js/material.js is carrying it any more. */
   {
-    world.spotLight.value = 0;
-    gg.gunships.render(pg.x, pg.y, pg.viewZ);
-    const lamp = ship.lamp, beam = ship.beam;
-    check('the searchlight lights the world: a cone from the lamp, pointed where the turret is',
-      world.spotLight.value > 0 &&
-      Math.abs(world.spotPos.value.x - lamp.x) < 1e-3 && Math.abs(world.spotPos.value.y - lamp.z) < 1e-3 &&
-      Math.abs(world.spotDir.value.x - beam.x) < 1e-3,
-      `${world.spotLight.value.toFixed(2)} bright, ${world.spotRange.value} far`);
-    check('and it is a cone with a soft edge rather than a circle of paint',
-      world.spotCos.value < world.spotSoft.value && world.spotCos.value > 0.8);
-    check('and the beam points down out of the sky rather than along it', beam.z < -0.05, `${beam.z.toFixed(2)}`);
+    const src = fs.readFileSync('js/material.js', 'utf8');
+    check('the lit cone is gone out of the world shader, at the user\'s request',
+      !/uniform\s+\w+\s+spot/.test(src) && !src.includes('spotLight >') && world.spotLight === undefined,
+      'js/material.js still declares a spotlight');
+    check('and nothing in the game points one any more',
+      !fs.readFileSync('js/vtol.js', 'utf8').includes('spotLight'));
     check('there is a flare at the lamp, and a smaller one at the muzzle',
       !!ship.lampFlare.mesh && !!ship.muzzleFlare.mesh &&
       ship.lampFlare.size[0] > ship.lampFlare.size[1] * 4 &&
@@ -6456,12 +6452,103 @@ section('the gunship');
       `${ship.lampFlare.size.join(' by ')} against ${ship.muzzleFlare.size.join(' by ')}`);
     check('and the flare is anamorphic: far wider than it is tall, with a sphere at the middle',
       ship.lampFlare.ball > 0 && ship.lampFlare.ball < 1);
-    /* and no gunship in the air is no spotlight, rather than a beam
-       left pointing wherever the last one died */
-    const gN = mkG();
-    gN.gunships.render(0, 0, 0);
-    check('and with nothing in the air the world has no spotlight in it', world.spotLight.value === 0);
-    gg.gunships.render(pg.x, pg.y, pg.viewZ);
+    const beam = ship.beam;
+    check('and the lamp points down out of the sky rather than along it', beam.z < -0.05, `${beam.z.toFixed(2)}`);
+  }
+
+  /* --- AND THE FLARE IS OCCLUSION AWARE ------------------------------
+     At the user's request, and it has to be done by hand: the quad is
+     drawn over the top of the frame with the depth test off, so nothing
+     in the renderer is going to hide it. Three tests, and each is
+     checked here on its own.
+
+     First the two pure pieces underneath them. `unturn` is `turn` from
+     js/vehicles.js solved for its input — the eye is what moves into
+     the aircraft's frame, because that is where the hull box is — and
+     `boxBetween` is the slab walk that decides whether the hull is in
+     the way of the lamp. */
+  {
+    const veh = await import('../js/vehicles.js');
+    for (const [yaw, rx, rz] of [[0.7, 0.2, -0.4], [-2.1, 0, 0], [3.0, 1.2, 0.9]]) {
+      const p0 = [37, -11, 23];
+      const back = V.unturn(veh.turn(p0, yaw, rx, rz), yaw, rx, rz);
+      check('turning a point and turning it back is where it started',
+        back.every((v, i) => Math.abs(v - p0[i]) < 1e-9),
+        back.map(v => v.toFixed(3)).join(', '));
+    }
+    const box = { lo: [-10, -10, -10], hi: [10, 10, 10] };
+    check('a line that misses the box is not blocked by it',
+      !V.boxBetween([100, 100, 100], [100, 100, -100], box, 0));
+    check('and a line straight through it is',
+      V.boxBetween([-100, 0, 0], [100, 0, 0], box, 0));
+    check('but not when it only clips it on the way in to its own end',
+      !V.boxBetween([0, -100, 0], [0, -9, 0], box, 5) &&
+      V.boxBetween([0, -100, 0], [0, -9, 0], box, 0.5),
+      'the clearance is what tells the hull from the lamp\'s own bracket');
+
+    /* AND THEN THE AIRCRAFT. The lamp hangs under the nose INSIDE the
+       fuselage's own box, so every sight line to it crosses that box
+       just before it arrives; what separates "the hull is in the way"
+       from "the lamp's own bracket is" is how FAR from the lamp the
+       crossing happens. Measured on the model: four to nine units from
+       below, in front, or dead ahead, and seventy-seven to a hundred
+       and fifty-nine from above, behind or abeam. The clearance sits
+       between the two with room on both sides. */
+    const gO = mkG();
+    const so = gO.gunships.send();
+    so.state = 'station';
+    so.x = 0; so.y = 0; so.cz = 0; so.yaw = 0; so.rx = 0; so.rz = 0;
+    so.tYaw = 0; so.tPitch = 0;
+    const hides = (bx, by, bz) => {
+      /* a point in the aircraft's own frame, put out into the world so
+         the test goes in the way the game's does */
+      const w = veh.turn([bx, by, bz], so.yaw, so.rx, so.rz);
+      return so.hullHides(so.x + w[0], so.y - w[2], so.cz + w[1], gO.gunships.model.lamp,
+        ['fuselage', 'turret', 'pitch', 'lamp']);
+    };
+    check('the aircraft\'s own hull does not hide its lamp from below, where the lamp faces',
+      !hides(172, -800, 0) && !hides(900, -500, 0) && !hides(1200, -37, 0),
+      'the lamp hangs under the nose; from underneath it there is nothing in the way');
+    check('and DOES hide it from above and from behind, which is most of the sky it flies in',
+      hides(172, 800, 0) && hides(-700, 600, 0) && hides(0, -37, 1200),
+      'straight down on the nose, over the tail, and abeam at its own height');
+    const C = V.VTOL.lamp.hullClear;
+    check('and the clearance that tells the two apart has room on both sides of it',
+      C > 12 && C < 60, `${C}, against 9 from below and 77 from above`);
+
+    /* the three tests, through the render path that actually uses them,
+       with the flare's own easing wound out by calling it enough times
+       for the answer to have arrived */
+    const settle = (ex, ey, ez, vdx, vdy) => {
+      for (let i = 0; i < 24; i++) so.render(ex, ey, ez, vdx, vdy);
+      return so.lampFlare.mesh.visible;
+    };
+    /* over the car park rather than over the origin, which on this map
+       is somewhere in the wood: the third test is a real sight line and
+       it wants open ground under it */
+    const po = gO.player;
+    so.lampOn = true;
+    so.x = po.x - 500; so.y = po.y;
+    so.ground = po.z;
+    so.cz = po.z + 330;
+    so.yaw = 0;
+    /* stood in front of the lamp and looking back along its own beam */
+    const under = { x: po.x, y: po.y, z: po.viewZ };
+    so.tPitch = Math.atan2(under.z - so.cz, under.x - so.x); so.tYaw = 0;
+    const toward = Math.atan2(so.y - under.y, so.x - under.x);
+    const seen = settle(under.x, under.y, under.z, Math.cos(toward), Math.sin(toward));
+    check('stood in front of a lit gunship and looking at it, the flare is drawn', seen);
+    /* turn round and it is gone: a flare sized by its own distance and
+       a lamp behind the eye is a white bowtie across the whole frame */
+    check('turn your back on it and the flare is not drawn at all',
+      !settle(under.x, under.y, under.z, -Math.cos(toward), -Math.sin(toward)));
+    /* and it does not switch: what the tests decide is eased onto */
+    so.lampFlare.vis = 0;
+    so.render(under.x, under.y, under.z, Math.cos(toward), Math.sin(toward));
+    const first = so.lampFlare.vis;
+    check('and it comes and goes over a few frames rather than switching',
+      first > 0 && first < 0.9 && V.VTOL.lamp.outer < V.VTOL.lamp.inner,
+      `${first.toFixed(2)} of the way there after one frame`);
   }
 
   /* THE JET WASH. Where an engine's exhaust lands is a ray from the
@@ -6603,8 +6690,11 @@ section('the gunship');
       gg.vehicles.flying.length + gg.vehicles.resting.length > 8 &&
       [...gg.vehicles.flying, ...gg.vehicles.resting].some(c => c.own));
     check('and it is burning on the tarmac where it landed', gg.fire.burningCells > 0, `${gg.fire.burningCells} cells`);
-    check('and the searchlight goes out with it',
-      (() => { gg.gunships.render(pg.x, pg.y, pg.viewZ); return world.spotLight.value === 0; })());
+    check('and the lamp goes out with it, flare and all',
+      (() => {
+        for (let i = 0; i < 24; i++) gg.gunships.render(pg.x, pg.y, pg.viewZ, 1, 0);
+        return !ship.lampOn && !ship.lampFlare.mesh.visible && !ship.muzzleFlare.mesh.visible;
+      })());
     /* it lies there smouldering rather than vanishing, and the night
        goes on round it */
     for (let t = 0; t < 200; t++) gg.tic();

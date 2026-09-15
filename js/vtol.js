@@ -67,17 +67,45 @@
    in its place a FLARE: the searchlight's own flare, small and warm,
    flickering at the muzzle while it fires.
 
-   THE SEARCHLIGHT IS A LIGHT. An actual lit cone in the world shader
-   (see spotPos and its friends in js/material.js), pointed where the
-   turret points, on every surface that shades with worldShade, with
-   no shadows, at the user's request. And where the lamp itself is
-   there is a FLARE, at the user's request, a massive anamorphic one:
-   a screen-facing quad whose shader draws a horizontal streak most of
-   the screen wide, thin, blue-white, with a gradient sphere at the
-   centre of it, brightest when the beam is on you and falling away
-   as it swings off. It is drawn over everything with the depth test
-   off, the way a lens flare is, and hidden when a wall is between you
-   and the lamp, which is one sight-line a frame.
+   THE SEARCHLIGHT IS A FLARE AND NOTHING ELSE, at the user's request.
+   It was a lit cone in the world shader for an afternoon — pointed
+   where the turret points, no shadows, on every surface that shades
+   with worldShade — and the user has had the beam taken out. What is
+   kept is the thing you actually read a searchlight by at night, which
+   is the LAMP ITSELF: a massive anamorphic flare, a screen-facing quad
+   whose shader draws a horizontal streak most of the screen wide,
+   thin, blue-white, with a gradient sphere at the centre of it,
+   brightest when the reflector is pointed at you and falling away as
+   it swings off.
+
+   AND IT IS OCCLUSION AWARE, at the user's request — which, for a
+   thing drawn over the top of the frame with the depth test off, means
+   the three tests are made by hand, every frame, for each flare:
+
+     BEHIND THE EYE   a flare is sized by its own DISTANCE so that it
+                      stays the same size on the screen wherever the
+                      lamp is, and a lamp behind your shoulder has a
+                      negative one. Left in, the corners project
+                      through infinity and what lands on the screen is
+                      a white bowtie across the whole frame, which is
+                      exactly what the first build of it did.
+     THE WORLD        one sight line from the eye to the lamp — the
+                      same call a trooper uses to decide whether it can
+                      see you — so a wall, a shut door or the shop
+                      between you and the aircraft takes the flare
+                      away.
+     ITS OWN HULL     and this is the one that is actually about an
+                      aircraft. The lamp hangs under the NOSE, so the
+                      fuselage is between you and it from above and
+                      from behind, which is most of the sky the thing
+                      flies in. The hull is a box in the aircraft's own
+                      frame and the sight line is walked against it, so
+                      the flare goes out as it banks over the top of
+                      you and comes back as it rolls out.
+
+   None of the three is a hard switch. A flare that pops off at a wall
+   edge is worse than one that is a few frames late, so what the tests
+   decide is a TARGET and the flare eases onto it — see Flare.render.
 
    AND IT CAN BE SHOT DOWN, at the user's request. Three shootable
    cylinders ride under it at its altitude (AIRBODY in js/states.js),
@@ -109,7 +137,6 @@ import * as THREE from 'three';
 import { parseGLB, readAccessor } from './glb.js';
 import { carTexture, carGeom, carMesh, modelVehicle, chunkGeometry } from './car.js';
 import { turn, lowestOf, extentOf, Chunk } from './vehicles.js';
-import { world } from './material.js';
 import { TICRATE, pRandom, angleDiff, clamp, dist2 } from './util.js';
 
 /* HOW LONG IT IS, nose to tail, on the game's ruler — the one number
@@ -146,21 +173,24 @@ export const VTOL = {
     yawLimit: 2.5, pitch: [-1.35, 0.30],
   },
   /* the lamp */
-  /* THE LAMP. `outer` and `inner` are the cosines of the cone's two
-     half-angles — twenty degrees and ten — so from three hundred and
-     thirty up the pool on the tarmac is about two hundred and forty
-     units across, a van and a half, with a soft edge. And `light` is
-     THREE AND A HALF rather than the one and a half it was first set
-     at, which is a number that came off a screenshot rather than off
-     paper: this renderer bands its light into Doom's thirty-two steps
-     and then puts the whole frame through a 256-colour palette, and a
-     lift of a sixth on night tarmac does not survive either — it
-     quantised straight back to the colour it started as, so the beam
-     was arithmetic nobody could see. At three and a half it is a pale
-     pool you can watch cross the lot. The COLOUR stays near-white: a
-     properly blue lamp comes out of the palette as a splash of flat
-     blue paint, which reads as a bug rather than as a light. */
-  spot: { range: 1500, outer: 0.94, inner: 0.98, light: 3.4 },
+  /* THE LAMP, WHICH NO LONGER LIGHTS ANYTHING. It threw a lit cone into
+     the world shader for an afternoon and the user has taken the beam
+     out; what is kept is the FLARE, which is what you actually read a
+     searchlight by at night. So these two are no longer a cone of
+     light, they are how directly you have to be looking INTO the lamp
+     for the flare to be at its brightest: full inside `inner`, eleven
+     degrees off the reflector's axis, and down to the dim off-axis
+     glint by `outer`, twenty. The same pair of angles the beam had,
+     because it is the same reflector.
+
+     `hullClear` is the other half of the occlusion test: how near the
+     lamp a sight line may clip the aircraft's own box and still count
+     as having arrived. The lamp hangs under the nose INSIDE that box —
+     four units up from its floor — so a line coming from below enters
+     the box a few units before it reaches the lamp and always would.
+     Twenty-six is past that and a long way short of the seventy-odd a
+     line from above has to cross. */
+  lamp: { outer: 0.94, inner: 0.98, hullClear: 26 },
   /* the exhaust */
   /* THE EXHAUST. `reach` is how far down a jet is worth drawing at all,
      `radius` how wide the pool of it on the ground is — a hundred and
@@ -196,12 +226,66 @@ export const VTOL = {
 const rnd = () => pRandom() / 255;
 const between = ([a, b]) => a + rnd() * (b - a);
 
+/* WHAT HANGS OFF WHAT, named once: the two points the game cares about
+   and the direction they both look along. Held as constants rather than
+   written out at each call because the hull test takes the same chain
+   the position does, and the two drifting apart would be a flare
+   occluded against a turret pointing somewhere else. */
+const AIM_CHAIN = ['fuselage', 'turret', 'pitch'];
+const MUZZLE_CHAIN = [...AIM_CHAIN, 'gun'];
+const LAMP_CHAIN = [...AIM_CHAIN, 'lamp'];
+
 /* ---------------------------------------------------------------------
    Turning things, in a part's own frame: x forward, y up, z right.
    --------------------------------------------------------------------- */
 const rotY = (p, a) => { const c = Math.cos(a), s = Math.sin(a); return [p[0] * c + p[2] * s, p[1], -p[0] * s + p[2] * c]; };
 const rotZ = (p, a) => { const c = Math.cos(a), s = Math.sin(a); return [p[0] * c - p[1] * s, p[0] * s + p[1] * c, p[2]]; };
 const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+
+/** `turn` from js/vehicles.js, undone: a point in the renderer's frame
+ *  back into the aircraft's own. Which is what the occlusion test needs
+ *  — the hull is a box in the aircraft's frame, so the EYE is what has
+ *  to be moved, not the box. Each line is the matching line of `turn`
+ *  solved for its input; the test holds the pair against each other. */
+export function unturn(p, yaw, rx, rz) {
+  const cy = Math.cos(yaw), sy = Math.sin(yaw);
+  const x1 = p[0] * cy - p[2] * sy, z2 = p[0] * sy + p[2] * cy, y2 = p[1];
+  const cx = Math.cos(rx), sx = Math.sin(rx);
+  const y1 = y2 * cx + z2 * sx, z1 = -y2 * sx + z2 * cx;
+  const cz = Math.cos(rz), sz = Math.sin(rz);
+  return [x1 * cz + y1 * sz, -x1 * sz + y1 * cz, z1];
+}
+
+/**
+ * Does the segment from `a` to `b` cross the box, and does it do so
+ * more than `clear` from `b`? Slab test, in whatever frame all three
+ * are already in. Pure, for the test.
+ *
+ * The clearance is not a fudge factor, it is the question being asked.
+ * The lamp hangs under the nose INSIDE the fuselage's own box — a few
+ * units up from its floor — so a sight line coming from below crosses
+ * that floor just before it arrives, every time. What is being asked
+ * is whether the hull is in the way, and a crossing that happens
+ * within the lamp's own bracket is not the hull being in the way.
+ */
+export function boxBetween(a, b, box, clear) {
+  const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  let t0 = 0, t1 = 1;
+  for (let k = 0; k < 3; k++) {
+    if (Math.abs(d[k]) < 1e-9) {
+      if (a[k] < box.lo[k] || a[k] > box.hi[k]) return false;
+      continue;
+    }
+    const inv = 1 / d[k];
+    let lo = (box.lo[k] - a[k]) * inv, hi = (box.hi[k] - a[k]) * inv;
+    if (lo > hi) { const t = lo; lo = hi; hi = t; }
+    if (lo > t0) t0 = lo;
+    if (hi < t1) t1 = hi;
+    if (t0 > t1) return false;
+  }
+  const px = a[0] + d[0] * t0, py = a[1] + d[1] * t0, pz = a[2] + d[2] * t0;
+  return Math.hypot(px - b[0], py - b[1], pz - b[2]) > clear;
+}
 
 /* =====================================================================
    THE MODEL, AS PARTS
@@ -271,19 +355,19 @@ export function buildVtolModel(json, bin, length = VTOL_LENGTH) {
   const def = modelVehicle(json, bin, { length, id: 'vtol', name: 'Gunship', use: 'army' });
   /* and the box in the file's own units, walked the same way, so the
      parts and the pieces agree on where the middle is */
-  const world = new Map();          // node index -> its origin in glTF units
+  const origins = new Map();        // node index -> its origin in glTF units
   const walk = (ni, at) => {
     const n = json.nodes[ni];
     const t = n.translation || [0, 0, 0];
     const here = [at[0] + t[0], at[1] + t[1], at[2] + t[2]];
-    world.set(ni, here);
+    origins.set(ni, here);
     for (const c of n.children || []) walk(c, here);
   };
   for (const ni of json.scenes[json.scene ?? 0].nodes) walk(ni, [0, 0, 0]);
   const bb = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
   const primOf = ni => json.meshes[json.nodes[ni].mesh].primitives;
   const posOf = p => readAccessor(json, bin, p.attributes.POSITION).array;
-  for (const [ni, at] of world) {
+  for (const [ni, at] of origins) {
     if (json.nodes[ni].mesh === undefined) continue;
     for (const p of primOf(ni)) {
       const pos = posOf(p);
@@ -304,7 +388,7 @@ export function buildVtolModel(json, bin, length = VTOL_LENGTH) {
     const out = { name, parent, arrays: null, tris: 0, offset: null, pivot: pivotG };
     /* the pivot relative to the parent's origin, in the part frame */
     const pOrigin = parent ? parent.pivotWorld : centre;
-    const here = world.get(ni);
+    const here = origins.get(ni);
     const pivotWorld = [here[0] + pivotG[0], here[1] + pivotG[1], here[2] + pivotG[2]];
     out.pivotWorld = pivotWorld;
     out.offset = swap(pivotWorld[0] - pOrigin[0], pivotWorld[1] - pOrigin[1], pivotWorld[2] - pOrigin[2], S);
@@ -409,12 +493,39 @@ export function buildVtolModel(json, bin, length = VTOL_LENGTH) {
   if (markers.muzzle.node !== NAMES.gun) throw new Error('the muzzle marker is in ' + markers.muzzle.node + ', not the gun');
   if (markers.lamp.node !== NAMES.lamp) throw new Error('the lamp marker is in ' + markers.lamp.node + ', not the lamp module');
 
+  /* ------------------------------------------------------------------
+     THE HULL, as one box in the aircraft's own frame
+
+     What the flare's occlusion test is walked against: the FUSELAGE's
+     own extent — not the whole aircraft's, which would include the
+     turret hanging under the nose with the lamp on it, and not a
+     sphere, which is the wrong shape for a thing four hundred units
+     long and eighty tall and gets the case that matters (straight down
+     onto the nose) exactly backwards.
+
+     It is the fuselage part's own vertices, which are stored about its
+     own pivot, put back where that pivot sits relative to the middle of
+     the model — so the box is in the same frame everything else here
+     is: x forward, y up, z to the right, about the point the aircraft
+     turns about.
+     ------------------------------------------------------------------ */
+  const hull = (() => {
+    const a = parts.fuselage.arrays.position, o = parts.fuselage.offset;
+    const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    for (let i = 0; i < a.length; i += 3) for (let k = 0; k < 3; k++) {
+      const v = a[i + k] + o[k];
+      if (v < lo[k]) lo[k] = v;
+      if (v > hi[k]) hi[k] = v;
+    }
+    return { lo, hi };
+  })();
+
   /* the corners of the whole thing, about its middle, for the crash */
   const L = length, h = def.box.height, hw = def.box.half;
   const corners = [];
   for (const x of [-0.5, 0.5]) for (const y of [-hw, hw]) for (const z of [0, h]) corners.push([x * L, (z - h / 2) * L, -y * L]);
 
-  return { parts, def, corners, muzzle, lamp, S, length, centre, box: def.box };
+  return { parts, def, corners, hull, muzzle, lamp, S, length, centre, box: def.box };
 }
 
 /* =====================================================================
@@ -472,10 +583,20 @@ void main() {
 }
 `;
 
+/* HOW FAST A FLARE COMES AND GOES once the tests have changed their
+   mind about it. Per FRAME rather than per tic, because a flare is not
+   simulation — nothing downstream of it is, so nothing is made
+   non-deterministic by it — and because what it is smoothing is a
+   drawing artefact: a hard switch at a wall edge or as a wing crosses
+   the lamp reads as the flare being broken rather than as the lamp
+   going behind something. About a sixth of a second either way. */
+const FLARE_EASE = 0.28;
+
 export class Flare {
   constructor(color, size, ball) {
     this.color = color; this.size = size; this.ball = ball;
     this.glow = 0;
+    this.vis = 0;               // 0 to 1, eased toward what the tests said
     this.x = 0; this.y = 0; this.z = 0;
     this.mesh = null;
   }
@@ -501,17 +622,23 @@ export class Flare {
     this.mesh.visible = false;
     scene.add(this.mesh);
   }
-  /** Put it at a game point with this much light, or hide it. `visible`
-   *  is the owner's answer to "can this be seen from there at all" —
-   *  a wall in the way, the lamp behind the eye, the lamp off. */
+  /** Put it at a game point with this much light, or take it away.
+   *  `visible` is the owner's answer to "can this be seen from there at
+   *  all" — a wall in the way, the aircraft's own hull in the way, the
+   *  lamp behind the eye, the lamp off — and it is eased onto rather
+   *  than switched to, for the reason at FLARE_EASE. */
   render(visible) {
     if (!this.mesh) return;
-    const on = visible && this.glow > 0.01;
+    const want = visible ? 1 : 0;
+    this.vis += (want - this.vis) * FLARE_EASE;
+    if (Math.abs(want - this.vis) < 0.01) this.vis = want;
+    const glow = this.glow * this.vis;
+    const on = glow > 0.01;
     this.mesh.visible = on;
     if (!on) return;
     const u = this.mesh.material.uniforms;
     u.centre.value.set(this.x, this.z, -this.y);
-    u.glow.value = this.glow;
+    u.glow.value = glow;
   }
   detach(scene) {
     if (!this.mesh) return;
@@ -588,15 +715,18 @@ export class Gunship {
 
     /* the flares: the lamp's, massive, and the muzzle's, small */
     /* THE FLARE AT THE LAMP, and the user asked for a massive one: it
-       is two thirds of the frame across against a thirteenth of it
-       high, which is an eight-to-one streak, with the gradient sphere
-       at the middle of it. It used to be twice that wide and covered
-       the sky; a flare has to be the brightest thing on the screen
-       without being the only thing on it. And the gun's, which is the
-       same shader at a fifth the size and a warm colour — the small
-       flare the user asked for in place of the muzzle flash. */
-    this.lampFlare = new Flare([0.62, 0.78, 1.0], [0.62, 0.075], 0.38);
-    this.muzzleFlare = new Flare([1.0, 0.72, 0.35], [0.13, 0.032], 0.55);
+       is most of the frame across against a tenth of it high, which is
+       an eight-to-one streak, with the gradient sphere at the middle of
+       it. It was cut to two thirds of this for a while to stop it
+       covering the sky, which turned out to be treating the symptom:
+       what covered the sky was a lamp BEHIND the eye being sized by a
+       negative distance, and with that fixed (see the guard in
+       FLARE_VERT and the test in canBeSeen) the flare can be the size
+       the user asked for. And the gun's, which is the same shader at a
+       fifth the size and a warm colour — the small flare the user asked
+       for in place of the muzzle flash. */
+    this.lampFlare = new Flare([0.62, 0.78, 1.0], [0.88, 0.105], 0.38);
+    this.muzzleFlare = new Flare([1.0, 0.72, 0.35], [0.17, 0.042], 0.55);
 
     this.parts = null;
     this.root = null;
@@ -654,10 +784,12 @@ export class Gunship {
     P.aux.rotation.set(0, 0, -this.tiltAux);
   }
 
-  /** A point in a part's frame, out to the world, in GAME coordinates.
+  /** A point in a part's frame, up the chain into the AIRCRAFT's own
+   *  frame — x forward, y up, z right, about the point it turns about.
    *  `chain` is the parts from the root down to the one the point is
-   *  in; each adds its offset and turns by what it is turned by. */
-  worldOf(p, chain) {
+   *  in; each adds its offset and turns by what it is turned by. This
+   *  is where the hull box lives, so the occlusion test stops here. */
+  bodyOf(p, chain) {
     const M = this.model.parts;
     let q = p;
     for (let i = chain.length - 1; i >= 0; i--) {
@@ -671,8 +803,36 @@ export class Gunship {
       else if (name === 'aux') q = add(rotZ(q, -this.tiltAux), M.aux.offset);
       else if (name === 'fuselage') q = add(q, M.fuselage.offset);
     }
-    const w = turn(q, this.yaw, this.rx, this.rz);
+    return q;
+  }
+
+  /** And the rest of the way out: into the world, in GAME coordinates. */
+  worldOf(p, chain) {
+    const w = turn(this.bodyOf(p, chain), this.yaw, this.rx, this.rz);
     return { x: this.x + w[0], y: this.y - w[2], z: this.cz + w[1] };
+  }
+
+  /** A world point in GAME coordinates, back into the aircraft's frame.
+   *  The other direction of worldOf, and what the eye goes through. */
+  bodyPoint(x, y, z, out = [0, 0, 0]) {
+    const w = unturn([x - this.x, z - this.cz, -(y - this.y)], this.yaw, this.rx, this.rz);
+    out[0] = w[0]; out[1] = w[1]; out[2] = w[2];
+    return out;
+  }
+
+  /** IS THE AIRCRAFT'S OWN BODY IN THE WAY of a point on it, seen from
+   *  the eye? The lamp hangs under the nose and the muzzle sticks out
+   *  in front of it, so the answer is yes for most of the sky it flies
+   *  in — above it and behind it — and that is the whole reason the
+   *  test exists. `chain` and `p` name the point in the model, so the
+   *  turret's own yaw and pitch are in the answer.
+   *
+   *  A wreck has no hull worth asking about: it is lying on the tarmac
+   *  in pieces and its lamp is out anyway. */
+  hullHides(ex, ey, ez, p, chain) {
+    const E = this.bodyPoint(ex, ey, ez, this._eyeBody || (this._eyeBody = [0, 0, 0]));
+    const B = this.bodyOf(p, chain);
+    return boxBetween(E, B, this.model.hull, VTOL.lamp.hullClear);
   }
   /** A direction, the same way, without the offsets. */
   dirOf(d, chain) {
@@ -690,10 +850,10 @@ export class Gunship {
     return { x: w[0] / l, y: -w[2] / l, z: w[1] / l };
   }
 
-  get muzzle() { const m = this.worldOf(this.model.muzzle, ['fuselage', 'turret', 'pitch', 'gun']); this._muzzle.x = m.x; this._muzzle.y = m.y; this._muzzle.z = m.z; return this._muzzle; }
-  get lamp() { const m = this.worldOf(this.model.lamp, ['fuselage', 'turret', 'pitch', 'lamp']); this._lamp.x = m.x; this._lamp.y = m.y; this._lamp.z = m.z; return this._lamp; }
+  get muzzle() { const m = this.worldOf(this.model.muzzle, MUZZLE_CHAIN); this._muzzle.x = m.x; this._muzzle.y = m.y; this._muzzle.z = m.z; return this._muzzle; }
+  get lamp() { const m = this.worldOf(this.model.lamp, LAMP_CHAIN); this._lamp.x = m.x; this._lamp.y = m.y; this._lamp.z = m.z; return this._lamp; }
   /** Which way the gun and the lamp point. */
-  get beam() { const d = this.dirOf([1, 0, 0], ['fuselage', 'turret', 'pitch']); this._beam.x = d.x; this._beam.y = d.y; this._beam.z = d.z; return this._beam; }
+  get beam() { const d = this.dirOf([1, 0, 0], AIM_CHAIN); this._beam.x = d.x; this._beam.y = d.y; this._beam.z = d.z; return this._beam; }
 
   /* ------------------------------------------------------------------
      What can happen to it
@@ -1215,41 +1375,52 @@ export class Gunship {
     const g = this.game;
     if (!this.root) return;
     this.place();
-    /* the lamp's flare: brightest looking into the beam, a dot from
-       the side, nothing from behind, and hidden by a wall */
+    /* HOW BRIGHT THE LAMP IS FROM HERE: full looking straight into the
+       reflector, a dim glint from off to the side, nothing from behind
+       it. `into` is how nearly the line from the lamp to your eye runs
+       back up the beam. */
     const lamp = this.lamp, beam = this.beam;
     const vx = ex - lamp.x, vy = ey - lamp.y, vz = ez - lamp.z;
     const vl = Math.hypot(vx, vy, vz) || 1;
     const into = (vx * beam.x + vy * beam.y + vz * beam.z) / vl;
     const on = this.lampOn ? (this.state === 'dying' ? this.lampFlicker : 1) : 0;
-    const k = Math.max(0, into) * 0.18 + smooth(VTOL.spot.outer - 0.06, VTOL.spot.inner, into);
+    const k = Math.max(0, into) * 0.18 + smooth(VTOL.lamp.outer - 0.06, VTOL.lamp.inner, into);
     this.lampFlare.x = lamp.x; this.lampFlare.y = lamp.y; this.lampFlare.z = lamp.z;
     this.lampFlare.glow = on * Math.min(1.25, k);
-    /* IN FRONT OF THE EYE FIRST, and it is the cheap half of the test:
-       a flare is a screen-space thing sized by its own distance, and a
-       lamp behind you has no screen position to be sized by. Then the
-       wall, which costs a sight line. */
-    const ahead = !vdx && !vdy ? true : ((lamp.x - ex) * vdx + (lamp.y - ey) * vdy) > 0;
-    const seen = ahead && this.lampFlare.glow > 0.01 && !g.level.sightBlocked(ex, ey, ez, lamp.x, lamp.y, lamp.z);
-    this.lampFlare.render(seen);
-    /* the muzzle's: while it fires, and from anywhere in front */
+    /* AND WHETHER IT ARRIVES, which is the occlusion and is three
+       questions in the order they are cheap — see the note at the top
+       of this file for what each of them is for. */
+    this.lampFlare.render(this.lampFlare.glow > 0.01 &&
+      this.canBeSeen(ex, ey, ez, vdx, vdy, lamp, this.model.lamp, LAMP_CHAIN));
+    /* the muzzle's, on the same three tests of its own: it is a
+       different point on the aircraft, out past the nose, and from
+       underneath there are angles where the barrels are lit and the
+       lamp beside them is behind the turret. */
     const m = this.muzzle;
     this.muzzleFlare.x = m.x; this.muzzleFlare.y = m.y; this.muzzleFlare.z = m.z;
-    this.muzzleFlare.glow = this.muzzleGlow * (0.35 + 0.65 * Math.max(0, (vx * beam.x + vy * beam.y + vz * beam.z) / vl));
-    this.muzzleFlare.render(this.muzzleGlow > 0.02 && seen);
+    this.muzzleFlare.glow = this.muzzleGlow * (0.35 + 0.65 * Math.max(0, into));
+    this.muzzleFlare.render(this.muzzleGlow > 0.02 &&
+      this.canBeSeen(ex, ey, ez, vdx, vdy, m, this.model.muzzle, MUZZLE_CHAIN));
     return on;
   }
 
-  /** Point the one spotlight in the world shader at whatever this one
-   *  is pointing at. */
-  lightWorld() {
-    const lamp = this.lamp, beam = this.beam;
-    world.spotPos.value.set(lamp.x, lamp.z, -lamp.y);
-    world.spotDir.value.set(beam.x, beam.z, -beam.y);
-    world.spotCos.value = VTOL.spot.outer;
-    world.spotSoft.value = VTOL.spot.inner;
-    world.spotRange.value = VTOL.spot.range;
-    world.spotLight.value = VTOL.spot.light * (this.state === 'dying' ? this.lampFlicker * 0.8 : 1);
+  /**
+   * CAN A POINT ON THIS AIRCRAFT BE SEEN FROM THE EYE? The three tests
+   * the flares are occluded by, cheapest first.
+   *
+   * @param at    the point in the world, GAME coordinates
+   * @param p     the same point in its part's frame, and
+   * @param chain the parts it hangs off — so the hull test knows where
+   *              the turret is pointing rather than assuming
+   */
+  canBeSeen(ex, ey, ez, vdx, vdy, at, p, chain) {
+    /* in front of the eye. With no view direction given nothing is
+       culled, which is what a caller that has not got one means. */
+    if ((vdx || vdy) && ((at.x - ex) * vdx + (at.y - ey) * vdy) <= 0) return false;
+    /* its own hull, which is the cheap one: a box and some arithmetic */
+    if (this.hullHides(ex, ey, ez, p, chain)) return false;
+    /* and the world, which costs a walk through the blockmap */
+    return !this.game.level.sightBlocked(ex, ey, ez, at.x, at.y, at.z);
   }
 
   remove() {
@@ -1344,18 +1515,14 @@ export class Gunships {
     return ship;
   }
 
-  /** The meshes, the flares, and the one spotlight: whichever lit
-   *  gunship is nearest the eye has the world's spotlight this frame. */
+  /** The meshes and the flares. Nothing here touches the world's own
+   *  light any more: the lamp threw a lit cone into the shader for an
+   *  afternoon and the user has had the beam out, so what is left is a
+   *  bright thing in the sky with a flare on it — which is also why
+   *  two of them up at once is no longer a question about which one
+   *  gets to be the light. */
   render(ex, ey, ez, vdx = 0, vdy = 0) {
-    let best = null, bd = Infinity;
-    for (const s of this.ships) {
-      const on = s.render(ex, ey, ez, vdx, vdy);
-      if (!on) continue;
-      const d = dist2(s.x, s.y, ex, ey);
-      if (d < bd) { bd = d; best = s; }
-    }
-    if (best) best.lightWorld();
-    else world.spotLight.value = 0;
+    for (const s of this.ships) s.render(ex, ey, ez, vdx, vdy);
   }
 
   /** Every loss is counted here, by whoever notices it. */
