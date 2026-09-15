@@ -5,8 +5,16 @@ name: test and publish
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'claude/**']
   pull_request:
+
+env:
+  # WHICH BRANCH IS THE PREVIEW. The site publishes twice: the root is
+  # main, and /dev is whatever this names — so there is somewhere to look
+  # at a change before it is somebody's front page. Point it at another
+  # branch to preview that one instead; if the branch is gone, /dev is
+  # simply not built and the root publishes as it always did.
+  DEV_REF: claude/american-town-expansion-plan-9bv2pm
 
 permissions:
   contents: read
@@ -36,7 +44,10 @@ jobs:
 
   publish:
     needs: test
-    if: github.ref == 'refs/heads/main'
+    # main publishes the root; a claude/ branch publishes because it is
+    # what /dev is for. The env context is not available in a job-level
+    # if, so this is the shape of the name rather than DEV_REF itself.
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/claude/')
     runs-on: ubuntu-latest
     permissions:
       pages: write
@@ -45,9 +56,31 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
+      # THE ROOT IS ALWAYS MAIN, whichever branch set this run going. A
+      # Pages deployment replaces the whole site, so a preview cannot be
+      # published on its own without taking the front page down with it.
       - uses: actions/checkout@v4
+        with: { ref: main }
       - name: assemble the site
         run: sh tools/build-site.sh public
+      # AND /dev IS THE PREVIEW BRANCH, assembled by its OWN copy of
+      # build-site.sh — so a branch that changes what the site is made of
+      # is previewed with that change in it. Nothing in the page is
+      # addressed from the site root, so it runs from a subdirectory
+      # without knowing it is in one.
+      - continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEV_REF }}
+          path: dev-src
+      - name: and the preview at /dev
+        run: |
+          if [ -f dev-src/tools/build-site.sh ]; then
+            sh dev-src/tools/build-site.sh "$PWD/public/dev"
+            rm -rf dev-src
+          else
+            echo "no ${DEV_REF} branch to preview — /dev not built"
+          fi
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with: { path: public }

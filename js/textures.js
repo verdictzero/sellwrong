@@ -2405,6 +2405,15 @@ export const CHARRABLE = [
   ...Array.from({ length: 6 }, (_, i) => 'FASPLAIN' + i),
   /* and the sign goes with it, which is the shot worth having */
   'LOGO0', 'LOGO1', 'LOGO2', 'LOGO3',
+  /* THE TOWN. A terrace of timber-framed houses sharing party walls is
+     the best fuel in the world and every real fire service knows it, so
+     nearly all of this burns. The brick does not — a brick shell stands
+     there after the fire with its roof gone, which is what a burnt-out
+     street looks like and is the whole reason js/ruin.js exists. */
+  'CLAPBRD', 'VINYLSID', 'SHINGLE', 'GABLEND', 'PLASTER', 'WALLPAPR',
+  'FLOORBRD', 'CARPETDM', 'KITCHTIL', 'STAIRTRD', 'SKIRTING',
+  'WINDOWDK', 'WINDOWLT', 'WINDOWWD', 'HOUSDOOR', 'SHOPFRNT',
+  'CHURCHWD', 'STAINGLS', 'LOCKERS', 'BLACKBRD', 'PEWEND', 'SCHOOLBR',
 ];
 
 /** The charred name for a texture, or the texture itself if it has none. */
@@ -2530,6 +2539,24 @@ export function guttedSurfaces(s, opts = {}) {
    ------------------------------------------------------------------ */
 const SIZES = {
   KERB:     { w: 64, h: 16 },
+  /* the town */
+  KERBSTON: { w: 64, h: 16 },
+  STAIRTRD: { w: 64, h: 16 },   // one repeat is one step
+  SKIRTING: { w: 64, h: 16 },
+  HOUSDOOR: { w: 64, h: 128 },  // one repeat is one door
+  SHOPFRNT: { w: 64, h: 128 },
+  STAINGLS: { w: 64, h: 128 },
+  /* ONE REPEAT IS ONE STOREY, which is 112. Worn at the default 64 a
+     three-storey terrace came out with five and a quarter rows of
+     windows up it, and a house with more window rows than floors is the
+     one thing on a street nobody has to be told is wrong. */
+  WINDOWDK: { w: 64, h: 112 },
+  WINDOWLT: { w: 64, h: 112 },
+  WINDOWWD: { w: 64, h: 112 },
+  PEWEND:   { w: 64, h: 40 },
+  CHAINLNK: { w: 64, h: 64, masked: true },
+  FENCEPIK: { w: 64, h: 48, masked: true },
+  TOWNPOLE: { w: 64, h: 128, masked: true },
   STORBASE: { w: 64, h: 32 },
   BRANDBAND:{ w: 64, h: 96 },   // one repeat is the fascia band
   DOORTRAK: { w: 64, h: 16 },
@@ -2602,6 +2629,526 @@ const SIZES = {
    diffuser, the flange's shadow back, and the ballast's scorch — which
    is the burst lamp sprite's old job, done in the place that knows the
    fire has been through. Same box fitTray is called with above. */
+/* =====================================================================
+   THE TOWN
+
+   Forty-odd surfaces for the thing on the other side of the ring road.
+   The rule that governs every one of them is the one the fascia taught:
+   WHAT TILES IS MATERIAL AND NEVER A WORD. A brick is a brick sixty
+   times over and nobody counts; SELLWRONG SUPERSTORE sixty times across
+   a wall is a joke that stops being funny in one second.
+
+   The second rule is that a town at night is a GRID OF LIT RECTANGLES
+   and very little else. So the windows are the ones that had the care
+   taken over them, and everything else is here to be the dark between.
+   ===================================================================== */
+
+/* ---------- outside: what a house is made of ---------- */
+
+/** Courses of brick with the mortar between them. `keys` picks the clay. */
+function brickwork(p, seed, key, lo, hi, mortarT = 0.42, courseH = 8, brickW = 22) {
+  const rng = makeRng(seed);
+  p.fill('grey', mortarT);
+  for (let row = 0; row * courseH < p.h; row++) {
+    const y0 = row * courseH;
+    /* half a brick's stagger every other course, which is a stretcher
+       bond and is what every house in America is */
+    const off = (row % 2) ? -brickW / 2 : 0;
+    for (let bx = -brickW; bx < p.w + brickW; bx += brickW) {
+      const x0 = Math.round(bx + off) + 1;
+      const t = lo + rng() * (hi - lo);
+      for (let y = y0 + 1; y < y0 + courseH - 1 && y < p.h; y++)
+        for (let x = x0; x < x0 + brickW - 2; x++) {
+          const xx = ((x % p.w) + p.w) % p.w;
+          p.ink(xx, y, key, t + (rng() - 0.5) * 0.05);
+        }
+    }
+  }
+}
+
+T.BRICKRED = () => {
+  const p = new Pix(64, 64, 31);
+  brickwork(p, 31, 'rust', 0.30, 0.52);
+  p.grime(0.35, 'grey', 0.08, 5);
+  /* the damp course, two rows of something greyer near the bottom */
+  return p.snap(0.5);
+};
+
+T.BRICKPNT = () => {
+  /* Painted brick — the same bond with the texture flattened under a
+     coat of cream, which is half the houses on any American street and
+     is the cheapest variation there is. */
+  const p = new Pix(64, 64, 37);
+  brickwork(p, 37, 'bone', 0.46, 0.60, 0.40);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) p.wash(x, y, 'bone', 0.62, 0.42);
+  p.grime(0.30, 'grey', 0.07, 9);
+  return p.snap(0.5);
+};
+
+/** Lapped horizontal boards with a shadow under each lap. */
+function lapSiding(p, seed, key, lo, hi, boardH) {
+  const rng = makeRng(seed);
+  for (let y = 0; y < p.h; y++) {
+    const k = y % boardH;
+    /* each board is a touch lighter at its bottom edge where it stands
+       proud, and there is a hard shadow line under the lap above it */
+    let t = lo + (hi - lo) * (k / boardH) * 0.55 + rng() * 0.03;
+    if (k === 0) t = lo * 0.62;                     // the shadow of the lap
+    else if (k === boardH - 1) t = hi;
+    for (let x = 0; x < p.w; x++) p.ink(x, y, key, t);
+  }
+}
+
+T.CLAPBRD = () => {
+  const p = new Pix(64, 64, 41);
+  lapSiding(p, 41, 'bone', 0.40, 0.58, 8);
+  /* the butt joints, which are what stop it reading as a gradient */
+  const rng = makeRng(43);
+  for (let row = 0; row < 8; row++) {
+    const x = Math.floor(rng() * 64);
+    for (let y = row * 8 + 1; y < row * 8 + 8; y++) p.ink(x, y, 'grey', 0.22);
+  }
+  p.grime(0.28, 'grey', 0.07, 11);
+  return p.snap(0.5);
+};
+
+T.VINYLSID = () => {
+  /* Vinyl is clapboard with no butt joints and a colour nothing grows —
+     the giveaway is that it is TOO even, so this one gets no grain at
+     all and only the faintest grime. */
+  const p = new Pix(64, 64, 47);
+  lapSiding(p, 47, 'blue', 0.30, 0.44, 8);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) p.wash(x, y, 'bone', 0.52, 0.30);
+  p.grime(0.10, 'grey', 0.05, 13);
+  return p.snap(0.5);
+};
+
+T.STUCCO = () => {
+  const p = new Pix(64, 64, 53);
+  aggregate(p, 53, { baseKey: 'bone', baseLo: 0.42, baseHi: 0.54,
+    grades: [{ count: 400, min: 0.3, max: 0.9, key: 'bone', lo: 0.36, hi: 0.60 }] });
+  p.grime(0.34, 'grey', 0.09, 17);
+  return p.snap(0.5);
+};
+
+T.SHINGLE = () => {
+  /* Asphalt shingle: three-tab, so the keyway slots are every third of
+     a course and the courses are staggered. Read from below at a low
+     angle it is a grey stripe, which is exactly what a roof is. */
+  const p = new Pix(64, 64, 59);
+  const rng = makeRng(59);
+  p.fill('grey', 0.18);
+  const CH = 16;
+  for (let row = 0; row * CH < 64; row++) {
+    const y0 = row * CH, off = (row % 2) ? 10 : 0;
+    for (let y = y0; y < y0 + CH && y < 64; y++) {
+      const edge = (y === y0);
+      for (let x = 0; x < 64; x++) {
+        const t = 0.20 + rng() * 0.10 + (y - y0) / CH * 0.06;
+        p.ink(x, y, 'grey', edge ? 0.11 : t);
+      }
+    }
+    /* the keyways */
+    for (let k = 0; k < 3; k++) {
+      const x = (off + k * 21 + 64) % 64;
+      for (let y = y0; y < y0 + CH - 4 && y < 64; y++) p.ink(x, y, 'grey', 0.10);
+    }
+  }
+  p.grime(0.30, 'grey', 0.06, 61);
+  return p.snap(0.5);
+};
+
+T.GABLEND = () => {
+  /* The triangle at the end of a roof: the same shingle turned so the
+     courses run the other way would be wrong, so this is BOARD — which
+     is what a gable usually is — with a vent in the middle of it. */
+  const p = new Pix(64, 64, 67);
+  lapSiding(p, 67, 'bone', 0.34, 0.48, 6);
+  p.box(26, 22, 12, 14, 'grey', 0.14);
+  for (let y = 23; y < 35; y += 2) p.hline(27, 36, y, 'grey', 0.30);
+  p.frame(26, 22, 12, 14, 'bone', 0.52);
+  p.grime(0.26, 'grey', 0.07, 71);
+  return p.snap(0.5);
+};
+
+T.ROOFSEAM = () => {
+  /* Standing seam, for the church hall and the gas station canopy. */
+  const p = new Pix(64, 64, 73);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'grey', 0.26);
+  for (const sx of [0, 16, 32, 48]) {
+    p.vline(sx, 0, 63, 'grey', 0.14);
+    p.vline((sx + 1) % 64, 0, 63, 'bone', 0.40);
+  }
+  p.grime(0.22, 'rust', 0.05, 79);
+  return p.snap(0.5);
+};
+
+/* ---------- the street ---------- */
+
+T.SIDEWALK = () => {
+  const p = new Pix(64, 64, 83);
+  aggregate(p, 83, { baseKey: 'bone', baseLo: 0.30, baseHi: 0.40,
+    grades: [{ count: 150, min: 0.4, max: 1.0, key: 'bone', lo: 0.22, hi: 0.44 },
+             { count: 40,  min: 0.4, max: 1.1, key: 'grey', lo: 0.24, hi: 0.36 }] });
+  /* THE SCORED JOINT, which is the whole of what makes concrete read as
+     sidewalk rather than as floor: one line across every four feet with
+     a tooled edge either side of it. */
+  p.hline(0, 63, 0, 'grey', 0.16);
+  p.hline(0, 63, 1, 'bone', 0.46);
+  p.hline(0, 63, 63, 'bone', 0.42);
+  crack(p, 8, 30, 40, 'grey', 0.14, 89);
+  p.grime(0.30, 'grey', 0.08, 97);
+  return p.snap(0.5);
+};
+
+T.KERBSTON = () => {
+  /* Sixteen tall, which is more than the twelve a kerb stands and
+     leaves a course of it buried, the way a real one is. */
+  const p = new Pix(64, 16, 101);
+  aggregate(p, 101, { baseKey: 'grey', baseLo: 0.30, baseHi: 0.40,
+    grades: [{ count: 90, min: 0.3, max: 0.9, key: 'bone', lo: 0.26, hi: 0.40 }] });
+  p.hline(0, 63, 0, 'bone', 0.50);            // the nosing catches the light
+  for (const jx of [0, 32]) p.vline(jx, 0, 15, 'grey', 0.18);
+  p.grime(0.34, 'grey', 0.08, 103);
+  return p.snap(0.5);
+};
+
+T.GRASSVRG = () => {
+  const p = new Pix(64, 64, 107);
+  const n = fbm(64, 64, 12, 3, 107);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'green', 0.16 + n[y * 64 + x] * 0.16);
+  const rng = makeRng(109);
+  for (let i = 0; i < 700; i++) {
+    const x = Math.floor(rng() * 64), y = Math.floor(rng() * 64);
+    p.ink(x, y, 'olive', 0.18 + rng() * 0.18);
+  }
+  return p.snap(0.5);
+};
+
+T.CROSSWLK = () => {
+  /* One bar and the gap after it, so a crossing is a strip of this
+     tiled across the mouth of a junction. */
+  const p = new Pix(64, 64, 113);
+  aggregate(p, 113, { baseKey: 'grey', baseLo: 0.10, baseHi: 0.16,
+    grades: [{ count: 120, min: 0.3, max: 0.8, key: 'grey', lo: 0.12, hi: 0.20 }] });
+  for (let y = 0; y < 64; y++) for (let x = 8; x < 40; x++) p.ink(x, y, 'bone', 0.52 + (x % 3) * 0.02);
+  p.grime(0.42, 'grey', 0.10, 127);
+  return p.snap(0.5);
+};
+
+T.ASPHOLD = () => {
+  /* The older of the two asphalts — the residential streets, laid a
+     decade before the mall's car park and patched twice since. */
+  const p = new Pix(64, 64, 131);
+  aggregate(p, 131, { baseKey: 'grey', baseLo: 0.11, baseHi: 0.18,
+    grades: [{ count: 260, min: 0.3, max: 1.0, key: 'grey', lo: 0.13, hi: 0.24 },
+             { count: 60,  min: 0.4, max: 1.2, key: 'bone', lo: 0.10, hi: 0.18 }] });
+  crack(p, 12, 4, 58, 'grey', 0.09, 137);
+  crack(p, 44, 20, 40, 'grey', 0.09, 139, 1.3);
+  /* a patch, darker and squarer than anything round it */
+  for (let y = 36; y < 56; y++) for (let x = 6; x < 30; x++) p.ink(x, y, 'grey', 0.09);
+  p.grime(0.36, 'grey', 0.07, 149);
+  return p.snap(0.5);
+};
+
+/* ---------- inside a house ---------- */
+
+T.PLASTER = () => {
+  const p = new Pix(64, 64, 151);
+  const n = fbm(64, 64, 20, 2, 151);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'bone', 0.44 + n[y * 64 + x] * 0.08);
+  crack(p, 30, 8, 26, 'bone', 0.30, 157);
+  p.grime(0.16, 'grey', 0.05, 163);
+  return p.snap(0.5);
+};
+
+T.WALLPAPR = () => {
+  /* A stripe, because a stripe is a pattern that tiles at any scale and
+     does not turn into a word. */
+  const p = new Pix(64, 64, 167);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'olive', 0.34 + ((x % 16) < 6 ? 0.10 : 0));
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) p.wash(x, y, 'bone', 0.54, 0.28);
+  p.grime(0.20, 'brown', 0.05, 173);
+  return p.snap(0.5);
+};
+
+T.FLOORBRD = () => {
+  const p = new Pix(64, 64, 179);
+  const rng = makeRng(179);
+  for (let b = 0; b < 8; b++) {
+    const y0 = b * 8, t = 0.26 + rng() * 0.12;
+    for (let y = y0; y < y0 + 8; y++) for (let x = 0; x < 64; x++) {
+      const g = Math.sin((x * 0.7 + b * 13) * 0.6) * 0.03;
+      p.ink(x, y, 'brown', t + g + (y === y0 ? -0.12 : 0));
+    }
+    const j = Math.floor(rng() * 64);
+    for (let y = y0 + 1; y < y0 + 8; y++) p.ink(j, y, 'brown', 0.14);
+  }
+  p.grime(0.22, 'grey', 0.05, 181);
+  return p.snap(0.5);
+};
+
+T.CARPETDM = () => {
+  const p = new Pix(64, 64, 191);
+  aggregate(p, 191, { baseKey: 'red', baseLo: 0.16, baseHi: 0.24,
+    grades: [{ count: 900, min: 0.2, max: 0.7, key: 'brown', lo: 0.14, hi: 0.26 }] });
+  p.grime(0.30, 'grey', 0.06, 193);
+  return p.snap(0.5);
+};
+
+T.KITCHTIL = () => {
+  const p = new Pix(64, 64, 197);
+  p.fill('bone', 0.52);
+  for (const g of [0, 16, 32, 48]) { p.hline(0, 63, g, 'grey', 0.30); p.vline(g, 0, 63, 'grey', 0.30); }
+  const rng = makeRng(199);
+  for (let ty = 0; ty < 4; ty++) for (let tx = 0; tx < 4; tx++)
+    if (rng() < 0.25) for (let y = ty * 16 + 1; y < ty * 16 + 16; y++)
+      for (let x = tx * 16 + 1; x < tx * 16 + 16; x++) p.ink(x, y, 'cyan', 0.34);
+  p.grime(0.20, 'grey', 0.05, 211);
+  return p.snap(0.5);
+};
+
+T.STAIRTRD = () => {
+  /* One repeat is one step: sixteen of rise with the nosing on top, so
+     a flight tiled with it has a tread line exactly where a tread is. */
+  const p = new Pix(64, 16, 223);
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'brown', 0.22 + y / 16 * 0.10);
+  p.hline(0, 63, 0, 'bone', 0.44);
+  p.hline(0, 63, 1, 'brown', 0.14);
+  p.grime(0.24, 'grey', 0.06, 227);
+  return p.snap(0.5);
+};
+
+T.SKIRTING = () => {
+  const p = new Pix(64, 16, 229);
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'bone', 0.50);
+  p.hline(0, 63, 0, 'bone', 0.62);
+  p.hline(0, 63, 3, 'grey', 0.30);
+  p.hline(0, 63, 15, 'grey', 0.22);
+  return p.snap(0.5);
+};
+
+/* ---------- the windows, which are the ones that matter ---------- */
+
+/** A sash window in a wall: the frame, the glass, and the muntins. */
+function sash(p, lit) {
+  const glassKey = lit ? 'yellow' : 'blue';
+  const glassT = lit ? 0.72 : 0.12;
+  p.box(14, 10, 36, 44, 'bone', 0.44);                 // the casing
+  p.box(17, 13, 30, 38, glassKey, glassT);             // the glass
+  if (lit) {
+    /* the light does not fall evenly on a room — it comes off one lamp
+       in a corner, so the pane nearest it is the bright one */
+    for (let y = 13; y < 51; y++) for (let x = 17; x < 47; x++) {
+      const d = Math.hypot(x - 22, y - 20) / 34;
+      p.ink(x, y, 'yellow', Math.max(0.30, glassT - d * 0.34));
+    }
+    /* and somebody is in there, as a shape and never as a person */
+    p.box(24, 30, 9, 21, 'brown', 0.22);
+  }
+  p.vline(31, 13, 50, 'bone', 0.50);                   // the meeting rail
+  p.vline(32, 13, 50, 'bone', 0.50);
+  p.hline(17, 46, 31, 'bone', 0.50);
+  p.hline(17, 46, 32, 'bone', 0.50);
+  p.frame(14, 10, 36, 44, 'bone', 0.56);
+  p.hline(12, 51, 54, 'bone', 0.50);                   // the sill
+  p.hline(12, 51, 55, 'grey', 0.26);
+}
+
+T.WINDOWDK = () => {
+  const p = new Pix(64, 64, 233);
+  brickwork(p, 233, 'rust', 0.30, 0.52);
+  sash(p, false);
+  p.grime(0.30, 'grey', 0.07, 239);
+  return p.snap(0.5);
+};
+
+T.WINDOWLT = () => {
+  const p = new Pix(64, 64, 241);
+  brickwork(p, 241, 'rust', 0.28, 0.48);
+  sash(p, true);
+  p.grime(0.22, 'grey', 0.06, 251);
+  return p.snap(0.5);
+};
+
+T.WINDOWWD = () => {
+  /* the same window in a clapboard wall, for the half of the street
+     that is not brick */
+  const p = new Pix(64, 64, 257);
+  lapSiding(p, 257, 'bone', 0.38, 0.54, 8);
+  sash(p, true);
+  p.grime(0.22, 'grey', 0.06, 263);
+  return p.snap(0.5);
+};
+
+T.HOUSDOOR = () => {
+  /* SIXTY-FOUR PIXELS, worn a hundred and twenty-eight units tall — see
+     SIZES, and see BRANDBAND, which is the same trick. The 64-pixel rule
+     is about the picture and not about how big the picture is on a wall,
+     and one repeat of this is one door. */
+  const p = new Pix(64, 64, 269);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'green', 0.18 + (y / 64) * 0.05);
+  p.frame(6, 2, 52, 60, 'green', 0.30);
+  for (const [py, ph] of [[7, 20], [31, 26]]) {
+    p.frame(14, py, 36, ph, 'green', 0.12);
+    p.box(16, py + 2, 32, ph - 4, 'green', 0.24);
+  }
+  p.disc(50, 33, 2, 'yellow', 0.62);                   // the knob
+  p.box(20, 4, 24, 5, 'yellow', 0.40);                 // the fanlight
+  p.grime(0.24, 'grey', 0.06, 271);
+  return p.snap(0.5);
+};
+
+/* ---------- civic ---------- */
+
+T.SCHOOLBR = () => {
+  /* Darker brick with a limestone band across it, which is what every
+     school built before 1960 has and is the entire reason you can tell
+     a school from an apartment block at three streets. */
+  const p = new Pix(64, 64, 277);
+  brickwork(p, 277, 'brown', 0.22, 0.38);
+  for (let y = 48; y < 58; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'bone', 0.48 + (y === 48 || y === 57 ? -0.14 : 0));
+  p.grime(0.34, 'grey', 0.08, 281);
+  return p.snap(0.5);
+};
+
+T.CHURCHWD = () => {
+  /* White clapboard, kept brighter than the houses because a church is
+     the best-lit building in a town at night and is painted every year
+     whether it needs it or not. */
+  const p = new Pix(64, 64, 283);
+  lapSiding(p, 283, 'bone', 0.54, 0.72, 6);
+  p.grime(0.10, 'grey', 0.04, 293);
+  return p.snap(0.5);
+};
+
+T.STAINGLS = () => {
+  /* A lancet: the arch and the leaded lights under it. Sixty-four
+     pixels, worn a hundred and twenty-eight units tall. */
+  const p = new Pix(64, 64, 307);
+  p.fill('grey', 0.10);
+  const keys = ['red', 'blue', 'green', 'yellow', 'purple'];
+  const halfAt = y => (y < 17 ? Math.sqrt(Math.max(0, 1 - ((17 - y) / 14) ** 2)) * 22 : 22);
+  for (let y = 3; y < 61; y++) {
+    const halfW = halfAt(y);
+    for (let x = Math.round(32 - halfW); x <= Math.round(32 + halfW); x++) {
+      const cell = Math.floor((x + 3) / 7) * 31 + Math.floor(y / 5) * 7;
+      const k = keys[Math.abs(cell) % keys.length];
+      p.ink(x, y, k, 0.30 + ((Math.sin(cell) + 1) / 2) * 0.34);
+    }
+    if (y % 5 === 0) for (let x = Math.round(32 - halfW); x <= Math.round(32 + halfW); x++) p.ink(x, y, 'grey', 0.10);
+  }
+  for (let y = 3; y < 61; y++) for (const x of [4, 11, 18, 25, 32, 39, 46, 53, 60])
+    if (Math.abs(x - 32) <= halfAt(y)) p.ink(x, y, 'grey', 0.10);
+  p.grime(0.16, 'grey', 0.05, 311);
+  return p.snap(0.5);
+};
+
+T.LOCKERS = () => {
+  /* A run of lockers, 64 tall — one repeat is two lockers wide and the
+     whole height of them, so a corridor lower texture is a corridor. */
+  const p = new Pix(64, 64, 313);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'blue', 0.22);
+  for (const dx of [0, 32]) {
+    p.frame(dx + 1, 2, 30, 60, 'blue', 0.14);
+    p.box(dx + 3, 4, 26, 56, 'blue', 0.28);
+    for (let y = 8; y < 16; y += 3) p.hline(dx + 8, dx + 24, y, 'blue', 0.12);   // the vents
+    p.box(dx + 24, 30, 3, 6, 'grey', 0.34);                                      // the latch
+  }
+  p.grime(0.34, 'grey', 0.08, 317);
+  return p.snap(0.5);
+};
+
+T.BLACKBRD = () => {
+  const p = new Pix(64, 64, 331);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'green', 0.09);
+  const rng = makeRng(337);
+  for (let i = 0; i < 260; i++) {                       // chalk dust, never words
+    const x = Math.floor(rng() * 60) + 2, y = Math.floor(rng() * 56) + 4;
+    p.ink(x, y, 'bone', 0.30 + rng() * 0.22);
+  }
+  p.frame(0, 0, 64, 64, 'brown', 0.26);
+  p.hline(0, 63, 60, 'brown', 0.30);                    // the chalk rail
+  return p.snap(0.5);
+};
+
+T.PEWEND = () => {
+  const p = new Pix(64, 40, 347);
+  for (let y = 0; y < 40; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'brown', 0.24 + (y / 40) * 0.08);
+  p.hline(0, 63, 0, 'brown', 0.40);
+  p.hline(0, 63, 1, 'brown', 0.16);
+  for (let x = 4; x < 64; x += 16) p.vline(x, 2, 39, 'brown', 0.18);
+  return p.snap(0.5);
+};
+
+T.CHAINLNK = () => {
+  /* Masked, like the yard fence it is a cousin of, and used round the
+     ball field. */
+  const p = new Pix(64, 64, 349, false);
+  p.clear();
+  for (let i = -64; i < 128; i += 8) {
+    p.line(i, 0, i + 64, 63, 'grey', 0.42, 190);
+    p.line(i, 63, i + 64, 0, 'grey', 0.42, 190);
+  }
+  for (const y of [0, 63]) p.hline(0, 63, y, 'grey', 0.34, 230);
+  return p.snap(0.35);
+};
+
+T.FENCEPIK = () => {
+  const p = new Pix(64, 48, 353, false);
+  p.clear();
+  for (let x = 2; x < 64; x += 10) {
+    for (let y = 6; y < 48; y++) for (let k = 0; k < 6; k++) p.ink(x + k, y, 'bone', 0.52, 240);
+    for (let k = 0; k < 6; k++) { p.ink(x + k, 4, 'bone', 0.46, 200); p.ink(x + k, 5, 'bone', 0.50, 230); }
+  }
+  for (const y of [12, 36]) for (let x = 0; x < 64; x++) { p.ink(x, y, 'bone', 0.44, 240); p.ink(x, y + 1, 'bone', 0.40, 240); }
+  return p.snap(0.35);
+};
+
+T.SHOPFRNT = () => {
+  /* Main Street's ground floor: a big pane, a stallriser under it and a
+     transom over. No name on it, ever — see the top of this section. */
+  const p = new Pix(64, 64, 359);
+  brickwork(p, 359, 'rust', 0.26, 0.44);
+  p.box(4, 2, 56, 10, 'grey', 0.14);                    // the transom
+  for (let y = 3; y < 11; y++) for (let x = 6; x < 58; x++) p.ink(x, y, 'yellow', 0.30 - (y - 3) * 0.016);
+  p.box(4, 14, 56, 37, 'grey', 0.12);                   // the pane
+  for (let y = 15; y < 50; y++) for (let x = 6; x < 58; x++) {
+    const d = Math.hypot(x - 20, y - 22) / 40;
+    p.ink(x, y, 'yellow', Math.max(0.10, 0.44 - d * 0.36));
+  }
+  p.vline(31, 14, 50, 'bone', 0.40); p.vline(32, 14, 50, 'bone', 0.40);
+  p.frame(4, 14, 56, 37, 'bone', 0.46);
+  for (let y = 52; y < 64; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'green', 0.16);
+  p.hline(0, 63, 52, 'bone', 0.40);
+  p.grime(0.28, 'grey', 0.07, 367);
+  return p.snap(0.5);
+};
+
+T.TOWNPOLE = () => {
+  /* A utility pole, masked, standing in a two-sided line the way the
+     yard fence does. Nothing in the world reads as America faster than
+     a wood pole with eleven wires on it. */
+  const p = new Pix(64, 64, 373, false);
+  p.clear();
+  for (let y = 0; y < 64; y++) for (let x = 27; x < 37; x++) {
+    const t = 0.16 + (x === 27 || x === 36 ? -0.05 : 0) + Math.sin(y * 0.8) * 0.015;
+    p.ink(x, y, 'brown', t, 255);
+  }
+  for (const [cy, half] of [[7, 26], [13, 20]]) {
+    for (let x = 32 - half; x <= 32 + half; x++) { p.ink(x, cy, 'brown', 0.20, 255); p.ink(x, cy + 1, 'brown', 0.16, 255); p.ink(x, cy + 2, 'brown', 0.12, 255); }
+    for (let k = -half + 3; k <= half - 3; k += 9) {
+      p.ink(32 + k, cy - 1, 'grey', 0.30, 255);
+      p.ink(32 + k, cy - 2, 'cyan', 0.30, 220);
+    }
+  }
+  return p.snap(0.35);
+};
+
 const AFTER_THE_FIRE = {
   CEILFIT: p => fitTray(p, 16, 25, 32, 14, 47, false),
 };

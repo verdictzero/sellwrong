@@ -163,9 +163,8 @@ const vAt = (z, peg, texH) => (z - peg) / texH;
 export function buildLevelGeometry(level, bank) {
   /* the roofs read their texture sizes from here, being geometry rather
      than a surface any sector owns */
-  for (const s of level.sectors) {
-    if (!s.roof) continue;
-    for (const n of [s.roof.tex || 'SHINGLE', s.roof.gableTex || s.roof.tex || 'SHINGLE']) {
+  for (const r of [...(level.roofs || []), ...level.sectors.map(s => s.roof).filter(Boolean)]) {
+    for (const n of [r.tex || 'SHINGLE', r.gableTex || r.tex || 'SHINGLE']) {
       const e = bank.get(n);
       if (e) noteTextureSize(n, e.w, e.h);
     }
@@ -202,7 +201,10 @@ export function buildLevelGeometry(level, bank) {
   const push = (m, k, v) => { let a = m.get(k); if (!a) m.set(k, a = []); a.push(v); };
   for (const s of staticSectors) { s.drawBlock = sectorBlock(s); push(blockSectors, s.drawBlock, s); }
   for (const l of staticLines) { const k = lineBlock(l); l.drawBlock = k; push(blockLines, k, l); }
-  const blockKeys = [...new Set([...blockSectors.keys(), ...blockLines.keys()])];
+  /* the roofs, which belong to no sector at all — see roofGeometry */
+  const blockRoofs = new Map();
+  for (const r of level.roofs || []) push(blockRoofs, blockOf((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2), r);
+  const blockKeys = [...new Set([...blockSectors.keys(), ...blockLines.keys(), ...blockRoofs.keys()])];
 
   /* AND THE INTERIORS ARE LOD. The buffer is two to four hundred rows
      tall. You cannot see through a forty-eight-unit window at forty
@@ -260,6 +262,7 @@ export function buildLevelGeometry(level, bank) {
        slope a ceiling and a flat-roofed house is not an American house.
        See roofGeometry. A roof is the most shell thing there is. */
     for (const s of blockSectors.get(k) || []) if (s.roof) roofGeometry(set, s);
+    for (const r of blockRoofs.get(k) || []) roofGeometry(set, { roof: r, light: r.light });
     shellG.add(set.toGroup(bank));
     if (inner.map.size) innerG.add(inner.toGroup(bank));
   }

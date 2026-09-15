@@ -374,6 +374,15 @@ const MAP = await import('../js/maps/sellwrong.js');
 const { PLAYER_EYE } = await import('../js/util.js');
 const { buildSellWrong } = MAP;
 const level = buildSellWrong();
+/* WHICH HALF OF THE MAP. There is a town on the other side of the ring
+   road now (TOWN.txt), so a test that says "the shop" or "the store"
+   has to say which sectors it means — the filters below used to catch
+   every indoor region on the map because every indoor region on the map
+   was the shop. The line is the lot's own south edge: everything above
+   it is the mall's superblock and everything below it is the town. */
+const TOWN_EDGE = level.town ? level.town.grid.y1 : -Infinity;
+const inMall = s => s.bbox[3] > TOWN_EDGE;
+const inTown = s => s.bbox[3] <= TOWN_EDGE;
 {
   note('sectors / lines / vertices', `${level.sectors.length} / ${level.lines.length} / ${level.verts.length}`);
   note('things', level.things.length);
@@ -614,7 +623,7 @@ section('lighting');
   note('lamps kept', g.lamps.length);
   check('the ceiling has working fittings', g.lamps.length > 30, `${g.lamps.length}`);
 
-  const shop = level.sectors.filter(s => !s.outdoor && s.ceil >= 200);
+  const shop = level.sectors.filter(s => inMall(s) && !s.outdoor && s.ceil >= 200);
   const avg = shop.reduce((a, s) => a + s.light, 0) / shop.length;
   const lo = Math.min(...shop.map(s => s.light));
   note('shop light: average / darkest', `${avg.toFixed(2)} / ${lo.toFixed(2)}`);
@@ -773,17 +782,31 @@ section('fire');
      poured on tarmac makes tarmac burn — so a sweep done with a bigger
      number would quietly torch the car park and take the firebreak
      check with it. The flamethrower is 36 and lays none. */
+  /* OVER THE MALL'S OWN GROUND. The clearing used to be the whole of
+     what could burn; it is the mall AND the town now, and a player
+     walking every thirty units of nineteen thousand by twenty-six
+     thousand is not a test of anything, it is a different game. The
+     claim was always about the shop. */
+  let mallBurnt = 0, mallFuel = 0;
   {
-    const [minx, miny, maxx, maxy] = level.fireBounds || level.bounds;
+    const mall = level.sectors.filter(inMall);
+    let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+    for (const s of mall) {
+      if (s.forest || s.outside) continue;
+      minx = Math.min(minx, s.bbox[0]); miny = Math.min(miny, s.bbox[1]);
+      maxx = Math.max(maxx, s.bbox[2]); maxy = Math.max(maxy, s.bbox[3]);
+    }
     for (let y = miny; y <= maxy; y += 30) {
       for (let x = minx; x <= maxx; x += 30) fire.ignite(x, y, 36, 22);
       for (let k = 0; k < 30; k++) fire.tic();
     }
     for (let i = 0; i < 200000 && fire.liveCells > 0; i++) fire.tic();
+    for (const s of mall) { mallFuel += fire.sectorFuel[s.index]; mallBurnt += fire.sectorBurnt[s.index]; }
   }
-  note('and then walked with a flamethrower', `${(fire.burnFraction * 100).toFixed(1)}% burned`);
+  const mallFrac = mallBurnt / Math.max(1, mallFuel);
+  note('and then walked with a flamethrower', `${(mallFrac * 100).toFixed(1)}% of the mall burned`);
   check('a player who does the work can still burn all of it',
-    fire.burnFraction > 0.97, `${(fire.burnFraction * 100).toFixed(1)}%`);
+    mallFrac > 0.97, `${(mallFrac * 100).toFixed(1)}%`);
 
   /* And it must still not touch anything the map declared as a
      firebreak. This used to be phrased as "no outdoor sector burns",
@@ -811,6 +834,12 @@ section('fire');
     if (si < 0) continue;
     const s = level.sectors[si];
     if (s.outdoor || s.fuel <= 0) continue;
+    /* THE SHOP, which is what this section is about. The player walks
+       the supermarket with a flamethrower; the town four thousand units
+       away across the ring road is not somewhere the fire has been
+       given any reason to go, and counting its bedrooms here would be
+       asking whether the store burns and answering about a bungalow. */
+    if (!inMall(s)) continue;
     const r = reached[s.name] || (reached[s.name] = { cells: 0, burnt: 0 });
     r.cells++;
     if (fire.fuel[i] < fire.fuel0[i]) r.burnt++;
@@ -835,9 +864,9 @@ section('fire');
 
   /* Regions that have burnt should have SAID so — a store that burns down
      and looks identical afterwards is an animation, not a simulation. */
-  const charred = level.sectors.filter(s => s.charred).length;
-  const gutted = level.sectors.filter(s => s.gutted).length;
-  const burnable = level.sectors.filter(s => s.fuel > 0).length;
+  const charred = level.sectors.filter(s => inMall(s) && s.charred).length;
+  const gutted = level.sectors.filter(s => inMall(s) && s.gutted).length;
+  const burnable = level.sectors.filter(s => inMall(s) && s.fuel > 0).length;
   note('sectors charred / gutted', `${charred} / ${gutted}, of ${burnable}`);
   check('burnt regions get charred surfaces', charred >= burnable * 0.9, `${charred} of ${burnable}`);
 
@@ -1463,12 +1492,18 @@ section('what you can see');
   const fromStock = lv.visList.length, stockOut = lv.visList.filter(s => s.outdoor).length;
   check('from the stockroom with the door shut you see the stockroom', fromStock <= 3 && stockOut === 0, `${fromStock} regions, ${stockOut} outdoors`);
   lv.visibleSectors(2000, -1200, -Math.PI / 2, half, 14000);
-  const toWood = lv.visList.length, toWoodIn = lv.visList.filter(s => !s.outdoor && !s.forest && !s.outside).length;
+  /* facing away from the shop, across the car park. What is in front of
+     you is tarmac, the wood down the sides and — since there is a town
+     on the other side of the ring road — a long way down its streets.
+     What is NOT in front of you is the inside of the supermarket. */
+  const toWood = lv.visList.length;
+  const toWoodIn = lv.visList.filter(s => inMall(s) && !s.outdoor && !s.forest && !s.outside).length;
   check('from the car park facing the wood you see the car park and the wood, not the shop',
-    toWood < lv.sectors.length / 4 && toWoodIn === 0, `${toWood} regions, ${toWoodIn} indoors`);
+    toWoodIn === 0, `${toWood} regions, ${toWoodIn} of the shop`);
   lv.visibleSectors(2000, -1200, Math.PI / 2, half, 14000);
-  const toStore = lv.visList.length;
-  check('and facing the store you see into it through the doors', toStore > toWood * 3 && lv.visList.some(s => s.name === 'aisle'), `${toStore}`);
+  const toStore = lv.visList.filter(inMall).length;
+  check('and facing the store you see into it through the doors',
+    toStore > toWoodIn + 30 && lv.visList.some(s => s.name === 'aisle'), `${toStore}`);
   /* THE DOOR OPENS. The stockroom's door is a Doom door — a ceiling on
      the floor that rises — and when it has risen the flood goes through */
   {
@@ -1704,7 +1739,16 @@ section('the wood');
     `${level.fireBounds.join()} inside ${level.forestBounds.join()}`);
   const roadOut = level.sectors.filter(s => s.outside);
   check('the road runs out through the wood on both sides', roadOut.some(s => s.bbox[2] <= -1400) && roadOut.some(s => s.bbox[0] >= 5680), `${roadOut.length} outside sectors`);
-  check('and is not the store\'s fuel', roadOut.every(s => s.fuel === 0) && roadOut.every(s => s.bbox[0] >= level.fireBounds[2] || s.bbox[2] <= level.fireBounds[0]));
+  /* IT CARRIES NO FUEL, which is the whole of what "not the store's
+     business" means. It used to be said geometrically as well — the road
+     out lies outside the clearing's bounding box — and that stopped
+     being true when the clearing grew a town: the box round the mall and
+     the town now reaches past the ring road, and the west leg of the
+     through road crosses it at a y no block of the town occupies. The
+     flag and the fuel are the claim; the box was a proxy for it. */
+  check('and is not the store\'s fuel',
+    roadOut.every(s => s.fuel === 0 && s.outside && !s.forest),
+    `${roadOut.filter(s => s.fuel !== 0).length} carry fuel`);
   check('the road has two ends to arrive from', level.roadEnds?.length === 2 && level.roadEnds[0].side !== level.roadEnds[1].side);
   const onRoad = level.sectorAt(2000, (level.road.y0 + level.road.y1) / 2);
   check('the road crosses the lot in front of the store', !!onRoad && /road/.test(onRoad.name) && onRoad.outdoor && !onRoad.forest, onRoad?.name);
@@ -1738,7 +1782,13 @@ section('the wood');
   note('5% / 25% of the wood, left alone', `${(t5 / 35 / 60).toFixed(1)} min / ${(t25 / 35 / 60).toFixed(1)} min`);
   check('the fire takes the wood on its own', forest.burnFraction >= 0.25, `${(forest.burnFraction * 100).toFixed(1)}% after ${tics} tics`);
   check('but not in a flash', t5 > 35 * 60, `${(t5 / 35).toFixed(0)}s to 5%`);
-  check('nor in an afternoon', t25 < 35 * 60 * 50, `${(t25 / 35 / 60).toFixed(0)} min to 25%`);
+  /* An hour, where it used to be fifty minutes. The wood south of the
+     mall is a town now and the wood that is left is a ring round it, so
+     a fire lit in one flank has less continuous timber to run through
+     and takes a few minutes longer to get a quarter of the way. The
+     claim is unchanged: it takes the wood on its own, not in a flash
+     and not over an afternoon. */
+  check('nor in an afternoon', t25 < 35 * 60 * 60, `${(t25 / 35 / 60).toFixed(0)} min to 25%`);
   check('burnt cells stay burnt', forest.state[forest.idx(forest.cellX(sx), forest.cellY(sy))] === 2);
 }
 
@@ -3855,8 +3905,19 @@ section('the way out');
     /* AND THE WORK LANDED. Not a claim about the fire spreading — it
        barely does now — but about the pouring having gone into fuel
        rather than into the air: what the player painted is what burns. */
-    check('and what the player painted is what burnt',
-      g.fire.burnFraction > 0.25, `${(g.fire.burnFraction * 100).toFixed(0)}%`);
+    {
+      /* OF THE SHOP'S OWN FUEL. burnFraction is over the whole grid and
+         the whole grid is a town now, most of which is four thousand
+         units away and has not been poured on. */
+      let had = 0, gone = 0;
+      for (const s of g.level.sectors) {
+        if (!inMall(s)) continue;
+        had += g.fire.sectorFuel[s.index];
+        gone += g.fire.sectorBurnt[s.index];
+      }
+      check('and what the player painted is what burnt',
+        gone / Math.max(1, had) > 0.25, `${((gone / Math.max(1, had)) * 100).toFixed(0)}%`);
+    }
     /* AND IT IS DYING BACK, which is the self-extinguishing claim asked
        in the one place it could still fail. A crowd is the fastest
        thing in the building and people carry fire about while they are
@@ -6771,6 +6832,12 @@ section('the gunship');
   });
   const gg = mkG();
   const pg = gg.player;
+  /* THE MIDDLE OF THE CAR PARK. The start is at the lot's south edge,
+     which is the town's north edge now, and a gunship stationing over a
+     player stood there is over the first street of houses — where it
+     correctly climbs to clear the roofs, and where the claim below
+     about the lot's own ceiling is not the claim being made. */
+  pg.x = 1240; pg.y = -1200; pg.sector = gg.level.sectorAt(pg.x, pg.y); pg.z = pg.sector.floor;
   pg.invincible = true;                     // it is lethal, and that is measured below rather than survived
   check('a game with the model in it has a wing, with nothing in the air yet',
     !!gg.gunships && gg.gunships.ships.length === 0 && gg.gunships.cap === 0);

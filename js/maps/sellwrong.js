@@ -54,6 +54,7 @@
 
 import { MapBuilder } from '../level.js';
 import { RectMap } from './rectmap.js';
+import { buildTown } from './town.js';
 import { SHOPPERS } from '../people.js';
 import { ACTORS } from '../states.js';   // to ask what is solid before standing next to it
 
@@ -1012,8 +1013,25 @@ export function buildSellWrong() {
   const MALL_Y1 = UNIT_Y1 + WALL;              // behind the in-line units
   const BACK_Y = ANCHOR_Y1 + WALL;             // behind the anchor
   const OX0 = RING_X0 - FOREST_REACH, OX1 = RING_X1 + FOREST_REACH;
-  const OY0 = LOT_Y0 - FOREST_REACH, OY1 = BACK_Y + FOREST_REACH;
-  woodRect(OX0, OY0, OX1, LOT_Y0, 'wood, behind you');
+  const OY1 = BACK_Y + FOREST_REACH;
+
+  /* =================================================================
+     AND THE TOWN, on the other side of the road
+
+     Everything south of the lot used to be nine thousand units of wood
+     and the words "wood, behind you". It is a town now — see
+     js/maps/town.js and TOWN.txt — and the wood goes round it instead,
+     at a shorter reach on the three town sides because a town blocks
+     its own sightlines and fifty thousand trees behind a terrace are
+     fifty thousand trees nobody can see.
+     ================================================================= */
+  const town = buildTown(rm, mb, { yTop: LOT_Y0 });
+  const TOWN_REACH = 4000;
+  const OY0 = town.grid.y0 - TOWN_REACH;
+  /* the wood that is left: west of the town, east of it, and behind it */
+  woodRect(OX0, town.grid.y0, town.grid.x0, LOT_Y0, 'wood, west of the town');
+  woodRect(town.grid.x1, town.grid.y0, OX1, LOT_Y0, 'wood, east of the town');
+  woodRect(OX0, OY0, OX1, town.grid.y0, 'wood, beyond the town');
   /* THE THROUGH ROAD carries on past both T-junctions and out through
      the wood until the forest ends. It is the same five strips as the
      traversal road it continues, so the lines run on across the junction
@@ -1132,7 +1150,7 @@ export function buildSellWrong() {
     const x0 = e.x0, x1 = e.x1;
     const lines = [
       ...mb.linesBetween(e.sector, mat.sector),
-      ...mb.lines.filter(l => (l.front === e.sector || l.back === e.sector) &&
+      ...mb._own(e.sector).filter(l => (l.front === e.sector || l.back === e.sector) &&
         Math.abs(l.y1 - (-WALL)) < 0.5 && Math.abs(l.y2 - (-WALL)) < 0.5),
     ];
     slide.push({
@@ -1160,9 +1178,7 @@ export function buildSellWrong() {
      hold is long, because what comes through a fire exit is not one
      person, it is everybody who was in that cross-aisle. */
   for (const x of exits) {
-    const lines = mb.lines.filter(l =>
-      (l.front === x.rect.sector || l.back === x.rect.sector) &&
-      l.front !== null && l.back !== null);
+    const lines = mb._own(x.rect.sector).filter(l => l.front !== null && l.back !== null);
     slide.push({
       x0: x.x, y0: x.y0, x1: x.x, y1: x.y1,
       zBot: FLOOR_WALK, zTop: DOOR_TOP,
@@ -1429,10 +1445,21 @@ export function buildSellWrong() {
        point, every rect that is not shop floor, and everything solid
        already placed. `rm.build()` and the crates have both happened by
        here, so both lists are the finished map. */
-    const BLOCKERS = rm.rects.filter(r => r.props.floor !== FLOOR_WALK);
-    const SOLIDS = mb.things.filter(t => ACTORS[t.type]?.solid);
     const CLEAR = 22;               // the radius and a little: beside it, not in it
-    const under = (x, yy) => rm.rects.find(r => x > r.x0 && x < r.x1 && yy > r.y0 && yy < r.y1);
+    /* ONLY THE SHOP'S OWN RECTANGLES. A shopper stands on the sales
+       floor and nowhere else, so nothing outside it can be what is
+       under one or what is too close to one. This used to be every rect
+       on the map, which was a thousand of them and fine; it is eight
+       thousand with a town on the other side of the road, and the
+       forty-four thousand candidates below made that the single most
+       expensive thing in the build. */
+    const M = CLEAR + 4;
+    const nearShop = r => r.x1 > SALES.x0 - M && r.x0 < SALES.x1 + M
+                       && r.y1 > SALES.y0 - M && r.y0 < SALES.y1 + M;
+    const SHOPRECTS = rm.rects.filter(nearShop);
+    const BLOCKERS = SHOPRECTS.filter(r => r.props.floor !== FLOOR_WALK);
+    const SOLIDS = mb.things.filter(t => ACTORS[t.type]?.solid && nearShop({ x0: t.x, x1: t.x, y0: t.y, y1: t.y }));
+    const under = (x, yy) => SHOPRECTS.find(r => x > r.x0 && x < r.x1 && yy > r.y0 && yy < r.y1);
     const standable = (x, yy) => {
       if (!onSalesFloor(x, yy)) return false;
       const r = under(x, yy);
@@ -1571,6 +1598,12 @@ export function buildSellWrong() {
 
   const level = mb.build();
   level.slideDoors = slide;
+  /* THE ROOFS, which belong to no sector: a sector engine cannot slope a
+     ceiling, so a pitched roof is geometry over a footprint. See
+     roofGeometry in js/mapgeo.js. */
+  level.roofs = town.roofPending;
+  /* and where the town is, for whoever wants to drive into it */
+  level.town = { grid: town.grid, stations: town.stations, school: town.school, church: town.church };
   /* Position, heading and which one it is, for whatever draws the cars. */
   level.carSlots = carSlots;
   /* the road, and where it leaves the map: whoever comes, comes from
