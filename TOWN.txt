@@ -9,6 +9,12 @@ that is drawn as a door.
 Nothing here is built. This is the plan, the numbers it falls out of,
 the one engine idea it needs, and the order to do it in.
 
+SIGHT.txt is its companion and covers what a town does to the renderer:
+occlusion, fog, a sky that changes, levels of detail, the cull distance,
+time of day and weather. Neither plan waits on the other; they meet at
+exactly one place, which is the per-block batching in THE BLOCK IS THE
+UNIT OF RESIDENCY below.
+
 
 WHAT IS THERE NOW
 -----------------
@@ -477,6 +483,16 @@ None of this is optional and none of it is hard. It is all in
 `js/mapgeo.js` and it wants doing BEFORE there are twenty-five blocks,
 not after.
 
+AND THE FRUSTUM IS NOT THE CULL THAT MATTERS. Batching per block is what
+makes a cull POSSIBLE; the frustum is only the weakest one that can then
+be applied, and on a street grid it keeps every block in front of you
+whether or not a house is standing in the way. The cull this town
+actually wants is a portal flood over the sector graph, which is exact,
+which the data model already has the input for, and which is SIGHT.txt's
+business rather than this document's. What matters here is that the two
+plans agree on the unit: the flood produces visible SECTORS, this plan
+batches by BLOCK, and the drawing is the blocks those sectors are in.
+
 
 FIRE IN A BUILDING WITH STAIRS
 ------------------------------
@@ -631,7 +647,7 @@ order by anybody.
 THE TEST
 --------
 
-1271 checks pass today in about a minute, with no install and no
+1278 checks pass today in about a minute, with no install and no
 browser, and every one of them is there because something reached a
 screenshot. The column breaks assumptions that nothing currently
 asserts, so these come first, in phase 1, before the code they check:

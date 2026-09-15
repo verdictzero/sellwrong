@@ -23,6 +23,12 @@ somewhere else: the people, the trees, the sky, and the gun.
                           one engine idea all of it waits on, which is
                           that a sector may name the sector above it.
                           Nothing in it is built
+  SIGHT.txt             the plan for the air between you and the thing
+                          you are looking at: occlusion, fog, a sky that
+                          changes, a fog that matches it because it is a
+                          texel of it, LOD, the cull distance, time of
+                          day and weather — one system, because they are
+                          one. Nothing in it is built either
   .gitlab-ci.yml        test, then publish to GitLab Pages
   .github/workflows/    the same two jobs, for GitHub Pages
   index.html            the page
