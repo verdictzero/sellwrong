@@ -737,7 +737,7 @@ order by anybody.
 THE TEST
 --------
 
-1576 checks pass today in about three minutes, with no install and no
+1594 checks pass today in about three minutes, with no install and no
 browser, and every one of them is there because something reached a
 screenshot. The column breaks assumptions that nothing currently
 asserts, so these come first, in phase 1, before the code they check:

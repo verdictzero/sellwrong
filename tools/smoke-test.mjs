@@ -2773,8 +2773,10 @@ section('the cold');
       check('and both are remembered and put on the player',
         /godmode: true/.test(main) && /toggle\('opt-godmode', 'godmode'\)/.test(main) &&
         /game\.player\.invincible = !!prefs\.godmode/.test(main));
+      /* 5 was the bump that turned them on; the picture's defaults have
+         bumped it since, and any later bump keeps the switches on */
       check('and both are ON by default, at the user\'s request, under a bumped prefs version',
-        /debug: true, godmode: true/.test(main) && /const PREF_VERSION = 5;/.test(main) &&
+        /debug: true, godmode: true/.test(main) && +(main.match(/const PREF_VERSION = (\d+);/) || [])[1] >= 5 &&
         /id="opt-debug"[^>]*aria-pressed="true"/.test(html) && /id="opt-godmode"[^>]*aria-pressed="true"/.test(html));
     }
 
@@ -3378,20 +3380,23 @@ await (async () => {
       !!l && l.every((e, i) => i === 0 || e.v < l[i - 1].v));
   }
   check('the render ladder goes from a phone to a desktop',
-    /const DETAIL = \[120,/.test(main) && /720\]/.test(main));
+    /const DETAIL = \[120,/.test(main) && /960\]/.test(main));
   /* WHAT THE GAME OPENS AT, which is two numbers and the user picked
-     both: 200 rows of chunky pixels off a 720-row render. The grid is
-     the picture and the render is how much is behind each square of it,
-     so the default is the coarsest picture this game has ever shipped
-     drawn off the finest buffer it has ever had. */
+     both: 320 rows of chunky pixels off a 960-row render (240 off 720
+     before that, and 200 before that). The grid is the picture and the
+     render is how much is behind each square of it, so the default is
+     a coarse picture drawn off the finest buffer the game has ever had,
+     with exactly three rows of it behind every row you see. */
   {
     const det = [...(main.match(/const DETAIL = \[([^\]]*)\]/) || ['', ''])[1].split(',').map(v => +v)];
     const pix = [...(main.match(/const PIXELS = \[([^\]]*)\]/) || ['', ''])[1].split(',').map(v => +v)];
     const dDef = +(main.match(/const DEFAULT_DETAIL = (\d+)/) || [])[1];
     const pDef = +(main.match(/const DEFAULT_PIXELS = (\d+)/) || [])[1];
     note('what it opens at', `${pix[pDef]} rows of pixels off a ${det[dDef]}-row render`);
-    check('the game opens at 240P pixels off a 720P render, at the user\'s request',
-      pix[pDef] === 240 && det[dDef] === 720);
+    check('the game opens at 320P pixels off a 960P render, at the user\'s request',
+      pix[pDef] === 320 && det[dDef] === 960);
+    check('and the render is three rows to the pixel exactly, so the average is a true box',
+      det[dDef] === 3 * pix[pDef]);
     check('and the render default is the top of its ladder',
       dDef === det.length - 1 && det.every((v, i) => i === 0 || v > det[i - 1]));
     check('and the pixel grid is never finer than the buffer behind it',
@@ -3426,6 +3431,33 @@ await (async () => {
     /* which on a 16:9 window at 240 rows is every column of a 720-row buffer */
     const tall = at(1920, 1080, { height: 720, pixelHeight: 240, pixelAspect: 1 / 3 });
     check('which at 240 rows off 720 on 16:9 is 1280 across', tall.gridWidth === 1280 && tall.gridHeight === 240, `${tall.gridWidth}x${tall.gridHeight}`);
+    check('and at 320 rows off 960 is every column of the 960-row buffer',
+      (g => g.gridWidth === g.width && g.gridHeight === 320)(at(1920, 1080, { height: 960, pixelHeight: 320, pixelAspect: 1 / 3 })));
+
+    /* AND TWO TO THREE, at the user's request, which is the shape the
+       game opens with: half again as tall as it is wide. On a 16:9
+       window at 320 rows off a 960-row buffer that is 853 across, and
+       every chunky pixel is two buffer columns by three buffer rows —
+       whole numbers both ways, so the block average is a true box. */
+    const paDef = +(main.match(/const DEFAULT_PIXAR = (\d+)/) || [])[1];
+    check('and a two-to-three, half again as tall as it is wide, at the user\'s request',
+      par.some(e => Math.abs(e.v - 2 / 3) < 0.001 && /2:3/.test(e.n)));
+    check('which is the shape the game opens with',
+      !!par[paDef] && Math.abs(par[paDef].v - 2 / 3) < 0.001, par[paDef] ? par[paDef].n : `index ${paDef}`);
+    const ship = at(1920, 1080, { height: 960, pixelHeight: 320, pixelAspect: 2 / 3 });
+    note('what it ships as, on 16:9', `${ship.gridWidth}x${ship.gridHeight} out of a ${ship.width}x${ship.height} buffer, ${ship.taps.join(' by ')} samples a pixel`);
+    check('which at 320 rows off 960 on 16:9 is 853 across, two by three samples a pixel',
+      ship.gridWidth === 853 && ship.gridHeight === 320 && ship.width === 1707 && ship.height === 960 &&
+      ship.taps[0] === 2 && ship.taps[1] === 3, `${ship.gridWidth}x${ship.gridHeight} ${ship.taps.join(',')}`);
+    check('and 640 across on a 4:3 one',
+      at(1024, 768, { height: 960, pixelHeight: 320, pixelAspect: 2 / 3 }).gridWidth === 640);
+    /* A 19.5:9 PHONE (2340 BY 1080) AT 960 ROWS IS 2080 ACROSS, over
+       the old ceiling of 2048 on the buffer's width — and a clamped
+       width moves the camera's aspect off the window's, which is the
+       world drawn wider than it is. The ceiling is 4096 now. */
+    const phone = at(2340, 1080, { height: 960, pixelHeight: 320, pixelAspect: 2 / 3 });
+    check('and a 19.5:9 phone at 960 rows keeps the window\'s shape, because the width\'s ceiling is above it',
+      phone.width === 2080 && Math.abs(phone.width / phone.height - 2340 / 1080) < 0.005, `${phone.width}x${phone.height}`);
     check('and the picture opens a third brighter than drawn', /bright: 1\.35/.test(main) && /delete saved\.bright/.test(main));
 
     /* THE ONE THAT MATTERS. Two hundred rows of 5:6 pixels filling a
@@ -3508,6 +3540,67 @@ await (async () => {
     const lots = at(1024, 768, { height: 600, pixelHeight: 60, pixelAspect: 1 });
     check('and nothing takes more than four, or the filter costs more than the frame',
       lots.taps[0] <= 4 && lots.taps[1] <= 4, lots.taps.join(','));
+  }
+
+  /* --- THE DITHER IS ONE STEP OF A 16 16 16 GRID -----------------
+     It was one step of the lookup cube's 32. The step is a constant
+     the pipeline exports — three numbers for three channels — and the
+     post pass and the sky bake both add it off the one GLSL function,
+     so there is one grain and it is the grain asked for.
+     --------------------------------------------------------------- */
+  {
+    const L = await import('../js/lofi.js');
+    const fsD = await import('node:fs');
+    const lofiSrc = fsD.readFileSync('js/lofi.js', 'utf8');
+    const skySrc = fsD.readFileSync('js/skyart.js', 'utf8');
+    check('the dither is one step of a 16 by 16 by 16 RGB grid, at the user\'s request',
+      Array.isArray(L.DITHER_LEVELS) && L.DITHER_LEVELS.length === 3 && L.DITHER_LEVELS.every(v => v === 16),
+      String(L.DITHER_LEVELS));
+    check('and the shader divides by it per channel, in the one function both passes use',
+      /uniform vec3\s+uDitherLevels/.test(L.PALETTE_GLSL) && /vec3 ditherAt\(vec2 cell, float amount\)/.test(L.PALETTE_GLSL) &&
+      /\/ uDitherLevels;/.test(L.PALETTE_GLSL) &&
+      /c \+= ditherAt\(vUv \* uGridSize, uDither\);/.test(lofiSrc) &&
+      /ditherAt\(floor\(gl_FragCoord\.xy \/ \$\{SKY_CELL\}\.0\), uDither\)/.test(skySrc));
+    check('and neither pass is still adding a thirty-second on its own',
+      !/1\.0 \/ 32\.0/.test(lofiSrc) && !/1\.0 \/ 32\.0/.test(skySrc));
+    check('and both materials carry the levels as a uniform',
+      /uDitherLevels: \{ value: new THREE\.Vector3\(DITHER_LEVELS\[0\], DITHER_LEVELS\[1\], DITHER_LEVELS\[2\]\) \}/.test(lofiSrc) &&
+      /uDitherLevels: \{ value: new V3\(DITHER_LEVELS\[0\], DITHER_LEVELS\[1\], DITHER_LEVELS\[2\]\) \}/.test(skySrc));
+  }
+
+  /* --- THE SKY IS 2048 BY 512 ------------------------------------
+     Twice the photograph each way, at the user's request, so a texel
+     of it is finer than a chunky pixel of the picture it sits behind;
+     with the stars one texel of the finer sky and the dither's grain
+     kept on the 1024 by 256 cells it had, so the post pass's averaging
+     cannot eat it. And the fog, which reads the horizon row, reads it
+     half a texel up in the bake's OWN row count.
+     --------------------------------------------------------------- */
+  {
+    const SK2 = await import('../js/skyart.js');
+    const fsD = await import('node:fs');
+    const skySrc = fsD.readFileSync('js/skyart.js', 'utf8');
+    const matSrc = fsD.readFileSync('js/material.js', 'utf8');
+    check('the sky bakes at 2048 by 512, twice the photograph each way, at the user\'s request',
+      SK2.SKY_W === 2048 && SK2.SKY_H === 512, `${SK2.SKY_W}x${SK2.SKY_H}`);
+    check('and a texel of it is finer than a chunky pixel of the picture it ships with',
+      360 / SK2.SKY_W < 72 / 320, `${(360 / SK2.SKY_W).toFixed(3)} against ${(72 / 320).toFixed(3)} degrees`);
+    check('but the grain stays on the 1024 by 256 cells it had, coarser than a chunky pixel',
+      SK2.SKY_CELL === SK2.SKY_W / 1024 && SK2.SKY_H / SK2.SKY_CELL === 256 &&
+      360 / (SK2.SKY_W / SK2.SKY_CELL) > 72 / 320);
+    check('and a star is one texel of the finer sky, at half the density per texel',
+      /floor\(vUv \* vec2\(\$\{SKY_W\}\.0, \$\{SKY_H\}\.0\)\)/.test(skySrc) && /float density = 0\.0035 \*/.test(skySrc));
+    /* the sine hash has about 256 values in a 32-bit float, and a band
+       of 0.0035 is narrower than one of its steps: read back out of
+       the bake, stars on it numbered four. The stars roll on a hash
+       without a sine in it; the clouds keep the one they had. */
+    check('off a hash that can be that sparing, which the sine hash cannot',
+      /float hashStar\(vec2 p\)/.test(skySrc) && /float h = hashStar\(cell \+ 0\.5\);/.test(skySrc) &&
+      !/hashStar[^\n]*sin\(/.test(skySrc) && /float hash2\(vec2 p\) \{ return fract\(sin\(/.test(skySrc));
+    check('and the fog reads the horizon row half a texel up in the sky\'s own row count',
+      /0\.5 \+ 0\.5 \/ \$\{SKY_H\}\.0/.test(matSrc) && !/0\.5 \/ 256\.0/.test(matSrc) && /import \{ SKY_H \} from '\.\/skyart\.js'/.test(matSrc));
+    check('without the sky depending on the weather, which depends on the world, which reads the sky',
+      !/from '\.\/weather\.js'/.test(skySrc));
   }
 
   /* --- AND THE CORNER IS TWO BARS AND NO WORDS -------------------
@@ -3626,7 +3719,22 @@ section('the wiring');
   walk('js');
   const exportsOf = src => {
     const out = new Set();
-    for (const m of src.matchAll(/^export\s+(?:async\s+)?(?:function|class|const|let|var)\s+([A-Za-z_$][\w$]*)/gm)) out.add(m[1]);
+    for (const m of src.matchAll(/^export\s+(?:async\s+)?(?:function|class)\s+([A-Za-z_$][\w$]*)/gm)) out.add(m[1]);
+    /* `export const a = 1, b = 2;` — every name at depth zero on the
+       line and not just the first, because five modules write theirs
+       that way and js/material.js was the first to import a second one
+       (SKY_H, off js/skyart.js) and be told it did not exist */
+    for (const m of src.matchAll(/^export\s+(?:const|let|var)\s+([^\n]*)/gm)) {
+      let depth = 0, seg = '';
+      const segs = [];
+      for (const ch of m[1]) {
+        if ('([{'.includes(ch)) depth++;
+        else if (')]}'.includes(ch)) depth--;
+        if (ch === ',' && depth === 0) { segs.push(seg); seg = ''; } else seg += ch;
+      }
+      segs.push(seg);
+      for (const sg of segs) { const n = (sg.trim().match(/^([A-Za-z_$][\w$]*)/) || [])[1]; if (n) out.add(n); }
+    }
     /* `export { a, b as c }` and `export { a } from './x.js'` */
     for (const m of src.matchAll(/^export\s*\{([^}]*)\}/gm))
       for (const part of m[1].split(','))

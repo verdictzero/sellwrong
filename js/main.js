@@ -62,8 +62,8 @@ const failed = text => { const s = $('load-status'); if (s) s.textContent = text
    pixel filter below is what decides how chunky the picture looks now
    and this one is free to be about detail. It is still the frame rate
    control; halving it quarters the pixels being shaded. */
-const DETAIL = [120, 150, 200, 240, 300, 400, 480, 600, 720];
-const DEFAULT_DETAIL = 8;              // 720, the top of the ladder
+const DETAIL = [120, 150, 200, 240, 300, 400, 480, 600, 720, 960];
+const DEFAULT_DETAIL = 9;              // 960, the top of the ladder, at the user's request (it was 720)
 
 /* AND HOW BIG A PIXEL IS, which is a different question and used to be
    the same one. This is the grid the finished frame is filtered down
@@ -75,13 +75,16 @@ const DEFAULT_DETAIL = 8;              // 720, the top of the ladder
 
    OFF is last because it is the finest setting there is — the grid
    becomes the buffer, which is exactly what this game did before the two
-   were pulled apart. It is not the default: the default is 240 rows of
-   5:6 pixels off a 720-row render, at the user's request (it was 200,
-   which is 320x200 at the shape Doom was drawn at), off a render fine
-   enough that every one of those chunky pixels is the average of nine. */
-const PIXELS = [120, 150, 200, 240, 300, 400, 480, 600, 0];
+   were pulled apart. It is not the default: the default is 320 rows of
+   2:3 pixels off a 960-row render, at the user's request (it was 240 of
+   5:6 off 720, and before that 200, which is 320x200 at the shape Doom
+   was drawn at), off a render fine enough that every one of those
+   chunky pixels is the average of six — two columns by three rows. The
+   320 took the rung 300 had; a ladder with both is a ladder with a
+   step nobody can see. */
+const PIXELS = [120, 150, 200, 240, 320, 400, 480, 600, 0];
 const PIXELS_OFF = PIXELS.length - 1;
-const DEFAULT_PIXELS = 3;              // 240, at the user's request, up from 200
+const DEFAULT_PIXELS = 4;              // 320, at the user's request, up from 240
 
 /* THE SHAPE OF ONE, width over height as displayed. 320x200 filling a
    4:3 monitor is not a square-pixel mode and never was: each pixel stood
@@ -94,16 +97,22 @@ const DEFAULT_PIXELS = 3;              // 240, at the user's request, up from 20
 const PIXEL_ASPECT = [
   { v: 1.0,     n: 'SQUARE' },
   { v: 0.83333, n: 'TALL 5:6' },      // 320x200 on a 4:3 monitor
+  /* TWO TO THREE, at the user's request, and the shape the game opens
+     with: a pixel half again as tall as it is wide. At 320 rows on a
+     16:9 window that is 853 across — two buffer columns by three buffer
+     rows to the chunky pixel off the 960-row render, so every one of
+     them is the average of six — and 640 across on a 4:3 one. */
+  { v: 0.66667, n: 'TALL 2:3' },
   { v: 1.16667, n: 'WIDE 7:6' },      // 256x224 on the same
   /* AND ONE TO THREE, at the user's request: a pixel three times as
-     tall as it is wide, which is a 240-row grid twelve hundred and
-     eighty across on a 16:9 window — every column of the 720-row
-     buffer, in rows a third as fine. lofiSizes clamps the width to the
-     buffer's, so on a narrower render the rows give way, as they do
-     for every tall setting. */
+     tall as it is wide, which is a 320-row grid seventeen hundred
+     across on a 16:9 window — every column of the 960-row buffer, in
+     rows a third as fine. lofiSizes clamps the width to the buffer's,
+     so on a narrower render the rows give way, as they do for every
+     tall setting. */
   { v: 0.33333, n: 'TALL 1:3' },
 ];
-const DEFAULT_PIXAR = 1;               // 5:6, which is the shape Doom was drawn on
+const DEFAULT_PIXAR = 2;               // 2:3, at the user's request; 5:6 is the shape Doom was drawn on
 
 /* ---------------------------------------------------------------------
    WHAT TO SPEND THE FRAME ON
@@ -141,8 +150,10 @@ const WOOD   = [{ v: 1, n: 'ALL OF IT' }, { v: 0.6, n: 'NEARER' }, { v: 0.35, n:
 const PREF_KEY = 'sellwrong.prefs';
 /* 4: the defaults moved — 240 rows of pixels, and the picture a third
    brighter — so a saved 200 and a saved 1.0 are not kept alive.
-   5: the two debug switches default to on. */
-const PREF_VERSION = 5;
+   5: the two debug switches default to on.
+   6: the picture moved again — 320 rows of 2:3 pixels off a 960-row
+   render — so a saved 240, 5:6 and 720 are not kept alive either. */
+const PREF_VERSION = 6;
 const DEFAULT_PREFS = { v: PREF_VERSION, sens: 1, invert: false, lefty: false, haptics: true,
                         detail: DEFAULT_DETAIL, pixels: DEFAULT_PIXELS, pixar: DEFAULT_PIXAR,
                         crowd: 0, fx: 0, wood: 0, fps: false,

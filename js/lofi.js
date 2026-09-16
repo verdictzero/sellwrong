@@ -89,6 +89,16 @@
    ON THE GRID, one threshold per chunky pixel, because a checker finer
    than the pixels is a checker the averaging has already eaten.
 
+   AND HOW MUCH DITHER IS THREE NUMBERS, ONE PER CHANNEL. The wobble is
+   one step of an RGB grid — 16 by 16 by 16, at the user's request, where
+   it used to be one step of the lookup cube's own 32. Half a step either
+   way, so at 16 a chunky pixel's threshold can move its colour a
+   sixteenth of a channel before the snap: enough to turn a band the
+   palette would have drawn as two flat colours into a checker of the
+   two, coarser and more visible than it was, which is the look asked
+   for. The sky bake adds the same step off the same function, so the
+   sky's grain and the picture's are one grain (DITHER_LEVELS, below).
+
    WHICH FIXED SOMETHING NOBODY HAD NOTICED. The old pass ran at SCREEN
    resolution and worked out the Bayer index as floor(vUv * bufferSize)
    — the buffer texel this screen pixel is standing on. That is the right
@@ -122,6 +132,23 @@ import { buildLutAtlas, LUT_SIZE } from './palette.js';
    which is the other reason this pass renders where it does. */
 const MAX_TAPS = 4;
 
+/* THE GRID THE DITHER IS ONE STEP OF, per channel: red, green, blue.
+   The Bayer threshold adds half a step of this grid either way before
+   the snap, so at 16 it spans a sixteenth of each channel — twice what
+   it spanned at the lookup cube's 32, at the user's request. Three
+   numbers and not one because a channel the eye is worse at could carry
+   a coarser grain than one it is better at; today all three are the
+   same, and the shader divides by them per channel either way. */
+export const DITHER_LEVELS = [16, 16, 16];
+
+/* A CEILING ON THE BUFFER'S WIDTH, for a window wider than any monitor.
+   It is 4096 and not 2048 because the buffer is 960 rows tall by default
+   now, and a 20:9 phone at 960 rows is 2133 across: clamp that and the
+   camera's aspect — which is the BUFFER's, see below — drifts off the
+   window's, and the whole world is drawn a couple of per cent wider
+   than it is. Every WebGL device can hold a 4096 texture. */
+const MAX_WIDTH = 4096;
+
 /**
  * Every size the pipeline runs at, from the window and the two
  * controls. Pure arithmetic, and exported on purpose — this is where
@@ -134,13 +161,13 @@ const MAX_TAPS = 4;
  *                             in which case the grid IS the buffer
  * @param opts.pixelAspect     the width of one chunky pixel over its
  *                             height, as displayed. 1 is square; 5/6 is
- *                             Doom's
+ *                             Doom's; 2/3 is what the game ships with
  * @param opts.maxWidth        a ceiling, for very wide windows
  */
 export function lofiSizes(displayW, displayH, opts = {}) {
   const dw = Math.max(1, Math.round(displayW)), dh = Math.max(1, Math.round(displayH));
   const aspect = dw / dh;
-  const maxWidth = opts.maxWidth ?? 2048;
+  const maxWidth = opts.maxWidth ?? MAX_WIDTH;
 
   /* the buffer: square pixels, so the camera's aspect is the window's */
   const height = Math.max(60, Math.round(opts.height ?? 200));
@@ -204,6 +231,7 @@ void main() {
 export const PALETTE_GLSL = /* glsl */`
 uniform sampler2D tLut;
 uniform float uLutSize;
+uniform vec3  uDitherLevels;   // the RGB grid the dither is one step of — DITHER_LEVELS
 /* 4x4 ordered Bayer, built the way Bayer matrices are actually defined:
    recursively out of the 2x2 one. M4(x,y) = 4*M2(low bits) + M2(high
    bits), where M2 is [[0,2],[3,1]] and works out to (2x+3y) mod 4. Four
@@ -216,6 +244,16 @@ float bayer4(vec2 p) {
   float lo = bayer2(mod(f.x, 2.0), mod(f.y, 2.0));
   float hi = bayer2(floor(f.x * 0.5), floor(f.y * 0.5));
   return 4.0 * lo + hi;                 // 0..15
+}
+
+/* THE WOBBLE, before the snap: the Bayer threshold at the cell, centred
+   on zero, scaled by the amount, as a step of the RGB grid in
+   uDitherLevels — a sixteenth of each channel at the shipped 16 16 16.
+   The post pass adds exactly this to every chunky pixel and the sky
+   bake to every cell of the sky, and neither adds anything else, so
+   there is one grain. */
+vec3 ditherAt(vec2 cell, float amount) {
+  return vec3((bayer4(cell) / 15.0 - 0.5) * amount) / uDitherLevels;
 }
 
 /* Nearest palette entry, via the atlas: 32 slices of 32x32 side by side.
@@ -299,9 +337,9 @@ void main() {
   if (uDither > 0.0) {
     /* ON THE GRID and not on the buffer: one threshold per chunky pixel.
        A checker finer than the pixels is a checker the averaging above
-       has already eaten. */
-    float t = (bayer4(vUv * uGridSize) / 15.0 - 0.5) * uDither * (1.0 / 32.0);
-    c += t;
+       has already eaten. One step of the 16 16 16 grid — ditherAt, and
+       DITHER_LEVELS above the shader. */
+    c += ditherAt(vUv * uGridSize, uDither);
   }
 
   vec3 snapped = palSnap(c);
@@ -333,7 +371,7 @@ export class LofiPipeline {
     this.height = opts.height ?? 200;
     this.pixelHeight = opts.pixelHeight ?? 0;
     this.pixelAspect = opts.pixelAspect ?? 1;
-    this.maxWidth = opts.maxWidth ?? 2048;
+    this.maxWidth = opts.maxWidth ?? MAX_WIDTH;
 
     /* THE BUFFER. Filtered LINEARLY, which reads like a betrayal of the
        whole file and is not: every fetch out of it is either a block
@@ -381,6 +419,7 @@ export class LofiPipeline {
         uGridSize:  { value: new THREE.Vector2(320, this.height) },
         uTaps:      { value: new THREE.Vector2(1, 1) },
         uDither:    { value: opts.dither ?? 1.0 },
+        uDitherLevels: { value: new THREE.Vector3(DITHER_LEVELS[0], DITHER_LEVELS[1], DITHER_LEVELS[2]) },
         uLutSize:   { value: LUT_SIZE },
         uSnap:      { value: opts.snap ?? 1.0 },
         uPicture:   { value: new THREE.Vector3(1, 1, 1) },

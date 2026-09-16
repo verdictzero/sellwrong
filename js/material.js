@@ -42,6 +42,7 @@
 
 import * as THREE from 'three';
 import { EMBER_RAMP } from './palette.js';
+import { SKY_H } from './skyart.js';
 
 /* Every material in the game shares these objects. Mutate .value on one
    and the whole store changes on the next frame — no walking a scene
@@ -485,12 +486,14 @@ vec3 worldShade(vec3 albedo, float l, float depth, vec3 world, float fullbright)
      The azimuth formula is the sphere's own (js/skyart.js, header) —
      atan2(z, x) over a full turn in the renderer's axes. Nearest
      filtered and repeat-wrapped, so a negative u is fine and the fetch
-     is one texel from a quarter-megapixel texture that lives in cache.
+     is one texel from a megapixel texture that lives in cache. Half a
+     texel above the horizon, in the bake's own row count (SKY_H), so
+     the row is the first one over the line whatever size the sky is.
      A smooth ramp rather than a straight one, so the air starts gently
      and a wall does not read as crossing a line. */
   vec3 toFrag = world - eyePos;
   float az = atan(toFrag.z, toFrag.x) * 0.15915494;          // over 2 pi
-  vec3 air = texture2D(skyTex, vec2(az, 0.5 + 0.5 / 256.0)).rgb;
+  vec3 air = texture2D(skyTex, vec2(az, 0.5 + 0.5 / ${SKY_H}.0)).rgb;
   float at = clamp((depth - airNear) / max(1.0, airFar - airNear), 0.0, 1.0);
   at = at * at * (3.0 - 2.0 * at);
   c = mix(c, air, at);

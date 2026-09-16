@@ -17,9 +17,30 @@
    a dither pattern nailed to the screen that crawls across the stars
    every time you turn your head. A picture is dithered ONCE, in its own
    texels, and the pattern is nailed to the sky. So this bakes into a
-   1024 x 256 equirect, on the GPU, with the same Bayer and the same
+   2048 x 512 equirect, on the GPU, with the same Bayer and the same
    palette snap the post pass uses (js/lofi.js exports them), and the
    sphere in js/sky.js wears the result exactly as it wore the PNG.
+
+   TWICE THE PHOTOGRAPH'S 1024 x 256 IN EACH DIRECTION, at the user's
+   request, and what got finer is the paint and not the grain. A texel
+   was a third of a degree, and at the picture the game ships now — 320
+   rows of chunky pixels over a 72-degree view, a chunky pixel every
+   0.225 degrees tall and 0.15 wide — that was a sky visibly blockier
+   than the picture in front of it. At 2048 a texel is 0.176 degrees,
+   between the width and the height of one of those pixels, so the
+   sun's edge, the moon's, the horizon and the cloud edges land where
+   they should and the sky is as fine as what it sits behind. The
+   stars are one texel each, as they always were, so a star is now a
+   single chunky pixel rather than a blob of four, and the hash is half
+   as generous per texel — which, on a hash that can actually be that
+   sparing (hashStar, below), lights about as many texels as the old
+   sky did: four times the stars at a quarter of the size, the same
+   light, finer. The Bayer threshold is
+   the one thing kept on the OLD grid: it is worked out on 1024 x 256
+   CELLS of two texels square (SKY_CELL), because a checker finer than
+   a chunky pixel is a checker the post pass's averaging eats, and what
+   would be left of it is the post pass's own dither, nailed to the
+   screen — which is the crawl this file exists to prevent.
 
    AND THE FOG READS THE SAME TEXELS. The world shader samples this
    texture's horizon row in the fragment's own azimuth for the colour
@@ -56,11 +77,15 @@
    ===================================================================== */
 
 import * as THREE from 'three';
-import { PALETTE_GLSL } from './lofi.js';
-import { LUT_SIZE } from './palette.js';
-import { toLinear } from './weather.js';
+import { PALETTE_GLSL, DITHER_LEVELS } from './lofi.js';
+import { LUT_SIZE, toLinear } from './palette.js';
 
-export const SKY_W = 1024, SKY_H = 256;
+export const SKY_W = 2048, SKY_H = 512;
+/* THE DITHER IS WORKED OUT ON CELLS this many texels square — 1024 x
+   256 of them, the grid the sky had before it doubled — so the grain is
+   the grain it was and survives the post pass's averaging. The stars
+   are not: a star is one texel of the finer sky. See the header. */
+export const SKY_CELL = SKY_W / 1024;
 
 const VERT = /* glsl */`
 precision highp float;
@@ -98,6 +123,21 @@ vec3 dirOf(vec2 uv) {
 }
 
 float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7)) + uSeed) * 43758.5453); }
+
+/* A HASH WITH THE WHOLE FLOAT UNDER IT, for the stars. The sine hash
+   above is fine for cloud noise and useless for a rare event: in a
+   32-bit float the product sin(x) * 43758 has a last place of about
+   0.004, so fract of it takes about 256 distinct values, and a
+   threshold band of 0.0035 — a star every three hundred texels — is
+   narrower than one step of it. Measured in the bake, one-texel stars
+   on that hash came out as FOUR texels in the whole sky. This one
+   (Hoskins' hash without a sine in it) is even to the fifth decimal,
+   and the same seed still moves the same stars. */
+float hashStar(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33) + uSeed;
+  return fract((p3.x + p3.y) * p3.z);
+}
 
 /* value noise, smooth, two octaves short of the CPU one in js/pixel.js
    because a cloud is a soft thing */
@@ -175,12 +215,17 @@ void main() {
   /* THE STARS: a hash of the texel, one texel each, thinned by the
      cosine of the elevation because an equirect has as many texels
      round the zenith as round the horizon and the sky does not. And a
-     band across them — the Milky Way — with more of them in it. */
+     band across them — the Milky Way — with more of them in it. The
+     density per texel is half what it was at 1024 x 256, on four times
+     the texels and a hash that can deliver it (hashStar, above): read
+     back out of the bake, the lit texels come out about equal to what
+     the old two-texel stars lit — four times the stars, a quarter the
+     size each, the same light. */
   vec2 cell = floor(vUv * vec2(${SKY_W}.0, ${SKY_H}.0));
-  float h = hash2(cell + 0.5);
+  float h = hashStar(cell + 0.5);
   vec3 bandN = normalize(vec3(0.30, 0.55, 0.78));
   float band = 1.0 - smoothstep(0.0, 0.24, abs(dot(dir, bandN)));
-  float density = 0.007 * max(cos((vUv.y - 0.5) * PI), 0.0) * (1.0 + band * 2.5);
+  float density = 0.0035 * max(cos((vUv.y - 0.5) * PI), 0.0) * (1.0 + band * 2.5);
   float star = step(1.0 - density, h) * (0.35 + 0.65 * fract(h * 77.7));
   star *= smoothstep(0.005, 0.03, e) * uStars * (1.0 - cloud) * (1.0 - disc) * (1.0 - mdisc);
   vec3 milky = vec3(0.22, 0.23, 0.32) * band * (0.5 + 0.5 * fbm(dir.xz * 5.0 + dir.y * 3.0)) * uMilky * smoothstep(0.0, 0.05, e);
@@ -189,10 +234,11 @@ void main() {
 
   col = mix(col, cloudCol, cloud);
 
-  /* THE PAINT. Dithered in the sky's own texels, snapped to the
-     palette, and then linear — see the header for why each. */
-  float t = (bayer4(gl_FragCoord.xy) / 15.0 - 0.5) * uDither * (1.0 / 32.0);
-  vec3 snapped = palSnap(clamp(col + t, 0.0, 1.0));
+  /* THE PAINT. Dithered in the sky's own cells — one Bayer threshold
+     per SKY_CELL texels, the grain the 1024-wide sky had — off the same
+     16 16 16 step as the post pass; snapped to the palette; and then
+     linear. See the header for why each. */
+  vec3 snapped = palSnap(clamp(col + ditherAt(floor(gl_FragCoord.xy / ${SKY_CELL}.0), uDither), 0.0, 1.0));
   vec3 lin = pow((snapped + 0.055) / 1.055, vec3(2.4));
   lin = mix(snapped / 12.92, lin, step(0.04045, snapped));
   gl_FragColor = vec4(lin, 1.0);
@@ -230,6 +276,7 @@ export class SkyBaker {
            dithered again on the way to the screen, and the two at full
            strength made the dawn a crosshatch */
         tLut: { value: lut }, uLutSize: { value: LUT_SIZE }, uDither: { value: 0.6 },
+        uDitherLevels: { value: new V3(DITHER_LEVELS[0], DITHER_LEVELS[1], DITHER_LEVELS[2]) },
         uSeed: { value: opts.seed ?? 0.0 },
         uZenith: { value: new V3() }, uHorizon: { value: new V3() }, uGround: { value: new V3() },
         uSunDir: { value: new V3(1, 0, 0) }, uSunCol: { value: new V3() }, uGlow: { value: new V3() },
@@ -290,8 +337,8 @@ export class SkyBaker {
 
   /** Bake again only when it would show: the hour has moved, the
    *  weather has changed, or there is cloud and it has drifted. At most
-   *  twice a second — a quarter of a megapixel each time, which is
-   *  nothing, and a sky that steps twice a second is a sky in a game
+   *  twice a second — a megapixel each time, which is still nothing,
+   *  and a sky that steps twice a second is a sky in a game
    *  whose world steps thirty-five times a second. */
   update(f, nowSeconds) {
     const since = nowSeconds - this._lastBake;

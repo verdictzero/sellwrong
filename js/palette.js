@@ -282,6 +282,12 @@ export function snapImageData(img, dither = 0) {
   return img;
 }
 
+/* sRGB bytes-as-fractions to linear light, the standard curve. It lived
+   in js/weather.js, which still exports it; it is here so the sky bake
+   can use it without depending on the weather, which depends on the
+   world material, which reads the sky's size — a cycle nobody needs. */
+export const toLinear = c => c.map(v => (v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)));
+
 /* --------------------------------------------------------------------
    THE EMBER RAMP
 

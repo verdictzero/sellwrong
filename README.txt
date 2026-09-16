@@ -129,7 +129,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         1576 checks, no install and no browser
+  the smoke test         1594 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -742,10 +742,16 @@ the picture as drawn. THE DEFAULT BRIGHTNESS IS 1.35, at the user's
 request — the picture a third brighter than drawn — and the other two
 sit at 1. They are remembered with the rest.
 
-AND THE DEFAULT PICTURE IS 720P RENDERED, 240P OF PIXELS, at the user's
-request, up from 200, with the pixel aspect ladder grown a fourth rung:
-TALL 1:3, a pixel three times as tall as it is wide, which on a 16:9
-window is every column of the 720-row buffer in 240 rows.
+AND THE DEFAULT PICTURE IS 960P RENDERED, 320P OF PIXELS AT 2:3, at the
+user's request — it was 720 and 240 at 5:6, and 200 before that. A pixel
+half again as tall as it is wide, and at 320 rows on a 16:9 window that
+is 853 across off a 1707 by 960 buffer: two buffer columns by three
+buffer rows to every chunky pixel, whole numbers both ways, so each is
+the average of six and the average is a true box. The pixel aspect
+ladder has five rungs now — SQUARE, TALL 5:6, TALL 2:3, WIDE 7:6 and
+TALL 1:3 — the last of which on a 16:9 window is every column of the
+960-row buffer in 320 rows. A saved setting from before takes the new
+defaults, as every moved default has.
 
 
 ON A PHONE
@@ -2685,20 +2691,27 @@ setting at which the store was legible AND the picture was made of visible
 squares, which is the look. So there are two now, both steppers in the
 pause menu:
 
-  RENDER    the buffer's height, 120 to 720, on [ and ]. How much the
+  RENDER    the buffer's height, 120 to 960, on [ and ]. How much the
             world is drawn with, and where the frame rate goes
   PIXELS    the height of the grid it is filtered onto, 120 to 600 or
             OFF, on shift-[ and shift-]. How big a pixel is, and it
             costs almost nothing
 
-IT SHIPS AT 720 AND 200 with 5:6 pixels, at the user's request: the
-finest render on the ladder filtered down onto the coarsest picture the
-game has shipped — about 384 by 200 of tall pixels off an 1152 by 720
-buffer, which is a 320x200-shaped picture with every chunky pixel the
-average of roughly twenty rasterised ones. It was 600 and 300 before,
-and the pair moved in opposite directions on purpose: the grid is the
-LOOK and the buffer is the DETAIL BEHIND IT, so making the look coarser
-is a reason to draw more behind it, not less.
+IT SHIPS AT 960 AND 320 with 2:3 pixels, at the user's request: the
+finest render on the ladder filtered down onto a grid with exactly three
+of its rows behind every row you see — 853 by 320 of tall pixels off a
+1707 by 960 buffer on a 16:9 window, 640 by 320 off 1280 by 960 on a 4:3
+one, and every chunky pixel the average of two columns by three rows,
+whole numbers both ways, which is a true box filter and not a set of taps
+falling between texels. It shipped at 720 and 240 with 5:6 pixels before
+that, at 720 and 200 before that, and at 600 and 300 before any of it:
+the render has only ever gone up and the pixels have gone both ways,
+because the grid is the LOOK and the buffer is the DETAIL BEHIND IT, and
+they are separate dials for exactly that reason. The ceiling on the
+buffer's width went from 2048 to 4096 with the move, because a 19.5:9
+phone at 960 rows is 2080 across and a 20:9 one 2133, and a clamped
+width moves the camera's aspect off the window's — the world drawn a
+couple of per cent wider than it is.
 
 The widths follow the window's shape either way, so a wider monitor shows
 MORE STORE rather than the same store stretched, and the menu prints both
@@ -2720,10 +2733,11 @@ them. 320x200 filling a 4:3 monitor is not a square-pixel mode and never
 was: each pixel stood five wide to six tall, and every Doom sprite was
 drawn by somebody looking at that screen, so a square-pixel 320x200 is a
 squashed Doom. The setting is the width of one chunky pixel over its
-height — SQUARE, TALL 5:6, or WIDE 7:6, which is a console's 256x224 on
-the same screen — and the grid's width is the window's shape divided by
-it. Ask for 5:6 at two hundred rows on a 4:3 window and you get 320x200,
-which is not a coincidence and is the whole of the arithmetic.
+height — SQUARE, TALL 5:6, TALL 2:3, WIDE 7:6, which is a console's
+256x224 on the same screen, or TALL 1:3 — and the grid's width is the
+window's shape divided by it. Ask for 5:6 at two hundred rows on a 4:3
+window and you get 320x200, which is not a coincidence and is the whole
+of the arithmetic.
 
 Nothing about the world moves when that changes. The camera reads the
 BUFFER's shape and the buffer's pixels are always square; the grid is a
@@ -2781,7 +2795,7 @@ runs once per chunky pixel, which at 320x200 is sixty-four thousand.
 WHAT TO SPEND THE FRAME ON. Four settings, and they are in the order of
 what they are worth, measured:
 
-  RENDER    the buffer's height, now up to 720. Halving it quarters the pixels, and on
+  RENDER    the buffer's height, now up to 960. Halving it quarters the pixels, and on
             anything with a weak fill rate that is the whole answer.
             PIXELS is not on this list: it is a look, not a cost, and
             turning it down does not make the world any cheaper to draw
@@ -2837,6 +2851,17 @@ Colours are snapped to the palette on the GPU through a 32x32x32 lookup
 cube, built once at start-up, flattened into a 1024x32 texture. Dither
 first, then snap: dithering afterwards would put back colours the palette
 does not contain.
+
+THE DITHER IS ONE STEP OF A 16 BY 16 BY 16 RGB GRID, at the user's
+request — it was one step of the cube's own 32 — so the Bayer threshold
+can move a chunky pixel a sixteenth of a channel either way before the
+snap, and a band the palette would have drawn as two flat colours comes
+out as a checker of the two, twice as far apart in colour as before and
+visibly so. Three numbers rather than one (DITHER_LEVELS in js/lofi.js,
+a vec3 the shader divides by per channel), because a channel the eye is
+worse at could carry a coarser grain than one it is better at; today all
+three are 16. The sky bake adds the same step off the same GLSL function,
+so the sky's grain and the picture's are one grain.
 
 THE FIRE IS THE ONE THING DRAWN ADDITIVELY, at the user's request, and it
 is the one thing in the game that should be. Doom had exactly one way of
@@ -3073,17 +3098,37 @@ down. The sky sphere takes the smoke and not the air, which is a proof
 and not a preference: the air IS the sky's horizon, so mixing the sky
 toward the air is the identity. Both are in the test.
 
-THE SKY IS BAKED IN THE PAGE, js/skyart.js, on the GPU, into the same
-1024 by 256 equirect the photograph was, for the hour and the weather:
-a ramp, horizon to zenith, and a ground below that starts as the
-horizon's own colour so the far plane's cut has nothing to show; the
-sun as a disc with a tight corona, and a glow along the horizon on
-its side that under a dozen degrees of sun is the whole dawn; the
-moon two degrees across, four times life size and the smallest thing
-that reads as a moon at three texels a degree; stars one texel each
-off a hash of the texel, thinned by the cosine of the elevation
-because an equirect has as many texels round the zenith as round the
-horizon and the sky does not, and a band across them with more in it;
+THE SKY IS BAKED IN THE PAGE, js/skyart.js, on the GPU, into a 2048 by
+512 equirect — twice the photograph's 1024 by 256 each way, at the
+user's request — for the hour and the weather: a ramp, horizon to
+zenith, and a ground below that starts as the horizon's own colour so
+the far plane's cut has nothing to show; the sun as a disc with a
+tight corona, and a glow along the horizon on its side that under a
+dozen degrees of sun is the whole dawn; the moon two degrees across,
+four times life size and the smallest thing that read as a moon at
+the three texels a degree it was drawn for (it is nearly six now);
+stars one texel each off a hash of the texel — a single chunky pixel
+now rather than a blob of four, at half the density per texel, off a
+hash that can be that sparing: the sine hash everything else uses has
+about 256 values in a 32-bit float, and a band of 0.0035 is narrower
+than one of its steps, so on it the finer sky had four stars in it,
+measured; on a hash without a sine the lit texels come out about
+equal to what the old sky lit, four times the stars at a quarter of
+the size, the same light, finer — thinned by the cosine of the
+elevation because an
+equirect has as many texels round the zenith as round the horizon and
+the sky does not, and a band across them with more in it; the dither
+alone is worked out on 1024 by 256 cells of two texels square, the
+grid the sky had before, because a checker finer than a chunky pixel
+is a checker the post pass's averaging eats, and what would be left
+is the post pass's own grain, nailed to the screen, which is the crawl
+a baked sky exists to prevent; and the doubling is
+because a texel of the old sky was a third of a degree, and at 320
+rows of chunky pixels over a 72-degree view a chunky pixel is 0.225
+degrees tall: the sky was visibly blockier than the picture in front
+of it, and at 0.176 degrees a texel it is not. The fog, which reads
+the bake's horizon row, reads it half a texel up in the bake's own row
+count rather than in a number typed next to it;
 clouds of value noise on a plane over your head, big overhead and
 crowding to the horizon the way clouds do, drifting with the wind,
 lit by the dawn from the side and by the town from below, and taking
@@ -4186,7 +4231,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-1576 checks. Every one of them earns its place by having caught something
+1594 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

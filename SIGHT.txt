@@ -121,9 +121,12 @@ strips back off the golf project: bake it in the page, at start-up, with
 everything else.
 
   tools/bake-sky.mjs goes into the page as js/skyart.js and takes a
-  TIME and a WEATHER instead of a JPEG. It writes a 1024 x 256 equirect,
-  snapped to the palette with the same ordered dither everything else
-  gets, exactly as the offline tool does today.
+  TIME and a WEATHER instead of a JPEG. It writes a 2048 x 512 equirect
+  (1024 x 256 when this was written; doubled at the user's request,
+  with the dither worked out on the old grid of cells so the grain
+  did not shrink under the post pass), snapped to the palette with the
+  same ordered dither everything else gets, exactly as the offline
+  tool does today.
 
   js/sky.js does not change. It is handed a texture; it does not care
   where the texture came from. The sphere, the radius, the mirrored x,
@@ -135,8 +138,8 @@ everything else.
   the sun comes up. What the generator makes is the ramp underneath it,
   the sun or moon in it, and the glow where the light is coming from.
 
-  IT IS RE-BAKED WHEN THE TIME HAS MOVED ENOUGH TO SHOW. A 1024 x 256
-  target is a quarter of a megapixel; a dawn over six minutes wants
+  IT IS RE-BAKED WHEN THE TIME HAS MOVED ENOUGH TO SHOW. A 2048 x 512
+  target is a megapixel; a dawn over six minutes wants
   about a bake every fifteen seconds, which is forty bakes a night.
 
 AND IT MUST STAY A BAKED PICTURE, which is the part that is easy to get
@@ -161,7 +164,7 @@ The fog colour is a texel of the sky texture.
                                               // matters here too
   vec3 air = texture2D(skyTex, vec2(az * INV_TWO_PI + 0.5, HORIZON_V)).rgb;
 
-One fetch, from a texture that is a quarter of a megapixel and will live
+One fetch, from a texture that is a megapixel and will live
 in cache for ever. And it is not APPROXIMATELY the sky — it is the sky,
 so it cannot drift out of agreement with it, because there is nothing to
 keep in agreement. A wall at the end of the street fades into precisely
@@ -185,7 +188,7 @@ a degree; sampling its real elevation would cost a second fetch to fix a
 thing nobody can see. If it ever matters — a gunship at 300 up seen from
 underneath — it is one more uniform.
 
-CHEAPER STILL, IF IT SHOWS: the horizon row copied into a 1024 x 1
+CHEAPER STILL, IF IT SHOWS: the horizon row copied into a 2048 x 1
 texture at bake time, so the fog fetch touches one row instead of
 walking into a 2D texture's mip chain. Measure first.
 
@@ -581,7 +584,7 @@ one.
 THE TEST
 --------
 
-1576 checks pass headless in about three minutes. These are the ones this
+1594 checks pass headless in about three minutes. These are the ones this
 work makes possible, and several of them are the kind that only a
 system built this way can state at all:
 

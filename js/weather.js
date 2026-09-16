@@ -154,7 +154,7 @@ const lerp3 = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2],
 export const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
 const smooth = (a, b, v) => { const t = clamp01((v - a) / (b - a)); return t * t * (3 - 2 * t); };
 /* sRGB bytes to linear, which is the space the buffer is in */
-export const toLinear = c => c.map(v => (v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)));
+export { toLinear } from './palette.js';   // where it lives now; everything that imported it from here still can
 
 /** Hours on a clock that runs 22:00 to 08:00 — anything is mapped onto
  *  that span so 1.5 and 25.5 are the same moment. */
