@@ -681,7 +681,7 @@ async function boot() {
           `${renderer.info.render.calls} draws  ${drawn}/${live} things  ` +
           `${game.fire.burningCells} alight  ${game.forest.burningCells} wood  ` +
           `${game.flame.liveCount + game.fx.liveCount} particles  ` +
-          `${game.weather.label} ${game.weather.kind} ${skyBaker.bakes} bakes`;
+          `${game.weather.label} ${game.weather.shownKind} ${skyBaker.bakes} bakes`;
       }
       fpsAccum = 0; fpsFrames = 0;
     }

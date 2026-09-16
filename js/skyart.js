@@ -284,7 +284,7 @@ export class SkyBaker {
     r.render(this.scene, this.camera);
     r.setRenderTarget(prev);
     this.bakes++;
-    this._lastHour = f.hour; this._lastKind = f.kind;
+    this._lastHour = f.hour; this._lastKind = f.kind; this._lastSmoke = f.smoke || 0;
     return this.texture;
   }
 
@@ -295,7 +295,8 @@ export class SkyBaker {
    *  whose world steps thirty-five times a second. */
   update(f, nowSeconds) {
     const since = nowSeconds - this._lastBake;
-    const moved = this._lastHour === null || Math.abs(f.hour - this._lastHour) > 0.004 || f.kind !== this._lastKind;
+    const moved = this._lastHour === null || Math.abs(f.hour - this._lastHour) > 0.004 || f.kind !== this._lastKind
+      || Math.abs((f.smoke || 0) - (this._lastSmoke || 0)) > 0.015;
     const drifting = f.cover > 0 && since > 0.5;
     if (!(moved || drifting) || since < 0.25) return false;
     this._lastBake = nowSeconds;

@@ -30,6 +30,18 @@
    townhouse, the school, the choir loft over the narthex. The splitting
    below does not change by a character, because splitting is about where
    the corners are and a column has one set of corners.
+
+   AND A SQUARE MAY BE AN ARC. Give it `arc: { centre, disc, rest }` and
+   it becomes TWO sectors: the quarter circle centred on the corner
+   `centre` names ('SW', 'SE', 'NE', 'NW'), with the square's side for
+   its radius, wearing `disc`; and the curved triangle left over at the
+   opposite corner, wearing `rest`. The two edges of the square that meet
+   at the centre belong to the disc whole and the other two to the rest
+   whole, so every neighbour still sees a rectangle and splits against it
+   exactly as before — which is what lets a kerb go round a corner in a
+   map made of rectangles. A sidewalk's corner is a square with the disc
+   the sidewalk and the rest the road; the outside of a bend in the road
+   is a square with the disc the road and the rest the sidewalk.
    ===================================================================== */
 
 /* A BUCKET GRID OVER THE RECTS, because both loops below are otherwise
@@ -156,7 +168,50 @@ export class RectMap {
       for (const x of this._splits(r, 'top').slice().reverse()) poly.push([x, r.y1]);
       poly.push([r.x0, r.y1]);
       for (const y of this._splits(r, 'left').slice().reverse()) poly.push([r.x0, y]);
-      if (r.props.storeys) {
+      if (r.props.arc) {
+        /* AN ARC: two sectors out of one square. The ring above runs
+           counter-clockwise from the south-west corner; turned to start
+           at the centre corner it is four edges E1..E4, E1 leaving the
+           centre and E4 returning to it. The disc is E1, the arc from
+           E1's far end round to E4's near end, and E4; the rest is E2,
+           E3 and the same arc the other way. Both wind counter-clockwise
+           because the ring did. */
+        const { arc, ...common } = r.props;
+        const side = Math.min(r.x1 - r.x0, r.y1 - r.y0);
+        if (Math.abs((r.x1 - r.x0) - (r.y1 - r.y0)) > 1e-6) throw new Error(`an arc must be a square: ${r.x0},${r.y0} ${r.x1},${r.y1}`);
+        const corners = { SW: [r.x0, r.y0], SE: [r.x1, r.y0], NE: [r.x1, r.y1], NW: [r.x0, r.y1] };
+        const C = corners[arc.centre];
+        if (!C) throw new Error(`an arc is centred on SW, SE, NE or NW, not ${arc.centre}`);
+        /* the four edges, each as its points from start to end, with
+           the splits — the same points the plain polygon has */
+        const E = [
+          [[r.x0, r.y0], ...this._splits(r, 'bottom').map(x => [x, r.y0]), [r.x1, r.y0]],
+          [[r.x1, r.y0], ...this._splits(r, 'right').map(y => [r.x1, y]), [r.x1, r.y1]],
+          [[r.x1, r.y1], ...this._splits(r, 'top').slice().reverse().map(x => [x, r.y1]), [r.x0, r.y1]],
+          [[r.x0, r.y1], ...this._splits(r, 'left').slice().reverse().map(y => [r.x0, y]), [r.x0, r.y0]],
+        ];
+        const start = { SW: 0, SE: 1, NE: 2, NW: 3 }[arc.centre];
+        const [E1, E2, E3, E4] = [0, 1, 2, 3].map(k => E[(start + k) % 4]);
+        /* the arc, from E1's far corner round to E4's near corner,
+           counter-clockwise about the centre; the corners themselves are
+           already the ends of the edges */
+        const a = E1[E1.length - 1], b = E4[0];
+        const t0 = Math.atan2(a[1] - C[1], a[0] - C[0]);
+        const n = arc.segments ?? Math.max(5, Math.round(side / 20));
+        const bow = [];
+        for (let k = 1; k < n; k++) {
+          const t = t0 + (Math.PI / 2) * (k / n);
+          bow.push([Math.round(C[0] + side * Math.cos(t)), Math.round(C[1] + side * Math.sin(t))]);
+        }
+        const disc = [...E1, ...bow, ...E4.slice(0, -1)];          // C .. a, the bow, b .. (C)
+        const rest = [...E2, ...E3.slice(1), ...bow.slice().reverse()];  // a .. c, .. b, the bow back to (a)
+        if (rest[rest.length - 1] !== b && (rest[rest.length - 1][0] === b[0] && rest[rest.length - 1][1] === b[1])) rest.pop();
+        const si = this.mb.sector(disc, { ...common, ...arc.disc });
+        const ri = this.mb.sector(rest, { ...common, ...arc.rest });
+        r.sector = si;
+        r.column = [si, ri];
+        r.arcSectors = { disc: si, rest: ri };
+      } else if (r.props.storeys) {
         /* A COLUMN: one outline, several storeys. The overlap check
            above and the edge splitting here are untouched by it,
            because both are about x and y and a column lives at one x,y.

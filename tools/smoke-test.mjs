@@ -417,8 +417,10 @@ const inTown = s => s.bbox[3] <= TOWN_EDGE;
      checking, because it is the only property of it that is hard to see
      and easy to break. */
   {
-    const slots = level.carSlots || [];
-    note('parking slots', slots.length);
+    /* the car park's own slots; the vans along the town's kerbs are
+       marked `street` and checked with the street */
+    const slots = (level.carSlots || []).filter(c => !c.street);
+    note('parking slots', `${slots.length} in the lot, ${(level.carSlots || []).length - slots.length} on the town's streets`);
     /* SPARSE, at the user's request: about one bay in six near the doors
        and almost nothing by the road. The claim is that there IS a car
        park and that it is not full — an empty lot and a full one are
@@ -1167,15 +1169,18 @@ section('fire');
     const smoke = drawn.smokes.filter(m => m.visible);
     note('one burning run, drawn', `${flames.length} flames and ${smoke.length} of smoke ` +
       `over ${drawn.active.length} cells alight`);
-    check('the fire is drawn', flames.length > 40, `${flames.length}`);
+    /* about half the cells get a flame — the thinning in FireSystem.render
+       — and each is drawn bigger than its cell, so a fire is a scatter
+       of big flames and not a carpet of small ones */
+    check('the fire is drawn', flames.length > 16, `${flames.length}`);
+    check('as fewer flames than cells alight, each standing for more than its own cell',
+      flames.length < drawn.active.length && flames.length > drawn.active.length * 0.2,
+      `${flames.length} flames on ${drawn.active.length} cells`);
     check('additively, and without writing depth',
       flames.every(m => m.material.blending === THREE.AdditiveBlending && !m.material.depthWrite));
     check('there is smoke standing over it', smoke.length > 4, `${smoke.length}`);
     check('and the smoke is blended rather than added',
       smoke.every(m => m.material.blending === THREE.NormalBlending && !m.material.depthWrite));
-    /* a clump: more sprites than there are cells they sit on */
-    const cells = new Set(flames.map(m => `${Math.round(m.position.x / 32)},${Math.round(m.position.z / 32)}`));
-    check('more flames than cells to put them in', flames.length > cells.size, `${flames.length} on ${cells.size}`);
     const off = flames.filter(m => Math.abs(((m.position.x - drawn.originX) % 32) - 16) > 0.5);
     check('and most of them are not on a cell centre', off.length > flames.length * 0.3,
       `${off.length} of ${flames.length}`);
@@ -1188,6 +1193,18 @@ section('fire');
     const now = drawn.sprites.filter(m => m.visible).map(m => `${m.position.x},${m.position.z}`);
     check('and the scatter is the same scatter next frame',
       was.length === now.length && was.every((v, i) => v === now[i]));
+    /* FROM THE FAR END OF THE STREET the same fire is a handful of very
+       big flames: past FLAME_MID the cells are gathered into clumps and
+       each clump is one flame sized by how much of it is alight, drawn
+       whatever the flood says, out to the air's reach */
+    drawn.render(1800 + 3200, 1250, 0);
+    const farFlames = drawn.sprites.filter(m => m.visible);
+    const farH = farFlames.map(m => m.material.uniforms.spriteScale.value.y);
+    note('the same fire from 3200 units', `${farFlames.length} flames, ${Math.min(...farH).toFixed(0)} to ${Math.max(...farH).toFixed(0)} units tall`);
+    check('from far off the fire is a handful of flames', farFlames.length >= 1 && farFlames.length <= 8, `${farFlames.length}`);
+    check('and every one of them is huge', farH.every(h => h > 200), `${Math.min(...farH).toFixed(0)}`);
+    drawn.render(1800 + 7000, 1250, 0);
+    check('and past the air there is nothing', drawn.sprites.filter(m => m.visible).length === 0);
   }
 
   /* And the player's weapon has to be much faster than waiting. */
@@ -1289,13 +1306,42 @@ section('the air');
   /* --- the uniforms --- */
   const w2 = new W.Weather({ hour: 2, kind: 'rain' });
   w2.apply(0.016, 0.25, 0.1);
-  check('apply sets the air from the row', M.world.airFar.value === W.WEATHERS.rain.airFar && M.world.airNear.value === W.WEATHERS.rain.airNear);
-  check('and the smoke from the two fires', Math.abs(M.world.smokeDensity.value - Math.min(0.5, 0.25 * 1.2 + 0.1 * 0.5)) < 1e-9);
+  check('apply sets the air from the row', Math.abs(M.world.airFar.value - W.WEATHERS.rain.airFar) < 1 && Math.abs(M.world.airNear.value - W.WEATHERS.rain.airNear) < 1);
+  check('and the smoke from the two fires', Math.abs(M.world.smokeDensity.value - Math.min(0.5, 0.25 * 1.2 + 0.1 * 0.5)) < 1e-3);
   check('and the ambient from the hour plus the burn', Math.abs(M.world.minLight.value - (W.sampleHour(2).minLight + 0.25 * 0.30)) < 1e-9);
   check('and everybody else can read the wind and the rain off climate',
-    W.climate.rain === 1 && W.climate.wind.x === 0.9 && W.climate.kind === 'rain' && W.climate.airFar === 5200);
+    W.climate.rain === 1 && Math.abs(W.climate.wind.x - 0.9) < 1e-3 && W.climate.kind === 'rain' && Math.abs(W.climate.airFar - 5200) < 1);
   w2.setKind('clear'); w2.apply(0.016, 0, 0);
   check('and clear again', W.climate.rain === 0 && M.world.smokeDensity.value === 0);
+
+  /* --- the weather a fire makes --- */
+  {
+    const plain = W.sampleFrame(2, 'clear', 0, 0), smoky = W.sampleFrame(2, 'clear', 0, 1);
+    check('a sky full of smoke closes the air in and puts the stars out',
+      smoky.airFar < plain.airFar / 3 && smoky.airNear < plain.airNear / 3 && smoky.stars === 0 && smoky.cover > 0.9,
+      `air ${smoky.airFar} of ${plain.airFar}`);
+    check('and is orange where the clear night is blue',
+      smoky.horizon[0] > smoky.horizon[2] * 2 && plain.horizon[2] >= plain.horizon[0],
+      `${smoky.horizon.map(v => v.toFixed(2))} against ${plain.horizon.map(v => v.toFixed(2))}`);
+    check('half a sky of smoke is half way there',
+      Math.abs(W.sampleFrame(2, 'clear', 0, 0.5).airFar - (plain.airFar + smoky.airFar) / 2) < 1);
+    check('and a sky with no smoke is the sky it always was', JSON.stringify(plain) === JSON.stringify(W.sampleFrame(2, 'clear')));
+    const w3 = new W.Weather({ hour: 2, kind: 'clear' });
+    for (let k = 0; k < 600; k++) w3.apply(0.1, 0, 0, { hot: 400, wood: 0 });
+    check('a big fire fills the sky with smoke in about a minute', w3.smoke > 0.7 && w3.smoke < 0.9, w3.smoke.toFixed(2));
+    check('and the whole world reads it off climate: the air has closed in and the wind is up',
+      W.climate.smoke === w3.smoke && W.climate.airFar < W.WEATHERS.clear.airFar / 2 && W.climate.wind.x > W.WEATHERS.clear.wind[0] * 1.5,
+      `air ${W.climate.airFar.toFixed(0)}, wind ${W.climate.wind.x.toFixed(2)}`);
+    check('and the label says so', w3.shownKind === 'smoke');
+    const before = W.climate.airFar;
+    for (let k = 0; k < 4000; k++) w3.apply(0.1, 0, 0, { hot: 0, wood: 0 });
+    check('and it clears, slowly, when the fire is out', w3.smoke < 0.1 && W.climate.airFar > before * 2 && w3.shownKind === 'clear',
+      `${w3.smoke.toFixed(3)}`);
+    /* what has burnt keeps a floor under it: a town half gone is half a sky of smoke for good */
+    const w4 = new W.Weather({ hour: 2, kind: 'clear' });
+    for (let k = 0; k < 6000; k++) w4.apply(0.1, 0.5, 0, { hot: 0, wood: 0 });
+    check('and a town half burnt keeps a sky a third full of smoke, fire or no fire', w4.smoke > 0.3 && w4.smoke < 0.4, w4.smoke.toFixed(2));
+  }
 
   /* --- THE FOG IS THE SKY. The claim of the whole plan, held where
      it can be held headless: the world shader's fog colour is a fetch
@@ -4788,7 +4834,10 @@ section('the van');
     const bay = gm.textures.get('BAYROW');
     const mod = (v, n) => ((v % n) + n) % n;
     const across = [];
-    for (const v of V.all) {
+    /* the lot's own vans; the ones along the town's kerbs stand on the
+       street's shoulders and are the street's business */
+    const lotVans = V.all.filter(v => !/^parking,/.test((level.sectorAt(v.x, v.y) || {}).name || ''));
+    for (const v of lotVans) {
       const sec = level.sectorAt(v.x, v.y);
       across.push(sec && sec.floorAnchor && sec.floorTex === 'BAYROW'
         ? mod(v.x - sec.floorAnchor[0], bay.w) : -1);
@@ -4796,9 +4845,9 @@ section('the van');
     const centred = across.filter(t => Math.abs(t - bay.w / 2) < 1).length;
     /* three of them are abandoned at an angle across the lot, which is
        the map saying everybody left at once; the rest are parked */
-    note('cars across their bay', `${centred} of ${V.count} dead centre of one`);
+    note('cars across their bay', `${centred} of ${lotVans.length} dead centre of one, ${V.count - lotVans.length} more parked in the town`);
     check('every parked car is in the middle of a bay rather than on a line',
-      centred >= V.count - 3,
+      centred >= lotVans.length - 3,
       across.filter(t => Math.abs(t - bay.w / 2) >= 1).map(t => t.toFixed(0)).join(', '));
     check('and the bay rows are exactly one repeat of the bay texture deep',
       level.sectors.filter(s => s.floorTex === 'BAYROW').every(s => {
@@ -7455,36 +7504,64 @@ section('the town');
     Math.abs((G.main[0] + G.main[1]) / 2 - 2140) < 64, `${((G.main[0] + G.main[1]) / 2).toFixed(0)} against 2140`);
   check('the town starts where the lot stops', G.y1 === -3096, `${G.y1}`);
 
-  /* THE STREET IN CROSS-SECTION, at the user's request: the sidewalk is
-     three times the plan's 48 and the kerb twice its 12, and both came
-     out of the carriageway because the block pitch is what puts the
-     supermarket on the grid. */
+  /* THE STREET IN CROSS-SECTION, at the user's request twice over: the
+     sidewalk went to three times the plan's 48 and the kerb to twice
+     its 12, and then the kerb came back down to the plan's twelve and
+     the sidewalk to 112 to make room for a parking shoulder each side
+     of the carriageway — 112 | 16 | 76 | 84 | 84 | 76 | 16 | 112, and
+     every one of those came out of the same 576 because the block pitch
+     is what puts the supermarket on the grid. */
   {
     const U3 = await import('../js/util.js');
     const walk = level.sectors.find(s2 => /^sidewalk,/.test(s2.name));
     const road = level.sectors.find(s2 => /^street centre,/.test(s2.name));
     const width = s2 => Math.min(s2.bbox[2] - s2.bbox[0], s2.bbox[3] - s2.bbox[1]);
-    note('the street', `sidewalk ${width(walk)} wide, kerb ${walk.floor} tall, carriageway ${T.STREET - 2 * (width(walk) + 24)}`);
-    check('a sidewalk is three times the plan\'s forty-eight', width(walk) === 144, `${width(walk)}`);
-    check('and the kerb twice its twelve', walk.floor === 24, `${walk.floor}`);
+    note('the street', `sidewalk ${width(walk)} wide, kerb ${walk.floor} tall, carriageway ${T.STREET - 2 * (width(walk) + 16)}`);
+    check('a sidewalk is more than twice the plan\'s forty-eight', width(walk) === 112, `${width(walk)}`);
+    check('and the kerb is the plan\'s twelve', walk.floor === 12, `${walk.floor}`);
     check('the street is still 576, so the block pitch is still 3648',
       T.STREET === 576 && T.PITCH === 3648);
     check('and main street still points at the supermarket doors',
       Math.abs((G.main[0] + G.main[1]) / 2 - 2140) < 64);
-    /* AND YOU CAN STILL GET ON IT. Twenty-four is exactly MAX_STEP, so
-       this is the check that stands between a town with sidewalks and a
-       town with a kerb you can see and not stand on. */
-    check('a kerb of twenty-four is exactly the tallest step there is',
-      walk.floor === U3.MAX_STEP, `${walk.floor} against ${U3.MAX_STEP}`);
+    /* AND YOU CAN STILL GET ON IT: half of MAX_STEP, so this is the
+       check that stands between a town with sidewalks and a town with a
+       kerb you can see and not stand on. */
+    check('a kerb of twelve is half the tallest step there is',
+      walk.floor * 2 === U3.MAX_STEP, `${walk.floor} against ${U3.MAX_STEP}`);
     /* THE KERB IS AT THE VERGE, which is the band the plan puts between
        the walking and the parking: road, then the step up, then grass,
-       then concrete. So the line to ask about is the verge's. */
+       then concrete. So the line to ask about is the verge's — and what
+       is over the line from it is the parking shoulder. */
     const verge = level.sectors.find(s2 => /^verge,/.test(s2.name));
     const shared = verge && verge.lines.find(l => l.frontCol.length && l.backCol.length &&
-      [l.front, l.back].some(i => /^(street|street edge|street centre),/.test(level.sectors[i].name)));
-    if (check('the kerb is a step from the carriageway up to the verge', !!shared && verge.floor === 24))
+      [l.front, l.back].some(i => /^(parking|storm drain),/.test(level.sectors[i].name)));
+    if (check('the kerb is a step from the parking shoulder up to the verge', !!shared && verge.floor === 12))
       check('and you can step up it', level.lineBlocks(shared, 0, 56, false) === null,
         `${level.lineBlocks(shared, 0, 56, false)}`);
+    /* THE SHOULDER: a parking lane each side at road level, a storm
+       drain in the gutter near each end of every run, and a van in a
+       few of the bays — slots js/vehicles.js parks a van in at load */
+    const parking = level.sectors.filter(s2 => /^parking,/.test(s2.name));
+    const drains = level.sectors.filter(s2 => /^storm drain,/.test(s2.name));
+    note('the shoulders', `${parking.length} pieces of parking, ${drains.length} storm drains, ${level.carSlots.filter(sl => sl.street).length} vans parked on the street`);
+    check('a parking shoulder is at road level, 76 wide and painted in bays',
+      parking.length > 200 && parking.every(s2 => s2.floor === 0 && width(s2) <= 76 && /^ASPHPAR[KV]$/.test(s2.floorTex)) &&
+      parking.filter(s2 => width(s2) === 76).length >= parking.length / 3,
+      `${parking.filter(s2 => !(s2.floor === 0 && width(s2) <= 76)).length} are not`);
+    check('a storm drain is a grate at road level against the kerb',
+      drains.length >= 400 && drains.every(s2 => s2.floor === 0 && s2.floorTex === 'DRAIN' && width(s2) === 24), `${drains.length}`);
+    check('and the drain is a step below the kerb it sits against — the verge, or on Main Street the pavement',
+      drains.every(s2 => s2.lines.some(l => l.frontCol.length && l.backCol.length && [l.front, l.back].some(i => /^(verge|sidewalk),/.test(level.sectors[i].name)))));
+    const townSlots = level.carSlots.filter(sl => sl.street);
+    check('vans are parked along the streets, on the shoulder, in a bay',
+      townSlots.length > 60 && townSlots.length < 200 &&
+      townSlots.every(sl => { const s2 = level.sectorAt(sl.x, sl.y); return s2 && /^parking,/.test(s2.name); }),
+      `${townSlots.length}, ${townSlots.filter(sl => !/^parking,/.test(level.sectorAt(sl.x, sl.y)?.name || '')).length} off the shoulder`);
+    check('and no two vans share a bay', (() => {
+      const seen = new Set();
+      for (const sl of townSlots) { const k = `${Math.round(sl.x / 16)},${Math.round(sl.y / 16)}`; if (seen.has(k)) return false; seen.add(k); }
+      return true;
+    })());
   }
 
   const townSecs = level.sectors.filter(inTown);
@@ -7632,7 +7709,7 @@ section('the town');
     const doored = doors.filter(s => s.lines.some(l => (!l.frontCol.length || !l.backCol.length) && /^FRNTDO/.test(l.middle)));
     check('every door recess has a door in it', doored.length === doors.length, `${doors.length - doored.length} have not`);
     check('a door sill is the height of the foundation, and a window sill is above it',
-      doors.every(s => s.floor === T.FOUND || s.floor === 24) && w0.every(s => s.floor >= T.FOUND));
+      doors.every(s => s.floor === T.FOUND || s.floor === T.KERB_H) && w0.every(s => s.floor >= T.KERB_H));
     /* the recess is sixteen deep, the wall twenty-four */
     check('a recess is sixteen deep in a wall twenty-four thick',
       windows.every(s => Math.min(s.bbox[2] - s.bbox[0], s.bbox[3] - s.bbox[1]) === T.NICHE) && T.ZONE === 24);
@@ -7728,9 +7805,11 @@ section('sloped roofs');
      and a roof at six in twelve over a 384 half-span, which is 192 of
      rise — a ridge above the mall's 480 parapet now, which a ridge may
      be, and under the 768 the sky sits at, which nothing may not */
-  check('a three-storey terrace tops out at 552, its ridge under the sky',
-    roofs.some(s2 => Math.abs(s2.ceil - 552) < 1e-6) && roofs.every(s2 => s2.ceil < 768),
-    `${roofs.filter(s2 => Math.abs(s2.ceil - 552) < 1e-6).length} at 552, highest ${Math.max(...roofs.map(s2 => s2.ceil))}`);
+  const TT = await import('../js/maps/town.js');
+  const shopTop = TT.KERB_H + 3 * TT.STOREY + 192;
+  check('a three-storey shop terrace tops out at the kerb, three storeys and 192 of roof, under the sky',
+    roofs.some(s2 => Math.abs(s2.ceil - shopTop) < 1e-6) && roofs.every(s2 => s2.ceil < 768),
+    `${roofs.filter(s2 => Math.abs(s2.ceil - shopTop) < 1e-6).length} at ${shopTop}, highest ${Math.max(...roofs.map(s2 => s2.ceil))} (${roofs.find(s2 => s2.ceil === Math.max(...roofs.map(q => q.ceil)))?.name})`);
   /* AND A HOUSE IS ITS ROOF: the shell of a house is one column of one
      storey, the roof, shut everywhere below the eaves */
   {

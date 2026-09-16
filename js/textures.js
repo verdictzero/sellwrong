@@ -2545,7 +2545,10 @@ export function guttedSurfaces(s, opts = {}) {
 const SIZES = {
   KERB:     { w: 64, h: 16 },
   /* the town */
-  KERBSTON: { w: 64, h: 24 },   // one repeat is one kerb, which is 24 now
+  KERBSTON: { w: 64, h: 12 },   // one repeat is one kerb, which is 12
+  DRAIN:    { w: 48, h: 24 },   // one repeat is one grate
+  ASPHPARK: { w: 192, h: 64 },  // one repeat is one parking bay, along x
+  ASPHPARV: { w: 64, h: 192 },  // and along y
   STAIRTRD: { w: 64, h: 16 },   // one repeat is one step
   SKIRTING: { w: 64, h: 16 },
   HOUSDOOR: { w: 64, h: 128 },  // one repeat is one door
@@ -2871,6 +2874,42 @@ T.SIDEWALK = () => {
   p.grime(0.30, 'grey', 0.08, 97);
   return p.snap(0.5);
 };
+
+T.DRAIN = () => {
+  /* A STORM DRAIN: the grate in the gutter, cast iron with five slots
+     and a frame, worn at 48 by 24 so one repeat is one grate. Sits at
+     road level against the kerb, which is where the water goes. */
+  const p = new Pix(64, 32, 99);
+  aggregate(p, 99, { baseKey: 'grey', baseLo: 0.10, baseHi: 0.16,
+    grades: [{ count: 60, min: 0.3, max: 0.8, key: 'grey', lo: 0.12, hi: 0.20 }] });
+  p.box(6, 4, 52, 24, 'grey', 0.30);             // the frame
+  p.frame(6, 4, 52, 24, 'grey', 0.38);
+  for (let k = 0; k < 5; k++) {                  // the slots
+    const x = 12 + k * 9;
+    p.box(x, 8, 5, 16, 'grey', 0.04);
+    p.vline(x, 8, 23, 'grey', 0.22);
+  }
+  p.hline(6, 57, 4, 'bone', 0.44);               // the lit edge of the frame
+  p.grime(0.30, 'grey', 0.08, 98);
+  return p.snap(0.5);
+};
+
+const parkingBay = (seed, along) => {
+  /* A PARKING BAY, and one repeat is one bay: worn 192 along the kerb
+     and 64 across, so every three units of road is one texel — which is
+     why the aggregate here is fine and low in contrast, and why the
+     white line is a single texel, which at three units is a painted
+     line. The bays are laid from the world origin, and so are the vans
+     — see shoulderRun in js/maps/town.js. */
+  const p = new Pix(64, 64, seed);
+  aggregate(p, seed, { baseKey: 'grey', baseLo: 0.12, baseHi: 0.16,
+    grades: [{ count: 200, min: 0.3, max: 0.7, key: 'grey', lo: 0.13, hi: 0.19 }] });
+  p.grime(0.30, 'grey', 0.07, seed + 2);
+  if (along === 'x') p.vline(0, 0, 63, 'bone', 0.60); else p.hline(0, 63, 0, 'bone', 0.60);
+  return p.snap(0.5);
+};
+T.ASPHPARK = () => parkingBay(171, 'x');
+T.ASPHPARV = () => parkingBay(173, 'y');
 
 T.KERBSTON = () => {
   /* Sixteen tall, which is more than the twelve a kerb stands and

@@ -1016,23 +1016,63 @@ export class FireSystem {
        units off is one pixel and there can be thousands of them. */
     const EMBER_RANGE2 = 760 * 760;
 
-    /* and nothing in a region the eye cannot see into — the portal
-       flood has run this frame (Level.visibleSectors); a fire behind a
-       wall throws its light and its smoke and not its sprites */
+    /* HOW FAR, AND AS WHAT. Out to FLAME_MID every burning cell is a
+       candidate, thinned by a stable hash to about half of them near
+       and a quarter further off, and each one that stays is drawn
+       bigger than the cell it stands in — so a fire is a scatter of big
+       flames with room between them rather than a carpet of small ones,
+       and the same pool of quads reaches further down the street. Past
+       FLAME_MID the cells are gathered into clumps of CLUMP cells on a
+       side and each clump is ONE flame, sized by how much of it is
+       alight: a handful of very big fires on the skyline, which is what
+       a town on fire is from the far end of it. Nothing past the air's
+       own reach, since the fog has already taken that. The first cut
+       stopped dead at two thousand units, and a fire the next block
+       over was a glow with nothing in it.
+
+       The near ones are still not drawn in a region the eye cannot see
+       into — the portal flood has run this frame (Level.visibleSectors);
+       a fire behind a wall throws its light and its smoke and not its
+       sprites. The far ones are: the flood is flat, and a fire behind a
+       row of houses stands above their roofs. */
+    const far = Math.min(FLAME_FAR, (climate.airFar || FLAME_FAR) * 0.96);
+    const FAR2 = far * far, NEARF2 = FLAME_NEAR * FLAME_NEAR, MID2 = FLAME_MID * FLAME_MID;
     const lv = this.game.level, sectors = lv.sectors, seeInto = !!lv.isVisible;
+    const clumps = this._clumps || (this._clumps = new Map());
+    clumps.clear();
+    const shift = Math.round(Math.log2(CLUMP));
     for (let k = 0; k < this.active.length; k++) {
       const i = this.active[k];
       const h = this.heat[i];
       if (h < 6) continue;
-      const c = i % this.plane;
-      const x = this.worldX(c % this.cols), y = this.worldY((c / this.cols) | 0);
+      const c = i % this.plane, cx = c % this.cols, cy = (c / this.cols) | 0;
+      const x = this.worldX(cx), y = this.worldY(cy);
       const d2 = dist2(x, y, camX, camY);
-      if (d2 > 2000 * 2000 || d2 < NEAR2) continue;
-      if (seeInto) { const si = this.sectorOf[i]; if (si >= 0 && !lv.isVisible(sectors[si])) continue; }
-      if (h < SPREAD_AT && d2 > EMBER_RANGE2) continue;
-      /* Nearest first, but weight by heat so a big fire further off
-         still gets drawn ahead of an ember at your feet. */
-      cand.push({ i, x, y, h, d2, core: this._core(i), key: d2 / (0.35 + h / 255) });
+      if (d2 > FAR2 || d2 < NEAR2) continue;
+      if (d2 <= MID2) {
+        if (seeInto) { const si = this.sectorOf[i]; if (si >= 0 && !lv.isVisible(sectors[si])) continue; }
+        if (h < SPREAD_AT && d2 > EMBER_RANGE2) continue;
+        const near = d2 <= NEARF2;
+        if (hash2(i, 4242) > (near ? NEAR_ODDS : MID_ODDS)) continue;
+        /* Nearest first, but weight by heat so a big fire further off
+           still gets drawn ahead of an ember at your feet. */
+        cand.push({ i, x, y, h, d2, core: this._core(i), boost: near ? 1.35 : 1.9, big: false, key: d2 / (0.35 + h / 255) });
+      } else {
+        if (h < SPREAD_AT) continue;
+        const key = (((i / this.plane) | 0) * 8192 + (cy >> shift)) * 8192 + (cx >> shift);
+        let g = clumps.get(key);
+        if (!g) clumps.set(key, g = { i, sx: 0, sy: 0, w: 0, n: 0, h: 0 });
+        const wt = h / 255;
+        g.sx += x * wt; g.sy += y * wt; g.w += wt; g.n++;
+        if (h > g.h) g.h = h;
+      }
+    }
+    for (const g of clumps.values()) {
+      const x = g.sx / g.w, y = g.sy / g.w;
+      const d2 = dist2(x, y, camX, camY);
+      /* first in the queue whatever the distance: there are never many
+         and each one stands for a great deal of fire */
+      cand.push({ i: g.i, x, y, h: g.h, d2, core: Math.min(1, g.n / 24), boost: 2.4 + Math.min(4.6, g.w * 0.14), big: true, key: -1e12 + d2 });
     }
     cand.sort((a, b) => a.key - b.key);
 
@@ -1050,19 +1090,15 @@ export class FireSystem {
       const cd = cand[c];
       /* which flame: an ember, a fire, or a proper blaze — and the outer
          members of the clump come off the rung below */
-      const rung = cd.h > 200 ? 2 : cd.h > 90 ? 1 : 0;
-      /* HOW MANY. Two on the front, three where the fire has closed over
-         the cell from every side, one for an ember — and one for anything
-         further off than about four metres, whatever it is.
-
-         THAT LAST CLAUSE IS A BUDGET, not a look. The pool is fixed, and
-         three sprites a cell spent on the nearest fifty cells is a fire
-         that stops dead halfway down the aisle while a thousand cells
-         behind it are alight and undrawn. A clump is only worth paying
-         for where you can see that it is one; past that the cell is a few
-         pixels and one flame in it is the same picture for a third of the
-         cost. */
-      const n = rung === 0 || cd.d2 > 620 * 620 ? 1 : 1 + Math.round((0.35 + cd.core) * 1.9);
+      const rung = cd.big ? 2 : cd.h > 200 ? 2 : cd.h > 90 ? 1 : 0;
+      /* HOW MANY. One — and two where the fire has closed over a cell
+         within a few metres of you. The first cut spent up to three on
+         every near cell, and the pool is fixed: three sprites a cell on
+         the nearest fifty cells is a fire that stops dead halfway down
+         the aisle while a thousand cells behind it are alight and
+         undrawn. The thinning above is what puts the room between them,
+         and the boost is what fills it. */
+      const n = (!cd.big && rung > 0 && cd.core > 0.5 && cd.d2 < 300 * 300) ? 2 : 1;
       const sec = this.game.level.sectors[this.sectorOf[cd.i]];
       const floor = sec ? sec.floor : 0;
       for (let j = 0; j < n && s < this.POOL; j++, s++) {
@@ -1082,9 +1118,13 @@ export class FireSystem {
            never off the clock: jitter that is re-rolled per frame is a
            fire that boils, and the only thing that should be moving in
            one of these is the drawing. */
-        const a = hash2(cd.i, j) * Math.PI * 2, r = j === 0 ? 0 : (0.30 + hash2(cd.i, j + 64) * 0.75) * CELL * 0.8;
+        const a = hash2(cd.i, j) * Math.PI * 2;
+        /* a flame stands a little off its cell's middle, in a direction
+           and by a distance hashed off the cell, so a burning floor is
+           a scatter and not a grid; a clump stands where its fire is */
+        const r = cd.big ? 0 : j === 0 ? hash2(cd.i, 77) * CELL * 0.4 : (0.30 + hash2(cd.i, j + 64) * 0.75) * CELL * 0.9;
         const grow = j === 0 ? 1 : 0.52 + hash2(cd.i, j + 128) * 0.30;
-        const sc = entry.scale * (0.7 + (cd.h / 255) * 0.75) * (0.95 + cd.core * 0.45) * grow * nearTaper(cd.d2);
+        const sc = entry.scale * (0.7 + (cd.h / 255) * 0.75) * (0.95 + cd.core * 0.45) * grow * cd.boost * nearTaper(cd.d2);
         u.spriteScale.value.set(entry.w * sc, entry.h * sc);
         u.billboardRot.value = billboardRot;
         u.light.value = 1;
@@ -1153,7 +1193,7 @@ export class FireSystem {
       const sec = this.game.level.sectors[this.sectorOf[cd.i]];
       const u = m.material.uniforms;
       u.map.value = bank.texture(entry, 0);
-      const sc = entry.scale * (0.9 + cd.core * 1.1) * nearTaper(cd.d2);
+      const sc = entry.scale * (0.9 + cd.core * 1.1) * (cd.big ? cd.boost * 0.9 : 1) * nearTaper(cd.d2);
       u.spriteScale.value.set(entry.w * sc, entry.h * sc);
       u.billboardRot.value = billboardRot;
       /* Lit by the room and by the fire under it, and it leans: a slow
@@ -1173,6 +1213,16 @@ export class FireSystem {
 /* The three sizes of flame, smallest first, so a clump can pick the rung
    below its own for the little ones round the edge. */
 const FLAME_SETS = ['EMBR', 'FIRE', 'BLAZ'];
+
+/* HOW FAR A FIRE IS DRAWN, and as what — see FireSystem.render. Every
+   cell to FLAME_NEAR, about half of them drawn; fewer and bigger to
+   FLAME_MID; one flame per clump of CLUMP cells on a side from there to
+   FLAME_FAR or the air's reach, whichever is nearer. The odds are the
+   share of cells that get a flame, and a cell that does not is not
+   dark: its neighbour's flame is drawn bigger to stand over it. */
+const FLAME_NEAR = 700, FLAME_MID = 1500, FLAME_FAR = 6000;
+const CLUMP = 8;                            // cells on a side, which is 256 units
+const NEAR_ODDS = 0.55, MID_ODDS = 0.28;
 
 /* HOW MUCH SMALLER A FLAME GETS FOR BEING CLOSE.
 

@@ -1641,6 +1641,9 @@ export function buildSellWrong(opts = {}) {
   /* and where the town is, for whoever wants to drive into it */
   level.town = town ? { grid: town.grid, stations: town.stations, school: town.school, church: town.church } : null;
   /* Position, heading and which one it is, for whatever draws the cars. */
+  /* and the vans parked along the town's streets — see shoulderRun in
+     js/maps/town.js, which puts a slot in a few of the bays it paints */
+  if (town) for (const slot of town.carSlots) carSlots.push(slot);
   level.carSlots = carSlots;
   /* the road, and where it leaves the map: whoever comes, comes from
      one of these two points */

@@ -1024,6 +1024,16 @@ export class Forest {
     const cand = this._flameCand;
     cand.length = 0;
     const R2 = 1700 * 1700;
+    /* AND THE FAR FIRE, as a handful of very big flames. Past R2, out to
+       the air's reach, the burning cells are gathered into clumps of
+       eight cells on a side and each clump is ONE flame at the middle of
+       its fire, sized by how much of it is alight — the same rule the
+       store's fire draws by (FireSystem.render), and the reason a wood
+       burning across the valley reads as a wood burning rather than as a
+       glow with nothing in it. The first cut drew nothing past R2. */
+    const far = Math.min(6000, (climate.airFar || 6000) * 0.96), FAR2 = far * far;
+    const clumps = this._flameClumps || (this._flameClumps = new Map());
+    clumps.clear();
     /* a sample of a big fire, every cell of a small one */
     const step = Math.max(1, this.active.length >> 9);
     for (let k = 0; k < this.active.length; k += step) {
@@ -1032,19 +1042,40 @@ export class Forest {
       if (t < 0.05 || t > 0.93) continue;
       const x = this.worldX(i % this.cols), y = this.worldY((i / this.cols) | 0);
       const d2 = dist2(x, y, camX, camY);
-      if (d2 > R2) continue;
+      if (d2 > FAR2) continue;
       const q = (t - 0.45) / 0.35;
       const heat = Math.exp(-q * q);
-      cand.push({ i, x, y, t, heat, key: d2 / (0.3 + heat) });
+      if (d2 > R2) {
+        const key = (((i / this.cols) | 0) >> 3) * 65536 + ((i % this.cols) >> 3);
+        let g = clumps.get(key);
+        if (!g) clumps.set(key, g = { i, sx: 0, sy: 0, w: 0, n: 0 });
+        g.sx += x * heat; g.sy += y * heat; g.w += heat; g.n++;
+        continue;
+      }
+      cand.push({ i, x, y, t, heat, big: 0, key: d2 / (0.3 + heat) });
+    }
+    for (const g of clumps.values()) {
+      if (g.w < 0.05) continue;
+      const x = g.sx / g.w, y = g.sy / g.w;
+      /* first in the queue: there are few, and each is a great deal of
+         fire. `big` is about how many cells it stands for, and is what
+         sets its size. */
+      cand.push({ i: g.i, x, y, t: 0.45, heat: Math.min(1, g.w / 3), big: g.n * step, key: -1e12 + dist2(x, y, camX, camY) });
     }
     cand.sort((a, b) => a.key - b.key);
     const n = Math.min(F.max, cand.length);
     const tics = this.tics;
     for (let s = 0; s < n; s++) {
       const c = cand[s];
-      const ti = this.cellTree[c.i];
+      const ti = c.big ? -1 : this.cellTree[c.i];
       let x = c.x, y = c.y, base = 0, w;
-      if (ti >= 0) {
+      if (c.big) {
+        /* a clump's flame is the size of the fire it stands for: a few
+           cells is a bonfire, a hillside is a wall of it — and it is a
+           long way off, so what looks enormous here is a few dozen
+           pixels there */
+        w = (420 + Math.min(760, c.big * 16)) * (0.55 + c.heat * 0.45);
+      } else if (ti >= 0) {
         const k = KINDS[this.trees.kind[ti]], th = k.h * this.trees.scale[ti];
         x = this.trees.x[ti]; y = this.trees.y[ti];
         w = Math.max(44, th * (k.aspect < 1 ? 0.40 : 0.85)) * (0.6 + c.heat * 0.6);
@@ -1170,6 +1201,7 @@ void main() {
   if (t.a < 0.5) discard;
   vec3 col = t.rgb;
   float ember = 0.0;
+  float gone = 0.0;
   vec3 hue = vec3(1.0);
 
   /* THE BURN, skipped entirely on a plant the fire has not reached —
@@ -1200,6 +1232,21 @@ void main() {
     col = mix(col, vec3(0.15, 0.13, 0.11) * (0.7 + 2.2 * lum), smoothstep(0.30, 0.95, tt) * bm.g);
     col = mix(col, vec3(0.46, 0.44, 0.40) * (0.60 + 2.0 * lum), smoothstep(0.85, 1.0, tt) * (1.0 - bm.g) * 0.75);
 
+    /* BURNT DOWN. From nine tenths of the burn a tree goes: what is
+       left of it comes down from the crown and in from the sides until
+       the foot of the trunk is all that stands — a stump, ash grey, for
+       good, because the cell's progress never comes back down. A bush
+       has no trunk worth the name and goes to nothing. Discarding the
+       texels is what does it, so the quad, the instance buffer and the
+       cell's own state are left exactly as they were. */
+    gone = smoothstep(0.88, 1.0, vBurn);
+    if (gone > 0.0) {
+      float top = mix(1.0, 0.12, gone);
+      float halfW = mix(0.5, 0.05, gone);
+      if (vUv.y > top || abs(vUv.x - 0.5) > halfW) discard;
+      col = mix(col, vec3(0.36, 0.34, 0.32) * (0.5 + 1.8 * lum), gone * 0.9);
+    }
+
     /* Two sines beaten against each other so neighbouring coals on one
        plant are out of step; the seed keeps two plants apart. */
     float flick = 0.80 + 0.30
@@ -1210,7 +1257,7 @@ void main() {
     float q = (tt - 0.5) / 0.16;
     float flame = exp(-q * q);
     float coal = bm.r * smoothstep(0.30, 0.62, tt) * (1.0 - 0.8 * smoothstep(0.70, 1.0, tt));
-    ember = (flame * (0.22 + 0.78 * bm.r) + coal) * flick * 1.5;
+    ember = (flame * (0.22 + 0.78 * bm.r) + coal) * flick * 1.5 * (1.0 - 0.85 * gone);
 
     /* The palette cycle: where a texel sits in the eight ember colours is
        its heat plus a wave that climbs the plant, quantised to whole

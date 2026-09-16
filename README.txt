@@ -129,7 +129,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         1549 checks, no install and no browser
+  the smoke test         1576 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -1660,6 +1660,20 @@ alone, has a twentieth of the wood gone in about ten minutes and a
 quarter in twenty-three, downwind faster than across. The smoke test
 runs that match in Node and holds it to those numbers.
 
+AND IT BURNS DOWN. The first cut's tree ended as a charred silhouette
+standing exactly where it had stood, for ever, which a burnt fir does
+not: a burnt fir is a stump. From nine tenths of the burn the shader
+brings what is left of the tree down from the crown and in from the
+sides — discarding texels above a line that falls and outside a width
+that narrows — until at the end only the foot of the trunk is standing,
+ash grey, and it stays that way because a cell's progress never comes
+back down. A bush has no trunk worth the name and goes to nothing; the
+ground under both is already black. Nothing in the buffers moves: the
+quad, the instance and the cell are exactly as they were, and the stump
+is a cut. A burnt-out wood is a field of grey stumps on black ground
+with the front still burning at the far side of it, which is a picture
+this game did not have.
+
 AND IT HAS FLAMES ON IT. The burn map chars a tree and puts coals on
 it; a pool of two hundred instanced flame quads, re-parked every frame
 on the hottest burning cells near the eye, puts FIRE on it — carried at
@@ -2852,6 +2866,29 @@ with a ragged fringe. It picks the SET as well as the scale: the outer
 members of a clump come off the size below, so a small flame is genuinely
 a smaller drawing rather than a big one shrunk.
 
+FEWER, BIGGER, AND AS FAR AS THE AIR. Two things a fire on a town's
+scale asked for that a fire in one shop did not. The first is room:
+one to three flames on every burning cell was a carpet, and a carpet
+is what the pool ran out on halfway down the street. So about half the
+cells near you get a flame and a quarter further off, chosen by a hash
+off the cell so the choice holds still, and each flame that stays is
+drawn bigger than the cell it stands in — a scatter of big fires with
+gaps between, which is what a fire looks like, and the same hundred and
+ninety-two quads reach three times as far. The second is distance. The
+first cut stopped drawing at two thousand units, and a town alight the
+next block over was a glow with nothing in it. Past FLAME_MID the
+burning cells are gathered into CLUMPS, eight cells on a side, and each
+clump is ONE flame at the middle of its fire, sized by how much of it is
+alight: a handful of very big fires on the skyline, drawn whatever the
+flood says — the flood is flat, and a fire behind a row of houses stands
+above their roofs — out to the air's own reach, since the fog has taken
+whatever is past that. The wood's flames do the same, from
+Forest._placeFlames, so a hillside burning across the valley is a
+hillside burning and not a row of dots. The headless check renders one
+burning run from three hundred units and from three thousand two
+hundred: fewer flames than cells alight the first time, a handful of
+huge ones the second, none at all from seven thousand.
+
 AND IT SHRINKS FOR BEING CLOSE, which is the same problem the particle
 system solved from the other end. The near cull only refuses a flame
 within forty-six units of the eye and it was written when a flame was a
@@ -3144,6 +3181,29 @@ THE ROLLS CAN BE SEEDED NOW — pSeed in js/util.js — because a
 comparison of a fire dry against the same fire in the rain is a
 comparison of nothing if the dice differ. It exists for the test.
 
+THE WEATHER A FIRE MAKES. A town alight from end to end puts a lid of
+brown smoke over itself, and this is the one thing the sky did not do:
+the smoke was a fog uniform keyed to how much of the shop had gone, and
+the sky over a burning town was the same clear night it started with.
+Now there is a fifth weather that comes on by degrees over whichever of
+the four is running. `Weather.smoke` is 0..1, how much of the sky the
+fire has; it follows what is alight RIGHT NOW — the two fires' hot cell
+counts, three hundred and twenty in the town or two hundred in the wood
+for a full sky — with a time constant of forty seconds coming and a
+hundred and fifty going, and what has already burnt holds a floor under
+it, because the smoke of a town that has burnt does not blow away in the
+time this game lasts. sampleFrame folds it over the frame: the zenith
+goes the colour of a paper bag and the horizon the colour of the fire
+under it, the sun goes red and its glow spreads, the cloud cover closes
+and the stars go out, the sky's light halves, the air closes in from
+fourteen thousand to twenty-four hundred and from twelve hundred to two
+hundred and twenty, and the wind doubles, because a fire makes its own.
+The bake sees the number and re-bakes as it moves; the fog reads the
+horizon it baked; the far plane follows the air in, so a sky full of
+smoke is cheaper to draw than a clear one, which is the right way round.
+It is read off `climate.smoke` by anything that wants to know, and the
+corner readout says SMOKE where it said CLEAR.
+
 
 WHAT YOU CAN SEE
 ----------------
@@ -3365,6 +3425,45 @@ and the daylight banding halved it again. The courses are inked in the
 top half of the ramp now and the shadow lines under them carry the
 contrast, and a roof at dawn is a grey surface with courses on it.
 
+THE STREET, ROUNDED
+- - - - - - - - - -
+
+A KERB THAT GOES ROUND A CORNER, in a map made of rectangles. RectMap
+has one new thing in it: a square may be an ARC. Give it `arc: {
+centre, disc, rest }` and it becomes two sectors — the quarter circle
+centred on the named corner, with the square's side for a radius, and
+the curved triangle left over at the opposite corner. The two edges
+that meet at the centre belong to the disc whole and the other two to
+the rest whole, so every neighbour still sees a rectangle and splits
+its own edges against it exactly as before; the arc is a matter between
+the two sectors that share it, and they share every one of its vertices
+by construction. A sidewalk's corner at a junction is a square of 96
+with the disc pavement and the rest road. The outside of a bend in the
+road is the whole middle of the junction, 320 square, with the disc
+road and the rest pavement. See AN ARC in js/maps/rectmap.js.
+
+THE STREETS STOP AT THE WOOD. A junction knows which of its four mouths
+a street leaves by, and a mouth with none is pavement right across, so
+the perimeter streets are a run of T's rather than roads that drive off
+into the trees, and where two perimeter streets meet at the town's
+south corners the road BENDS through ninety degrees on that arc. The
+north edge opens onto the supermarket's lot, as it did.
+
+THE SHOULDER. A carriageway is 76 | 84 | 84 | 76 on a residential
+street: a parking lane, two travel lanes about the centre line, and a
+parking lane, with the white edge line between each shoulder and its
+lane. The bays are painted by the texture — ASPHPARK is one bay, 192
+along the kerb, tiled from the world origin — and the vans are parked
+at the same arithmetic, so they land between the lines: a slot in one
+bay in sixteen goes onto level.carSlots and js/vehicles.js parks the
+car park's van in it at load, in one of its five colours, in the one
+slab of geometry the car park's own vans are already in. A hundred-odd
+of them. A storm drain sits in the gutter near each end of every run
+and every 1536 between, a grate 48 by 24 at road level against the
+kerb. The sidewalk came down from 144 to 112 and the kerb from 24 to 12
+to make the room, both at the user's request, and a kerb of twelve is
+the plan's own number.
+
 TWO THINGS IN THE ENGINE HAD TO GIVE, both found by standing in front of
 a house and seeing no window in it. A band's two edges are the surfaces
 lineBands cut it at, and the drawing has to ask THOSE surfaces at the
@@ -3470,10 +3569,11 @@ so any more, and the supermarket's partitions never did.
 WHAT IT COST, AND WHAT WAS DONE ABOUT IT
 - - - - - - - - - - - - - - - - - - - - -
 
-Fourteen thousand regions against 327, and thirty thousand lines
-against a thousand — about what the town with interiors had, because a
-recess is four lines for one small room and the ground under every eave
-is two regions where it was one. Four things break at that size and all four break
+Fifteen and a half thousand regions against 327, and thirty-six
+thousand lines against a thousand — more than the town with interiors
+had, because a recess is four lines for one small room, the ground under
+every eave is two regions where it was one, and every kerb that goes
+round a corner is a square cut in two. Four things break at that size and all four break
 quietly, so all four were fixed against the map that existed, before
 there was a town to find them with:
 
@@ -4086,7 +4186,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-1549 checks. Every one of them earns its place by having caught something
+1576 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -4647,8 +4747,11 @@ WHAT IS NOT DONE
   nobody lives in the town. No residents, no cars moving, no crowd on
     the streets — two in the morning is the excuse and it is a good one
     for a first pass; it will not survive a second. What the town has
-    instead is light in windows, and a window that goes dark when its
-    room burns
+    instead is light in windows, a window that goes dark when its room
+    burns, and a hundred vans parked along its kerbs that nobody drives
+  the parked vans are all the one van, the car park's, in five colours.
+    A town's kerbs want a saloon and a pickup and a station wagon, and
+    the fleet has one model
   the houses have no insides. A house is a shell with a facade, and
     its door is painted; the shops on Main Street are the same. The
     first answer — a hall, a stair, two bedrooms behind every door — was

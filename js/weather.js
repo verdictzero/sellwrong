@@ -144,6 +144,8 @@ export const climate = {
   skyLight: 0.08,
   /* the draw distance, in units */
   airFar: CLEAR_FAR,
+  /* how much of the sky the fire has, 0..1 */
+  smoke: 0,
 };
 
 const hex = h => [parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255];
@@ -189,22 +191,58 @@ export function sampleHour(hour) {
   };
 }
 
+/* THE WEATHER A FIRE MAKES. A town alight from end to end puts a lid
+   of brown smoke over itself: the sun goes red in it, the stars go, the
+   air closes in to a few hundred metres and everything under it is
+   dimmer and oranger. This is that sky, and `smoke` below is how much
+   of it there is, 0..1 — a fifth weather that comes on by degrees over
+   whichever of the four is running, and goes again. The numbers are a
+   wildfire afternoon's: zenith the colour of a paper bag, horizon the
+   colour of the fire under it. */
+export const SMOKE_SKY = {
+  zenith: [0.30, 0.15, 0.06], horizon: [0.68, 0.34, 0.12], ground: [0.26, 0.12, 0.05],
+  sunCol: [1.0, 0.36, 0.10], airNear: 220, airFar: 2400,
+};
+/* how much fire fills the sky: hot cells in the store and in the wood
+   for a full one, and how many seconds it takes to come and to go */
+export const SMOKE_HOT = 320, SMOKE_WOOD = 200, SMOKE_RISE = 40, SMOKE_FALL = 150;
+
 /** The hour's row and the weather's row, folded together into the one
- *  frame the sky bake and the uniforms are set from. */
-export function sampleFrame(hour, kind = 'clear', cloudTime = 0) {
+ *  frame the sky bake and the uniforms are set from — and the fire's
+ *  smoke over both, by `smoke`. */
+export function sampleFrame(hour, kind = 'clear', cloudTime = 0, smoke = 0) {
   const f = sampleHour(hour);
   const w = WEATHERS[kind] || WEATHERS.clear;
   const haze = hex(w.haze || '#000000');
   const add = c => c.map((v, i) => Math.min(1, v + haze[i]));
-  return {
+  const out = {
     ...f,
     zenith: add(f.zenith), horizon: add(f.horizon), ground: add(f.ground),
     kind, airNear: w.airNear, airFar: w.airFar,
     skyLight: f.skyLight * w.skyMul,
     stars: f.stars * w.stars, milky: f.milky * w.stars,
     cover: w.cover, cloudDark: w.cloudDark, flat: w.flat, rain: w.rain,
-    wind: w.wind, cloudTime,
+    wind: w.wind, cloudTime, smoke: 0,
   };
+  const k = Math.max(0, Math.min(1, smoke || 0));
+  if (k > 0) {
+    const toward = (c, s, t) => c.map((v, i) => lerp(v, s[i], t));
+    out.smoke = k;
+    out.zenith = toward(out.zenith, SMOKE_SKY.zenith, k * 0.9);
+    out.horizon = toward(out.horizon, SMOKE_SKY.horizon, k * 0.92);
+    out.ground = toward(out.ground, SMOKE_SKY.ground, k * 0.9);
+    out.sunCol = toward(f.sunCol, SMOKE_SKY.sunCol, k);
+    out.glowAmt = f.glowAmt * (1 + k * 0.8);
+    out.cover = Math.max(out.cover, k * 0.96);
+    out.cloudDark = lerp(out.cloudDark, 0.5, k);
+    out.stars *= 1 - k; out.milky *= 1 - k;
+    out.skyLight *= 1 - 0.55 * k;
+    out.airNear = lerp(out.airNear, Math.min(out.airNear, SMOKE_SKY.airNear), k);
+    out.airFar = lerp(out.airFar, Math.min(out.airFar, SMOKE_SKY.airFar), k);
+    /* a fire makes its own wind */
+    out.wind = [w.wind[0] * (1 + k), w.wind[1] * (1 + k)];
+  }
+  return out;
 }
 
 /* --------------------------------------------------------------------
@@ -220,7 +258,9 @@ export class Weather {
        cloud that holds still while the game is paused is fine and a
        cloud that jumps when it resumes is not */
     this.cloudTime = 0;
-    this.frame = sampleFrame(this.hour, this.kind, 0);
+    /* how much of the sky the fire has, 0..1 — see apply */
+    this.smoke = 0;
+    this.frame = sampleFrame(this.hour, this.kind, 0, 0);
     this._sync();
   }
 
@@ -239,11 +279,24 @@ export class Weather {
 
   /** Once a frame: the clouds drift, and every atmosphere uniform is
    *  set from the hour, the weather and how much of the world is on
-   *  fire. `burn` is the store's burn fraction, `wood` the forest's;
-   *  the smoke is theirs, everything else is the sky's. */
-  apply(dt, burn = 0, wood = 0) {
+   *  fire. `burn` is the store's burn fraction, `wood` the forest's,
+   *  and `live` is what is alight RIGHT NOW — `{ hot, wood }`, the two
+   *  fires' hot cell counts; the smoke is theirs, everything else is the
+   *  sky's. */
+  apply(dt, burn = 0, wood = 0, live = null) {
     this.cloudTime += dt;
-    this.frame = sampleFrame(this.hour, this.kind, this.cloudTime);
+    /* THE SMOKE OVER THE TOWN follows what is alight now, and slowly:
+       a sky takes a minute or so to fill and longer to clear, and what
+       has already burnt holds a floor under it, because the smoke of a
+       town that has burnt does not blow away in the time this game
+       lasts. So the sky, the air and the light change as the fire
+       grows, by degrees, the way a weather comes in. */
+    const hot = live ? (live.hot || 0) / SMOKE_HOT + (live.wood || 0) / SMOKE_WOOD : 0;
+    const target = Math.min(1, hot + (burn + wood) * 0.7);
+    const tau = target > this.smoke ? SMOKE_RISE : SMOKE_FALL;
+    this.smoke += (target - this.smoke) * Math.min(1, dt / tau);
+    if (target === 0 && this.smoke < 0.003) this.smoke = 0;
+    this.frame = sampleFrame(this.hour, this.kind, this.cloudTime, this.smoke);
     const f = this.frame;
 
     world.airNear.value = f.airNear;
@@ -254,8 +307,9 @@ export class Weather {
        and stopping well short of opaque — see the note that was on
        this in js/fire.js. The wood adds its share and a forest is big,
        so its share stays small. */
-    world.smokeDensity.value = Math.min(0.50, burn * 1.2 + wood * 0.5);
-    world.smokeColor.value.setRGB(0.46 + burn * 0.12, 0.34 + burn * 0.08, 0.24 + burn * 0.03);
+    const sm = this.smoke;
+    world.smokeDensity.value = Math.min(0.62, burn * 1.2 + wood * 0.5 + sm * 0.30);
+    world.smokeColor.value.setRGB(lerp(0.46 + burn * 0.12, 0.60, sm), lerp(0.34 + burn * 0.08, 0.33, sm), lerp(0.24 + burn * 0.03, 0.14, sm));
     /* A gutted store lit only by embers is, accurately, almost pitch
        black — and the player still has to find the way out of it. So
        the ambient lifts as the place goes. Accuracy loses this one on
@@ -269,13 +323,20 @@ export class Weather {
 
   _sync() {
     const w = WEATHERS[this.kind];
+    const f = this.frame;
     climate.hour = this.hour;
     climate.kind = this.kind;
-    climate.wind.x = w.wind[0]; climate.wind.y = w.wind[1];
+    /* the wind and the air are the frame's, which is the weather's with
+       the fire's smoke over it */
+    climate.wind.x = f ? f.wind[0] : w.wind[0]; climate.wind.y = f ? f.wind[1] : w.wind[1];
     climate.rain = w.rain;
-    climate.skyLight = this.frame ? this.frame.skyLight : 0;
-    climate.airFar = w.airFar;
+    climate.skyLight = f ? f.skyLight : 0;
+    climate.airFar = f ? f.airFar : w.airFar;
+    climate.smoke = this.smoke;
   }
+
+  /** What the sky is doing, for a label: the weather, or the fire's. */
+  get shownKind() { return this.smoke > 0.4 ? 'smoke' : this.kind; }
 
   /** "02:00", for a menu. */
   get label() {

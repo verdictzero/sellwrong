@@ -33,14 +33,20 @@ WHERE IT DEPARTS FROM THE PLAN, and why:
   THE SCHOOL HAS SIX CLASSROOMS, not ten. Ten of 480 will not fit
     beside a gym of 1200 in a block of 3072, which the plan's own
     figures say if you add them up.
-  THE SIDEWALK IS 144 AND THE KERB 24, at the user's request — three
-    times and twice what THE STREET below asks for. Both came out of
-    the carriageway, because the block pitch is what puts the mall on
-    the grid and a wider street would take it off: 144 | 24 | 240 | 24
-    | 144 rather than the plan's nine bands, which is two travel lanes
-    and nowhere to park. Main Street went to 1024 to keep a road in it
-    at all. Twenty-four is exactly MAX_STEP, so a sidewalk is the
-    tallest thing in the town you can still walk onto.
+  THE SIDEWALK IS 112 AND THE KERB 12, and there is somewhere to park.
+    The first cut had 144 | 24 | 240 | 24 | 144 at the user's request —
+    a sidewalk three times the plan's and a kerb twice it, two travel
+    lanes and nowhere to park; the second, at the user's request again,
+    is 112 | 16 | 76 | 84 | 84 | 76 | 16 | 112 — a parking shoulder each
+    side with the bays painted on it by the texture, a van in one bay in
+    sixteen, storm drains in the gutters, and the kerb back at the
+    plan's twelve. All of it out of the same 576, because the block pitch
+    is what puts the mall on the grid. Main Street went to 1024 to keep
+    a road in it at all. And THE KERB GOES ROUND THE CORNER: every
+    junction's pavement corners are quarter circles, the streets stop at
+    the wood in T's instead of running into it, and the two south
+    corners of the town are bends in the road — see THE STREET, ROUNDED
+    in README.txt.
   THE HOUSES HAVE NO INSIDES. THE TOWNHOUSE below, with its hall and
     stair and two bedrooms, was built, walked by the test from every
     front hall, and taken out again at the user's request — nobody went
@@ -731,7 +737,7 @@ order by anybody.
 THE TEST
 --------
 
-1549 checks pass today in about three minutes, with no install and no
+1576 checks pass today in about three minutes, with no install and no
 browser, and every one of them is there because something reached a
 screenshot. The column breaks assumptions that nothing currently
 asserts, so these come first, in phase 1, before the code they check:

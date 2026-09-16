@@ -1110,7 +1110,8 @@ export class Game {
        light, the smoke off the two fires. See js/weather.js. */
     const dt = this._lastNow === undefined ? 0 : Math.min(0.25, (now - this._lastNow) / 1000);
     this._lastNow = now;
-    this.weather.apply(dt, this.fire ? this.fire.burnFraction : 0, this.forest ? this.forest.burnFraction : 0);
+    this.weather.apply(dt, this.fire ? this.fire.burnFraction : 0, this.forest ? this.forest.burnFraction : 0,
+                       { hot: this.fire ? this.fire.burningCells : 0, wood: this.forest ? this.forest.burningCells : 0 });
     /* THE FAR PLANE IS THE AIR'S. Nothing past airFar can be seen, so
        nothing past it is drawn; the sky sphere follows it in. */
     const far = climate.airFar * 1.06;

@@ -86,9 +86,34 @@ export const SKY = 768;
    will let anything walk up (MAX_STEP in js/util.js). One more unit and
    the sidewalks of an entire town would be a place you could see and
    not stand on. */
-const WALK = 144, VERGE = 24, KERB_H = 24;
+const WALK = 112, VERGE = 16;
+export const KERB_H = 12;
 const MAIN_WALK = 336;
-const CARRIAGE = STREET - 2 * (WALK + VERGE);       // 240
+const CARRIAGE = STREET - 2 * (WALK + VERGE);       // 320
+
+/* THE SHOULDER. A carriageway is a parking lane, a travel lane, the
+   centre line, a travel lane and a parking lane: 76 | 84 | 84 | 76 on a
+   residential street and 76 | 91 | 91 | 76 on Main Street. A van is 174
+   long and 65 wide, so a bay is 192 and a shoulder 76, and the bays are
+   painted by the texture — one repeat is one bay, tiled from the world
+   origin, and the vans are parked at the same arithmetic so they land
+   between the lines. The sidewalk came down from 144 to 112 and the
+   kerb from 24 to 12 to make room, both at the user's request; a
+   sidewalk of 112 is still more than twice the plan's 48.
+     BAY       how long a parking bay is
+     DRAIN_L,D a storm drain's grate, in the gutter against the kerb
+     VAN_ODDS  how many bays have a van in them */
+const PARK = 76, BAY = 192;
+const DRAIN_L = 48, DRAIN_D = 24;
+const VAN_ODDS = 0.06;
+/* THE KERB GOES ROUND THE CORNER. KERB_R is the radius of a sidewalk's
+   corner at a junction, which is a square of that side with the quarter
+   circle the sidewalk and the rest of it road — see AN ARC in
+   js/maps/rectmap.js. It has to clear the crossing bar: R <= corner - B.
+   BEND_R is the outside of a right-angle bend where the town's
+   perimeter streets meet, which is the whole of the junction's middle:
+   the disc is the road and the curved triangle outside it is pavement. */
+const KERB_R = 96;
 
 /* THE STREET LAMPS. One every 1536 along a sidewalk, staggered so the
    two sides alternate and a lamp is never more than 768 from you on a
@@ -258,7 +283,7 @@ export function buildTown(rm, mb, opts = {}) {
   const G = townGrid(opts.x0, opts.yTop);
   const R = rng(opts.seed ?? 20250915);
   const out = { grid: G, houses: [], stations: {}, lamps: 0, plants: [], glass: [],
-                windows: 0, doors: 0, stones: 0, roofPending: [] };
+                windows: 0, doors: 0, stones: 0, roofPending: [], carSlots: [], drains: 0, bends: 0 };
 
   /* ---- the props every outdoor thing in the town shares ------------ */
   const open = (name, extra = {}) => ({
@@ -303,23 +328,75 @@ export function buildTown(rm, mb, opts = {}) {
      units of road, so it is a strip six wide wearing a tile that is line
      all the way through. See roadRun in js/maps/sellwrong.js. */
   const L = 6, H = 3;
+  const road = (a, b, c, d, tex, n, extra = {}) => rm.add(a, b, c, d,
+    open(n, { floorTex: tex, light: 0.30, ambient: 0.30, fuel: TOWN_FUEL.road, ...extra }));
+
+  /**
+   * A PARKING SHOULDER along one kerb. `[a0,a1]` is the run along
+   * `along`, `[b0,b1]` the band across it, and the kerb is at the `kerb`
+   * edge. A storm drain sits in the gutter near each end and every
+   * LAMP_PITCH between, and the bays between the drains are the
+   * texture's; a van stands in VAN_ODDS of them, its nose one way or the
+   * other, as a slot for js/vehicles.js to park a van in at load.
+   */
+  function shoulderRun(a0, a1, b0, b1, along, tag, kerb) {
+    const lay = (p0, p1, q0, q1, tex, n) => {
+      if (p1 - p0 < 1 || q1 - q0 < 1) return;
+      if (along === 'x') road(p0, q0, p1, q1, tex, n); else road(q0, p0, q1, p1, tex, n);
+    };
+    const bayTex = along === 'x' ? 'ASPHPARK' : 'ASPHPARV';
+    const g0 = kerb === 'lo' ? b0 : b1 - DRAIN_D, g1 = kerb === 'lo' ? b0 + DRAIN_D : b1;   // the gutter band
+    const drains = [a0 + 72, a1 - 72];
+    for (let c = a0 + LAMP_PITCH / 2; c < a1 - LAMP_PITCH / 4; c += LAMP_PITCH) drains.push(c);
+    drains.sort((p, q) => p - q);
+    let u = a0;
+    for (const c of drains) {
+      const d0 = c - DRAIN_L / 2, d1 = c + DRAIN_L / 2;
+      if (d0 < u) continue;
+      lay(u, d0, b0, b1, bayTex, `parking, ${tag}`);
+      lay(d0, d1, g0, g1, 'DRAIN', `storm drain, ${tag}`);
+      out.drains++;
+      lay(d0, d1, kerb === 'lo' ? g1 : b0, kerb === 'lo' ? b1 : g0, bayTex, `parking, ${tag}`);
+      u = d1;
+    }
+    lay(u, a1, b0, b1, bayTex, `parking, ${tag}`);
+    /* THE VANS. A bay is BAY long from the world origin, which is where
+       the texture starts its lines, so a van at a bay's middle is
+       between two of them. Not in a bay a drain shares, and not so
+       close to the end of the run that its nose is in the junction. */
+    const mid = (b0 + b1) / 2;
+    for (let c = (Math.floor(a0 / BAY) + 1) * BAY + BAY / 2; c + BAY / 2 <= a1; c += BAY) {
+      if (c - BAY / 2 < a0 + 8) continue;
+      if (drains.some(d => Math.abs(d - c) < BAY / 2 + DRAIN_L / 2)) continue;
+      if (R() >= VAN_ODDS) continue;
+      const nose = R() < 0.5 ? 0 : Math.PI;
+      const angle = along === 'x' ? nose : nose + Math.PI / 2;
+      const [x, y] = along === 'x' ? [c, mid] : [mid, c];
+      out.carSlots.push({ x, y: y + (R() - 0.5) * 4, angle: angle + (R() - 0.5) * 0.04, variant: Math.floor(R() * 5), street: true });
+    }
+  }
+
+  /** The carriageway between two kerbs: a shoulder each side, the edge
+   *  lines, two lanes and the centre line. */
   function carriage(x0, y0, x1, y1, along, tag) {
-    const road = (a, b, c, d, tex, n) => rm.add(a, b, c, d,
-      open(n, { floorTex: tex, light: 0.30, ambient: 0.30, fuel: TOWN_FUEL.road }));
     if (along === 'x') {
       const m = (y0 + y1) / 2;
-      road(x0, y0, x1, y0 + L, 'ROADEDGE', `street edge, ${tag}`);
-      road(x0, y0 + L, x1, m - H, 'ASPHOLD', `street, ${tag}`);
+      shoulderRun(x0, x1, y0, y0 + PARK, 'x', tag, 'lo');
+      road(x0, y0 + PARK, x1, y0 + PARK + L, 'ROADEDGE', `street edge, ${tag}`);
+      road(x0, y0 + PARK + L, x1, m - H, 'ASPHOLD', `street, ${tag}`);
       road(x0, m - H, x1, m + H, 'ROADLINE', `street centre, ${tag}`);
-      road(x0, m + H, x1, y1 - L, 'ASPHOLD', `street, ${tag}`);
-      road(x0, y1 - L, x1, y1, 'ROADEDGE', `street edge, ${tag}`);
+      road(x0, m + H, x1, y1 - PARK - L, 'ASPHOLD', `street, ${tag}`);
+      road(x0, y1 - PARK - L, x1, y1 - PARK, 'ROADEDGE', `street edge, ${tag}`);
+      shoulderRun(x0, x1, y1 - PARK, y1, 'x', tag, 'hi');
     } else {
       const m = (x0 + x1) / 2;
-      road(x0, y0, x0 + L, y1, 'ROADEDGE', `street edge, ${tag}`);
-      road(x0 + L, y0, m - H, y1, 'ASPHOLD', `street, ${tag}`);
+      shoulderRun(y0, y1, x0, x0 + PARK, 'y', tag, 'lo');
+      road(x0 + PARK, y0, x0 + PARK + L, y1, 'ROADEDGE', `street edge, ${tag}`);
+      road(x0 + PARK + L, y0, m - H, y1, 'ASPHOLD', `street, ${tag}`);
       road(m - H, y0, m + H, y1, 'ROADLINV', `street centre, ${tag}`);
-      road(m + H, y0, x1 - L, y1, 'ASPHOLD', `street, ${tag}`);
-      road(x1 - L, y0, x1, y1, 'ROADEDGE', `street edge, ${tag}`);
+      road(m + H, y0, x1 - PARK - L, y1, 'ASPHOLD', `street, ${tag}`);
+      road(x1 - PARK - L, y0, x1 - PARK, y1, 'ROADEDGE', `street edge, ${tag}`);
+      shoulderRun(y0, y1, x1 - PARK, x1, 'y', tag, 'hi');
     }
   }
 
@@ -379,35 +456,92 @@ export function buildTown(rm, mb, opts = {}) {
    * larger ate the whole 576 of the smaller and left the middle of the
    * junction with a negative width. The corner is a rectangle.
    */
-  function junction(x0, y0, x1, y1, tag, mainAcross = false) {
+  /**
+   * A junction. `open` says which of its four mouths a street leaves
+   * by; a mouth with no street is pavement across the whole width, so a
+   * junction on the edge of the town is a T and one at its corner is a
+   * BEND in the road. THE KERB GOES ROUND EVERY CORNER: a corner where
+   * two mouths meet is a square of KERB_R with the quarter circle
+   * pavement and the rest road, and the outside of a bend is the whole
+   * middle of the junction with the quarter circle road and the rest
+   * pavement — see AN ARC in js/maps/rectmap.js.
+   */
+  function junction(x0, y0, x1, y1, tag, mainAcross = false, open4 = { n: true, s: true, e: true, w: true }) {
     const wx = mainAcross ? MAIN_WALK : WALK + VERGE;   // down the column
     const wy = WALK + VERGE;                            // along the row
     const corner = walkProps(`corner, ${tag}`, { light: 0.58, ambient: 0.58 });
-    rm.add(x0, y0, x0 + wx, y0 + wy, corner);
-    rm.add(x1 - wx, y0, x1, y0 + wy, corner);
-    rm.add(x0, y1 - wy, x0 + wx, y1, corner);
-    rm.add(x1 - wx, y1 - wy, x1, y1, corner);
-    lamp(x0 + wx - 20, y0 + wy - 20); lamp(x1 - wx + 20, y0 + wy - 20);
-    lamp(x0 + wx - 20, y1 - wy + 20); lamp(x1 - wx + 20, y1 - wy + 20);
-    const road = (a, b, c, d, tex, n) => rm.add(a, b, c, d,
-      open(n, { floorTex: tex, light: 0.30, ambient: 0.30, fuel: TOWN_FUEL.road }));
+    const roadProps = open(`junction, ${tag}`, { floorTex: 'ASPHOLD', light: 0.30, ambient: 0.30, fuel: TOWN_FUEL.road });
     const B = 24;                                       // how deep a crossing bar is
+    const R = KERB_R;
+    const { n, s, e, w } = open4;
+    /* A CORNER between two open mouths: the pavement in two rectangles
+       and the arc square at its tip, whose disc is centred on the
+       corner's own outer corner. `px,py` is the tip, `sx,sy` which way
+       the pavement lies from it. */
+    const roundCorner = (px, py, sx, sy, cw, ch) => {
+      const ax = sx < 0 ? px - cw : px, ay = sy < 0 ? py - ch : py;          // the corner's bbox
+      const bx = ax + cw, by = ay + ch;
+      const qx0 = sx < 0 ? px - R : px, qx1 = qx0 + R;                     // the arc square
+      const qy0 = sy < 0 ? py - R : py, qy1 = qy0 + R;
+      /* the rest of the corner: the strip beside the square along the
+         full depth, and the strip beyond the square along the tip's edge */
+      if (sx < 0) rm.add(ax, ay, qx0, by, corner); else rm.add(qx1, ay, bx, by, corner);
+      if (sy < 0) rm.add(qx0, ay, qx1, qy0, corner); else rm.add(qx0, qy1, qx1, by, corner);
+      const centre = (sx < 0 ? 'W' : 'E'); const cn = (sy < 0 ? 'S' : 'N') + centre;
+      rm.add(qx0, qy0, qx1, qy1, { ...corner, arc: { centre: cn, disc: corner, rest: roadProps } });
+      /* the lamp, on the pavement inside the arc */
+      const k = (R - 22) / Math.SQRT2;
+      lamp(px + sx * (R - k), py + sy * (R - k));
+    };
+    /* A PLAIN CORNER, where a closed side meets anything: pavement, with
+       the lamp at the tip as before */
+    const plainCorner = (px, py, sx, sy, cw, ch) => {
+      rm.add(sx < 0 ? px - cw : px, sy < 0 ? py - ch : py, sx < 0 ? px : px + cw, sy < 0 ? py : py + ch, corner);
+      lamp(px + sx * 20, py + sy * 20);
+    };
+    const bend = (!s && !w) || (!s && !e) || (!n && !w) || (!n && !e);
+
+    /* the four corners of the square */
+    (s && w ? roundCorner : plainCorner)(x0 + wx, y0 + wy, -1, -1, wx, wy);
+    (s && e ? roundCorner : plainCorner)(x1 - wx, y0 + wy, 1, -1, wx, wy);
+    (n && w ? roundCorner : plainCorner)(x0 + wx, y1 - wy, -1, 1, wx, wy);
+    (n && e ? roundCorner : plainCorner)(x1 - wx, y1 - wy, 1, 1, wx, wy);
+    /* and a closed side is pavement between its two corners */
+    if (!s) rm.add(x0 + wx, y0, x1 - wx, y0 + wy, corner);
+    if (!n) rm.add(x0 + wx, y1 - wy, x1 - wx, y1, corner);
+    if (!w) rm.add(x0, y0 + wy, x0 + wx, y1 - wy, corner);
+    if (!e) rm.add(x1 - wx, y0 + wy, x1, y1 - wy, corner);
+
     /* the mouths, with the crossing bars painted across them */
-    road(x0 + wx, y0, x1 - wx, y0 + B, 'CROSSWLK', `crossing, ${tag}`);
-    road(x0 + wx, y1 - B, x1 - wx, y1, 'CROSSWLK', `crossing, ${tag}`);
-    road(x0, y0 + wy, x0 + B, y1 - wy, 'CROSSWLK', `crossing, ${tag}`);
-    road(x1 - B, y0 + wy, x1, y1 - wy, 'CROSSWLK', `crossing, ${tag}`);
-    road(x0 + wx, y0 + B, x1 - wx, y0 + wy, 'ASPHOLD', `junction, ${tag}`);
-    road(x0 + wx, y1 - wy, x1 - wx, y1 - B, 'ASPHOLD', `junction, ${tag}`);
-    road(x0 + B, y0 + wy, x0 + wx, y1 - wy, 'ASPHOLD', `junction, ${tag}`);
-    road(x1 - wx, y0 + wy, x1 - B, y1 - wy, 'ASPHOLD', `junction, ${tag}`);
-    road(x0 + wx, y0 + wy, x1 - wx, y1 - wy, 'ASPHOLD', `junction, ${tag}`);
+    if (s) { road(x0 + wx, y0, x1 - wx, y0 + B, 'CROSSWLK', `crossing, ${tag}`); road(x0 + wx, y0 + B, x1 - wx, y0 + wy, 'ASPHOLD', `junction, ${tag}`); }
+    if (n) { road(x0 + wx, y1 - B, x1 - wx, y1, 'CROSSWLK', `crossing, ${tag}`); road(x0 + wx, y1 - wy, x1 - wx, y1 - B, 'ASPHOLD', `junction, ${tag}`); }
+    if (w) { road(x0, y0 + wy, x0 + B, y1 - wy, 'CROSSWLK', `crossing, ${tag}`); road(x0 + B, y0 + wy, x0 + wx, y1 - wy, 'ASPHOLD', `junction, ${tag}`); }
+    if (e) { road(x1 - B, y0 + wy, x1, y1 - wy, 'CROSSWLK', `crossing, ${tag}`); road(x1 - wx, y0 + wy, x1 - B, y1 - wy, 'ASPHOLD', `junction, ${tag}`); }
+    /* THE MIDDLE: plain road, or at a bend the arc square whose disc is
+       centred on the corner the two open mouths share, road inside the
+       arc and pavement outside it */
+    const mx0 = x0 + wx, my0 = y0 + wy, mx1 = x1 - wx, my1 = y1 - wy;
+    if (bend && mx1 - mx0 === my1 - my0) {
+      const cn = (s ? 'S' : 'N') + (e ? 'E' : 'W');
+      rm.add(mx0, my0, mx1, my1, { ...roadProps, arc: { centre: cn, disc: roadProps, rest: corner } });
+      /* a lamp on the pavement outside the bend, at the arc's middle */
+      const Ro = mx1 - mx0, k = (Ro + 22) / Math.SQRT2;
+      lamp((e ? mx1 : mx0) + (e ? -k : k), (s ? my0 : my1) + (s ? k : -k));
+      out.bends++;
+    } else {
+      road(mx0, my0, mx1, my1, 'ASPHOLD', `junction, ${tag}`);
+    }
   }
 
   /* ---- the whole grid of them ------------------------------------- */
   for (let r = 0; r <= 5; r++) {
     for (let c = 0; c <= 5; c++) {
-      junction(G.sx[c][0], G.sy[r][0], G.sx[c][1], G.sy[r][1], `${r}${c}`, c === 3);
+      /* the streets stop at the wood: a junction on the west, east or
+         south edge has no mouth that way, so the perimeter street is a
+         run of T's and the two south corners are bends. The north edge
+         opens onto the supermarket's lot. */
+      const open4 = { n: true, s: r < 5, e: c < 5, w: c > 0 };
+      junction(G.sx[c][0], G.sy[r][0], G.sx[c][1], G.sy[r][1], `${r}${c}`, c === 3, open4);
       /* the run east of this junction */
       if (c < 5) streetRun(G.sx[c][1], G.sx[c + 1][0], G.sy[r][0], G.sy[r][1], 'x', `row ${r} west of ${c + 1}`);
       /* and the run south of it */
