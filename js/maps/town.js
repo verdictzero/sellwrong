@@ -1083,28 +1083,23 @@ export function buildTown(rm, mb, opts = {}) {
     solid(B, F, 0, -D + ZONE, ZONE, -ZONE);
     solid(B, F, W - ZONE, -D + ZONE, W, -ZONE);
 
-    /* THE LOBBY, THE PASSAGE AND THE WEST STAIR */
+    /* THE LOBBY AND THE PASSAGE. There was a stair here, running along
+       the corridor and open to it down its whole length — seven treads
+       up from the lobby end with a balustrade on all but the first and
+       the last. IT IS GONE, at the user's request, and so is the one at
+       the east end and the switchback in the church.
+
+       WHAT THAT COSTS IS WRITTEN DOWN RATHER THAN QUIETLY LOST: the
+       first floor of the school and the choir loft over the narthex are
+       still built, still lit and still furnished, and there is now no
+       way to walk to any of them. The fire's route changed with them —
+       a stairwell is a chimney and the fire went up one readily (see
+       js/fire.js), and what is left is the slower climb through a
+       ceiling. The floor the stair stood on is plain hallway now, which
+       is what leaves the lobby opening straight onto the corridor. */
     I(24, 24, 328, 376, two('KITCHTIL', TOWN_FUEL.hallway, `${tag} lobby`));
     I(264, 376, 328, 424, two('KITCHTIL', TOWN_FUEL.hallway, `${tag} passage`));
-    /* A TREAD AND, ON ALL BUT THE FIRST AND THE LAST, A RAIL. The
-       stair is open to the corridor down its whole length, which is
-       what the fire climbs and what makes it a stair you can see; it
-       also made it a stack of black slabs floating in a dark room. The
-       last eight of every tread but the two you get on and off by is a
-       balustrade: open under the handrail, shut for the thirty-two the
-       rail is, open over it — masked, so you see the corridor through
-       the standards. Seven rails stepping up sixteen at a time is the
-       diagonal the eye needed. */
-    const RAIL_H = 24, RAIL_T = 32;
-    const stair = (u0, d0, floor, name, rail) => {
-      I(u0, d0, u0 + 32, d0 + (rail ? 24 : 32), col(B,
-        [{ floor, ceil: floor + CLEAR }], room(TOWN_FUEL.stair, { floorTex: 'STAIRTRD', lowerTex: 'STAIRTRD', name })));
-      if (rail) I(u0, d0 + 24, u0 + 32, d0 + 32, col(B,
-        [{ floor, ceil: floor + RAIL_H }, { floor: floor + RAIL_H + RAIL_T, ceil: floor + CLEAR }],
-        room(TOWN_FUEL.stair, { floorTex: 'STAIRTRD', lowerTex: 'HANDRAIL', ceilTex: 'HANDRAIL', name: `${name} rail` })));
-    };
-    for (let i = 0; i < 7; i++) stair(24 + 32 * i, 392, Bz + 16 * i, `${tag} west stair`, i > 0 && i < 6);
-    fitting(...F.at(136, -408));
+    I(24, 376, 264, 424, two('KITCHTIL', TOWN_FUEL.hallway, `${tag} passage`));
     /* THE CORRIDOR, with the lockers down both sides of it. A locker
        bank is a strip sixteen deep and sixty-four tall you cannot walk
        through, broken at every door. */
@@ -1159,13 +1154,12 @@ export function buildTown(rm, mb, opts = {}) {
         I(u0 + 168, 552, u0 + 232, 568, door2(`${tag} classroom door`));
         lockers(u0, u0 + 168, 536); strip(u0 + 168, u0 + 232, 536); lockers(u0 + 232, u0 + 416, 536);
       } else {
-        /* the last one on the north side sits behind the east stair,
-           and reaches the corridor past it */
+        /* the last one on the north side sat behind the east stair and
+           reached the corridor past it; with the stair gone the run of
+           wall it stood against is lockers like the rest */
         classroom(u0, 600, 952, k, 'N');
         I(u0 + 24, 552, u0 + 88, 600, door2(`${tag} classroom door`));
-        lockers(u0, u0 + 24, 536); strip(u0 + 24, u0 + 88, 536); lockers(u0 + 88, u0 + 176, 536); strip(u0 + 176, u0 + 400, 536);
-        for (let i = 0; i < 7; i++) stair(u0 + 368 - 32 * i, 552, Bz + 16 * i, `${tag} east stair`, i > 0 && i < 6);
-        fitting(...F.at(u0 + 272, -568));
+        lockers(u0, u0 + 24, 536); strip(u0 + 24, u0 + 88, 536); lockers(u0 + 88, u0 + 400, 536);
       }
     }
     /* THE OFFICE, over the road from the lobby */
@@ -1550,16 +1544,13 @@ export function buildTown(rm, mb, opts = {}) {
       topOf(B)] });
     F.add(472, nv1 - 64, 616, nv1, narthex);
     F.add(24, nv0 + WALL, 616, nv1 - 64, narthex);
-    /* THE STAIR TURNS BACK ON ITSELF: seven treads east to west along
-       the front wall, then seven back the other way beside them, and
-       the two flights are side by side rather than stacked — so the top
-       of the first shares its air with the bottom of the second, and
-       you step across. No landing rectangle: the switchback IS the
-       landing. */
-    const tread = (u0, v0, floor, name) => F.add(u0, v0, u0 + 32, v0 + 32, col(B,
-      [{ floor, ceil: floor + CLEAR }], { ...holy, floorTex: 'STAIRTRD', lowerTex: 'STAIRTRD', fuel: TOWN_FUEL.stair, name }));
-    for (let i = 0; i < 7; i++) tread(216 - 32 * i, nv1 - 32, Bz + 16 * i, `${tag} stair, first flight`);
-    for (let j = 0; j < 7; j++) tread(24 + 32 * j, nv1 - 64, Bz + STOREY + 16 * j, `${tag} stair, second flight`);
+    /* A STAIR TURNED BACK ON ITSELF HERE — seven treads east to west
+       along the front wall and seven back beside them, the top of one
+       sharing its air with the bottom of the next, no landing rectangle
+       at all — and it is gone with the school's two, at the user's
+       request. The narthex is a plain rectangle again and the choir
+       loft over it cannot be reached on foot. */
+    F.add(24, nv1 - 64, 248, nv1, narthex);
     /* the way through to the nave, on both levels */
     /* the way through to the nave, on both levels — and at the loft's
        level it is a RAIL and not a way: the upper opening starts a rail

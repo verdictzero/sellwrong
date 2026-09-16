@@ -5023,7 +5023,7 @@ section('the van');
       for (const o of V.all) if (o !== v) near = Math.min(near, Math.hypot(o.x - v.x, o.y - v.y));
       if (near > far) { far = near; target = v; }
     }
-    const startHealth = target.health, ground = target.ground;
+    const startHealth = target.health, tookOffFrom = target.ground;
     target.ignite();
     check('a vehicle you set light to is on fire', target.burning > 0);
     check('and the tarmac under it is too', gm.fire.heatAt(target.x, target.y) > 0);
@@ -5099,10 +5099,21 @@ section('the van');
     const over = Math.abs(((target.rx / Math.PI) % 2) - 1);
     check('and it is lying on its roof', over < 0.06,
       `${(target.rx / Math.PI).toFixed(3)} half-turns`);
-    /* and its lowest corner is on the tarmac, whatever angle it stopped at */
+    /* AND ITS LOWEST CORNER IS ON WHATEVER IT CAME DOWN ON, whatever
+       angle it stopped at — which is not always what it took off from.
+       crash() calls updateSector() before it sets the height, so a van
+       thrown off the carriageway and landing over a kerb rests twelve
+       higher than it started, and that is the engine being right. This
+       check used to hold the landing against the TAKE-OFF height and
+       passed for as long as the arc happened to end on tarmac; the day
+       it ended on a sidewalk it failed, and it was the check that was
+       wrong. It is held against the resting ground now, and the
+       take-off height is noted so a drift of a whole kerb is visible
+       rather than silent. */
     const low = veh.extentOf(target.corners, target.rx, target.rz).lo;
-    check('and its lowest corner is exactly on the tarmac',
-      Math.abs((target.cz + low) - ground) < 1e-6, `${(target.cz + low - ground).toFixed(4)} off`);
+    note('where it came down', `${target.ground - tookOffFrom} above what it took off from`);
+    check('and its lowest corner is exactly on what it came down on',
+      Math.abs((target.cz + low) - target.ground) < 1e-6, `${(target.cz + low - target.ground).toFixed(4)} off`);
     check('and it is still in the way', target.blockers.length === 3 &&
       gm.player.thingInWay(target.x, target.y));
     check('and it is burnt, so js/material.js puts coals on it',
@@ -7762,13 +7773,19 @@ section('the town');
      map error with no honest answer; the builder counts them. */
   check('no edge has three columns on it', (level.edgeConflicts ?? 0) === 0, `${level.edgeConflicts}`);
 
-  /* EVERY ROOM IS REACHABLE, in the two buildings that still have an
-     inside. A walk in through the school's front door must get to
-     every classroom upstairs, and a walk in through the church door to
-     the choir loft — which is the check that catches a stair laid out
-     one tread short or a landing that turns back on nothing. Done as
-     the engine would do it: step up no more than MAX_STEP through
-     openings that are actually open at the height you are at. */
+  /* EVERY ROOM ON THE GROUND FLOOR IS REACHABLE, in the two buildings
+     that still have an inside. Done as the engine would do it: step up
+     no more than MAX_STEP through openings that are actually open at
+     the height you are at.
+
+     IT USED TO ASK FOR THE UPSTAIRS TOO, and it was the check that
+     caught a stair laid out one tread short. THE STAIRS ARE GONE, at
+     the user's request — both of the school's and the church's
+     switchback — so the first floor and the choir loft are built, lit
+     and furnished with no way to walk to any of them, and a test that
+     still asked would be asking for something nobody built. What it
+     asks instead is that the ground floor is whole, which is the part
+     that would break if a wall went in the wrong place. */
   {
     const U = await import('../js/util.js');
     const walk = (start) => {
@@ -7790,7 +7807,7 @@ section('the town');
       }
       return seen;
     };
-    const reach = (tag, door, rooms) => {
+    const reach = (tag, door, rooms, upstairs) => {
       const secs = level.sectors.filter(s => s.name.startsWith(tag));
       const start = secs.find(s => s.name === door);
       if (!check(`${tag.trim()} has a way in`, !!start)) return;
@@ -7800,10 +7817,16 @@ section('the town');
       note(`${tag.trim()} walked from its door`, `${seen.size} regions reached, ${want.length} rooms asked for`);
       check(`every room in ${tag.trim()} can be walked to`, want.length > 20 && missed.length === 0,
         `${missed.length} cannot, e.g. ${missed[0]?.name} (storey ${missed[0]?.storey})`);
-      check(`and that includes the upstairs`, want.some(s => s.storey > 0 && seen.has(s.index)));
+      if (upstairs) check(`and that includes the upstairs`, want.some(s => s.storey > 0 && seen.has(s.index)));
+      /* and with no stair the upstairs is exactly what you CANNOT get
+         to, which is worth saying out loud rather than leaving as the
+         absence of a check */
+      else check(`and with no stair, nothing above the ground floor is`,
+        secs.filter(s => s.storey > 0 && !s.outdoor && s.fuel > 0).every(s => !seen.has(s.index)),
+        `${secs.filter(s => s.storey > 0 && !s.outdoor && s.fuel > 0 && seen.has(s.index)).length} reached`);
     };
-    reach('C3 ', 'C3 front door', /^(classroom [SN]\d( upstairs)?|corridor( upstairs)?|lobby( upstairs)?|office( upstairs)?|gym|passage( upstairs)?)$/);
-    reach('B3 ', 'B3 door', /^(nave floor|centre aisle|side aisle|chancel|narthex|choir loft|tower)$/);
+    reach('C3 ', 'C3 front door', /^(classroom [SN]\d|corridor|lobby|office|gym|passage)$/, false);
+    reach('B3 ', 'B3 door', /^(nave floor|centre aisle|side aisle|chancel|narthex|tower)$/, false);
   }
 
   /* THE FACADES, which are what the houses are now. A house is a shell
@@ -7925,10 +7948,10 @@ section('the town');
     check('and padding, trusses and a stage',
       named(/^C3 gym padding$/).length >= 4 && named(/^C3 gym truss$/).length >= 3 && named(/^C3 gym stage$/).length === 1);
     /* THE STAIRS, which were a stack of floating slabs */
-    /* five rails a stair, two stairs, and a rail is a column of two —
-       open under the handrail and open over it */
-    check('both stairs have a balustrade, and not on the treads you get on and off by',
-      named(/^C3 (west|east) stair rail$/).length === 20);
+    /* \b so that UPSTAIRS is not a stair: every room on the first floor
+       is named one and the word is in the middle of it */
+    check('and no stair anywhere in the town, at the user\'s request',
+      named(/\bstair/).length === 0, named(/\bstair/).slice(0, 3).map(s => s.name).join(', '));
 
     /* THE CHURCH: a water table, buttresses in two stages, a louvred
        belfry, a cornice the spire springs off. */
@@ -8146,11 +8169,16 @@ section('the town on fire');
   /* A FIRE ON A GROUND FLOOR REACHES THE STOREY ABOVE. Poured over the
      whole of the school's ground floor — every classroom, the corridor,
      the lobby and the office — the way a player with a full tank would,
-     and then left. The houses have
-     no inside to pour it into any more; the school has a stair. */
+     and then left.
+
+     IT USED TO GO UP THE STAIRS, and the stairs are gone. What is left
+     is the other route: a ceiling, which burns through eventually and
+     is the slower half of the same rule in js/fire.js. It still gets
+     there, and it gets to less of it — which is the honest thing to
+     measure now, and it is measured rather than assumed. */
   const TAG = 'C3 ';
   const mine = fresh.sectors.filter(s => s.name.startsWith(TAG) && !s.outdoor);
-  const ground = mine.filter(s => s.storey === 0 && s.fuel > 0 && /^(lobby|passage|corridor|classroom [SN]\d|office|west stair|east stair)$/.test(s.name.slice(TAG.length)));
+  const ground = mine.filter(s => s.storey === 0 && s.fuel > 0 && /^(lobby|passage|corridor|classroom [SN]\d|office)$/.test(s.name.slice(TAG.length)));
   check('the school has a ground floor and an upstairs',
     ground.length > 4 && mine.some(s => s.storey > 0), `${ground.length} rooms`);
   for (let k = 0; k < 40; k++) for (const s of ground)
@@ -8159,8 +8187,8 @@ section('the town on fire');
   const up = mine.filter(s => s.storey > 0 && s.charred);
   note('the school, poured on downstairs', `${mine.filter(s => s.charred).length} of ${mine.length} regions charred, ${up.length} of them upstairs`);
   check('the fire climbs to the floor above', up.length > 0, `${up.length} upstairs regions charred`);
-  check('and it went up the stairs to get there',
-    mine.some(s => /stair/.test(s.name) && s.charred) && up.length > 2,
+  check('and it got there through a ceiling, there being no stair left to climb',
+    up.length > 2 && !mine.some(s => /\bstair/.test(s.name)),
     up.map(s => s.name.slice(TAG.length)).slice(0, 8).join(', '));
 
   /* AND IT DOES NOT COME BACK DOWN SOMEBODY ELSE'S CHIMNEY: the church,

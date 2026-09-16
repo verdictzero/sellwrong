@@ -3531,14 +3531,20 @@ two textures on one wall, a raised chancel with an altar and a cross let
 into the wall behind it, and twelve lancets of coloured glass, each a
 recess on the outside and a recess on the inside with the pane hung on
 the line between them, so you see in and out through it and stop at it.
-The choir loft is reached by a stair that turns back on itself: two
-flights side by side, the top of one sharing its air with the bottom of
-the next, and no landing rectangle at all. The school has six classrooms
-with desks in rows and a blackboard let into the west wall of each,
-lockers down the corridor you cannot walk through, steel windows you can
-see in through, and TWO STAIRS running along the corridor and open to
-it, which the first cut did not have: nobody could get upstairs, and the
-fire could only get there through the ceiling.
+The school has six classrooms with desks in rows and a blackboard let
+into the west wall of each, lockers down the corridor you cannot walk
+through, and steel windows you can see in through.
+
+AND THERE ARE NO STAIRS ANY MORE, at the user's request. There were
+three: the school's two, running along the corridor and open to it down
+their length, and the church's switchback of two flights side by side
+over the narthex. All three are gone and the floor each stood on is the
+room it stood in. WHAT THAT COSTS IS WRITTEN DOWN RATHER THAN QUIETLY
+LOST: the school's first floor and the choir loft are still built, still
+lit and still furnished, and there is now no way to walk to any of them.
+The fire's route changed with them — see A FIRE ON A GROUND FLOOR below
+— and the reachability test asks for the ground floor whole instead of
+asking for something nobody built.
 
 
 A BUILDING IS WHAT IT DOES AT ITS EDGES
@@ -3575,10 +3581,10 @@ no name on it ever, and the cornice carried round the front.
 THE GYM was a black box a hundred and twenty feet long. It has a maple
 floor with a court painted on it, padding round the foot of the walls,
 three roof trusses across it, bleachers down the far side in three tiers
-you can climb, and a stage at the east end. THE STAIRS have a
-balustrade on every tread but the one you get on by and the one you get
-off by, which is the difference between a flight of stairs and a stack
-of floating slabs.
+you can climb, and a stage at the east end. The stairs got a balustrade
+on every tread but the one you got on by and the one you got off by,
+and then the stairs were taken out altogether at the user's request —
+see AND THERE ARE NO STAIRS ANY MORE above.
 
 THE CHURCH gets the same treatment and one thing the school cannot have.
 A water table, a BUTTRESS in the middle of every gap between two
@@ -3677,14 +3683,21 @@ The fuel grid has a plane per storey now. Plane 0 is the ground
 everywhere and is exactly the grid it always was, which is why nothing
 that indexes it by cy*cols+cx knows the rest is there.
 
-A fire on a ground floor finds the stair. The school's run along the
-corridor and are open to it down their length, so the top tread shares
-its air with the corridor above, and fire goes up that FOUR TIMES as
-readily as it goes along, because a staircase is a chimney with a
-handrail. The ceiling is the slow way, a tenth of that, straight up and
-same cell. Both are needed. With only the stairs, one cell of one tread
-has to win a race against its own fuel running out, and it loses, and a
-building burns to the ceiling and stops.
+A fire on a ground floor finds the stair, where there is one. A stair
+open to the corridor down its length puts the top tread's air into the
+corridor above, and fire goes up that FOUR TIMES as readily as it goes
+along, because a staircase is a chimney with a handrail. The ceiling is
+the slow way, a tenth of that, straight up and same cell. Both were
+needed: with only the stairs, one cell of one tread has to win a race
+against its own fuel running out, and it loses, and a building burns to
+the ceiling and stops.
+
+THE TOWN HAS NO STAIRS IN IT NOW, so what is left is the slow way, and
+the second path turns out to carry the building on its own: poured over
+the school's whole ground floor the fire still reaches the corridor
+above and two classrooms off it. Fewer regions than it took with the
+stairs, which is what a ceiling instead of a chimney should look like.
+The engine keeps both paths; the map has stopped using one of them.
 
 AND THE FUEL IS THREE HUNDRED AND OVER in both buildings, because the
 spread chance in js/fire.js climbs as the 2.4th power of the fuel up to

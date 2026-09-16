@@ -13,9 +13,9 @@ js/fire.js, and the town itself in js/maps/town.js. Twenty-five blocks,
 sixty runs of street with lamps down them and thirty-six junctions,
 three hundred and twelve houses that are FACADES — a foundation, a
 stoop, a door and windows cut into the wall, and no inside, which is the
-largest of the departures below — a school with two stairs and desks in
-its classrooms, a church with pews and an altar under a choir loft, and
-a fire that climbs the school's stairs. The rest of this document is the
+largest of the departures below — a school with desks in its classrooms,
+a church with pews and an altar under a choir loft, and a fire that
+climbs through a ceiling. The rest of this document is the
 plan it was built from and is left as it was written, so that what was
 argued for and what was done can be compared.
 
@@ -63,10 +63,16 @@ WHERE IT DEPARTS FROM THE PLAN, and why:
     and a fascia board over the ground at its foot, and the gable band
     faces the street instead of the attic. See THE ROOF YOU CAN SEE in
     README.txt.
-  THE SCHOOL HAS TWO STAIRS, desks, lockers and windows you can see in
-    through; the church has pews, a wainscot, an altar with a cross
-    behind it and coloured glass you can see through. The two buildings
-    with an inside got the inside.
+  THE SCHOOL HAS desks, lockers and windows you can see in through; the
+    church has pews, a wainscot, an altar with a cross behind it and
+    coloured glass you can see through. The two buildings with an inside
+    got the inside.
+  AND THEN THE STAIRS CAME OUT, at the user's request: the school's two
+    and the church's switchback, all three of them. The first floor and
+    the choir loft are still built, lit and furnished and there is no
+    longer any way to walk to them; the fire reaches the floor above
+    through a ceiling instead of up a chimney, which it still does, and
+    to less of it. Written down rather than quietly lost.
   AND THEN THEY GOT AN OUTSIDE, at the user's request. Both of them
     were slabs of wall with holes in them, and what they have now is
     all one idea: a BAND, which is a strip of wall a projecting piece
@@ -74,7 +80,7 @@ WHERE IT DEPARTS FROM THE PLAN, and why:
     stone water table, a string course, a cornice and twenty-four
     pilasters — the first three out of one rectangle whose column is
     open, shut, open, shut, shut — plus an entrance bay with real
-    doors, a fitted-out gym and a balustrade on its stairs. The church
+    doors and a fitted-out gym. The church
     gets a water table, twelve buttresses in two stages, eaves down
     both long walls, a louvred belfry and a cornice under the spire,
     and inside it a nave OPEN TO THE ROOF with tie beams, a chancel
@@ -110,7 +116,10 @@ WHERE IT DEPARTS FROM THE PLAN, and why:
     stairwell, four times as willing as going along, and the CEILING as
     the slow way at a tenth of that. One flight reaches into the floor
     above at exactly one tread, and one cell cannot carry a house on
-    its own.
+    its own. WITH THE STAIRS TAKEN OUT the second path is the only one
+    the town uses, and it turns out to carry the school by itself: the
+    corridor above and two classrooms off it catch, which is fewer than
+    the chimney managed and is what a ceiling should look like.
   THE HALF-SECOND IS NOW ABOUT A SECOND AND A HALF. See THE TEST below
     for what was done about it and README.txt for the number.
 
