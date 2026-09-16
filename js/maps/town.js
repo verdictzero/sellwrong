@@ -283,7 +283,18 @@ export function buildTown(rm, mb, opts = {}) {
   const G = townGrid(opts.x0, opts.yTop);
   const R = rng(opts.seed ?? 20250915);
   const out = { grid: G, houses: [], stations: {}, lamps: 0, plants: [], glass: [],
-                windows: 0, doors: 0, stones: 0, roofPending: [], carSlots: [], drains: 0, bends: 0 };
+                windows: 0, doors: 0, stones: 0, roofPending: [], carSlots: [], drains: 0, bends: 0,
+                /* A FENCE IS NOT A SECTOR. It is a masked texture hung in
+                   the hole between two patches of ground that are both
+                   open to the sky — the same thing the mall's service
+                   yard has had since there was a mall, and the reason a
+                   chain link fence is something you see the ball field
+                   THROUGH rather than a painted picture of one. The
+                   lines do not exist until mb.build(), so what a builder
+                   can do here is name the two sectors and let
+                   js/maps/sellwrong.js hang the wire once they do. */
+                fences: [] };
+  const fence = (a, b, tex, h) => { out.fences.push({ a, b, tex, h }); return b; };
 
   /* ---- the props every outdoor thing in the town shares ------------ */
   const open = (name, extra = {}) => ({
@@ -615,9 +626,18 @@ export function buildTown(rm, mb, opts = {}) {
    *  band below them IS the wall. */
   const topOf = B => B.slope
     ? { floor: B.eaves, ceil: B.eaves + B.rise, slopeCeil: B.slope,
-        floorTex: 'NONE', ceilTex: 'NONE', roofTex: B.roof, roofLight: ROOF_LIGHT,
+        /* THE ROOF FROM UNDERNEATH. An attic is never seen from inside
+           and wears no ceiling, which is why this has been 'NONE' since
+           there were roofs. A church is the exception: its nave is open
+           to the rafters, the sloped ceiling you are looking at from a
+           pew IS this storey's, and the shingle on the other side of it
+           is the same triangles wound the other way (see js/mapgeo.js).
+           `soffit` is what that boarding is, and a building that does
+           not name one keeps the attic it had. */
+        floorTex: 'NONE', ceilTex: B.soffit || 'NONE', roofTex: B.roof, roofLight: ROOF_LIGHT,
         wallTex: B.wall, upperTex: B.jamb || B.wall, lowerTex: B.wall,
-        light: 0.16, ambient: 0.16, fuel: 0, outdoor: false, sky: 0, name: `${B.tag} roof` }
+        light: B.soffit ? 0.30 : 0.16, ambient: B.soffit ? 0.30 : 0.16,
+        fuel: 0, outdoor: false, sky: 0, name: `${B.tag} roof` }
     : { floor: B.top, ceil: B.top,
         floorTex: 'NONE', ceilTex: 'NONE',
         wallTex: B.wall, upperTex: B.jamb || B.wall, lowerTex: B.wall,
@@ -1066,9 +1086,25 @@ export function buildTown(rm, mb, opts = {}) {
     /* THE LOBBY, THE PASSAGE AND THE WEST STAIR */
     I(24, 24, 328, 376, two('KITCHTIL', TOWN_FUEL.hallway, `${tag} lobby`));
     I(264, 376, 328, 424, two('KITCHTIL', TOWN_FUEL.hallway, `${tag} passage`));
-    const stair = (u0, d0, floor, name) => I(u0, d0, u0 + 32, d0 + 32, col(B,
-      [{ floor, ceil: floor + CLEAR }], room(TOWN_FUEL.stair, { floorTex: 'STAIRTRD', lowerTex: 'STAIRTRD', name })));
-    for (let i = 0; i < 7; i++) stair(24 + 32 * i, 392, Bz + 16 * i, `${tag} west stair`);
+    /* A TREAD AND, ON ALL BUT THE FIRST AND THE LAST, A RAIL. The
+       stair is open to the corridor down its whole length, which is
+       what the fire climbs and what makes it a stair you can see; it
+       also made it a stack of black slabs floating in a dark room. The
+       last eight of every tread but the two you get on and off by is a
+       balustrade: open under the handrail, shut for the thirty-two the
+       rail is, open over it — masked, so you see the corridor through
+       the standards. Seven rails stepping up sixteen at a time is the
+       diagonal the eye needed. */
+    const RAIL_H = 24, RAIL_T = 32;
+    const stair = (u0, d0, floor, name, rail) => {
+      I(u0, d0, u0 + 32, d0 + (rail ? 24 : 32), col(B,
+        [{ floor, ceil: floor + CLEAR }], room(TOWN_FUEL.stair, { floorTex: 'STAIRTRD', lowerTex: 'STAIRTRD', name })));
+      if (rail) I(u0, d0 + 24, u0 + 32, d0 + 32, col(B,
+        [{ floor, ceil: floor + RAIL_H }, { floor: floor + RAIL_H + RAIL_T, ceil: floor + CLEAR }],
+        room(TOWN_FUEL.stair, { floorTex: 'STAIRTRD', lowerTex: 'HANDRAIL', ceilTex: 'HANDRAIL', name: `${name} rail` })));
+    };
+    for (let i = 0; i < 7; i++) stair(24 + 32 * i, 392, Bz + 16 * i, `${tag} west stair`, i > 0 && i < 6);
+    fitting(...F.at(136, -408));
     /* THE CORRIDOR, with the lockers down both sides of it. A locker
        bank is a strip sixteen deep and sixty-four tall you cannot walk
        through, broken at every door. */
@@ -1128,7 +1164,8 @@ export function buildTown(rm, mb, opts = {}) {
         classroom(u0, 600, 952, k, 'N');
         I(u0 + 24, 552, u0 + 88, 600, door2(`${tag} classroom door`));
         lockers(u0, u0 + 24, 536); strip(u0 + 24, u0 + 88, 536); lockers(u0 + 88, u0 + 176, 536); strip(u0 + 176, u0 + 400, 536);
-        for (let i = 0; i < 7; i++) stair(u0 + 368 - 32 * i, 552, Bz + 16 * i, `${tag} east stair`);
+        for (let i = 0; i < 7; i++) stair(u0 + 368 - 32 * i, 552, Bz + 16 * i, `${tag} east stair`, i > 0 && i < 6);
+        fitting(...F.at(u0 + 272, -568));
       }
     }
     /* THE OFFICE, over the road from the lobby */
@@ -1138,8 +1175,34 @@ export function buildTown(rm, mb, opts = {}) {
 
     /* THE GYM: two storeys tall in one span, and the whole argument for
        the column over a fixed stack of floors. */
-    I(1592, 24, 2792, 952, col(B, [{ floor: Bz, ceil: Bz + 2 * STOREY, name: `${tag} gym` }],
-      room(TOWN_FUEL.gym, { floorTex: 'FLOORBRD', ceilTex: 'PLASTER' })));
+    /* WHAT IS IN IT, because a room two storeys tall and a hundred and
+       twenty feet long with nothing in it is not a gym, it is a hangar:
+       a maple floor with a court painted on it, PADDING round the foot
+       of the walls, three ROOF TRUSSES across it — masked, so the dark
+       of the roof shows through the web — BLEACHERS down the far side
+       in three tiers you can climb, and a STAGE at the east end, which
+       is where the assembly is. Every one of them is a raised floor or
+       a band, which is every trick this map has. */
+    const gymRoom = (n, extra = {}) => room(TOWN_FUEL.gym, { floorTex: 'GYMFLOOR', ceilTex: 'PLASTER', light: 0.34, ambient: 0.34, name: `${tag} ${n}`, ...extra });
+    const court = n => col(B, [{ floor: Bz, ceil: Bz + 2 * STOREY }], gymRoom(n));
+    const raised = (n, up, low) => col(B, [{ floor: Bz + up, ceil: Bz + 2 * STOREY }], gymRoom(n, { lowerTex: low, floorTex: 'BLEACHER' }));
+    const pad = n => col(B, [{ floor: Bz + 64, ceil: Bz + 2 * STOREY }], gymRoom(n, { lowerTex: 'GYMPAD', floorTex: 'PLASTER' }));
+    const truss = n => col(B, [{ floor: Bz, ceil: Bz + 2 * STOREY - 56 },
+                               { floor: Bz + 2 * STOREY - 24, ceil: Bz + 2 * STOREY }],
+      gymRoom(n, { lowerTex: 'GYMTRUSS', ceilTex: 'GYMTRUSS', floorTex: 'GYMTRUSS' }));
+    I(1592, 24, 2792, 32, pad('gym padding'));
+    I(1592, 944, 2792, 952, pad('gym padding'));
+    I(1592, 32, 1600, 456, pad('gym padding'));
+    I(1592, 456, 1600, 520, court('gym'));
+    I(1592, 520, 1600, 944, pad('gym padding'));
+    I(2632, 32, 2792, 944, raised('gym stage', 48, 'PEWFRONT'));
+    {
+      const BANDS = [[168, court], [24, truss], [168, court], [24, truss], [168, court], [24, truss], [144, court],
+                     [64, d => raised(d, 24, 'BLEACHER')], [64, d => raised(d, 48, 'BLEACHER')], [64, d => raised(d, 72, 'BLEACHER')]];
+      let d = 32;
+      for (const [h, mk] of BANDS) { I(1600, d, 2632, d + h, mk(mk === court ? 'gym' : mk === truss ? 'gym truss' : 'gym bleachers')); d += h; }
+    }
+    for (const [gu, gd] of [[1700, 500], [2300, 500], [2700, 200], [2700, 760]]) fitting(...F.at(gu, -gd));
     I(1576, 456, 1592, 520, col(B, [{ floor: Bz, ceil: Bz + CLEAR }], room(TOWN_FUEL.hallway, { floorTex: 'KITCHTIL', name: `${tag} gym doors` })));
     for (const [gu, gd] of [[1892, 260], [2492, 260], [1892, 716], [2492, 716]]) fitting(...F.at(gu, -gd));
     for (let u = 152; u < 1576; u += 256) fitting(...F.at(u, -488));
@@ -1186,7 +1249,16 @@ export function buildTown(rm, mb, opts = {}) {
       const ops = [];
       for (const [u0, k0, k1] of southRooms) {
         if (k0 < 0) {
-          F.add(DOOR0, -ZONE, DOOR1, 0, wayCol(B, CLEAR, room(TOWN_FUEL.hallway, { floorTex: 'KITCHTIL', light: 0.5, ambient: 0.5 }), `${tag} front door`));
+          /* A PAIR OF DOORS AND THE GAP BETWEEN THEM. The middle
+             forty-eight is a way you walk through; the leaf each side
+             of it is a SHUT STOREY eighty tall wearing the steel, which
+             is what a school's front doors look like when one of them
+             is propped and the other never is. */
+          for (const [lu0, lu1] of [[DOOR0, DOOR0 + 24], [DOOR1 - 24, DOOR1]])
+            F.add(lu0, -ZONE, lu1, 0, { storeys: [
+              { floor: B.base + DOOR_H, ceil: B.base + DOOR_H, lowerTex: 'SCHDOOR', upperTex: B.wall,
+                wallTex: 'SCHDOOR', floorTex: 'NONE', ceilTex: 'NONE', name: `${tag} door leaf` }, topOf(B)] });
+          F.add(DOOR0 + 24, -ZONE, DOOR1 - 24, 0, wayCol(B, CLEAR, room(TOWN_FUEL.hallway, { floorTex: 'KITCHTIL', light: 0.5, ambient: 0.5 }), `${tag} front door`));
           out.doors++;
           ops.push({ u0: DOOR0, u1: DOOR1 });
           continue;
@@ -1199,14 +1271,110 @@ export function buildTown(rm, mb, opts = {}) {
     }
     face(K, northRooms);
 
-    /* the ground: foundation all round, the steps up to the front door,
-       a path a hundred units wide down the lawn to the sidewalk */
-    approach(B, F, [0, W], { u0: DOOR0 - 16, u1: DOOR1 + 16 }, [-128, W + 128], FY, { path: true, ext: [PLINTH, PLINTH] });
-    approach(B, K, [0, W], null, [-128, W + 128], (y1 - y0) - FY - D, { ext: [PLINTH, PLINTH] });
-    F.add(-PLINTH, -D, 0, 0, plinthProps(B));
-    F.add(W, -D, W + PLINTH, 0, plinthProps(B));
-    F.add(-128, -D - PLINTH, -PLINTH, PLINTH, lawn(`${tag} side lawn`));
-    F.add(W + PLINTH, -D - PLINTH, W + 128, PLINTH, lawn(`${tag} side lawn`));
+    /* ---- THE ELEVATIONS, IN COURSES ---------------------------------
+       The building was a slab of brick two hundred and eighty feet long
+       with holes in it. What it has now is what every school built in
+       this decade has, and all of it is BANDS — see THE TRIM in
+       js/textures.js — got out of exactly two kinds of rectangle:
+
+         THE TRIM STRIP, eight past the plinth and sixteen past the
+           wall, whose column is open, shut for sixteen, open, shut for
+           twenty-four, and shut. Three bands out of one strip: the
+           STONE WATER TABLE it stands on, the STRING COURSE at first-
+           floor level, and the CORNICE where it stops. A strip is one
+           rectangle and it does the work of three.
+         THE PILASTER, sixteen past the wall and solid from the ground
+           to the eaves, at every party wall between two classrooms and
+           every other bay of the gym. It breaks the trim, which is why
+           the elevation is walked as SEGMENTS rather than laid as four
+           long rectangles.
+
+       And at the door, an ENTRANCE BAY standing forty-eight in front of
+       the rest: two brick piers, a pair of steel doors between them
+       with a date stone over, and the cornice carried round the front
+       of it. The front door used to be a hole in a flat wall, and from
+       the lawn it read as a black wedge — which is the thing the user
+       drew a ring round. */
+    const SBASE = 16, STRING = FOUND + STOREY;           // how far the trim stands out, and the first floor
+    const trimProps = () => open(`${tag} trim`, {
+      floor: FOUND / 2, ceil: B.top, floorTex: 'CONCRETE', light: 0.30, ambient: 0.30,
+      lowerTex: 'WATERTBL', upperTex: B.gable, wallTex: B.wall, fuel: 0 });
+    const trim = () => ({ ...trimProps(), storeys: [
+      { floor: FOUND / 2, ceil: STRING - PLINTH, ceilTex: 'SKY' },
+      { floor: STRING, ceil: B.eaves - 24, ceilTex: 'SKY', lowerTex: 'WATERTBL' },
+      { floor: B.eaves, ceil: B.eaves, ceilTex: 'SKY', lowerTex: 'CORNICE', upperTex: 'NONE' }] });
+    const pilaster = () => ({ storeys: [{ ...topOf(B), lowerTex: 'PILASTR', wallTex: 'PILASTR', upperTex: 'NONE',
+                                          name: `${tag} pilaster` }] });
+    /* one at every party wall, one every other bay of the gym, one on
+       each corner */
+    const piers = [[0, 32], [W - 32, W]];
+    for (const u of [344, 760, 1176, 1592]) piers.push([u - 16, u + 16]);
+    for (let j = 0; j < 5; j++) piers.push([1792 + 176 * j, 1824 + 176 * j]);
+    piers.sort((a, b) => a[0] - b[0]);
+    const BAY0 = DOOR0 - 32, BAY1 = DOOR1 + 32, BAY_OUT = 48;
+    /* the courses along one face, between and through the piers */
+    const courses = (Fx, skip) => {
+      let u = 0;
+      const plain = (a, b) => {
+        if (b - a <= 0) return;
+        Fx.add(a, 0, b, PLINTH, plinthProps(B));
+        Fx.add(a, PLINTH, b, SBASE, trim());
+      };
+      for (const [p0, p1] of [...piers, ...(skip ? [skip] : [])].sort((a, b) => a[0] - b[0])) {
+        plain(u, p0);
+        if (!skip || p0 !== skip[0]) Fx.add(p0, 0, p1, SBASE, pilaster());
+        u = p1;
+      }
+      plain(u, W);
+    };
+    courses(F, [BAY0, BAY1]);
+    courses(K, null);
+    /* THE ENTRANCE BAY: two piers, the doors between them, a date stone
+       over the doors and the cornice carried round in front. */
+    Fx_bay: {
+      F.add(BAY0, 0, DOOR0, BAY_OUT, pilaster());
+      F.add(DOOR1, 0, BAY1, BAY_OUT, pilaster());
+      F.add(DOOR0, 0, DOOR1, BAY_OUT, { ...open(`${tag} entrance`, {
+          floor: FOUND, ceil: B.top, floorTex: 'KITCHTIL', light: 0.46, ambient: 0.46,
+          lowerTex: 'SCHOOLBR', upperTex: B.gable, wallTex: 'SCHDOOR', fuel: 0 }),
+        storeys: [
+          { floor: FOUND, ceil: FOUND + CLEAR, name: `${tag} entrance` },
+          { floor: FOUND + CLEAR + 32, ceil: FOUND + CLEAR + 32, lowerTex: 'DATESTON', name: `${tag} date stone` },
+          { floor: B.eaves, ceil: B.eaves, ceilTex: 'SKY', lowerTex: 'SCHOOLBR', upperTex: 'NONE' }] });
+      F.add(BAY0, BAY_OUT, BAY1, BAY_OUT + PLINTH, stoopProps(B));
+      F.add(BAY0, BAY_OUT + PLINTH, BAY1, BAY_OUT + SBASE, trim());
+    }
+    /* the steps, the path and the lawn in front of them */
+    const STEP0 = BAY_OUT + SBASE;
+    F.add(BAY0, STEP0, BAY1, STEP0 + TREAD_D, treadProps(B));
+    F.add(BAY0, STEP0 + TREAD_D, BAY1, FY, pathProps(B));
+    /* and chain link along the frontage, with the path through it,
+       because an American school has a fence and this one had a lawn
+       that ran into the road */
+    const SFENCE = 16;
+    const railedS = (u0, u1) => {
+      if (u1 - u0 <= 0) return;
+      const a = F.add(u0, SBASE, u1, FY - SFENCE, lawn(`${tag} yard`));
+      fence(a, F.add(u0, FY - SFENCE, u1, FY, lawn(`${tag} verge`)), 'CHAINLNK', 128);
+    };
+    railedS(-128, BAY0);
+    railedS(BAY1, W + 128);
+    F.add(-SBASE, 0, 0, SBASE, lawn(`${tag} yard`));
+    F.add(W, 0, W + SBASE, SBASE, lawn(`${tag} yard`));
+    /* and the back, which has the same courses and no door */
+    const BY = (y1 - y0) - FY - D;
+    K.add(-128, SBASE, W + 128, BY, lawn(`${tag} back yard`));
+    K.add(-SBASE, 0, 0, SBASE, lawn(`${tag} back yard`));
+    K.add(W, 0, W + SBASE, SBASE, lawn(`${tag} back yard`));
+    /* the two short sides, which have no windows and get the courses
+       anyway, because a building that stops being a building round the
+       corner is a film set */
+    for (const [Fs, X] of [[frame(sx0, sy0, 'W'), 0], [frame(sx0 + W, sy0, 'E'), 0]]) {
+      Fs.add(0, 0, D, PLINTH, plinthProps(B));
+      Fs.add(0, PLINTH, D, SBASE, trim());
+    }
+    F.add(-128, -D - SBASE, -SBASE, SBASE, lawn(`${tag} side lawn`));
+    F.add(W + SBASE, -D - SBASE, W + 128, SBASE, lawn(`${tag} side lawn`));
     /* trees along the front, the way a school planted in 1954 has them */
     for (let u = -40; u < W + 40; u += 352) if (Math.abs(u - (DOOR0 + DOOR1) / 2) > 200)
       plant(R() < 0.6 ? 'fir_medium' : 'fir_tall_2', ...F.at(u + (R() - 0.5) * 60, FY - 140 - R() * 120), 0.9 + R() * 0.3);
@@ -1221,10 +1389,21 @@ export function buildTown(rm, mb, opts = {}) {
      streets away, and is therefore built before the building is */
   function field(bx, by, tag) {
     const [x0, x1] = bx, [y0, y1] = by;
-    rm.add(x0, y0, x1, y1, open(`${tag} ball field`, {
+    const M = 160;                       // the verge between the fence and the sidewalk
+    const grass = n => open(n, {
       floorTex: 'GRASSVRG', light: 0.28, ambient: 0.28, fuel: TOWN_FUEL.yard,
-      wallTex: 'CHAINLNK', upperTex: 'CHAINLNK',
-    }));
+      wallTex: 'CHAINLNK', upperTex: 'CHAINLNK' });
+    /* the field, and a ring of four round it, so every side of it has a
+       line with another sector on the far side — which is where the
+       wire goes */
+    const inner = rm.add(x0 + M, y0 + M, x1 - M, y1 - M, grass(`${tag} ball field`));
+    for (const [a, b, c, d] of [[x0, y0, x1, y0 + M], [x0, y1 - M, x1, y1],
+                                [x0, y0 + M, x0 + M, y1 - M], [x1 - M, y0 + M, x1, y1 - M]])
+      fence(inner, rm.add(a, b, c, d, grass(`${tag} field lawn`)), 'CHAINLNK', 128);
+    /* the trees go on the lawn OUTSIDE the wire, which is where a ball
+       field's trees are: on the field they would be in right centre */
+    for (const [u, v] of [[M / 2, 0.22], [M / 2, 0.78], [x1 - x0 - M / 2, 0.22], [x1 - x0 - M / 2, 0.78]])
+      plant('fir_medium', x0 + u, y0 + (y1 - y0) * v, 0.9);
   }
 
   /* =================================================================
@@ -1242,6 +1421,17 @@ export function buildTown(rm, mb, opts = {}) {
     const [x0, x1] = bx, [y0, y1] = by;
     const NAVE_W = 640, BODY_D = 1144, TOWER = 256, NARTH_D = 160;
     const FYc = 512;
+    /* HOW A WALL MEETS THE GROUND, in three courses rather than one.
+       WATER is how far the stone water table stands out past the
+       plinth; the plinth is PLINTH; and the sixteen beyond that is the
+       strip still under the eaves. A buttress stands through all three
+       — BUTT_W across, BUTT_OUT proud of the wall, with its lower
+       stage weathered off at BUTT_SET and the upper stage carrying on
+       to the eaves eight proud, which is what a buttress IS: not a
+       block against a wall but a wall that gets thinner as it goes up
+       and sheds the rain at every change. */
+    const WATER = PLINTH, BASE = PLINTH + WATER;         // 8 and 16
+    const BUTT_W = 48, BUTT_OUT = BASE, BUTT_STEP = PLINTH, BUTT_SET = 216;
     const cx = x0 + (x1 - x0 - NAVE_W) / 2;
     const cyTop = y1 - FYc;                              // the tower's front face
     const F = frame(cx, cyTop, 'N');                     // u along +x, v north
@@ -1249,7 +1439,11 @@ export function buildTown(rm, mb, opts = {}) {
     /* the body, with a pitched roof — steeper than a house's, because a
        church's is */
     const B = building(tag, frame(cx, cyTop - TOWER, 'N'), NAVE_W, BODY_D, 3, dress,
-      { base: FOUND, rise: 192, jamb: 'WINREVEL', foundation: 'STONEFND', litChance: 0.5 });
+      { base: FOUND, rise: 192, jamb: 'WINREVEL', foundation: 'STONEFND', litChance: 0.5,
+        /* THE NAVE IS OPEN TO THE ROOF, so the roof storey has an inside
+           — see topOf. Boarding and rafters, and the shingle is the
+           other face of the same triangles. */
+        soffit: 'CHURCHCL' });
     /* THE RIDGE RUNS DOWN THE NAVE, not across it: the gable faces the
        street, which is what a church looks like from its own front */
     B.slope = gableSlope('y', cx + NAVE_W / 2, NAVE_W / 2, B.eaves, B.rise);
@@ -1259,17 +1453,56 @@ export function buildTown(rm, mb, opts = {}) {
     const Bz = FOUND;
     const holy = { light: 0.34, ambient: 0.34, ceilTex: 'PLASTER', wallTex: 'CHURCHIN', upperTex: 'CHURCHIN', lowerTex: 'CHURCHIN', fuel: TOWN_FUEL.nave };
 
-    /* ---- the tower ------------------------------------------------ */
+    /* ---- THE TOWER, IN STAGES -------------------------------------
+       A tower is not a box. It is a box that changes at every stage —
+       a water table it stands on, a belt course where the stair
+       landing is, a belfry with the slats you hear the bell through,
+       and a cornice the spire sits on rather than grows out of. All
+       four are BANDS, and a band is a piece of geometry standing proud
+       of the wall behind it; see THE TRIM in js/textures.js.
+
+       THE LOUVRE IS A SHUT STOREY. The wall is split into an outer
+       sixteen and an inner eight, the outer is open across the belfry
+       and the inner is not — and what the inner is NOT open with is a
+       storey whose ceiling is on its floor, which lineBands calls the
+       shut door: open nowhere and still the surface you are looking
+       at. Its lowerTex is the slats. Sixteen units of recess in front
+       of them is what makes the opening read as a hole in a wall
+       rather than as a picture of one. */
     const tv0 = -TOWER, tu0 = (NAVE_W - TOWER) / 2, tu1 = tu0 + TOWER;   // 192..448
-    solid(T, F, tu0, tv0, tu0 + ZONE, -ZONE);
-    solid(T, F, tu1 - ZONE, tv0, tu1, -ZONE);
-    /* the front: a doorway you walk through, with solid either side */
+    const BELF0 = T.top - 176, BELF1 = T.top - 48;        // 288..416
+    const bv0 = tv0 + 40, bv1 = -40;                      // and across the tower
+    const belfSkin = { ...recess, floorTex: 'SILLWOOD', ceilTex: 'WINREVEL', wallTex: 'WINREVEL',
+                       lowerTex: 'CHURCHWD', upperTex: 'CHURCHWD' };
+    const louvreBack = () => ({ floor: BELF1, ceil: BELF1, lowerTex: 'LOUVRE', upperTex: 'CHURCHWD',
+                                wallTex: 'LOUVRE', name: `${tag} belfry louvre` });
+    const belfSt = [{ floor: BELF0, ceil: BELF1, light: 0.46, ambient: 0.46, name: `${tag} belfry` }];
+    out.louvres = (out.louvres || 0) + 4;
+    /* the two sides: solid, belfry, solid */
+    for (const side of ['W', 'E']) {
+      const w0 = side === 'W' ? tu0 : tu1 - ZONE, w1 = w0 + ZONE;
+      const [o0, o1] = side === 'W' ? [w0, w0 + NICHE] : [w1 - NICHE, w1];
+      const [i0, i1] = side === 'W' ? [w0 + NICHE, w1] : [w0, w1 - NICHE];
+      solid(T, F, w0, tv0, w1, bv0);
+      solid(T, F, w0, bv1, w1, -ZONE);
+      F.add(o0, bv0, o1, bv1, col(T, belfSt, { ...belfSkin, light: 0.46, ambient: 0.46 }));
+      F.add(i0, bv0, i1, bv1, col(T, [louvreBack()], { ...belfSkin, light: 0.30, ambient: 0.30 }));
+    }
+    /* the front: a doorway you walk through with the belfry over it,
+       and solid either side. The doorway is split at the recess line
+       for the same reason the sides are — the slats go on the inner
+       half's shut storey. */
     solid(T, F, tu0, -ZONE, tu0 + 80, 0);
-    F.add(tu0 + 80, -ZONE, tu1 - 80, 0, wayCol(T, CLEAR, { ...holy, floorTex: 'FLOORBRD', light: 0.5, ambient: 0.5 }, `${tag} door`));
+    const doorSkin = { ...holy, floorTex: 'FLOORBRD', light: 0.5, ambient: 0.5, upperTex: T.wall, lowerTex: T.wall };
+    F.add(tu0 + 80, -NICHE, tu1 - 80, 0, col(T,
+      [{ floor: T.base, ceil: T.base + CLEAR, name: `${tag} door` },
+       { floor: BELF0, ceil: BELF1, light: 0.46, ambient: 0.46, name: `${tag} belfry` }], doorSkin));
+    F.add(tu0 + 80, -ZONE, tu1 - 80, -NICHE, col(T,
+      [{ floor: T.base, ceil: T.base + CLEAR, name: `${tag} door` }, louvreBack()], doorSkin));
     out.doors++;
     solid(T, F, tu1 - 80, -ZONE, tu1, 0);
     /* one tall room, all the way up to the bells */
-    F.add(tu0 + ZONE, tv0 + ZONE, tu1 - ZONE, -ZONE, col(T, [{ floor: Bz, ceil: T.top, name: `${tag} tower` }], { ...holy, floorTex: 'FLOORBRD' }));
+    F.add(tu0 + ZONE, tv0 + ZONE, tu1 - ZONE, -ZONE, col(T, [{ floor: Bz, ceil: T.top, ceilTex: 'PLASTER', name: `${tag} tower` }], { ...holy, floorTex: 'FLOORBRD' }));
     /* its back wall, through into the narthex */
     solid(T, F, tu0 + ZONE, tv0, tu0 + 80, tv0 + ZONE);
     solid(T, F, tu1 - 80, tv0, tu1 - ZONE, tv0 + ZONE);
@@ -1302,10 +1535,20 @@ export function buildTown(rm, mb, opts = {}) {
     const nv1 = bodyFront - ZONE;                        // -280, the inside of the front wall
     const nv0 = bodyFront - NARTH_D;                     // -416, the wall to the nave
     const narthex = col(B,
-      [{ floor: Bz, ceil: Bz + 2 * STOREY - WALL, name: `${tag} narthex` },
-       { floor: Bz + 2 * STOREY, ceil: Bz + 3 * STOREY, name: `${tag} choir loft`, floorTex: 'FLOORBRD' }],
+      [{ floor: Bz, ceil: Bz + 2 * STOREY - WALL, ceilTex: 'PLASTER', name: `${tag} narthex` },
+       { floor: Bz + 2 * STOREY, ceil: Bz + 3 * STOREY, ceilTex: 'NONE', name: `${tag} choir loft`, floorTex: 'FLOORBRD' }],
       { ...holy, floorTex: 'FLOORBRD' });
-    F.add(248, nv1 - 64, 616, nv1, narthex);
+    /* THE ORGAN stands on the loft against the front wall: the narthex
+       below it is untouched and the case is a SHUT band between the
+       loft's floor and a storey that starts ninety-six above it, which
+       is exactly as tall as the pipes are. */
+    F.add(248, nv1 - 64, 312, nv1, narthex);
+    F.add(312, nv1 - 64, 472, nv1, { ...holy, floorTex: 'FLOORBRD', storeys: [
+      { floor: Bz, ceil: Bz + 2 * STOREY - WALL, ceilTex: 'PLASTER', name: `${tag} narthex` },
+      { floor: Bz + 2 * STOREY + 96, ceil: Bz + 3 * STOREY, floorTex: 'PLASTER', lowerTex: 'ORGANPIP',
+        ceilTex: 'NONE', light: 0.44, ambient: 0.44, name: `${tag} organ` },
+      topOf(B)] });
+    F.add(472, nv1 - 64, 616, nv1, narthex);
     F.add(24, nv0 + WALL, 616, nv1 - 64, narthex);
     /* THE STAIR TURNS BACK ON ITSELF: seven treads east to west along
        the front wall, then seven back the other way beside them, and
@@ -1318,8 +1561,14 @@ export function buildTown(rm, mb, opts = {}) {
     for (let i = 0; i < 7; i++) tread(216 - 32 * i, nv1 - 32, Bz + 16 * i, `${tag} stair, first flight`);
     for (let j = 0; j < 7; j++) tread(24 + 32 * j, nv1 - 64, Bz + STOREY + 16 * j, `${tag} stair, second flight`);
     /* the way through to the nave, on both levels */
+    /* the way through to the nave, on both levels — and at the loft's
+       level it is a RAIL and not a way: the upper opening starts a rail
+       above the loft's floor, so the band under it is the balusters you
+       lean on and cannot walk through */
     F.add(224, nv0, 416, nv0 + WALL, col(B,
-      [{ floor: Bz, ceil: Bz + STOREY }, { floor: Bz + 2 * STOREY, ceil: Bz + 3 * STOREY }],
+      [{ floor: Bz, ceil: Bz + STOREY, ceilTex: 'PLASTER' },
+       { floor: Bz + 2 * STOREY + 32, ceil: Bz + 3 * STOREY, lowerTex: 'ALTARRL', ceilTex: 'NONE',
+         name: `${tag} loft rail` }],
       { ...holy, floorTex: 'FLOORBRD', name: `${tag} nave door` }));
 
     /* ---- the nave --------------------------------------------------- */
@@ -1329,7 +1578,14 @@ export function buildTown(rm, mb, opts = {}) {
        walls, which is the one way this engine puts two textures on one
        wall: the ledge's face is the panelling and the wall above it is
        plaster. The windows open onto it. */
-    const ledgeProps = { ...holy, floor: Bz + 40, floorTex: 'PEWSEAT', lowerTex: 'WAINSCOT', name: `${tag} wainscot` };
+    const TOP = Bz + 3 * STOREY;                         // the eaves, which is the nave's ceiling line
+    /* EVERY CEILING IN THE NAVE IS 'NONE', which is not a missing
+       ceiling but the point: with nothing drawn at the eaves you are
+       looking straight up into the roof storey above, whose sloped
+       ceiling wears the boarding (see soffit in topOf) and whose other
+       face is the shingle on the street. A church open to its rafters,
+       out of one texture name. */
+    const ledgeProps = { ...holy, floor: Bz + 40, floorTex: 'PEWSEAT', lowerTex: 'WAINSCOT', ceilTex: 'NONE', name: `${tag} wainscot` };
     F.add(ZONE, av0, ZONE + 8, av1, col(B, [{ floor: Bz + 40, ceil: Bz + 3 * STOREY }], ledgeProps));
     F.add(NAVE_W - ZONE - 8, av0, NAVE_W - ZONE, av1, col(B, [{ floor: Bz + 40, ceil: Bz + 3 * STOREY }], ledgeProps));
     /* the long walls: five lancets a side, solid between them */
@@ -1350,63 +1606,231 @@ export function buildTown(rm, mb, opts = {}) {
       }
       solid(B, F, side ? NAVE_W - ZONE : 0, v, side ? NAVE_W : ZONE, nv1);
     }
-    /* THE CHANCEL: a step up, red carpet, the altar in the middle of it
-       and the reredos let into the wall behind */
+    /* ---- THE CHANCEL, IN BANDS --------------------------------------
+       A step up, red carpet, the altar in the middle of it, the reredos
+       let into the wall behind, a pulpit and a lectern at the front
+       corners, and across the whole of it the communion rail with a
+       gate in the middle — which is masked, so what you see between the
+       balusters is the chancel and not a painted picture of one. */
     const cv0 = av0, cv1 = av0 + 192;
-    const chancel = col(B, [{ floor: Bz + 16, ceil: Bz + 3 * STOREY }], { ...holy, floorTex: 'CHANCEL', lowerTex: 'STEPFACE', name: `${tag} chancel` });
-    F.add(32, cv0, 272, cv1, chancel);
-    F.add(368, cv0, 608, cv1, chancel);
-    F.add(272, cv0, 368, cv0 + 52, chancel);
-    F.add(272, cv0 + 92, 368, cv1, chancel);
-    F.add(272, cv0 + 52, 368, cv0 + 92, col(B, [{ floor: Bz + 56, ceil: Bz + 3 * STOREY }],
+    const cvR = cv1 - 8, cvP = cvR - 64;                 // the rail, and where the pulpit starts
+    const chan = (n, extra = {}) => col(B, [{ floor: Bz + 16, ceil: TOP, ceilTex: 'NONE' }],
+      { ...holy, floorTex: 'CHANCEL', lowerTex: 'STEPFACE', name: `${tag} ${n}`, ...extra });
+    const stand = (n, up, low, lit = 0.42) => col(B, [{ floor: Bz + 16 + up, ceil: TOP, ceilTex: 'NONE' }],
+      { ...holy, floorTex: 'PEWSEAT', lowerTex: low, light: lit, ambient: lit, name: `${tag} ${n}` });
+    F.add(32, cv0, 272, cv0 + 52, chan('chancel'));
+    F.add(272, cv0, 368, cv0 + 52, chan('chancel'));
+    F.add(368, cv0, 608, cv0 + 52, chan('chancel'));
+    F.add(32, cv0 + 52, 272, cv0 + 92, chan('chancel'));
+    F.add(272, cv0 + 52, 368, cv0 + 92, col(B, [{ floor: Bz + 56, ceil: TOP, ceilTex: 'NONE' }],
       { ...holy, floorTex: 'ALTARTOP', lowerTex: 'ALTARFRT', light: 0.5, ambient: 0.5, name: `${tag} altar` }));
+    F.add(368, cv0 + 52, 608, cv0 + 92, chan('chancel'));
+    F.add(32, cv0 + 92, 608, cvP, chan('chancel'));
+    F.add(32, cvP, 96, cvR, chan('chancel'));
+    F.add(96, cvP, 176, cvR, stand('pulpit', 48, 'PULPITFR', 0.48));
+    F.add(176, cvP, 464, cvR, chan('chancel'));
+    F.add(464, cvP, 544, cvR, stand('lectern', 32, 'PEWFRONT'));
+    F.add(544, cvP, 608, cvR, chan('chancel'));
+    F.add(32, cvR, 272, cv1, stand('communion rail', 32, 'ALTARRL'));
+    F.add(272, cvR, 368, cv1, chan('chancel gate'));
+    F.add(368, cvR, 608, cv1, stand('communion rail', 32, 'ALTARRL'));
     solid(B, F, 0, av0 - ZONE, 256, av0);
-    F.add(256, av0 - NICHE, 384, av0, col(B, [{ floor: Bz + 16, ceil: Bz + 144, wallTex: 'REREDOS', light: 0.5, ambient: 0.5 }],
+    F.add(256, av0 - NICHE, 384, av0, col(B, [{ floor: Bz + 16, ceil: Bz + 144, wallTex: 'REREDOS', light: 0.5, ambient: 0.5, ceilTex: 'WINREVEL' }],
       { ...holy, floorTex: 'CHANCEL', name: `${tag} reredos` }));
     solid(B, F, 384, av0 - ZONE, NAVE_W, av0);
-    /* THE PEWS: eight rows a side of a seat you can climb on and a back
-       you cannot, a centre aisle wide enough for a procession and side
-       aisles wide enough for one. */
-    const aisle = n => col(B, [{ floor: Bz, ceil: Bz + 3 * STOREY }], { ...holy, floorTex: 'FLOORBRD', name: `${tag} ${n}` });
-    F.add(32, cv1, 80, av1, aisle('side aisle'));
-    F.add(256, cv1, 384, av1, aisle('centre aisle'));
-    F.add(560, cv1, 608, av1, aisle('side aisle'));
-    for (const [bu0, bu1] of [[80, 256], [384, 560]]) {
-      F.add(bu0, cv1, bu1, cv1 + 24, aisle('nave floor'));
-      let v = cv1 + 24;
-      for (let r = 0; r < 8; r++) {
-        F.add(bu0, v, bu1, v + 24, col(B, [{ floor: Bz + 16, ceil: Bz + 3 * STOREY }], { ...holy, floorTex: 'PEWSEAT', lowerTex: 'PEWFRONT', name: `${tag} pew` }));
-        F.add(bu0, v + 24, bu1, v + 32, col(B, [{ floor: Bz + 44, ceil: Bz + 3 * STOREY }], { ...holy, floorTex: 'PEWSEAT', lowerTex: 'PEWBACK', name: `${tag} pew back` }));
-        F.add(bu0, v + 32, bu1, v + 80, aisle('nave floor'));
-        v += 80;
+
+    /* ---- THE NAVE, BAND BY BAND -------------------------------------
+       Five strips down its length — aisle, pews, the centre aisle,
+       pews, aisle — and the nave laid as a PARTITION ACROSS them rather
+       than as five strips each tiled on its own. Which is what lets
+       anything that crosses the nave be one thing: the arch into the
+       chancel is one band, and so is every tie beam over your head.
+       Five bands kept in step by hand is five chances to be one unit
+       out, and a church with a beam that stops over the third pew is
+       worse than a church with no beams.
+
+       THE ARCH IS FIVE RECTANGLES. This engine has no curve, and a
+       semicircle drawn in five steps from a pier at each side reads as
+       an arch from the door, which is where you look at it from. The
+       plaster over it is the band between each step's ceiling and the
+       roof storey above.
+
+       THE TIE BEAM IS A COLUMN WITH A GAP IN IT: open under the beam,
+       shut for the twenty-four the beam is deep, open over it and on up
+       into the rafters. You walk under it; you see it from both sides
+       and from underneath; and it is the same disagreement rule the
+       whole town is drawn with. */
+    const NAVE_U = [32, 80, 256, 384, 560, 608];
+    const bandName = i => i === 2 ? 'centre aisle' : (i === 1 || i === 3) ? 'nave floor' : 'side aisle';
+    const aisle = n => col(B, [{ floor: Bz, ceil: TOP, ceilTex: 'NONE' }], { ...holy, floorTex: 'FLOORBRD', name: `${tag} ${n}` });
+    let nv = cv1;
+    const floorBand = d => { if (d <= 0) return; for (let i = 0; i + 1 < NAVE_U.length; i++) F.add(NAVE_U[i], nv, NAVE_U[i + 1], nv + d, aisle(bandName(i))); nv += d; };
+    const pewBand = () => {
+      for (let i = 0; i + 1 < NAVE_U.length; i++) {
+        const u0 = NAVE_U[i], u1 = NAVE_U[i + 1];
+        if (i !== 1 && i !== 3) { F.add(u0, nv, u1, nv + 32, aisle(bandName(i))); continue; }
+        F.add(u0, nv, u1, nv + 24, col(B, [{ floor: Bz + 16, ceil: TOP, ceilTex: 'NONE' }], { ...holy, floorTex: 'PEWSEAT', lowerTex: 'PEWFRONT', name: `${tag} pew` }));
+        F.add(u0, nv + 24, u1, nv + 32, col(B, [{ floor: Bz + 44, ceil: TOP, ceilTex: 'NONE' }], { ...holy, floorTex: 'PEWSEAT', lowerTex: 'PEWBACK', name: `${tag} pew back` }));
       }
-      F.add(bu0, v, bu1, av1, aisle('nave floor'));
-    }
-    for (const v of [-560, -720, -880, -1040]) fitting(...F.at(320, v));
+      nv += 32;
+    };
+    const BEAM_D = 24, BEAM_Z = Bz + 248;                // the beam's soffit, eight feet up
+    const beamBand = () => {
+      F.add(32, nv, 608, nv + BEAM_D, col(B, [
+        { floor: Bz, ceil: BEAM_Z, ceilTex: 'TIEBEAM' },
+        { floor: BEAM_Z + BEAM_D, ceil: TOP, floorTex: 'TIEBEAM', lowerTex: 'TIEBEAM', ceilTex: 'NONE' },
+      ], { ...holy, floorTex: 'FLOORBRD', name: `${tag} tie beam` }));
+      nv += BEAM_D;
+    };
+    /* the arch: a pier each side and five steps of head between them */
+    const pier = n => ({ storeys: [{ ...topOf(B), lowerTex: 'CHURCHIN', wallTex: 'CHURCHIN', upperTex: 'CHURCHIN', name: `${tag} ${n}` }] });
+    const ARCH = [[32, 96, 0], [96, 160, 232], [160, 224, 264], [224, 416, 288], [416, 480, 264], [480, 544, 232], [544, 608, 0]];
+    for (const [u0, u1, h] of ARCH)
+      F.add(u0, nv, u1, nv + 16, h ? col(B, [{ floor: Bz, ceil: Bz + h, ceilTex: 'PLASTER' }], { ...holy, floorTex: 'FLOORBRD', name: `${tag} chancel arch` })
+                                   : pier('chancel arch pier'));
+    nv += 16;
+    floorBand(24);
+    for (let r = 0; r < 8; r++) { pewBand(); floorBand(48); if (r === 2 || r === 5) beamBand(); }
+    floorBand(av1 - nv);
+    /* the lights: four down the nave, two over the chancel, one in the
+       narthex, because a church at two in the morning is lit by
+       whatever somebody left on */
+    for (const v of [-520, -680, -840, -1000, -1140]) fitting(...F.at(320, v));
+    for (const u of [176, 464]) fitting(...F.at(u, cv0 + 120));
     fitting(...F.at(432, nv1 - 32));
 
-    /* ---- the ground round it ---------------------------------------- */
-    const stoop = { u0: tu0 + 80, u1: tu1 - 80 };
-    approach(T, F, [tu0, tu1], stoop, [tu0 - PLINTH, tu1 + PLINTH], FYc, { path: true, ext: [PLINTH, PLINTH] });
+    /* ---- THE GROUND ROUND IT, IN RINGS -------------------------------
+       Three of them outside the wall and each one a step down: the
+       PLINTH the wall stands on, the WATER TABLE outside that, and
+       outside that the sixteen of lawn still under the eaves. A ring
+       is three rects — a strip down each side and one across the back
+       that takes both corners — so they tile with nothing left over
+       and nothing laid twice.
+
+       AND THE EAVES ARE ON THE LONG SIDES, because the ridge runs down
+       the nave: every ring down a side is wrapped in underEaves and so
+       carries the roof's own edge over it, and the two gable ends get
+       the same rings with no lip. A church with no eaves is a shed, and
+       that is what this was. */
+    const bw0 = x0 - cx, bw1 = x1 - cx;                  // the block, in u
+    const backV = bodyFront - BODY_D;                    // the outside of the back wall
+    const back0 = y0 - cyTop;
+    /* THE RAILING along the frontage, with the gate where the path is:
+       the churchyard is laid short of the sidewalk by a verge, and the
+       iron goes in the line between the two. Masked, so what you see
+       between the standards is the graveyard. */
+    const RAILV = 16;
+    const railed = (u0, u1, v0) => {
+      if (u1 - u0 <= 0) return;
+      const a = F.add(u0, v0, u1, FYc - RAILV, lawn(`${tag} churchyard`));
+      fence(a, F.add(u0, FYc - RAILV, u1, FYc, lawn(`${tag} churchyard verge`)), 'RAILING', 48);
+    };
+    const waterProps = () => open(`${tag} water table`, {
+      floor: PLINTH * 2, ceil: B.top, floorTex: 'CONCRETE', light: 0.32, ambient: 0.32,
+      lowerTex: 'WATERTBL', upperTex: B.gable, wallTex: B.wall, fuel: 0 });
+    /* WHERE A BUTTRESS GOES: the middle of every gap between two
+       lancets, and one on each back corner. Two stages — sixteen proud
+       to the set-off and eight proud from there to the eaves — because
+       a buttress is a wall that gets thinner as it goes up and sheds
+       the rain at every change, and one block of one thickness reads as
+       a pilaster somebody forgot to finish. */
+    const buttV = [[backV, backV + BUTT_W]];
+    for (let i = 0; i + 1 < naveWin.length; i++)
+      buttV.push([(naveWin[i] + WIN_W + naveWin[i + 1] - BUTT_W) / 2, (naveWin[i] + WIN_W + naveWin[i + 1] + BUTT_W) / 2]);
+    buttV.push([naveWin[naveWin.length - 1] + WIN_W + 40, naveWin[naveWin.length - 1] + WIN_W + 40 + BUTT_W]);
+    /* upperTex NONE because a buttress stops at the eaves: the band
+       between its shut top and the roof lip beside it is not a surface,
+       it is the roof overhanging, and a texture there is a board
+       standing in the air above the gutter. */
+    const buttTop = { ...topOf(B), lowerTex: 'CORNRBRD', wallTex: 'CORNRBRD', upperTex: 'NONE',
+                      name: `${tag} buttress` };
+    const buttSet = () => underEaves(B, open(`${tag} buttress set-off`, {
+      floor: BUTT_SET, ceil: B.top, floorTex: 'WATERTBL', light: 0.34, ambient: 0.34,
+      lowerTex: 'CORNRBRD', upperTex: 'CORNRBRD', wallTex: 'CORNRBRD', fuel: 0 }));
+    /* a strip [o0,o1] out from one side's wall face, from v0 to v1 */
+    const outStrip = (side, o0, o1, v0, v1, props) => (v1 - v0 > 0) && (side
+      ? F.add(NAVE_W + o0, v0, NAVE_W + o1, v1, props)
+      : F.add(-o1, v0, -o0, v1, props));
+    for (const side of [0, 1]) {
+      let v = backV;
+      const plain = (v0, v1) => {
+        outStrip(side, 0, PLINTH, v0, v1, underEaves(B, plinthProps(B)));
+        outStrip(side, PLINTH, BASE, v0, v1, underEaves(B, waterProps()));
+      };
+      for (const [b0, b1] of buttV) {
+        plain(v, b0);
+        outStrip(side, 0, BUTT_STEP, b0, b1, { storeys: [buttTop] });
+        outStrip(side, BUTT_STEP, BUTT_OUT, b0, b1, buttSet());
+        v = b1;
+      }
+      plain(v, bodyFront);
+      /* each ring reaches one ring further back than the one inside it,
+         so the back strip below takes the corner square and nothing is
+         laid twice */
+      outStrip(side, PLINTH, BASE, backV - PLINTH, backV, waterProps());
+      outStrip(side, BASE, EAVE, backV - BASE, bodyFront, underEaves(B, lawn(`${tag} churchyard`)));
+    }
+    /* the back, which is a gable end and takes both corners with it */
+    F.add(-PLINTH, backV - PLINTH, NAVE_W + PLINTH, backV, plinthProps(B));
+    F.add(-BASE, backV - BASE, NAVE_W + BASE, backV - PLINTH, waterProps());
+    F.add(-EAVE, backV - EAVE, NAVE_W + EAVE, backV - BASE, lawn(`${tag} churchyard`));
+    /* the front, either side of the tower, which is the other gable end */
+    F.add(-EAVE, bodyFront, tu0 - BASE, bodyFront + PLINTH, plinthProps(B));
+    F.add(tu1 + BASE, bodyFront, NAVE_W + EAVE, bodyFront + PLINTH, plinthProps(B));
+    /* ---- the tower's own ground, and the cornice the spire sits on ---
+       The cornice is a strip sixteen out from each tower face that is
+       OPEN below the bed mould and SHUT for the twenty-four above it:
+       one band, hanging four hundred units up, which is the only way
+       this engine puts anything on a wall that is not on the ground. */
+    const cornCol = (name) => ({ ...open(name, { floor: FOUND, floorTex: 'CONCRETE', light: 0.34, ambient: 0.34,
+        lowerTex: 'STONEFND', upperTex: B.gable, wallTex: T.wall, fuel: 0 }),
+      /* OPEN TO THE BED MOULD AND SHUT ABOVE IT. The cornice is the
+         band between the two, and the top storey is SHUT — ceiling on
+         floor — rather than open to the sky, because an open one is
+         open where the nave's roof beside it is not, and that
+         disagreement is a sliver of board standing in the air from the
+         roof's edge to the cloud base. It was two of them, either side
+         of the spire, and they were one pixel wide and took an
+         afternoon. ceilTex SKY so the band above the cornice is two
+         heights of nothing and draws nothing; upperTex NONE so the
+         sliver against the roof draws nothing either. */
+      storeys: [{ floor: FOUND, ceil: T.top - 24, ceilTex: 'SKY' },
+                { floor: T.top, ceil: T.top, ceilTex: 'SKY', lowerTex: 'CORNICE', upperTex: 'NONE' }] });
+    /* LAID BY HAND rather than by approach(), because approach lays one
+       plinth and walks away and a tower wants two courses: eight proud
+       for the plinth and sixteen for the cornice, and the cornice's
+       strip has to reach all the way round the front for the band to
+       close at the corners. */
+    const stoop = { u0: tu0 + 80 - STOOP_WING, u1: tu1 - 80 + STOOP_WING };
     F.add(tu0 - PLINTH, tv0, tu0, 0, plinthProps(T));
     F.add(tu1, tv0, tu1 + PLINTH, 0, plinthProps(T));
-    /* the body's front plinths either side of the tower, and the lawn
-       in front of them, up to the sidewalk */
-    F.add(-PLINTH, bodyFront, tu0 - PLINTH, bodyFront + PLINTH, plinthProps(B));
-    F.add(tu1 + PLINTH, bodyFront, NAVE_W + PLINTH, bodyFront + PLINTH, plinthProps(B));
-    const bw0 = x0 - cx, bw1 = x1 - cx;                  // the block, in u
-    F.add(bw0, bodyFront + PLINTH, tu0 - PLINTH, FYc, lawn(`${tag} churchyard`));
-    F.add(tu1 + PLINTH, bodyFront + PLINTH, bw1, FYc, lawn(`${tag} churchyard`));
-    /* down the sides and round the back */
-    F.add(-PLINTH, bodyFront - BODY_D, 0, bodyFront, plinthProps(B));
-    F.add(NAVE_W, bodyFront - BODY_D, NAVE_W + PLINTH, bodyFront, plinthProps(B));
-    F.add(-PLINTH, bodyFront - BODY_D - PLINTH, NAVE_W + PLINTH, bodyFront - BODY_D, plinthProps(B));
-    F.add(bw0, bodyFront - BODY_D - PLINTH, -PLINTH, bodyFront + PLINTH, lawn(`${tag} churchyard`));
-    F.add(NAVE_W + PLINTH, bodyFront - BODY_D - PLINTH, bw1, bodyFront + PLINTH, lawn(`${tag} churchyard`));
-    const back0 = y0 - cyTop;
-    F.add(bw0, back0, bw1, bodyFront - BODY_D - PLINTH, lawn(`${tag} graveyard`));
+    F.add(tu0 - PLINTH, 0, tu1 + PLINTH, PLINTH, plinthProps(T));
+    F.add(tu0 - BASE, tv0, tu0 - PLINTH, PLINTH, cornCol(`${tag} tower cornice`));
+    F.add(tu1 + PLINTH, tv0, tu1 + BASE, PLINTH, cornCol(`${tag} tower cornice`));
+    F.add(tu0 - BASE, PLINTH, tu1 + BASE, BASE, cornCol(`${tag} tower cornice`));
+    F.add(stoop.u0, BASE, stoop.u1, BASE + STOOP_D, stoopProps(T));
+    F.add(stoop.u0, BASE + STOOP_D, stoop.u1, BASE + STOOP_D + TREAD_D, treadProps(T));
+    F.add(stoop.u0, BASE + STOOP_D + TREAD_D, stoop.u1, FYc, pathProps(T));
+    /* THE CHEEK WALLS at the steps, which is where a church puts its
+       hands on your shoulders: low stone the height of two risers,
+       standing the length of the stoop and the step and no further. */
+    const CHEEK = 16, cheekV = BASE + STOOP_D + TREAD_D;
+    for (const [cu0, cu1] of [[stoop.u0 - CHEEK, stoop.u0], [stoop.u1, stoop.u1 + CHEEK]]) {
+      F.add(cu0, BASE, cu1, cheekV, open(`${tag} cheek wall`, {
+        floor: FOUND + 24, ceil: SKY, floorTex: 'WATERTBL', light: 0.40, ambient: 0.40,
+        lowerTex: 'STONEFND', fuel: 0 }));
+      railed(cu0, cu1, cheekV);
+    }
+    railed(tu0 - BASE, stoop.u0 - CHEEK, BASE);
+    railed(stoop.u1 + CHEEK, tu1 + BASE, BASE);
+    /* the lawn, from the rings out to the block */
+    railed(bw0, tu0 - BASE, bodyFront + PLINTH);
+    railed(tu1 + BASE, bw1, bodyFront + PLINTH);
+    F.add(bw0, backV - EAVE, -EAVE, bodyFront + PLINTH, lawn(`${tag} churchyard`));
+    F.add(NAVE_W + EAVE, backV - EAVE, bw1, bodyFront + PLINTH, lawn(`${tag} churchyard`));
+    F.add(bw0, back0, bw1, backV - EAVE, lawn(`${tag} graveyard`));
     /* the graveyard behind, in rows, and the trees a churchyard has */
-    for (let v = bodyFront - BODY_D - 200; v > back0 + 160; v -= 224)
+    for (let v = backV - 200; v > back0 + 160; v -= 224)
       for (let u = bw0 + 224; u < bw1 - 160; u += 176) if (R() < 0.8) stone(...F.at(u + (R() - 0.5) * 24, v + (R() - 0.5) * 24));
     for (const [u, v] of [[-500, -700], [-700, -1250], [1100, -600], [1300, -1300], [-300, 200], [1000, 300], [-900, -2000], [1400, -2100]])
       plant(R() < 0.5 ? 'fir_tall_1' : 'fir_tall_2', ...F.at(u + (R() - 0.5) * 120, v + (R() - 0.5) * 120), 0.95 + R() * 0.3);
@@ -1415,7 +1839,11 @@ export function buildTown(rm, mb, opts = {}) {
     /* the spire: a roof with a tall rise and a small footprint, drawn
        rather than built — a pyramid is four planes and a gable is two */
     const [sx, sy] = F.at(tu0, tv0);
-    out.roofPending.push({ x0: sx - 8, y0: sy - 8, x1: sx + TOWER + 8, y1: sy + TOWER + 8,
+    /* THE SPIRE SPRINGS OFF THE CORNICE and not off the wall, so its
+       footprint is the tower plus the sixteen the cornice stands out —
+       which is what stops it reading as the tower carrying on to a
+       point. */
+    out.roofPending.push({ x0: sx - BASE, y0: sy - BASE, x1: sx + TOWER + BASE, y1: sy + TOWER + BASE,
       base: T.top, rise: 320, tex: 'SHINGLE', gableTex: 'CHURCHWD', along: 'y', light: 0.38, sky: 1 });
     const [chx, chy] = F.at(NAVE_W / 2, (av0 + av1) / 2);
     out.church = { x: chx, y: chy };

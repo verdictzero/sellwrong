@@ -67,6 +67,24 @@ WHERE IT DEPARTS FROM THE PLAN, and why:
     through; the church has pews, a wainscot, an altar with a cross
     behind it and coloured glass you can see through. The two buildings
     with an inside got the inside.
+  AND THEN THEY GOT AN OUTSIDE, at the user's request. Both of them
+    were slabs of wall with holes in them, and what they have now is
+    all one idea: a BAND, which is a strip of wall a projecting piece
+    of geometry makes the disagreement rule draw. The school gets a
+    stone water table, a string course, a cornice and twenty-four
+    pilasters — the first three out of one rectangle whose column is
+    open, shut, open, shut, shut — plus an entrance bay with real
+    doors, a fitted-out gym and a balustrade on its stairs. The church
+    gets a water table, twelve buttresses in two stages, eaves down
+    both long walls, a louvred belfry and a cornice under the spire,
+    and inside it a nave OPEN TO THE ROOF with tie beams, a chancel
+    arch, a communion rail, a pulpit and an organ on the loft. See
+    A BUILDING IS WHAT IT DOES AT ITS EDGES in README.txt.
+  THERE ARE FENCES, which the plan did not ask for and a town without
+    them looks wrong: chain link round the ball field and along the
+    school's frontage, wrought iron round the churchyard with the gate
+    where the path is. A fence is a masked texture hung in the hole
+    between two patches of open ground, not a sector.
   THERE ARE LAMPS after all — one every 1536 along a sidewalk,
     staggered, one on every corner, each over a pool of light that is a
     brighter sector of pavement — and trees in the yards, shrubs along
@@ -737,7 +755,7 @@ order by anybody.
 THE TEST
 --------
 
-1594 checks pass today in about three minutes, with no install and no
+1649 checks pass today in about three minutes, with no install and no
 browser, and every one of them is there because something reached a
 screenshot. The column breaks assumptions that nothing currently
 asserts, so these come first, in phase 1, before the code they check:

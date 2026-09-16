@@ -606,14 +606,27 @@ function addLine(set, level, l, bank, pick = null) {
     /* WHERE A SLOPE IS IN PLAY the band is not an interval, it is an
        interval AT A POINT. Asked of the same two sectors the band was
        worked out from, so the flat case gives back the same numbers. */
-    if (edgeSlope(bd.e0) || edgeSlope(bd.e1)) {
-      emitWall(dst, l, bank, bd.tex, (x, y) => bandEdges(level, bd, x, y), facing, peg,
-               lit.light + l.contrast, skyOf(lit), ch,
-               [edgeSlope(bd.e0), edgeSlope(bd.e1)]);
-    } else {
-      addQuad(dst, l, bank, bd.tex, bd.z0, bd.z1, facing, peg,
-              lit.light + l.contrast, skyOf(lit), ch);
-    }
+    const emit = (face, light) => {
+      if (edgeSlope(bd.e0) || edgeSlope(bd.e1))
+        emitWall(dst, l, bank, bd.tex, (x, y) => bandEdges(level, bd, x, y), face, peg,
+                 light + l.contrast, skyOf(lit), ch, [edgeSlope(bd.e0), edgeSlope(bd.e1)]);
+      else
+        addQuad(dst, l, bank, bd.tex, bd.z0, bd.z1, face, peg,
+                light + l.contrast, skyOf(lit), ch);
+    };
+    emit(facing, lit.light);
+    /* AND A ROOF SPACE YOU CAN SEE THE INSIDE OF GETS THE INSIDE OF ITS
+       GABLE TOO. The rule above winds the gable to face the street
+       because the other side of it is an attic and nobody is in an
+       attic. A church is the one building where that is false: its nave
+       is open to the rafters, so the roof storey has a ceiling you are
+       looking at from a pew (see soffit in js/maps/town.js), and the
+       far end of it was a triangle of sky — the gable drawn once,
+       facing away from the only person who could see it. Drawn the
+       other way as well when the roof space is one with a ceiling, and
+       lit by that ceiling rather than by the sky outside. It costs the
+       houses nothing: their attics say ceilTex NONE and never ask. */
+    if (gable && bd.open.ceilTex && bd.open.ceilTex !== 'NONE') emit(!facing, bd.open.light);
   }
 
   /* A middle texture on a two-sided line is the thing IN the hole: a

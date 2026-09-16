@@ -129,7 +129,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         1594 checks, no install and no browser
+  the smoke test         1649 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -3540,6 +3540,92 @@ see in through, and TWO STAIRS running along the corridor and open to
 it, which the first cut did not have: nobody could get upstairs, and the
 fire could only get there through the ceiling.
 
+
+A BUILDING IS WHAT IT DOES AT ITS EDGES
+---------------------------------------
+
+Both of them were, at the user's request, made immensely more detailed —
+and what that turned out to mean was not more rooms. It was that a wall
+which runs from the ground to the eaves with nothing on it is a slab,
+and the town was full of slabs. Everything below is a BAND: a strip of
+wall a few units tall that a piece of geometry standing proud of the
+wall behind it makes the disagreement rule draw. One projecting
+rectangle is one band; a rectangle with a gap in its column is two or
+three. See THE TRIM in js/textures.js for the paint and the church and
+the school in js/maps/town.js for where each one goes.
+
+THE SCHOOL gets four things it did not have, and they are all the same
+thing. A stone WATER TABLE it stands on. A STRING COURSE at first-floor
+level. A CORNICE where the brick stops, so the building has a top
+instead of just ending. And a PILASTER at every party wall between two
+classrooms, every other bay of the gym and both corners — twenty-four of
+them, which is what breaks two hundred and eighty feet of brick into
+bays you can count. The first three come out of ONE rectangle: a strip
+sixteen past the wall whose column is open, shut for sixteen, open,
+shut for twenty-four, and shut, which is three bands for the price of
+one and the reason the elevation is walked as segments.
+
+AND THE FRONT DOOR IS A DOOR. It was a hole in a flat wall, and from
+the lawn it read as a black wedge — which is the thing the user drew a
+ring round. It is an ENTRANCE BAY now: two brick piers standing
+forty-eight in front of the rest, a pair of steel doors between them
+with the middle open and a leaf each side, a date stone over them with
+no name on it ever, and the cornice carried round the front.
+
+THE GYM was a black box a hundred and twenty feet long. It has a maple
+floor with a court painted on it, padding round the foot of the walls,
+three roof trusses across it, bleachers down the far side in three tiers
+you can climb, and a stage at the east end. THE STAIRS have a
+balustrade on every tread but the one you get on by and the one you get
+off by, which is the difference between a flight of stairs and a stack
+of floating slabs.
+
+THE CHURCH gets the same treatment and one thing the school cannot have.
+A water table, a BUTTRESS in the middle of every gap between two
+lancets and one on each back corner — two stages, sixteen proud to the
+set-off and eight proud from there to the eaves, because a buttress is
+a wall that gets thinner as it goes up and sheds the rain at every
+change. EAVES down both long walls, which it had none of: the roof met
+the wall with no edge at all and the whole thing read as a shed. A
+tower in stages with LOUVRED BELFRY openings on three faces and a
+cornice the spire springs off rather than grows out of.
+
+AND THE NAVE IS OPEN TO THE ROOF, which is the one thing here that is
+not a band. The roof storey has always been an attic — floor NONE,
+ceiling NONE, nobody in it — and a church is the one building where
+that is false. Name a SOFFIT and the roof storey gets a ceiling: the
+boarding and rafters you are looking at from a pew, whose other face is
+the shingle on the street, drawn from the same triangles wound the other
+way. The nave's own ceilings then say NONE and you are looking straight
+up into it. Tie beams cross it at two places, the chancel arch is five
+rectangles and two piers, and there is a communion rail with a gate, a
+pulpit, a lectern, an organ on the choir loft and a rail along its edge.
+
+WHICH NEEDED ONE ENGINE FIX. A gable is wound to face the street,
+because the other side of it is an attic and nobody is in an attic. With
+the nave open to the rafters that stopped being true, and the far end of
+the roof was a triangle of sky — the gable drawn once, facing away from
+the only person who could see it. It is drawn the other way as well now
+when the roof space is one with a ceiling, and lit by that ceiling. It
+costs the houses nothing: their attics say NONE and never ask.
+
+AND THERE ARE FENCES, at the user's request. Chain link round the ball
+field, wrought iron along the churchyard with the gate where the path
+is, and chain link along the school's frontage. A fence is not a sector:
+it is a masked texture hung in the hole between two patches of ground
+that are both open to the sky, which is the same thing the mall's
+service yard has had since there was a mall, and it is why a fence is
+something you see the ball field THROUGH.
+
+WHICH ALSO SETTLED WHERE MASKED BELONGS. Three of the new textures went
+in masked — a truss, a handrail, a communion rail — and what you saw
+through all three of them was the SKY. A masked texture only works
+where there is something behind it, and a BAND has nothing behind it by
+construction: a band is the one quad drawn where two columns differ,
+and the differing is exactly the part of the world with no geometry in
+it. Masked belongs on a MIDDLE texture, in the hole between two open
+sectors. Everything that is a band paints its own dark.
+
 THE STREET has lamps — one every 1536 along each sidewalk, staggered so
 the sides alternate, and one on every corner — each a fullbright sprite
 standing on a pool of light that is a brighter sector of pavement, which
@@ -4231,7 +4317,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-1594 checks. Every one of them earns its place by having caught something
+1649 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

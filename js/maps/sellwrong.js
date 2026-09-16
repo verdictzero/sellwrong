@@ -1116,6 +1116,7 @@ export function buildSellWrong(opts = {}) {
      wall are two-sided too and get the texture as well, harmlessly: a
      middle texture is drawn only in a hole, and a jamb has none. Done
      here because the lines do not exist until rm.build() has run. */
+  let townFenceLines = 0;
   if (town) {
     for (const g of town.glass) {
       const skip = new Set(mb.linesBetween(g.inner.sector, g.outer.sector));
@@ -1125,6 +1126,24 @@ export function buildSellWrong(opts = {}) {
         l.blocking = true;          // glass: you see through it and stop at it
       }
     }
+    /* --- AND THE TOWN'S FENCES ------------------------------------
+       Every one of them is the same three lines the service yard's
+       chain link is hung with, and for the same reasons: midHeight
+       because a fence stops at its top rail and not at the cloud base,
+       pegMiddle bottom because it stands on the ground rather than
+       hanging from the sky, and texLocked because finishTextures runs
+       at mb.build() and would otherwise take a two-sided line's middle
+       straight back off. See out.fences in js/maps/town.js. */
+    for (const f of town.fences) {
+      for (const l of mb.linesBetween(f.a.sector, f.b.sector)) {
+        l.middle = f.tex;
+        l.midHeight = f.h;
+        l.pegMiddle = 'bottom';
+        l.blocking = true;
+        l.texLocked = true;
+        townFenceLines++;
+      }
+    }
   }
 
   /* -----------------------------------------------------------------
@@ -1132,6 +1151,7 @@ export function buildSellWrong(opts = {}) {
      ----------------------------------------------------------------- */
   const S = mb.sectors;
   const byName = n => S.filter(s => s.name === n);
+  if (town && !townFenceLines) throw new Error('the town laid fences and none of them got wire');
 
   /* --- HANGING THE CHAIN LINK ---------------------------------------
      Four of the yard's five neighbours get wire; the fifth is the gate

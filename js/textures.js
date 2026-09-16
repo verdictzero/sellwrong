@@ -2562,6 +2562,21 @@ const SIZES = {
   WINDOWLT: { w: 64, h: 112 },
   WINDOWWD: { w: 64, h: 112 },
   PEWEND:   { w: 64, h: 40 },
+  /* THE TRIM, and every one of them is a BAND: the height is what the
+     projecting piece of geometry is tall, so one repeat is the whole
+     course and never a course and a half. See THE TRIM in this file. */
+  WATERTBL: { w: 64, h: 16 },
+  CORNICE:  { w: 64, h: 24 },
+  TIEBEAM:  { w: 64, h: 24 },
+  ORGANPIP: { w: 64, h: 96 },
+  RAILING:  { w: 64, h: 48, masked: true },
+  ALTARRL:  { w: 64, h: 32 },
+  HANDRAIL: { w: 64, h: 32 },
+  GYMTRUSS: { w: 64, h: 32 },
+  PULPITFR: { w: 64, h: 48 },
+  BLEACHER: { w: 64, h: 24 },
+  SCHDOOR:  { w: 64, h: 80 },
+  DATESTON: { w: 64, h: 32 },
   CHAINLNK: { w: 64, h: 64, masked: true },
   FENCEPIK: { w: 64, h: 48, masked: true },
   TOWNPOLE: { w: 64, h: 128, masked: true },
@@ -3618,6 +3633,351 @@ T.LAMPPOOL = () => {
              { count: 40,  min: 0.4, max: 1.1, key: 'grey', lo: 0.26, hi: 0.38 }] });
   p.hline(0, 63, 0, 'grey', 0.16); p.hline(0, 63, 1, 'bone', 0.48);
   p.grime(0.24, 'grey', 0.07, 667);
+  return p.snap(0.5);
+};
+
+/* ---------- TRIM: what a building is made of where it stops ----------
+
+   A wall that runs from the ground to the eaves with nothing on it is a
+   slab, and the town was full of them. Everything in this section is a
+   BAND: a strip of wall a few units tall that a projecting piece of
+   geometry wears, and which the disagreement rule in js/level.js draws
+   because that piece stands proud of the wall behind it. A water table
+   at the bottom, a string course between the storeys, a cornice at the
+   top — three bands and a slab becomes a building. See the church and
+   the school in js/maps/town.js for where each one goes.
+   ------------------------------------------------------------------ */
+
+T.WATERTBL = () => {
+  /* The stone course a brick or clapboard wall stands on, sixteen tall
+     and worn so: a weathered top that throws the rain off, a drip under
+     it, and the joints of a stone that was laid in four-foot lengths. */
+  const p = new Pix(64, 16, 701);
+  aggregate(p, 701, { baseKey: 'bone', baseLo: 0.30, baseHi: 0.38,
+    grades: [{ count: 180, min: 0.3, max: 0.9, key: 'grey', lo: 0.26, hi: 0.40 }] });
+  p.hline(0, 63, 0, 'bone', 0.52); p.hline(0, 63, 1, 'bone', 0.46);   // the wash on top, catching the light
+  p.hline(0, 63, 13, 'grey', 0.16); p.hline(0, 63, 14, 'grey', 0.12); // the drip, in shadow
+  for (const x of [0, 32]) p.vline(x, 2, 12, 'grey', 0.20);           // the joints
+  p.grime(0.30, 'grey', 0.07, 709);
+  return p.snap(0.5);
+};
+
+T.CORNICE = () => {
+  /* Where a wall stops. Twenty-four tall and read from below, so it is
+     three mouldings and a shadow under each: the bed, the corona that
+     stands furthest out, and the cyma over it. The dark line at the
+     bottom is what makes the whole thing project rather than be a
+     stripe of paler paint. */
+  const p = new Pix(64, 24, 719);
+  aggregate(p, 719, { baseKey: 'bone', baseLo: 0.36, baseHi: 0.44,
+    grades: [{ count: 140, min: 0.3, max: 0.8, key: 'grey', lo: 0.30, hi: 0.44 }] });
+  p.hline(0, 63, 23, 'grey', 0.10); p.hline(0, 63, 22, 'grey', 0.14);  // the shadow it casts on itself
+  p.hline(0, 63, 17, 'bone', 0.56); p.hline(0, 63, 18, 'grey', 0.18);  // the bed mould
+  p.hline(0, 63, 11, 'bone', 0.60); p.hline(0, 63, 12, 'grey', 0.20);  // under the corona
+  for (let y = 4; y < 11; y++) p.hline(0, 63, y, 'bone', 0.48 - (y - 4) * 0.012);
+  p.hline(0, 63, 0, 'bone', 0.64); p.hline(0, 63, 1, 'bone', 0.58);    // the cap, in the sun
+  for (let x = 6; x < 64; x += 12) { p.vline(x, 19, 23, 'grey', 0.22); p.vline(x + 1, 19, 23, 'bone', 0.50); }  // the modillions
+  p.grime(0.22, 'grey', 0.06, 727);
+  return p.snap(0.5);
+};
+
+T.CORNRBRD = () => {
+  /* The board that closes the corner of a clapboard building, and the
+     face of a church buttress, which is the same board four times as
+     wide. Painted the trim white, which is a shade whiter than the
+     siding, and beaded down both edges. */
+  const p = new Pix(64, 64, 733);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'bone', 0.62 + Math.sin(y * 0.21 + x * 0.05) * 0.015);
+  p.vline(0, 0, 63, 'bone', 0.72); p.vline(1, 0, 63, 'bone', 0.68);
+  p.vline(62, 0, 63, 'grey', 0.26); p.vline(63, 0, 63, 'grey', 0.20);
+  for (const x of [5, 58]) { p.vline(x, 0, 63, 'bone', 0.74); p.vline(x + 1, 0, 63, 'grey', 0.30); }  // the bead
+  const rng = makeRng(739);
+  for (let k = 0; k < 4; k++) crack(p, Math.floor(rng() * 64), Math.floor(rng() * 64), 12, 'bone', 0.44, 743 + k, 0.25);
+  p.grime(0.12, 'grey', 0.05, 751);
+  return p.snap(0.5);
+};
+
+T.PILASTR = () => {
+  /* A brick pier standing proud of a brick wall. It is the SAME brick —
+     a school does not change material for its piers — so what has to
+     read at fifty feet is the light on it, and that is the job of the
+     band this texture is worn on rather than of the texture. What is
+     here is a bond one course out of step with the wall's, which is
+     what a pier bonded into a wall actually looks like, and the two
+     soldier courses that cap it. */
+  const p = new Pix(64, 64, 757);
+  brickwork(p, 757, 'brown', 0.24, 0.42);
+  for (let y = 0; y < 6; y++) p.hline(0, 63, y, 'brown', 0.30 + y * 0.01);
+  for (let x = 0; x < 64; x += 8) p.vline(x, 0, 5, 'grey', 0.22);       // the soldiers on top
+  p.vline(0, 0, 63, 'brown', 0.44); p.vline(1, 0, 63, 'brown', 0.38);   // the arris, lit
+  p.vline(63, 0, 63, 'grey', 0.14);                                     // and the one in shadow
+  p.grime(0.30, 'grey', 0.07, 761);
+  return p.snap(0.5);
+};
+
+/* ---------- the church, in more detail ---------- */
+
+T.LOUVRE = () => {
+  /* A belfry opening. Slats at forty-five degrees with the dark of the
+     bell chamber between them, which is the one place in this town
+     where a hole in a wall is supposed to read as black. */
+  const p = new Pix(64, 64, 769);
+  p.fill('grey', 0.05);
+  for (let y = 2; y < 64; y += 6) {
+    for (let x = 0; x < 64; x++) {
+      p.ink(x, y, 'bone', 0.52); p.ink(x, y + 1, 'bone', 0.44);
+      p.ink(x, y + 2, 'bone', 0.28); p.ink(x, y + 3, 'grey', 0.09);
+    }
+  }
+  for (const x of [0, 1, 62, 63]) p.vline(x, 0, 63, 'bone', 0.60);      // the frame
+  p.hline(0, 63, 0, 'bone', 0.64); p.hline(0, 63, 63, 'bone', 0.40);
+  p.grime(0.16, 'grey', 0.05, 773);
+  return p.snap(0.5);
+};
+
+T.CHURCHCL = () => {
+  /* The underside of the nave roof, which in this church is the
+     ceiling: tongue-and-groove boarding running up the slope, and a
+     rafter every sixteen. Worn on the roof storey's ceiling, so what
+     you are looking at from a pew is the back of the shingle. */
+  const p = new Pix(64, 64, 787);
+  const rng = makeRng(787);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'brown', 0.26 + rng() * 0.025 + Math.sin(x * 0.7) * 0.012);
+  for (let x = 0; x < 64; x += 8) { p.vline(x, 0, 63, 'brown', 0.16); p.vline(x + 1, 0, 63, 'brown', 0.32); }
+  for (const y of [6, 38]) {                                            // the rafters
+    for (let k = 0; k < 6; k++) p.hline(0, 63, y + k, 'brown', 0.20 - k * 0.012);
+    p.hline(0, 63, y - 1, 'brown', 0.36);
+  }
+  p.grime(0.18, 'grey', 0.05, 797);
+  return p.snap(0.5);
+};
+
+T.TIEBEAM = () => {
+  /* A tie beam across the nave, twenty-four deep: stained oak, adzed
+     rather than sawn, with the shadow it throws on itself. */
+  const p = new Pix(64, 24, 809);
+  const rng = makeRng(809);
+  for (let y = 0; y < 24; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'brown', 0.20 + rng() * 0.03 + Math.sin(x * 0.3 + y * 0.8) * 0.02);
+  p.hline(0, 63, 0, 'brown', 0.36); p.hline(0, 63, 1, 'brown', 0.30);
+  p.hline(0, 63, 22, 'brown', 0.10); p.hline(0, 63, 23, 'brown', 0.08);
+  for (const x of [10, 53]) { p.box(x, 8, 4, 4, 'grey', 0.26); p.frame(x, 8, 4, 4, 'grey', 0.16); }   // the bolts
+  return p.snap(0.5);
+};
+
+T.ORGANPIP = () => {
+  /* The front of the organ in the choir loft, ninety-six tall: speaking
+     pipes of polished tin in a case, tallest in the middle, with the
+     mouths in a line across them. */
+  const p = new Pix(64, 64, 811);
+  p.fill('brown', 0.18);
+  const tops = [18, 11, 6, 3, 6, 11, 18];
+  for (let i = 0; i < 7; i++) {
+    const x0 = 2 + i * 9, top = tops[i];
+    for (let y = top; y < 61; y++)
+      for (let k = 0; k < 7; k++) {
+        const shade = 0.30 + Math.cos((k - 3) / 3.4) * 0.30;            // round, by shading across
+        p.ink(x0 + k, y, 'grey', shade * (y < top + 2 ? 1.25 : 1));
+      }
+    for (let k = 0; k < 7; k++) p.ink(x0 + k, top, 'bone', 0.62);       // the lip of the pipe
+    p.box(x0 + 1, 36, 5, 5, 'grey', 0.12);                              // the mouth
+    p.hline(x0 + 1, x0 + 5, 36, 'bone', 0.50);
+  }
+  p.hline(0, 63, 61, 'brown', 0.30); p.hline(0, 63, 62, 'brown', 0.22);  // the impost
+  p.hline(0, 63, 0, 'brown', 0.26);
+  p.grime(0.16, 'grey', 0.05, 821);
+  return p.snap(0.5);
+};
+
+T.RAILING = () => {
+  /* Wrought iron round the churchyard, forty-eight tall and MASKED, so
+     what you see between the uprights is the graveyard and not a
+     painted picture of it. A spear on every standard, a rail top and
+     bottom, and a heavier post every sixteen. */
+  const p = new Pix(64, 48, 823, false);
+  p.clear();
+  for (let x = 3; x < 64; x += 8) {
+    for (let y = 6; y < 46; y++) { p.ink(x, y, 'grey', 0.16, 255); p.ink(x + 1, y, 'grey', 0.26, 255); }
+    p.ink(x, 3, 'grey', 0.22, 255); p.ink(x + 1, 3, 'grey', 0.30, 255);          // the spear
+    p.ink(x, 4, 'grey', 0.18, 255); p.ink(x + 1, 4, 'grey', 0.28, 255);
+    p.ink(x, 2, 'grey', 0.26, 255); p.ink(x + 1, 2, 'grey', 0.34, 255);
+  }
+  for (const y of [10, 11, 40, 41]) for (let x = 0; x < 64; x++) p.ink(x, y, 'grey', y & 1 ? 0.16 : 0.28, 255);
+  for (const x of [0, 1, 2, 32, 33, 34]) for (let y = 0; y < 48; y++) p.ink(x, y, 'grey', 0.24, 255);   // the standards
+  for (const x of [0, 32]) { p.ink(x, 0, 'grey', 0.34, 255); p.ink(x + 1, 0, 'grey', 0.34, 255); p.ink(x + 2, 0, 'grey', 0.26, 255); }
+  return p.snap(0.3);
+};
+
+T.ALTARRL = () => {
+  /* The communion rail, and the rail along the front of the choir loft:
+     turned oak balusters under a handrail you kneel at, over the red of
+     the chancel carpet behind them. Opaque for the reason GYMTRUSS is,
+     and painted on the colour of what it stands in front of, which is
+     the next best thing to seeing through it. */
+  const p = new Pix(64, 32, 827);
+  p.fill('red', 0.08);
+  for (let x = 4; x < 64; x += 10) {
+    for (let y = 8; y < 29; y++) {
+      const w = 2 + (Math.sin((y - 8) * 0.45) > 0.4 ? 1 : 0);           // the turning
+      for (let k = -w; k <= w; k++) p.ink(x + k, y, 'brown', 0.24 + (k < 0 ? 0.10 : 0), 255);
+    }
+  }
+  for (let y = 0; y < 7; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'brown', 0.30 - y * 0.01, 255);
+  p.hline(0, 63, 0, 'brown', 0.44, 255); p.hline(0, 63, 6, 'brown', 0.14, 255);
+  for (let x = 0; x < 64; x++) { p.ink(x, 29, 'brown', 0.26, 255); p.ink(x, 30, 'brown', 0.18, 255); }
+  return p.snap(0.3);
+};
+
+T.PULPITFR = () => {
+  /* The front of the pulpit, forty-eight tall: linenfold panels in a
+     frame, and the moulding that runs round the top of them. */
+  const p = new Pix(64, 48, 829);
+  const rng = makeRng(829);
+  for (let y = 0; y < 48; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'brown', 0.21 + rng() * 0.025);
+  p.hline(0, 63, 0, 'brown', 0.44); p.hline(0, 63, 1, 'brown', 0.36); p.hline(0, 63, 3, 'brown', 0.12);
+  for (const px of [4, 36]) {
+    p.box(px, 8, 24, 32, 'brown', 0.26);
+    p.bevel(px, 8, 24, 32, 'brown', 0.40, 'brown', 0.10);
+    for (let y = 12; y < 36; y += 4) { p.hline(px + 3, px + 20, y, 'brown', 0.34); p.hline(px + 3, px + 20, y + 1, 'brown', 0.14); }
+  }
+  p.hline(0, 63, 44, 'brown', 0.14); p.hline(0, 63, 45, 'brown', 0.10);
+  return p.snap(0.5);
+};
+
+/* ---------- the school, in more detail ---------- */
+
+T.SCHDOOR = () => {
+  /* The front doors: a pair, eighty tall, steel painted the colour
+     every school in the country painted them, with a push bar across
+     each and wired glass over it. */
+  const p = new Pix(64, 64, 839);
+  p.fill('grey', 0.18);
+  for (const dx of [0, 32]) {
+    p.box(dx + 2, 2, 28, 60, 'red', 0.24);
+    p.bevel(dx + 2, 2, 28, 60, 'red', 0.34, 'red', 0.12);
+    p.box(dx + 5, 5, 22, 21, 'grey', 0.10);                             // the light
+    for (let y = 6; y < 25; y += 4) p.hline(dx + 6, dx + 25, y, 'grey', 0.22);
+    for (let x = dx + 6; x < dx + 27; x += 4) p.vline(x, 6, 24, 'grey', 0.22);
+    p.frame(dx + 5, 5, 22, 21, 'grey', 0.30);
+    p.box(dx + 4, 32, 24, 3, 'grey', 0.42);                             // the push bar
+    p.hline(dx + 4, dx + 27, 32, 'grey', 0.54);
+    p.box(dx + 6, 35, 3, 3, 'grey', 0.30); p.box(dx + 23, 35, 3, 3, 'grey', 0.30);
+  }
+  p.vline(31, 0, 63, 'grey', 0.28); p.vline(32, 0, 63, 'grey', 0.12);   // the meeting stile
+  p.grime(0.26, 'grey', 0.07, 853);
+  return p.snap(0.5);
+};
+
+T.GYMFLOOR = () => {
+  /* Maple, laid across, with the paint of a court on it: the sideline,
+     the key's edge, and the centre circle's arc, none of which land in
+     the same place twice because one repeat is sixty-four units and a
+     court is not. What it has to do is read as PAINTED WOOD from the
+     door, and it does. */
+  const p = new Pix(64, 64, 857);
+  const rng = makeRng(857);
+  for (let b = 0; b < 8; b++) {
+    const y0 = b * 8, t = 0.34 + rng() * 0.05;
+    for (let y = y0; y < y0 + 8; y++) for (let x = 0; x < 64; x++)
+      p.ink(x, y, 'yellow', t * 0.62 + Math.sin((x * 0.4 + b * 5) * 0.6) * 0.02 + (y === y0 ? -0.06 : 0));
+  }
+  for (let x = 0; x < 64; x++) { p.ink(x, 20, 'bone', 0.50); p.ink(x, 21, 'bone', 0.50); }   // a line
+  for (let y = 0; y < 64; y++) { p.ink(44, y, 'red', 0.36); p.ink(45, y, 'red', 0.36); }     // and one the other way
+  p.grime(0.20, 'grey', 0.05, 859);
+  return p.snap(0.5);
+};
+
+T.GYMPAD = () => {
+  /* The padding round the bottom of a gym wall, in the school's own
+     colour, quilted in panels with a steel strip between them. */
+  const p = new Pix(64, 64, 863);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'blue', 0.20 + Math.sin(y * 0.2) * 0.01);
+  for (const x of [0, 32]) {
+    p.box(x + 2, 3, 28, 58, 'blue', 0.26);
+    p.bevel(x + 2, 3, 28, 58, 'blue', 0.34, 'blue', 0.12);
+  }
+  p.vline(31, 0, 63, 'grey', 0.24); p.vline(63, 0, 63, 'grey', 0.24);
+  p.hline(0, 63, 0, 'grey', 0.28); p.hline(0, 63, 62, 'grey', 0.14); p.hline(0, 63, 63, 'grey', 0.10);
+  p.grime(0.22, 'grey', 0.06, 877);
+  return p.snap(0.5);
+};
+
+T.BLEACHER = () => {
+  /* The riser of a bleacher, twenty-four tall: the plank you put your
+     feet on, the steel frame under it and the dark of the space
+     between, which is where everything anybody ever dropped is. */
+  const p = new Pix(64, 24, 881);
+  for (let y = 0; y < 24; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'grey', 0.07);
+  for (let y = 0; y < 8; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'yellow', 0.24 + Math.sin(x * 0.5) * 0.02 - y * 0.008);
+  p.hline(0, 63, 0, 'yellow', 0.34); p.hline(0, 63, 7, 'grey', 0.10);
+  for (let x = 4; x < 64; x += 24) { p.box(x, 8, 4, 16, 'grey', 0.26); p.vline(x, 8, 23, 'grey', 0.34); }
+  p.grime(0.30, 'grey', 0.07, 883);
+  return p.snap(0.5);
+};
+
+T.HANDRAIL = () => {
+  /* A steel pipe handrail: a top rail, a knee rail and a standard every
+     thirty-two, on the dark of the stairwell. Every stair in the school
+     wears it down its open side, which is the difference between a
+     flight of stairs and a stack of floating slabs. Opaque for the
+     reason GYMTRUSS is. */
+  const p = new Pix(64, 32, 887);
+  p.fill('grey', 0.10);
+  for (const y of [1, 2, 3, 15, 16]) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'grey', y === 1 ? 0.52 : y === 2 ? 0.42 : 0.24, 255);
+  for (const x of [6, 38]) for (let y = 1; y < 32; y++) {
+    p.ink(x, y, 'grey', 0.44, 255); p.ink(x + 1, y, 'grey', 0.34, 255); p.ink(x + 2, y, 'grey', 0.18, 255);
+  }
+  return p.snap(0.3);
+};
+
+T.GYMTRUSS = () => {
+  /* A roof truss over the gym: a bottom chord, a top chord and the
+     diagonals between them, painted the grey that everything above a
+     gym floor is painted, on the dark of the roof space.
+
+     OPAQUE, AND THAT IS NOT A COMPROMISE. It was masked, and what you
+     saw through the web was the SKY — because a masked texture only
+     works where there is something behind it, and a BAND has nothing
+     behind it by construction: a band is the one quad the disagreement
+     rule draws where two columns differ, and the differing is exactly
+     the part of the world with no geometry in it. Masked belongs on a
+     MIDDLE texture, in the hole between two open sectors, which is what
+     the fences use. Everything that is a band paints its own dark. */
+  const p = new Pix(64, 32, 907);
+  p.fill('grey', 0.05);
+  for (const y of [0, 1, 29, 30, 31]) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'grey', y < 2 ? 0.30 : 0.22, 255);
+  for (let i = 0; i < 64; i += 16) {
+    for (let k = 0; k < 16; k++) {
+      p.ink(i + k, 2 + k * 1.7 | 0, 'grey', 0.26, 255);
+      p.ink(i + k + 1, 2 + k * 1.7 | 0, 'grey', 0.18, 255);
+      p.ink(i + 15 - k, 2 + k * 1.7 | 0, 'grey', 0.26, 255);
+      p.ink(i + 16 - k, 2 + k * 1.7 | 0, 'grey', 0.18, 255);
+    }
+    for (let y = 0; y < 32; y++) { p.ink(i, y, 'grey', 0.28, 255); p.ink(i + 1, y, 'grey', 0.18, 255); }
+  }
+  return p.snap(0.3);
+};
+
+T.DATESTON = () => {
+  /* The stone over the front door. Every school built in this decade
+     has one and there is no name on it, ever — the same rule the
+     shopfronts keep. What is carved is a panel and a pair of rosettes,
+     and the eye supplies a year. */
+  const p = new Pix(64, 32, 911);
+  aggregate(p, 911, { baseKey: 'bone', baseLo: 0.38, baseHi: 0.46,
+    grades: [{ count: 120, min: 0.3, max: 0.8, key: 'grey', lo: 0.32, hi: 0.46 }] });
+  p.frame(3, 3, 58, 26, 'grey', 0.26);
+  p.frame(4, 4, 56, 24, 'bone', 0.58);
+  p.box(10, 9, 44, 14, 'bone', 0.34);
+  p.bevel(10, 9, 44, 14, 'grey', 0.24, 'bone', 0.56);
+  for (const cx of [7, 56]) { p.disc(cx, 16, 2, 'grey', 0.26); p.disc(cx, 16, 1, 'bone', 0.52); }
+  p.hline(0, 63, 0, 'bone', 0.62); p.hline(0, 63, 31, 'grey', 0.18);
+  p.grime(0.24, 'grey', 0.06, 919);
   return p.snap(0.5);
 };
 

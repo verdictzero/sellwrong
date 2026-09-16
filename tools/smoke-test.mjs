@@ -1765,10 +1765,18 @@ section('the wood');
     note('the fence', `${wire.length} lines of chain link, ${Y.fenceH} tall`);
     check('the chain link hangs in openings rather than being built as wall',
       wire.length >= 4 && wire.every(l => l.front !== null && l.back !== null));
+    /* THE YARD'S OWN WIRE IS THE YARD'S OWN HEIGHT; the town's is the
+       town's — the ball field's and the school's are taller than the
+       loading bay's, because they are. What every fence on the map has
+       to do is stop at its top rail rather than fill the opening it
+       hangs in, and that is the check. */
+    const yardWire = wire.filter(l => l.front === yard.index || l.back === yard.index);
+    check('the yard\'s wire is the height the yard says it is',
+      yardWire.length >= 4 && yardWire.every(l => l.midHeight === Y.fenceH), `${yardWire.length} lines`);
     check('and it stops at the top rail instead of filling the opening',
-      wire.every(l => l.midHeight === Y.fenceH &&
+      wire.every(l => l.midHeight > 0 &&
         l.midHeight < Math.min(level.sectors[l.front].ceil, level.sectors[l.back].ceil)),
-      `${wire.filter(l => !(l.midHeight < Math.min(level.sectors[l.front].ceil, level.sectors[l.back].ceil))).length} reach the sky`);
+      `${wire.filter(l => !(l.midHeight > 0 && l.midHeight < Math.min(level.sectors[l.front].ceil, level.sectors[l.back].ceil))).length} reach the sky`);
     check('and every bit of it is solid', wire.every(l => l.blocking));
 
     /* AND NOW THE ONLY QUESTION A PLAYER ASKS OF A FENCE. Fired across
@@ -7695,7 +7703,12 @@ section('the town');
        anybody forgot: a door on a three-storey terrace has two storeys
        of brick over it and then the roof. */
     if (up.roofTex || up.ceil - up.floor < 1e-6) continue;
-    if (up.floor - s.ceil > T.STOREY + 16) deep++;
+    /* AND A WALL MAY HAVE A RAIL ON TOP OF IT, which is forty-eight
+       more: the choir loft's opening starts a rail above its floor so
+       the band under it is the balusters, and the church tower's
+       belfry sits a storey and a half over its door. Both are a wall
+       with something on it and neither is a floor anybody forgot. */
+    if (up.floor - s.ceil > T.STOREY + 48) deep++;
   }
   check('every column stacks without overlap', bad === 0, `${bad} storeys start under the one below`);
   check('and the gap between two storeys is a deck or a wall, never a missing floor', deep === 0, `${deep} too deep`);
@@ -7862,6 +7875,98 @@ section('the town');
       level.plants.filter(pl => { const s = level.sectorAt(pl.x, pl.y); return !(s && !s.roofTex && /yard|garden|lawn|churchyard|graveyard|green|park|cemetery/.test(s.name)); }).slice(0, 3).map(pl => level.sectorAt(pl.x, pl.y)?.name ?? 'nowhere').join(', '));
     const stones = level.things.filter(t => t.type === 'GRAVESTONE');
     check('the cemetery has its stones', stones.length > 100 && stones.every(t => /cemetery|graveyard/.test(level.sectorAt(t.x, t.y)?.name ?? '')), `${stones.length}`);
+  }
+
+  /* --- A BUILDING IS WHAT IT DOES AT ITS EDGES --------------------
+     Both landmarks were slabs of wall with holes in them, and what
+     they have now is all one idea: a BAND, which is a strip of wall
+     that a piece of geometry standing proud of the wall behind it
+     makes the disagreement rule draw. What is checked is that each
+     one EXISTS as geometry — the count and the height and the skin —
+     because that is what a band is made of, and a band that is not
+     there is a wall with nothing on it, which is what this was.
+     ---------------------------------------------------------------- */
+  {
+    const S3 = level.sectors;
+    const named = re => S3.filter(s => re.test(s.name || ''));
+    const T5 = tex.TEXTURE_SIZES;
+    const fsB = await import('node:fs');
+    const UB = await import('../js/util.js');
+
+    /* THE SCHOOL'S THREE COURSES OUT OF ONE STRIP. The trim is one
+       rectangle per segment whose column is open, shut for sixteen,
+       open, shut for twenty-four, and shut — the water table, the
+       string course and the cornice, and one rectangle does all three. */
+    const trim = named(/^C3 trim$/);
+    note('the school\'s courses', `${trim.length} trim sectors, ${named(/^C3 pilaster$/).length} pilasters`);
+    check('the school stands on a stone water table',
+      trim.length > 40 && trim.filter(s => s.storey === 0).every(s => s.lowerTex === 'WATERTBL'));
+    check('and the same strip carries the string course and the cornice',
+      trim.filter(s => s.storey === 1).every(s => s.lowerTex === 'WATERTBL') &&
+      trim.filter(s => s.storey === 2).every(s => s.lowerTex === 'CORNICE' && s.floor === s.ceil),
+      `${trim.filter(s => s.storey === 2).length} cornice storeys`);
+    check('and a pilaster at every party wall, every other bay of the gym and both corners',
+      named(/^C3 pilaster$/).length === 24);
+    /* THE FRONT DOOR IS A DOOR. It was a hole in a flat wall. */
+    check('the front door is a pair of leaves with a way between them',
+      named(/^C3 door leaf$/).length === 2 &&
+      named(/^C3 door leaf$/).every(s => s.lowerTex === 'SCHDOOR' && s.floor === s.ceil) &&
+      named(/^C3 front door$/).length >= 1);
+    check('under a date stone with no name on it', named(/^C3 date stone$/).length === 1);
+
+    /* THE GYM, which was a black box a hundred and twenty feet long */
+    const bleach = named(/^C3 gym bleachers$/);
+    note('the gym', `${bleach.length} tiers of bleachers, ${named(/^C3 gym truss$/).length} truss sectors`);
+    check('the gym has a court painted on a maple floor',
+      named(/^C3 gym$/).every(s => s.floorTex === 'GYMFLOOR'));
+    check('and bleachers in three tiers you can climb',
+      bleach.length === 3 && [...new Set(bleach.map(s => s.floor))].length === 3 &&
+      bleach.map(s => s.floor).sort((a, b) => a - b).every((f, i, a) => i === 0 || f - a[i - 1] <= UB.MAX_STEP));
+    check('and padding, trusses and a stage',
+      named(/^C3 gym padding$/).length >= 4 && named(/^C3 gym truss$/).length >= 3 && named(/^C3 gym stage$/).length === 1);
+    /* THE STAIRS, which were a stack of floating slabs */
+    /* five rails a stair, two stairs, and a rail is a column of two —
+       open under the handrail and open over it */
+    check('both stairs have a balustrade, and not on the treads you get on and off by',
+      named(/^C3 (west|east) stair rail$/).length === 20);
+
+    /* THE CHURCH: a water table, buttresses in two stages, a louvred
+       belfry, a cornice the spire springs off. */
+    check('the church has a buttress in every bay and one on each back corner',
+      named(/^B3 buttress$/).length === 12 && named(/^B3 buttress set-off$/).length === 12);
+    check('and a louvred belfry, and a cornice under the spire',
+      named(/^B3 belfry louvre$/).length === 3 && named(/^B3 belfry$/).length === 3 &&
+      named(/^B3 tower cornice$/).some(s => s.lowerTex === 'CORNICE'));
+    /* AND THE NAVE IS OPEN TO THE ROOF, which is the one thing here
+       that is not a band: name a soffit and the roof storey gets a
+       ceiling, and the nave's own ceilings then say NONE. */
+    const roof = named(/^B3 roof$/);
+    check('the nave is open to the roof',
+      roof.length > 20 && roof.every(s => s.ceilTex === 'CHURCHCL' && s.roofTex === 'SHINGLE' && s.slopeCeil),
+      `${roof.length} roof sectors`);
+    check('and everything under it looks straight up into it',
+      named(/^B3 (nave floor|centre aisle|side aisle|pew|chancel|choir loft)$/).every(s => s.ceilTex === 'NONE'));
+    check('with tie beams across it, a chancel arch and a communion rail',
+      named(/^B3 tie beam$/).length === 4 && named(/^B3 chancel arch/).length === 7 &&
+      named(/^B3 communion rail$/).length === 2 && named(/^B3 (pulpit|lectern|organ|loft rail)$/).length === 4);
+    /* which needed the gable drawn both ways */
+    check('and a gable over a roof space with a ceiling is drawn from inside it too',
+      /if \(gable && bd\.open\.ceilTex && bd\.open\.ceilTex !== 'NONE'\) emit\(!facing, bd\.open\.light\);/
+        .test(fsB.readFileSync('js/mapgeo.js', 'utf8')));
+
+    /* THE FENCES. A fence is a masked texture hung in the hole between
+       two patches of open ground; a BAND has nothing behind it, so
+       nothing that is a band may be masked or you see the sky through
+       it — which is what three of these textures did. */
+    const fences = level.lines.filter(l => /^(CHAINLNK|RAILING)$/.test(l.middle || ''));
+    note('the fences', `${fences.length} lines of wire and iron`);
+    check('the ball field, the churchyard and the school frontage are fenced',
+      fences.length >= 12 && fences.every(l => l.blocking && l.midHeight > 0 &&
+        l.front !== null && l.back !== null));
+    check('and the fence textures are masked, because you see through a fence',
+      T5.CHAINLNK.masked && T5.RAILING.masked);
+    check('and the ones that are BANDS are not, because a band has nothing behind it',
+      !T5.GYMTRUSS.masked && !T5.HANDRAIL.masked && !T5.ALTARRL.masked);
   }
 
   /* NOTHING IS OUTSIDE ITS OWN SHELL. RectMap throws on two rectangles
