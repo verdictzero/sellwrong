@@ -7724,8 +7724,13 @@ section('sloped roofs');
     roofs.every(s2 => s2.floor === s2.slopeCeil.base), `${roofs.filter(s2 => s2.floor !== s2.slopeCeil.base).length} do not`);
   check('a roof\'s ceil is the HIGHEST it gets, so nothing flat is told there is less room than there is',
     roofs.every(s2 => Math.abs(s2.ceil - (s2.slopeCeil.base + s2.slopeCeil.rise)) < 1e-6));
-  check('a three-storey terrace tops out at 464, sixteen under the mall\'s parapet',
-    roofs.some(s2 => Math.abs(s2.ceil - 464) < 1e-6) && 464 < 480);
+  /* the shop terraces on Main Street: three storeys on a kerb-high base
+     and a roof at six in twelve over a 384 half-span, which is 192 of
+     rise — a ridge above the mall's 480 parapet now, which a ridge may
+     be, and under the 768 the sky sits at, which nothing may not */
+  check('a three-storey terrace tops out at 552, its ridge under the sky',
+    roofs.some(s2 => Math.abs(s2.ceil - 552) < 1e-6) && roofs.every(s2 => s2.ceil < 768),
+    `${roofs.filter(s2 => Math.abs(s2.ceil - 552) < 1e-6).length} at 552, highest ${Math.max(...roofs.map(s2 => s2.ceil))}`);
   /* AND A HOUSE IS ITS ROOF: the shell of a house is one column of one
      storey, the roof, shut everywhere below the eaves */
   {

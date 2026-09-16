@@ -2567,6 +2567,7 @@ const SIZES = {
   FOUNDATN: { w: 64, h: 32 },
   STONEFND: { w: 64, h: 32 },
   STEPFACE: { w: 64, h: 16 },
+  FASCIA:   { w: 64, h: 8 },    // the board on a roof's edge, which is the lip storey's height
   FRNTDOOR: { w: 48, h: 80 },
   FRNTDOR2: { w: 48, h: 80 },
   FRNTDOR3: { w: 48, h: 80 },
@@ -2755,26 +2756,76 @@ T.SHINGLE = () => {
   /* Asphalt shingle: three-tab, so the keyway slots are every third of
      a course and the courses are staggered. Read from below at a low
      angle it is a grey stripe, which is exactly what a roof is. */
+  /* WEATHERED, not tar: the first cut sat at a fifth of grey, and from
+     the far end of a street at dawn a roof at a fifth of grey is a
+     black wedge on top of the wall — which is what the user drew a
+     ring round. A shingle that has had ten summers on it is the grey
+     of a pavement, and reads as a surface with courses on it. */
+  /* THE GREY RAMP IS DARK. Its half-way stop is 92 of 255 and its
+     gamma 1.3, so a shingle inked at four tenths is fifty-eight, and
+     the bone the walls are inked with at the same four tenths is
+     ninety: a roof drawn at what reads as a sensible grey came out at
+     half the wall's brightness, and the daylight banding halved it
+     again. So the courses are inked in the upper half of the ramp and
+     the shadow lines below them carry the contrast. */
   const p = new Pix(64, 64, 59);
   const rng = makeRng(59);
-  p.fill('grey', 0.18);
+  p.fill('grey', 0.58);
   const CH = 16;
   for (let row = 0; row * CH < 64; row++) {
     const y0 = row * CH, off = (row % 2) ? 10 : 0;
     for (let y = y0; y < y0 + CH && y < 64; y++) {
       const edge = (y === y0);
       for (let x = 0; x < 64; x++) {
-        const t = 0.20 + rng() * 0.10 + (y - y0) / CH * 0.06;
-        p.ink(x, y, 'grey', edge ? 0.11 : t);
+        const t = 0.58 + rng() * 0.12 + (y - y0) / CH * 0.10;
+        p.ink(x, y, 'grey', edge ? 0.34 : t);
       }
     }
     /* the keyways */
     for (let k = 0; k < 3; k++) {
       const x = (off + k * 21 + 64) % 64;
-      for (let y = y0; y < y0 + CH - 4 && y < 64; y++) p.ink(x, y, 'grey', 0.10);
+      for (let y = y0; y < y0 + CH - 4 && y < 64; y++) p.ink(x, y, 'grey', 0.38);
     }
   }
-  p.grime(0.30, 'grey', 0.06, 61);
+  p.grime(0.30, 'grey', 0.22, 61);
+  return p.snap(0.5);
+};
+
+T.FASCIA = () => {
+  /* The board on the edge of a roof, eight tall, which is the one
+     thing that makes an eave read from the pavement under it: a white
+     line along the top of the wall with the shadow of the gutter on
+     it. Worn by the LIP storey over every eave strip — see underEaves
+     in js/maps/town.js. */
+  const p = new Pix(64, 8, 91);
+  p.fill('bone', 0.66);
+  p.hline(0, 63, 0, 'grey', 0.26);              // the gutter's shadow
+  p.hline(0, 63, 1, 'grey', 0.40);
+  p.hline(0, 63, 2, 'bone', 0.78);              // the lit top edge of the board
+  p.hline(0, 63, 7, 'grey', 0.44);              // and its drip edge
+  const rng = makeRng(92);
+  for (let x = 0; x < 64; x++) if (rng() < 0.08) p.vline(x, 3, 6, 'bone', 0.58);
+  return p.snap(0.5);
+};
+
+T.EAVESOFT = () => {
+  /* The underside of an eave: painted boards running along the wall,
+     in shadow, with the vent slots that let the attic breathe. A
+     ceiling, so it tiles from the world origin like every flat. */
+  const p = new Pix(64, 64, 93);
+  p.fill('bone', 0.46);
+  for (let y = 0; y < 64; y += 8) {
+    p.hline(0, 63, y, 'grey', 0.30);            // the joint between boards
+    p.hline(0, 63, y + 1, 'bone', 0.52);
+  }
+  const rng = makeRng(94);
+  for (let i = 0; i < 40; i++) p.ink(Math.floor(rng() * 64), Math.floor(rng() * 64), 'bone', 0.40);
+  /* one vent strip across the middle */
+  p.box(0, 28, 64, 8, 'grey', 0.24);
+  for (let x = 2; x < 64; x += 4) p.vline(x, 29, 34, 'grey', 0.12);
+  p.hline(0, 63, 28, 'bone', 0.36);
+  p.hline(0, 63, 35, 'bone', 0.36);
+  p.grime(0.20, 'grey', 0.06, 95);
   return p.snap(0.5);
 };
 

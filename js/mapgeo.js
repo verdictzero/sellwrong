@@ -587,16 +587,32 @@ function addLine(set, level, l, bank, pick = null) {
        is shell even where the wall under it is not */
     const dst = (bd.open.roofTex || bd.from.roofTex) ? into(bd.open.roofTex ? bd.open : bd.from) : into(s);
     const peg = pegOf(l, bd.kind, bd.z0, bd.z1, s, bank.get(bd.tex).h);
+    /* THE GABLE FACES THE STREET. An upper band over a sector whose
+       ceiling is the sky is a wall rising above outdoor ground — the
+       gable end of a roof, over the plinth at its foot, whose ceiling
+       is put at the eaves so that this band exists at all. Its "open"
+       side is the attic, and nobody is in the attic: the side that
+       looks at it is the shut one, from under the sky. So it is wound
+       to face that side and lit by it, or it is a triangle of board
+       facing into the roof space at the attic's sixteenth of a light,
+       and from the pavement the house has no gable — which is what it
+       had until somebody stood on the pavement. Doom, with no slopes,
+       drew nothing here at all; the rule above is the other half of
+       that. */
+    const gable = bd.kind === 'upper' && bd.from.ceilTex === 'SKY';
+    const lit = gable ? bd.from : s;
+    const facing = gable ? !bd.openFront : bd.openFront;
+    const ch = Math.max(charOf(s), charOf(lit));
     /* WHERE A SLOPE IS IN PLAY the band is not an interval, it is an
        interval AT A POINT. Asked of the same two sectors the band was
        worked out from, so the flat case gives back the same numbers. */
     if (edgeSlope(bd.e0) || edgeSlope(bd.e1)) {
-      emitWall(dst, l, bank, bd.tex, (x, y) => bandEdges(level, bd, x, y), bd.openFront, peg,
-               s.light + l.contrast, skyOf(s), charOf(s),
+      emitWall(dst, l, bank, bd.tex, (x, y) => bandEdges(level, bd, x, y), facing, peg,
+               lit.light + l.contrast, skyOf(lit), ch,
                [edgeSlope(bd.e0), edgeSlope(bd.e1)]);
     } else {
-      addQuad(dst, l, bank, bd.tex, bd.z0, bd.z1, bd.openFront, peg,
-              s.light + l.contrast, skyOf(s), charOf(s));
+      addQuad(dst, l, bank, bd.tex, bd.z0, bd.z1, facing, peg,
+              lit.light + l.contrast, skyOf(lit), ch);
     }
   }
 

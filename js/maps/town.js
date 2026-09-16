@@ -125,6 +125,30 @@ const WIN_W = 64, WIN_SILL = 40, WIN_H = 64;
 const DOOR_W = 48, DOOR_H = 80;
 const STOOP_D = 32, TREAD_D = 16, STOOP_WING = 16;
 
+/* THE ROOF, in numbers.
+
+     EAVE      how far a roof overhangs an eave wall. The ground under
+              it is a column of two — see underEaves — and the same
+              thirty-two as the stoop, so the stoop is under it whole
+     FASCIA_H  how thick the roof's edge is: the board on it
+     PITCH_*   rise over half-span — for a house whose ridge runs along
+              the street, for one whose gable faces it, and for a
+              terrace. The first cut had every roof at 128 over 384,
+              one in three, and a roof at one in three cannot be seen
+              from the pavement in front of it: you are under its plane
+              until you are twenty-one metres back, and from across the
+              street it is a black wedge on top of the wall, which is
+              what the user drew a ring round. Six in twelve is the
+              least a roof is.
+     ROOF_LIGHT how lit the shingle is, seen from above or from across
+              the street: a little over the walls, because a roof faces
+              the sky, and not so far over that it glows at night. The
+              tar the first cut's roofs read as was the texture, not
+              this — see T.SHINGLE. */
+const EAVE = STOOP_D, FASCIA_H = 8;
+const PITCH_SIDE = 0.55, PITCH_FRONT = 0.75, PITCH_ROW = 0.5;
+const ROOF_LIGHT = 0.50;
+
 /* WHAT BURNS. The houses do not, any more: a house is a shell with no
    inside, and what chars on a street is the yards and the siding facing
    them. The church and the school are the fuel in this town, and they
@@ -457,7 +481,7 @@ export function buildTown(rm, mb, opts = {}) {
    *  band below them IS the wall. */
   const topOf = B => B.slope
     ? { floor: B.eaves, ceil: B.eaves + B.rise, slopeCeil: B.slope,
-        floorTex: 'NONE', ceilTex: 'NONE', roofTex: B.roof, roofLight: 0.40,
+        floorTex: 'NONE', ceilTex: 'NONE', roofTex: B.roof, roofLight: ROOF_LIGHT,
         wallTex: B.wall, upperTex: B.jamb || B.wall, lowerTex: B.wall,
         light: 0.16, ambient: 0.16, fuel: 0, outdoor: false, sky: 0, name: `${B.tag} roof` }
     : { floor: B.top, ceil: B.top,
@@ -467,6 +491,30 @@ export function buildTown(rm, mb, opts = {}) {
 
   /** A column inside a building: its storeys, and the roof on top. */
   const col = (B, storeys, common) => ({ ...common, storeys: [...storeys, topOf(B)] });
+
+  /**
+   * THE GROUND UNDER AN EAVE: a column of two. The ground itself, with
+   * the soffit for a ceiling at the eaves; and over it the LIP, which
+   * is the roof's edge — FASCIA_H of board thick, shingle on top, open
+   * to the sky up to the ridge. The disagreement rule then draws, and
+   * only draws, the right things: against the yard the lip is a shut
+   * band eight tall between the ground's ceiling and its own floor,
+   * and wears FASCIA; against the wall the same band is hidden over
+   * the soffit; between the lip and the roof storey both columns are
+   * open and nothing draws; above the ridge both are shut, and above
+   * that the sky. A roof with no edge is a plane you are under, and
+   * this is the edge. `ground` is any of the ground props — a plinth,
+   * a stoop, a lawn, a forecourt.
+   */
+  const underEaves = (B, ground) => ({
+    ...ground,
+    storeys: [
+      { ceil: B.eaves, ceilTex: 'EAVESOFT' },
+      { floor: B.eaves + FASCIA_H, ceil: B.eaves + B.rise, floorTex: B.roof, ceilTex: 'SKY',
+        lowerTex: 'FASCIA', upperTex: B.gable, wallTex: B.wall, light: ROOF_LIGHT, ambient: ROOF_LIGHT,
+        outdoor: true, sky: 1, fuel: 0, name: `${B.tag} eaves` },
+    ],
+  });
 
   /** A solid piece of wall. */
   const solid = (B, F, u0, v0, u1, v1) =>
@@ -558,32 +606,56 @@ export function buildTown(rm, mb, opts = {}) {
   function approach(B, F, seg, door, lot, yard, o = {}) {
     const [eL, eR] = o.ext || [0, 0];
     const G2 = o.ground || (n => lawn(`${B.tag} ${n}`));
-    const plinth = (a, b) => (b - a > 0) && F.add(a, 0, b, PLINTH, plinthProps(B));
+    /* UNDER AN EAVE OR AT A GABLE END. This face is one or the other:
+       under an eave everything within EAVE of the wall is a column of
+       two with the soffit over it; at a gable end the plinth has its
+       ceiling at the eaves and the gable draws over it. */
+    const wrap = props => o.eave ? underEaves(B, props) : props;
+    const a0 = seg[0] - eL, a1 = seg[1] + eR;           // the wall, round its corners
+    const plinth = (a, b) => (b - a > 0) && F.add(a, 0, b, PLINTH, wrap(plinthProps(B)));
+    /* the lot between u0 and u1 from the plinth out to the yard — under
+       an eave the first stretch of it, along the wall, is under the
+       soffit and the rest is not */
+    const ground = (u0, u1) => {
+      if (u1 - u0 <= 0 || yard <= PLINTH) return;
+      if (!o.eave) { F.add(u0, PLINTH, u1, yard, G2('yard')); return; }
+      const b0 = Math.max(u0, a0), b1 = Math.min(u1, a1);
+      if (b0 > u0) F.add(u0, PLINTH, b0, EAVE, G2('yard'));
+      if (b1 > b0) F.add(b0, PLINTH, b1, EAVE, wrap(G2('yard')));
+      if (u1 > b1) F.add(b1, PLINTH, u1, EAVE, G2('yard'));
+      if (yard > EAVE) F.add(u0, EAVE, u1, yard, G2('yard'));
+    };
     if (!door) {
-      plinth(seg[0] - eL, seg[1] + eR);
-      if (yard > PLINTH) F.add(lot[0], PLINTH, lot[1], yard, G2('yard'));
+      plinth(a0, a1);
+      ground(lot[0], lot[1]);
       return null;
     }
     const s0 = door.u0 - STOOP_WING, s1 = door.u1 + STOOP_WING;
-    plinth(seg[0] - eL, s0); plinth(s1, seg[1] + eR);
-    F.add(s0, 0, s1, STOOP_D, stoopProps(B));
+    plinth(a0, s0); plinth(s1, a1);
+    F.add(s0, 0, s1, STOOP_D, wrap(stoopProps(B)));
     F.add(s0, STOOP_D, s1, STOOP_D + TREAD_D, treadProps(B));
     if (yard > STOOP_D + TREAD_D) F.add(s0, STOOP_D + TREAD_D, s1, yard, o.path ? pathProps(B) : G2('yard'));
-    if (s0 > lot[0]) F.add(lot[0], PLINTH, s0, yard, G2('yard'));
-    if (lot[1] > s1) F.add(s1, PLINTH, lot[1], yard, G2('yard'));
+    ground(lot[0], s0); ground(s1, lot[1]);
     return { s0, s1 };
   }
 
   /** What a building is, for the functions above. `d` is its depth from
-   *  this face to the back one, and the ridge runs along the face. */
+   *  this face to the back one. The ridge runs along the face unless
+   *  `extra.ridge` is 'across', which is a house whose gable faces the
+   *  street; `extra.pitch` is rise over half-span and sets the rise
+   *  from the span, or `extra.rise` gives it outright. */
   function building(tag, F, w, d, n, dress, extra = {}) {
+    const across = extra.ridge === 'across';
+    const half = across ? w / 2 : d / 2;
+    const rise = extra.rise ?? (extra.pitch ? Math.round(half * extra.pitch / 8) * 8 : RIDGE);
     const B = {
       tag, wall: dress.wall, gable: dress.gable, roof: dress.roof, jamb: extra.jamb,
       foundation: extra.foundation, n, base: FOUND, winBase: 0, litChance: 0.22,
-      eaves: (extra.base ?? 0) + n * STOREY, rise: extra.rise ?? RIDGE, ...extra,
+      eaves: (extra.base ?? 0) + n * STOREY, ...extra, rise, across,
     };
     const [mx, my] = F.at(w / 2, -d / 2);
-    B.slope = gableSlope(F.axis, F.axis === 'x' ? my : mx, d / 2, B.eaves, B.rise);
+    const axis = across ? (F.axis === 'x' ? 'y' : 'x') : F.axis;
+    B.slope = gableSlope(axis, axis === 'x' ? my : mx, half, B.eaves, B.rise);
     B.top = B.eaves;
     return B;
   }
@@ -621,7 +693,15 @@ export function buildTown(rm, mb, opts = {}) {
    */
   function house(hx0, faceY, facing, w, d, n, dress, tag, lot, fy, by) {
     const F = frame(hx0, faceY, facing);
-    const B = building(tag, F, w, d, n, dress);
+    /* WHICH WAY THE RIDGE RUNS. Half the houses have their gable to the
+       street — a triangle of board over the front door, which is the
+       one shape that says HOUSE from the pavement — and half run their
+       ridge along it, with the eave over the door and the long slope
+       showing from across the road. Both are the town; a street of
+       only one is a barracks. */
+    const across = R() < 0.5;
+    const B = building(tag, F, w, d, n, dress,
+                       { ridge: across ? 'across' : 'along', pitch: across ? PITCH_FRONT : PITCH_SIDE });
     const ks = Array.from({ length: n }, (_, k) => k);
     const backFacing = { N: 'S', S: 'N', E: 'W', W: 'E' }[facing];
     const K = frame(...F.at(0, -d), backFacing);
@@ -633,16 +713,37 @@ export function buildTown(rm, mb, opts = {}) {
     F.add(0, -d + ZONE, w, -ZONE, { storeys: [topOf(B)] });
     const front = DETACHED.front(B, ks, door);
     facade(B, F, w, front);
-    const fr = approach(B, F, [0, w], front.find(x => x.kind === 'door'), lot, fy, { path: true, ext: [PLINTH, PLINTH] });
+    const fr = approach(B, F, [0, w], front.find(x => x.kind === 'door'), lot, fy,
+                        { path: true, ext: [PLINTH, PLINTH], eave: !across });
     const back = DETACHED.back(B, ks, door);
     facade(B, K, w, back);
-    const bk = approach(B, K, [0, w], back.find(x => x.kind === 'door'), lot, by, { ext: [PLINTH, PLINTH] });
-    /* the gable ends, with the foundation running along them, and the
-       side yards outside that */
-    F.add(-PLINTH, -d, 0, 0, plinthProps(B));
-    F.add(w, -d, w + PLINTH, 0, plinthProps(B));
-    F.add(lot[0], -d - PLINTH, -PLINTH, PLINTH, lawn(`${tag} side yard`));
-    F.add(w + PLINTH, -d - PLINTH, lot[1], PLINTH, lawn(`${tag} side yard`));
+    const bk = approach(B, K, [0, w], back.find(x => x.kind === 'door'), lot, by,
+                        { ext: [PLINTH, PLINTH], eave: !across });
+    /* THE SIDES, with the foundation running along them and the side
+       yards outside that. Under the eaves of a house whose gable faces
+       the street, they are the strip under the soffit and then the
+       yard; on a house whose ridge runs along it they are its gable
+       ends, and the plinth's ceiling at the eaves is what draws them. */
+    const side = lawn(`${tag} side yard`);
+    /* a lot is thirty-two wider than its house each side, which is
+       exactly the eave, so the yard beyond the strip can be nothing */
+    const lay = (u0, v0, u1, v1, props) => (u1 - u0 > 0 && v1 - v0 > 0) && F.add(u0, v0, u1, v1, props);
+    if (across) {
+      F.add(-PLINTH, -d, 0, 0, underEaves(B, plinthProps(B)));
+      F.add(w, -d, w + PLINTH, 0, underEaves(B, plinthProps(B)));
+      F.add(-EAVE, -d, -PLINTH, 0, underEaves(B, side));
+      F.add(w + PLINTH, -d, w + EAVE, 0, underEaves(B, side));
+      lay(lot[0], -d - PLINTH, -EAVE, PLINTH, side);
+      lay(w + EAVE, -d - PLINTH, lot[1], PLINTH, side);
+      /* the corners of the strip, past the ends of the side walls */
+      lay(-EAVE, -d - PLINTH, -PLINTH, -d, side); lay(-EAVE, 0, -PLINTH, PLINTH, side);
+      lay(w + PLINTH, -d - PLINTH, w + EAVE, -d, side); lay(w + PLINTH, 0, w + EAVE, PLINTH, side);
+    } else {
+      F.add(-PLINTH, -d, 0, 0, plinthProps(B));
+      F.add(w, -d, w + PLINTH, 0, plinthProps(B));
+      F.add(lot[0], -d - PLINTH, -PLINTH, PLINTH, side);
+      F.add(w + PLINTH, -d - PLINTH, lot[1], PLINTH, side);
+    }
 
     /* THE LANDSCAPING: a tree in the front yard as often as not, shrubs
        along the foundation between the windows, and a tree or two out
@@ -693,7 +794,8 @@ export function buildTown(rm, mb, opts = {}) {
   function terrace(tx0, faceC, facing, count, n, dress, tag, fy, by, shops) {
     const w = count * ROW_W, d = HOUSE_D;
     const F = frame(...(facing === 'N' || facing === 'S' ? [tx0, faceC] : [faceC, tx0]), facing);
-    const B = building(tag, F, w, d, n, dress, shops ? { base: KERB_H, winBase: KERB_H, litChance: 0.3 } : { litChance: 0.3 });
+    const B = building(tag, F, w, d, n, dress,
+                       shops ? { base: KERB_H, winBase: KERB_H, litChance: 0.3, pitch: PITCH_ROW } : { litChance: 0.3, pitch: PITCH_ROW });
     const ks = Array.from({ length: n }, (_, k) => k);
     const backFacing = { N: 'S', S: 'N', E: 'W', W: 'E' }[facing];
     const K = frame(...F.at(0, -d), backFacing);
@@ -721,8 +823,10 @@ export function buildTown(rm, mb, opts = {}) {
     if (shops) {
       /* a shop stands on the sidewalk: no foundation, no stoop, a
          forecourt of concrete level with Main Street's own pavement */
-      F.add(0, 0, w, fy, open(`${tag} forecourt`, { floor: KERB_H, ceil: B.top, floorTex: 'SIDEWALK',
-        light: 0.56, ambient: 0.56, lowerTex: 'KERBSTON', upperTex: B.gable, fuel: TOWN_FUEL.walk }));
+      const fore = open(`${tag} forecourt`, { floor: KERB_H, floorTex: 'SIDEWALK',
+        light: 0.56, ambient: 0.56, lowerTex: 'KERBSTON', upperTex: B.gable, fuel: TOWN_FUEL.walk });
+      F.add(0, 0, w, EAVE, underEaves(B, fore));
+      F.add(0, EAVE, w, fy, fore);
       F.add(-ROW_END, 0, 0, fy, open(`${tag} forecourt`, { floor: KERB_H, floorTex: 'SIDEWALK', light: 0.50, ambient: 0.50, fuel: 0 }));
       F.add(w, 0, w + ROW_END, fy, open(`${tag} forecourt`, { floor: KERB_H, floorTex: 'SIDEWALK', light: 0.50, ambient: 0.50, fuel: 0 }));
       /* the alleys down the ends, and the yards out the back */
@@ -732,7 +836,7 @@ export function buildTown(rm, mb, opts = {}) {
       for (let i = 0; i < count; i++) {
         const u = i * ROW_W;
         const a = approach(B, F, [u, u + ROW_W], doors[i], [u, u + ROW_W], fy,
-                           { path: true, ext: [i === 0 ? PLINTH : 0, i === count - 1 ? PLINTH : 0] });
+                           { path: true, ext: [i === 0 ? PLINTH : 0, i === count - 1 ? PLINTH : 0], eave: true });
         if (R() < 0.6) plant(R() < 0.5 ? 'bush_small_1' : 'bush_large_2', ...F.at(u + 128 + (R() - 0.5) * 24, 28 + R() * 20), 0.7 + R() * 0.3);
         if (R() < 0.25) plant('fir_young', ...F.at(u + 118 + (R() - 0.5) * 40, fy - 44 - R() * 24), 0.8 + R() * 0.3);
         void a;
@@ -742,8 +846,8 @@ export function buildTown(rm, mb, opts = {}) {
       F.add(-ROW_END, -d - PLINTH, -PLINTH, PLINTH, lawn(`${tag} end garden`));
       F.add(w + PLINTH, -d - PLINTH, w + ROW_END, PLINTH, lawn(`${tag} end garden`));
     }
-    /* the back: one foundation strip, one yard, and the ends */
-    approach(B, K, [0, w], null, [0, w], by, { ext: [PLINTH, PLINTH] });
+    /* the back: one foundation strip under the eave, one yard, and the ends */
+    approach(B, K, [0, w], null, [0, w], by, { ext: [PLINTH, PLINTH], eave: true });
     K.add(-ROW_END, PLINTH, 0, by, lawn(`${tag} end garden`));
     K.add(w, PLINTH, w + ROW_END, by, lawn(`${tag} end garden`));
     for (let i = 0; i < count; i++) if (R() < 0.45)

@@ -3315,11 +3315,55 @@ and a path of flagstones out to the sidewalk. Two steps of sixteen up to
 a door at thirty-two is a porch, and both are under the twenty-four the
 engine lets you climb.
 
-EVERYTHING THAT TOUCHES A WALL HAS ITS CEILING AT THE EAVES — the
+EVERYTHING THAT TOUCHES A GABLE WALL HAS ITS CEILING AT THE EAVES — the
 plinth, the stoop, the gable strips — because above the eaves the ground
 is shut and the roof storey is open, and that disagreement IS the gable.
 A sky-ceilinged sector against the same wall would draw brick from the
-ridge up to the sky.
+ridge up to the sky. And the gable band FACES THE STREET: the
+disagreement rule winds a wall to face its open side, and above the
+plinth the open side is the attic. Nobody is in the attic. So an upper
+band over a sector whose ceiling is the sky is wound the other way and
+lit by the ground under the sky, or the house has a gable that can be
+seen from inside its own roof and from nowhere else — which is what
+every house had until somebody stood on the pavement and looked up.
+
+THE ROOF YOU CAN SEE. Three things had to change before a roof was
+anything but a black wedge on top of the wall, and the user drew a ring
+round the wedge.
+
+  THE PITCH. Every roof was 128 over a 384 half-span, one in three, and
+    you are under the plane of a roof at one in three until you are
+    twenty-one metres back from the wall: from the pavement in front of
+    a house there was nothing above the eaves but sky, and from across
+    the street a sliver. A terrace is six in twelve now, a house with
+    its ridge along the street a little over, and a house with its
+    gable to the street nine in twelve — 192, 208 and 168 of rise.
+  THE EAVE. A roof with no edge is a plane you are under. So the ground
+    under an eave wall is a COLUMN OF TWO: the plinth or the lawn or
+    the stoop, with the soffit for a ceiling at the eaves, and over it
+    the LIP — the roof's edge, eight of board thick, shingle on top and
+    open to the sky up to the ridge. The disagreement rule draws it
+    without being told: against the yard the lip is a band eight tall
+    and wears FASCIA, a white line along the top of every wall; against
+    the wall the same band is over the soffit where nobody sees it;
+    between the lip and the roof both columns are open and nothing
+    draws; above the ridge both are shut. It is thirty-two deep, the
+    depth of the stoop, so the stoop is under it whole and a front door
+    is under a porch. See underEaves in js/maps/town.js.
+  THE GABLE TO THE STREET. Half the detached houses run their ridge
+    back from the street instead of along it, so the front wall carries
+    a triangle of board 448 wide and 168 tall over the door — the one
+    shape that says HOUSE from the pavement. The other half show their
+    eave to the street and their long slope from across it. Both are
+    the town; a street of only one is a barracks.
+
+And the shingle was the colour of tar, which was the palette and not the
+light: the grey ramp's half-way stop is 92 of 255 with a gamma of 1.3,
+so a shingle inked at what reads as a sensible four tenths came out at
+fifty-eight against the ninety of the walls' bone at the same number,
+and the daylight banding halved it again. The courses are inked in the
+top half of the ramp now and the shadow lines under them carry the
+contrast, and a roof at dawn is a grey surface with courses on it.
 
 TWO THINGS IN THE ENGINE HAD TO GIVE, both found by standing in front of
 a house and seeing no window in it. A band's two edges are the surfaces
@@ -3426,10 +3470,10 @@ so any more, and the supermarket's partitions never did.
 WHAT IT COST, AND WHAT WAS DONE ABOUT IT
 - - - - - - - - - - - - - - - - - - - - -
 
-Eleven and a half thousand regions against 327, and twenty-eight
-thousand lines against a thousand — fewer regions than the town with
-interiors had and more lines, because a recess is four lines for one
-small room. Four things break at that size and all four break
+Fourteen thousand regions against 327, and thirty thousand lines
+against a thousand — about what the town with interiors had, because a
+recess is four lines for one small room and the ground under every eave
+is two regions where it was one. Four things break at that size and all four break
 quietly, so all four were fixed against the map that existed, before
 there was a town to find them with:
 

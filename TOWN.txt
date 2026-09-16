@@ -50,6 +50,13 @@ WHERE IT DEPARTS FROM THE PLAN, and why:
     door, a foundation you can see, two steps up to the stoop and a path
     to the sidewalk. What was spent on wallpaper is spent on the street.
     See A HOUSE IS A FACADE in README.txt.
+  THE ROOFS ARE STEEPER THAN THE PLAN'S and half the houses turn their
+    gable to the street. Every roof was one in three, which cannot be
+    seen from the pavement under it; a terrace is six in twelve now and
+    a gable-fronted house nine in twelve, every eave wall has a soffit
+    and a fascia board over the ground at its foot, and the gable band
+    faces the street instead of the attic. See THE ROOF YOU CAN SEE in
+    README.txt.
   THE SCHOOL HAS TWO STAIRS, desks, lockers and windows you can see in
     through; the church has pews, a wainscot, an altar with a cross
     behind it and coloured glass you can see through. The two buildings
