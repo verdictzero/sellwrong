@@ -172,13 +172,33 @@ function spanCovering(spans, z) {
  */
 export function lineBands(Fall, Ball) {
   const F = openSpans(Fall), B = openSpans(Ball);
+  /* EVERY CUT REMEMBERS WHOSE SURFACE IT IS. A band's two edges are two
+     of these, and where one of them is a sloped ceiling the drawing has
+     to ask that ceiling at the point rather than take the flat number —
+     see bandEdges in js/mapgeo.js. The first cut of this took the shut
+     storey's floor for every lower band's top, which is right for a
+     step and wrong for a window recess under a roof: the band from the
+     sill to the head came out as a sheet of brick from the sill to the
+     eaves, over every window in the town. */
   const cuts = [];
-  for (let i = 0; i < F.length; i++) { cuts.push(F[i].floor, F[i].ceil); }
-  for (let i = 0; i < B.length; i++) { cuts.push(B[i].floor, B[i].ceil); }
-  cuts.sort((a, b) => a - b);
+  for (let i = 0; i < F.length; i++) { cuts.push({ z: F[i].floor, s: F[i], which: 'floor' }, { z: F[i].ceil, s: F[i], which: 'ceil' }); }
+  for (let i = 0; i < B.length; i++) { cuts.push({ z: B[i].floor, s: B[i], which: 'floor' }, { z: B[i].ceil, s: B[i], which: 'ceil' }); }
+  cuts.sort((a, b) => a.z - b.z);
+  /* of the cuts at one height, the one that bounds this band: the open
+     storey's own surface first, then the shut one's, then whichever */
+  const edgeAt = (k, open, from) => {
+    const z = cuts[k].z;
+    let best = cuts[k];
+    for (let j = 0; j < cuts.length; j++) {
+      if (Math.abs(cuts[j].z - z) > ZEPS) continue;
+      if (cuts[j].s === open) return cuts[j];
+      if (cuts[j].s === from) best = cuts[j];
+    }
+    return best;
+  };
   const bands = [], holes = [];
   for (let i = 0; i + 1 < cuts.length; i++) {
-    const z0 = cuts[i], z1 = cuts[i + 1];
+    const z0 = cuts[i].z, z1 = cuts[i + 1].z;
     if (z1 - z0 <= ZEPS) continue;
     const m = (z0 + z1) / 2;
     const f = spanCovering(F, m), b = spanCovering(B, m);
@@ -205,7 +225,8 @@ export function lineBands(Fall, Ball) {
       if (z1 <= lowest.floor + ZEPS) { from = lowest; kind = 'lower'; }
       else { from = highest; kind = 'upper'; }
     }
-    bands.push({ z0, z1, open, from, kind, openFront: !!f });
+    bands.push({ z0, z1, open, from, kind, openFront: !!f,
+                 e0: edgeAt(i, open, from), e1: edgeAt(i + 1, open, from) });
   }
   return { bands, holes };
 }

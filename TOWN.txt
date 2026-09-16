@@ -10,12 +10,14 @@ WHAT IS BUILT OF IT, as of the commit this paragraph arrived in: all
 seven phases, in the shape below and with the departures noted at the
 end. The column is in js/level.js, the scale work in js/mapgeo.js and
 js/fire.js, and the town itself in js/maps/town.js. Twenty-five blocks,
-sixty runs of street and thirty-six junctions, two hundred and
-sixty-eight houses with an interior behind every door that is drawn as a
-door, a school, a church with a choir loft, and a fire that climbs the
-stairs. The rest of this document is the plan it was built from and is
-left as it was written, so that what was argued for and what was done
-can be compared.
+sixty runs of street with lamps down them and thirty-six junctions,
+three hundred and twelve houses that are FACADES — a foundation, a
+stoop, a door and windows cut into the wall, and no inside, which is the
+largest of the departures below — a school with two stairs and desks in
+its classrooms, a church with pews and an altar under a choir loft, and
+a fire that climbs the school's stairs. The rest of this document is the
+plan it was built from and is left as it was written, so that what was
+argued for and what was done can be compared.
 
 WHERE IT DEPARTS FROM THE PLAN, and why:
 
@@ -39,8 +41,28 @@ WHERE IT DEPARTS FROM THE PLAN, and why:
     and nowhere to park. Main Street went to 1024 to keep a road in it
     at all. Twenty-four is exactly MAX_STEP, so a sidewalk is the
     tallest thing in the town you can still walk onto.
-  THERE ARE NO UTILITY POLES and no furniture. Both are content on top
-    of a construction that works; see WHAT IS NOT DONE in README.txt.
+  THE HOUSES HAVE NO INSIDES. THE TOWNHOUSE below, with its hall and
+    stair and two bedrooms, was built, walked by the test from every
+    front hall, and taken out again at the user's request — nobody went
+    in, and a house at two in the morning is a thing you look at. A
+    house is a shell now: one column of one storey, the roof, with a
+    wall of solid pieces and RECESSES cut in it for the windows and the
+    door, a foundation you can see, two steps up to the stoop and a path
+    to the sidewalk. What was spent on wallpaper is spent on the street.
+    See A HOUSE IS A FACADE in README.txt.
+  THE SCHOOL HAS TWO STAIRS, desks, lockers and windows you can see in
+    through; the church has pews, a wainscot, an altar with a cross
+    behind it and coloured glass you can see through. The two buildings
+    with an inside got the inside.
+  THERE ARE LAMPS after all — one every 1536 along a sidewalk,
+    staggered, one on every corner, each over a pool of light that is a
+    brighter sector of pavement — and trees in the yards, shrubs along
+    the foundations, paths across the parks and stones in the cemetery.
+    All of it sprites; none of it sectors. No utility poles still.
+  THE FUEL IS THREE HUNDRED AND OVER in the school and the church,
+    because the spread chance saturates at three hundred and a corridor
+    at a hundred and twenty was a firebreak down the middle of the
+    school. The houses, having no inside, do not burn; their yards do.
   THE STAIR IS A COLUMN OF STEPPED BOXES rather than a column of one
     with flights inside it. Tread i is floor 16i and ceiling 16i + 96,
     and the next flight stacks over it with the deck between — which is
@@ -702,7 +724,7 @@ order by anybody.
 THE TEST
 --------
 
-1463 checks pass today in about three minutes, with no install and no
+1549 checks pass today in about three minutes, with no install and no
 browser, and every one of them is there because something reached a
 screenshot. The column breaks assumptions that nothing currently
 asserts, so these come first, in phase 1, before the code they check:

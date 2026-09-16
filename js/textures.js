@@ -2414,6 +2414,11 @@ export const CHARRABLE = [
   'FLOORBRD', 'CARPETDM', 'KITCHTIL', 'STAIRTRD', 'SKIRTING',
   'WINDOWDK', 'WINDOWLT', 'WINDOWWD', 'HOUSDOOR', 'SHOPFRNT',
   'CHURCHWD', 'STAINGLS', 'LOCKERS', 'BLACKBRD', 'PEWEND', 'SCHOOLBR',
+  /* the facades: a door, a pane and a sill burn; a foundation and a
+     gravestone do not */
+  'FRNTDOOR', 'FRNTDOR2', 'FRNTDOR3', 'WINPANEL', 'WINPANED', 'WINSHADE', 'SILLWOOD',
+  'CHURCHIN', 'WAINSCOT', 'PEWSEAT', 'PEWFRONT', 'PEWBACK', 'CHANCEL', 'ALTARFRT', 'ALTARTOP',
+  'REREDOS', 'WINREVEL', 'SCHWINLT', 'SCHWINDK', 'DESKTOP', 'DESKFRNT', 'PAVERS',
 ];
 
 /** The charred name for a texture, or the texture itself if it has none. */
@@ -2544,7 +2549,7 @@ const SIZES = {
   STAIRTRD: { w: 64, h: 16 },   // one repeat is one step
   SKIRTING: { w: 64, h: 16 },
   HOUSDOOR: { w: 64, h: 128 },  // one repeat is one door
-  SHOPFRNT: { w: 64, h: 128 },
+  SHOPFRNT: { w: 64, h: 112 },  // one repeat is one shop's ground floor, which is a storey
   STAINGLS: { w: 64, h: 128 },
   /* ONE REPEAT IS ONE STOREY, which is 112. Worn at the default 64 a
      three-storey terrace came out with five and a quarter rows of
@@ -2557,6 +2562,21 @@ const SIZES = {
   CHAINLNK: { w: 64, h: 64, masked: true },
   FENCEPIK: { w: 64, h: 48, masked: true },
   TOWNPOLE: { w: 64, h: 128, masked: true },
+  /* THE FACADES. One repeat is the whole thing: the foundation's
+     thirty-two, a riser's sixteen, a door's forty-eight by eighty. */
+  FOUNDATN: { w: 64, h: 32 },
+  STONEFND: { w: 64, h: 32 },
+  STEPFACE: { w: 64, h: 16 },
+  FRNTDOOR: { w: 48, h: 80 },
+  FRNTDOR2: { w: 48, h: 80 },
+  FRNTDOR3: { w: 48, h: 80 },
+  WAINSCOT: { w: 64, h: 40 },
+  PEWFRONT: { w: 64, h: 16 },
+  PEWBACK:  { w: 64, h: 40 },
+  ALTARFRT: { w: 64, h: 40 },
+  REREDOS:  { w: 128, h: 128 },
+  DESKFRNT: { w: 64, h: 24, masked: true },
+  GRAVESTN: { w: 24, h: 32 },
   STORBASE: { w: 64, h: 32 },
   BRANDBAND:{ w: 64, h: 96 },   // one repeat is the fascia band
   DOORTRAK: { w: 64, h: 16 },
@@ -3147,6 +3167,368 @@ T.TOWNPOLE = () => {
     }
   }
   return p.snap(0.35);
+};
+
+/* =====================================================================
+   THE TOWN, SECOND PASS — what a house is made of when it is a facade
+
+   The houses have no insides now (see A HOUSE IS A FACADE in
+   js/maps/town.js), and everything that used to be spent on wallpaper
+   nobody saw is spent on the outside: a foundation you can see, a stoop
+   and a step up to a door that is a door, and windows that are HOLES
+   in the wall with a pane at the back of them rather than a picture of
+   a hole. So these are the surfaces of a recess — the pane, the sill,
+   the riser — and the surfaces a church and a school are lined with.
+   ===================================================================== */
+
+/* ---------- foundations, steps and the path to the door ---------- */
+
+T.FOUNDATN = () => {
+  /* Concrete block, worn thirty-two tall — one repeat is the whole
+     height of the foundation, two courses of block with the top course
+     catching the light and the bottom one in the dirt. */
+  const p = new Pix(64, 32, 379);
+  aggregate(p, 379, { baseKey: 'grey', baseLo: 0.30, baseHi: 0.38,
+    grades: [{ count: 90, min: 0.3, max: 0.9, key: 'bone', lo: 0.26, hi: 0.38 }] });
+  const rng = makeRng(383);
+  for (const y0 of [0, 16]) {
+    p.hline(0, 63, y0, 'grey', 0.18);
+    p.hline(0, 63, y0 + 1, 'bone', 0.42);
+    const off = y0 ? 16 : 0;
+    for (let x = off; x < 64; x += 32) { p.vline(x, y0, y0 + 15, 'grey', 0.18); p.vline((x + 1) % 64, y0 + 1, y0 + 15, 'bone', 0.40); }
+    for (let k = 0; k < 40; k++) p.ink(Math.floor(rng() * 64), y0 + 2 + Math.floor(rng() * 13), 'grey', 0.26 + rng() * 0.1);
+  }
+  /* the splash line, where the rain off the wall has darkened it */
+  for (let y = 24; y < 32; y++) for (let x = 0; x < 64; x++) p.wash(x, y, 'grey', 0.14, (y - 23) / 9 * 0.5);
+  p.grime(0.40, 'olive', 0.10, 389);
+  return p.snap(0.5);
+};
+
+T.STONEFND = () => {
+  /* Fieldstone, for the church: rubble in a lime mortar, which is what
+     every church in a small town stands on and no house does. */
+  const p = new Pix(64, 32, 397);
+  p.fill('bone', 0.36);
+  const rng = makeRng(397);
+  const stones = [[8, 8, 7], [24, 7, 6], [40, 9, 8], [56, 6, 6], [4, 24, 6], [17, 23, 5], [32, 24, 7], [48, 22, 6], [60, 25, 5]];
+  for (const [cx, cy, r] of stones) {
+    const t = 0.30 + rng() * 0.16;
+    p.disc(cx, cy, r, 'grey', t);
+    p.disc(cx - 1, cy - 1, r * 0.55, 'grey', Math.min(1, t + 0.10));
+    p.disc(cx + 1, cy + 2, r * 0.5, 'grey', Math.max(0, t - 0.08));
+  }
+  p.grime(0.36, 'olive', 0.10, 401);
+  return p.snap(0.5);
+};
+
+T.STEPFACE = () => {
+  /* The riser of a concrete step, sixteen tall: one repeat is one step,
+     and the nosing on top is the only thing about it you ever see. */
+  const p = new Pix(64, 16, 409);
+  aggregate(p, 409, { baseKey: 'grey', baseLo: 0.32, baseHi: 0.40,
+    grades: [{ count: 50, min: 0.3, max: 0.8, key: 'bone', lo: 0.30, hi: 0.42 }] });
+  p.hline(0, 63, 0, 'bone', 0.54);
+  p.hline(0, 63, 1, 'bone', 0.46);
+  p.hline(0, 63, 2, 'grey', 0.22);
+  p.grime(0.34, 'grey', 0.08, 419);
+  return p.snap(0.5);
+};
+
+T.PAVERS = () => {
+  /* Flagstones, two by two, with moss in the joints. The path from the
+     sidewalk to the front door, and the paths across the park. */
+  const p = new Pix(64, 64, 421);
+  const rng = makeRng(421);
+  p.fill('olive', 0.22);
+  for (const [fx, fy] of [[0, 0], [32, 0], [0, 32], [32, 32]]) {
+    const t = 0.34 + rng() * 0.08;
+    p.box(fx + 2, fy + 2, 28, 28, 'bone', t);
+    speckle(28, 28, 60, 431 + fx + fy, (x, y, a) => p.ink(fx + 2 + x, fy + 2 + y, 'bone', t - 0.06 + a * 0.12));
+    p.hline(fx + 2, fx + 29, fy + 2, 'bone', t + 0.10);
+    p.vline(fx + 2, fy + 2, fy + 29, 'bone', t + 0.08);
+    p.hline(fx + 2, fx + 29, fy + 29, 'grey', 0.22);
+    p.vline(fx + 29, fy + 2, fy + 29, 'grey', 0.24);
+  }
+  p.grime(0.26, 'olive', 0.08, 433);
+  return p.snap(0.5);
+};
+
+/* ---------- the door, which is a door now ---------- */
+
+/** A panelled front door in its casing, 64 pixels worn 48 by 80. The
+ *  casing is at the edges ON PURPOSE: a door stands at the back of a
+ *  recess and its jambs are the same texture wrapped round the corner,
+ *  so the edge of the picture has to be the frame. */
+const frontDoor = (seed, leaf, leafT) => () => {
+  const p = new Pix(64, 64, seed);
+  p.fill('bone', 0.50);                                   // the casing
+  p.bevel(0, 0, 64, 64, 'bone', 0.62, 'bone', 0.34);
+  p.box(6, 12, 52, 52, leaf, leafT);                      // the leaf
+  p.box(6, 3, 52, 8, 'blue', 0.16);                       // the transom
+  for (let x = 8; x < 56; x += 2) p.ink(x, 6, 'yellow', 0.34);   // a light left on in the hall
+  p.hline(6, 57, 11, 'bone', 0.30);
+  /* two small panels over two tall ones, each with the light on its
+     top-left and the shadow on its bottom-right */
+  for (const [px, py, pw, ph] of [[11, 17, 19, 12], [34, 17, 19, 12], [11, 34, 19, 26], [34, 34, 19, 26]]) {
+    p.box(px, py, pw, ph, leaf, leafT - 0.05);
+    p.bevel(px, py, pw, ph, leaf, Math.min(1, leafT + 0.14), leaf, Math.max(0, leafT - 0.12));
+  }
+  p.disc(52, 44, 2.2, 'yellow', 0.62);                    // the knob
+  p.ink(52, 41, 'yellow', 0.5);                           // the lock
+  for (let y = 12; y < 64; y++) p.ink(6, y, leaf, Math.min(1, leafT + 0.08));   // the hinge stile catches the light
+  p.grime(0.22, 'grey', 0.06, seed + 4);
+  return p.snap(0.5);
+};
+T.FRNTDOOR = frontDoor(439, 'red', 0.26);      // the red door
+T.FRNTDOR2 = frontDoor(443, 'green', 0.20);    // the green one
+T.FRNTDOR3 = frontDoor(449, 'grey', 0.12);     // and the black one
+
+/* ---------- the window pane, at the back of its recess ---------- */
+
+/** A whole window filling the picture: casing at the edges, a
+ *  double-hung sash inside it, four lights a sash. `lit` is a lamp on
+ *  in the room; `shade` is a blind pulled half way. */
+function windowPane(p, lit, shade) {
+  p.fill('bone', 0.50);                                   // the casing, which is also the jamb
+  p.bevel(0, 0, 64, 64, 'bone', 0.62, 'bone', 0.34);
+  p.box(5, 5, 54, 56, 'bone', 0.58);                      // the sash frame
+  const glassKey = lit ? 'yellow' : 'blue';
+  const glassT = lit ? 0.70 : 0.12;
+  p.box(8, 8, 48, 50, glassKey, glassT);
+  if (lit) {
+    for (let y = 8; y < 58; y++) for (let x = 8; x < 56; x++) {
+      const d = Math.hypot(x - 20, y - 24) / 44;
+      p.ink(x, y, 'yellow', Math.max(0.36, glassT - d * 0.30));
+    }
+    /* a curtain drawn back on one side, and somebody's lamp */
+    for (let y = 8; y < 58; y++) for (let x = 8; x < 16; x++) p.ink(x, y, 'red', 0.30 + ((x + y) % 3 === 0 ? 0.06 : 0));
+    p.box(40, 30, 6, 12, 'brown', 0.24);
+  } else {
+    /* the night sky in the glass, and one reflection of a street lamp */
+    for (let y = 8; y < 58; y++) for (let x = 8; x < 56; x++) p.ink(x, y, 'blue', 0.10 + (y - 8) / 50 * 0.05);
+    for (let k = 0; k < 14; k++) p.ink(12 + k, 50 - k, 'blue', 0.26);
+    for (let k = 0; k < 14; k++) p.ink(13 + k, 50 - k, 'blue', 0.20);
+  }
+  if (shade) {
+    /* a blind, down to the meeting rail: cream, with its slats */
+    for (let y = 8; y < 33; y++) for (let x = 8; x < 56; x++) p.ink(x, y, 'bone', y % 3 === 0 ? 0.46 : 0.58);
+    p.hline(8, 55, 32, 'bone', 0.40);
+  }
+  p.box(31, 8, 2, 50, 'bone', 0.60);                      // the meeting stile
+  p.box(8, 31, 48, 3, 'bone', 0.60);                      // the meeting rail
+  p.hline(5, 58, 60, 'bone', 0.66);                       // the sill
+  p.hline(5, 58, 61, 'grey', 0.26);
+}
+T.WINPANEL = () => { const p = new Pix(64, 64, 457); windowPane(p, true, false);  p.grime(0.16, 'grey', 0.05, 461); return p.snap(0.5); };
+T.WINPANED = () => { const p = new Pix(64, 64, 463); windowPane(p, false, false); p.grime(0.16, 'grey', 0.05, 467); return p.snap(0.5); };
+T.WINSHADE = () => { const p = new Pix(64, 64, 479); windowPane(p, false, true);  p.grime(0.16, 'grey', 0.05, 487); return p.snap(0.5); };
+
+T.SILLWOOD = () => {
+  /* The sill and the head of a window recess, seen from above and from
+     below: painted board, sixteen deep, with the paint cracking. */
+  const p = new Pix(64, 64, 491);
+  const rng = makeRng(491);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'bone', 0.54 + Math.sin(x * 0.4 + y) * 0.02);
+  for (let k = 0; k < 6; k++) crack(p, Math.floor(rng() * 64), Math.floor(rng() * 64), 10, 'bone', 0.40, 499 + k, 0.3);
+  p.grime(0.10, 'grey', 0.04, 503);
+  return p.snap(0.5);
+};
+
+/* ---------- inside the church ---------- */
+
+T.CHURCHIN = () => {
+  /* Cream plaster, warmer than the school's, because a church is lit by
+     candles in the story it tells about itself even when it is lit by
+     tubes. A picture rail two thirds of the way up, and nothing else. */
+  const p = new Pix(64, 64, 509);
+  const n = fbm(64, 64, 14, 2, 509);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'bone', 0.50 + n[y * 64 + x] * 0.08);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) p.wash(x, y, 'yellow', 0.56, 0.14);
+  p.grime(0.14, 'grey', 0.05, 521);
+  return p.snap(0.5);
+};
+
+T.WAINSCOT = () => {
+  /* Dark oak dado panelling, forty tall: a rail on top, two raised
+     panels, and a skirting in the dirt. The ledge along the nave walls
+     wears it — see the church in js/maps/town.js. */
+  const p = new Pix(64, 40, 523);
+  const rng = makeRng(523);
+  for (let y = 0; y < 40; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'brown', 0.22 + rng() * 0.03 + Math.sin(y * 0.9) * 0.01);
+  p.hline(0, 63, 0, 'brown', 0.44); p.hline(0, 63, 1, 'brown', 0.36); p.hline(0, 63, 3, 'brown', 0.12);
+  for (const px of [4, 36]) {
+    p.box(px, 7, 24, 26, 'brown', 0.27);
+    p.bevel(px, 7, 24, 26, 'brown', 0.40, 'brown', 0.10);
+    p.bevel(px + 3, 10, 18, 20, 'brown', 0.12, 'brown', 0.36);
+  }
+  p.hline(0, 63, 36, 'brown', 0.14); p.hline(0, 63, 37, 'brown', 0.10);
+  return p.snap(0.5);
+};
+
+T.PEWSEAT = () => {
+  /* Varnished plank, the top of a pew. */
+  const p = new Pix(64, 64, 541);
+  const rng = makeRng(541);
+  for (let b = 0; b < 4; b++) {
+    const y0 = b * 16, t = 0.32 + rng() * 0.06;
+    for (let y = y0; y < y0 + 16; y++) for (let x = 0; x < 64; x++)
+      p.ink(x, y, 'brown', t + Math.sin((x * 0.5 + b * 7) * 0.7) * 0.025 + (y === y0 ? -0.10 : 0) + (y === y0 + 1 ? 0.06 : 0));
+  }
+  return p.snap(0.5);
+};
+
+T.PEWFRONT = () => {
+  /* The front of the seat, sixteen tall, with the kneeler rail under it. */
+  const p = new Pix(64, 16, 547);
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'brown', 0.26 + y / 16 * 0.06);
+  p.hline(0, 63, 0, 'brown', 0.42);
+  p.hline(0, 63, 1, 'brown', 0.16);
+  p.hline(0, 63, 12, 'brown', 0.36); p.hline(0, 63, 13, 'brown', 0.12);
+  return p.snap(0.5);
+};
+
+T.PEWBACK = () => {
+  /* The back of a pew, forty tall: the rail, then a panel, then the
+     shelf for the hymnals on the far side, which is the side you see. */
+  const p = new Pix(64, 40, 557);
+  const rng = makeRng(557);
+  for (let y = 0; y < 40; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'brown', 0.24 + rng() * 0.03);
+  p.hline(0, 63, 0, 'brown', 0.46); p.hline(0, 63, 1, 'brown', 0.40); p.hline(0, 63, 2, 'brown', 0.30); p.hline(0, 63, 4, 'brown', 0.12);
+  for (let x = 6; x < 64; x += 16) p.vline(x, 5, 30, 'brown', 0.16);
+  p.hline(0, 63, 31, 'brown', 0.40); p.hline(0, 63, 32, 'brown', 0.12);
+  for (let x = 4; x < 60; x += 12) { p.box(x, 34, 8, 5, 'red', 0.30); p.vline(x + 8, 34, 38, 'brown', 0.14); }   // the hymnals
+  return p.snap(0.5);
+};
+
+T.CHANCEL = () => {
+  /* Red carpet up the steps and across the chancel. */
+  const p = new Pix(64, 64, 563);
+  aggregate(p, 563, { baseKey: 'red', baseLo: 0.22, baseHi: 0.30,
+    grades: [{ count: 700, min: 0.2, max: 0.7, key: 'red', lo: 0.18, hi: 0.32 }] });
+  p.grime(0.16, 'grey', 0.05, 569);
+  return p.snap(0.5);
+};
+
+T.ALTARFRT = () => {
+  /* The frontal: white linen with a band of purple and a gold fringe. */
+  const p = new Pix(64, 40, 571);
+  for (let y = 0; y < 40; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'bone', 0.74 + Math.sin(x * 0.6) * 0.03);
+  p.hline(0, 63, 0, 'bone', 0.86);
+  for (let y = 10; y < 18; y++) p.hline(0, 63, y, 'purple', 0.44);
+  p.hline(0, 63, 9, 'yellow', 0.62); p.hline(0, 63, 18, 'yellow', 0.62);
+  for (let x = 0; x < 64; x += 2) p.vline(x, 34, 39, 'yellow', 0.58);
+  p.hline(0, 63, 33, 'yellow', 0.66);
+  return p.snap(0.5);
+};
+
+T.ALTARTOP = () => {
+  const p = new Pix(64, 64, 577);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'bone', 0.76 + Math.sin(y * 0.5) * 0.03);
+  p.frame(0, 0, 64, 64, 'bone', 0.86);
+  p.box(6, 6, 52, 52, 'bone', 0.80);                      // the fair linen
+  p.disc(14, 32, 3, 'yellow', 0.66); p.disc(50, 32, 3, 'yellow', 0.66);   // candlesticks
+  p.box(28, 20, 8, 24, 'yellow', 0.60); p.box(22, 26, 20, 6, 'yellow', 0.60);   // the cross, lying flat
+  return p.snap(0.5);
+};
+
+T.REREDOS = () => {
+  /* The panel behind the altar, a hundred and twenty-eight square: dark
+     oak and a gilt cross. One repeat is the whole thing. */
+  const p = new Pix(64, 64, 587);
+  const rng = makeRng(587);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'brown', 0.20 + rng() * 0.03);
+  p.frame(0, 0, 64, 64, 'brown', 0.36);
+  p.frame(3, 3, 58, 58, 'brown', 0.10);
+  p.box(28, 6, 8, 52, 'yellow', 0.62);
+  p.box(14, 18, 36, 8, 'yellow', 0.62);
+  p.vline(28, 6, 57, 'yellow', 0.80); p.hline(14, 49, 18, 'yellow', 0.80);
+  p.vline(35, 6, 57, 'yellow', 0.40); p.hline(14, 49, 25, 'yellow', 0.40);
+  return p.snap(0.5);
+};
+
+T.WINREVEL = () => {
+  /* The reveal of a church window: white painted board, the same as the
+     jamb of any window, but wider and in better repair. */
+  const p = new Pix(64, 64, 593);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'bone', 0.62 + Math.sin(y * 0.3) * 0.02);
+  p.grime(0.08, 'grey', 0.04, 599);
+  return p.snap(0.5);
+};
+
+/* ---------- inside the school ---------- */
+
+/** A steel-framed school window, nine lights, 64 square and worn so. */
+function schoolWindow(p, lit) {
+  p.fill('grey', 0.34);                                   // the frame, which is also the reveal
+  p.bevel(0, 0, 64, 64, 'grey', 0.44, 'grey', 0.22);
+  const g = lit ? 0.62 : 0.11;
+  p.box(4, 4, 56, 56, lit ? 'yellow' : 'blue', g);
+  if (lit) {
+    for (let y = 4; y < 60; y++) for (let x = 4; x < 60; x++) p.ink(x, y, 'yellow', g - (y - 4) / 56 * 0.10);
+    for (let y = 4; y < 60; y++) for (let x = 4; x < 60; x++) p.wash(x, y, 'cyan', 0.8, 0.22);   // the tube light is green
+    for (let y = 40; y < 60; y += 5) p.hline(8, 56, y, 'yellow', 0.40);                          // desks and their shadows
+  }
+  for (const x of [22, 41]) p.box(x, 4, 2, 56, 'grey', 0.42);
+  for (const y of [22, 41]) p.box(4, y, 56, 2, 'grey', 0.42);
+  p.hline(0, 63, 62, 'grey', 0.46); p.hline(0, 63, 63, 'grey', 0.20);
+}
+T.SCHWINLT = () => { const p = new Pix(64, 64, 601); schoolWindow(p, true);  p.grime(0.18, 'grey', 0.05, 607); return p.snap(0.5); };
+T.SCHWINDK = () => { const p = new Pix(64, 64, 613); schoolWindow(p, false); p.grime(0.18, 'grey', 0.05, 617); return p.snap(0.5); };
+
+T.DESKTOP = () => {
+  /* Laminate, with a pencil groove and somebody's initials. */
+  const p = new Pix(64, 64, 619);
+  const n = fbm(64, 64, 10, 2, 619);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'bone', 0.56 + n[y * 64 + x] * 0.05);
+  p.frame(0, 0, 64, 64, 'brown', 0.30);
+  p.hline(4, 59, 10, 'grey', 0.36);
+  crack(p, 40, 40, 8, 'grey', 0.30, 631, 0.2);
+  return p.snap(0.5);
+};
+
+T.DESKFRNT = () => {
+  /* The side of a school desk, twenty-four tall: the steel legs, the
+     book box between them, the shadow under the top. */
+  const p = new Pix(64, 24, 641, false);
+  p.clear();
+  p.hline(0, 63, 0, 'brown', 0.30, 255); p.hline(0, 63, 1, 'brown', 0.22, 255);
+  for (const x of [4, 58]) { p.box(x, 2, 3, 22, 'grey', 0.30, 255); p.vline(x, 2, 23, 'grey', 0.40, 255); }
+  p.box(9, 3, 46, 11, 'brown', 0.30, 255);
+  p.bevel(9, 3, 46, 11, 'brown', 0.40, 'brown', 0.16);
+  for (let x = 12; x < 52; x += 8) p.box(x, 5, 5, 6, ['red', 'blue', 'green'][Math.floor(x / 8) % 3], 0.36, 255);   // the books
+  return p.snap(0.35);
+};
+
+/* ---------- the cemetery ---------- */
+
+T.GRAVESTN = () => {
+  /* Granite, worn twenty-four wide and thirty-two tall so that one
+     repeat is one stone's face: the panel where the name was, and no
+     name on it, ever. */
+  const p = new Pix(64, 64, 653);
+  aggregate(p, 653, { baseKey: 'grey', baseLo: 0.34, baseHi: 0.42,
+    grades: [{ count: 200, min: 0.3, max: 0.8, key: 'grey', lo: 0.30, hi: 0.50 }] });
+  p.hline(0, 63, 0, 'grey', 0.54); p.hline(0, 63, 1, 'grey', 0.48);
+  p.box(10, 12, 44, 30, 'grey', 0.28);
+  p.frame(10, 12, 44, 30, 'grey', 0.22);
+  for (const y of [18, 24, 30, 36]) p.hline(16, 48 - (y === 36 ? 12 : 0), y, 'grey', 0.18);
+  p.grime(0.40, 'olive', 0.12, 659);
+  return p.snap(0.5);
+};
+
+/* ---------- the street lamp's own light, on the ground ---------- */
+
+T.LAMPPOOL = () => {
+  /* The sidewalk directly under a lamp: the same concrete, with the
+     lamp's own base plate cast into it. */
+  const p = new Pix(64, 64, 661);
+  aggregate(p, 661, { baseKey: 'bone', baseLo: 0.32, baseHi: 0.42,
+    grades: [{ count: 150, min: 0.4, max: 1.0, key: 'bone', lo: 0.24, hi: 0.46 },
+             { count: 40,  min: 0.4, max: 1.1, key: 'grey', lo: 0.26, hi: 0.38 }] });
+  p.hline(0, 63, 0, 'grey', 0.16); p.hline(0, 63, 1, 'bone', 0.48);
+  p.grime(0.24, 'grey', 0.07, 667);
+  return p.snap(0.5);
 };
 
 const AFTER_THE_FIRE = {

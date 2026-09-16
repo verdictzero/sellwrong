@@ -216,6 +216,10 @@ troopStates('ARMY', TROOPS.ARMY.sprite, 'A_ArmyFire');
    ------------------------------------------------------------------- */
 S('TRLY_STAND',  'TRLY', 'A', -1, null, null);
 S('BOLL_STAND',  'BOLL', 'A', -1, null, null);
+S('LMPP_STAND',  'LMPP', 'A', -1, null, null);
+/* two stones — a round-topped one and a cross — picked per actor the
+   way the splats are, so a cemetery is not one stone repeated */
+S('GRAV_STAND',  'GRV0', 'A', -1, null, null);
 S('GCAN_STAND',  'GCAN', 'A', -1, null, null);
 S('CRAT_STAND',  'CRAT', 'A', -1, null, null);
 /* What is left where somebody was. Three paintings, picked per actor
@@ -455,6 +459,21 @@ export const ACTORS = {
   /* Scenery. Solid, mostly, and most of it burns. */
   TROLLEY: { name: 'Trolley', spawn: 'TRLY_STAND', radius: 16, height: 44, solid: true, pushable: true },
   BOLLARD: { name: 'Bollard', spawn: 'BOLL_STAND', radius: 10, height: 42, solid: true },
+  /* THE STREET LAMP. A post you walk into and a globe that is its own
+     light: fullbright, because the sidewalk under it is lit by the
+     sector's ambient and the sprite would otherwise be as dim as the
+     kerb. It does not light anything itself — see lampPool in
+     js/maps/town.js, which is the pool of light on the pavement, cast
+     the only way this renderer casts light: by being a sector. Not
+     shootable, not flammable: cast iron. */
+  STREETLAMP: { name: 'Street lamp', spawn: 'LMPP_STAND', radius: 8, height: 128, solid: true,
+                fullbright: true },
+  /* A HEADSTONE. Granite, thirty-two tall, which is taller than a step
+     and shorter than you: it stops you and you can see over it, and a
+     cemetery full of them is a maze you cannot get lost in. Two
+     drawings, chosen per stone — see `variants`. */
+  GRAVESTONE: { name: 'Headstone', spawn: 'GRAV_STAND', radius: 10, height: 32, solid: true,
+                variants: 2 },
   FUELCAN: { name: 'Fuel can', spawn: 'GCAN_STAND', radius: 12, height: 38, solid: false,
              shootable: true, health: 1, flammable: true, fuel: 400, explodes: true, pickup: 'fuel' },
   CRATE:   { name: 'Stock',   spawn: 'CRAT_STAND', radius: 20, height: 58, solid: true,

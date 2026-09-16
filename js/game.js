@@ -51,6 +51,8 @@ const THING_TO_ACTOR = {
   SHOPPER: 'SHOPPER',
   TROLLEY: 'TROLLEY', BOLLARD: 'BOLLARD',
   FUELCAN: 'FUELCAN', CRATE: 'CRATE', LAMP: 'LAMP',
+  /* the town's furniture — see js/maps/town.js */
+  STREETLAMP: 'STREETLAMP', GRAVESTONE: 'GRAVESTONE',
 };
 
 /* How far a fitting throws light and how much it is worth at the source.
@@ -226,7 +228,7 @@ export class Game {
       /* Lights are laid on a grid over the whole map; the ones that fell
          outdoors, into a doorway, or under a low ceiling are dropped
          here rather than described twice in the map file. */
-      if (type === 'LAMP') {
+      if (type === 'LAMP' && !t.placed) {
         const sec = this.level.sectorAt(t.x, t.y);
         if (!sec || sec.outdoor || sec.ceil < 200) continue;
       }

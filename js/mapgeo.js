@@ -590,10 +590,10 @@ function addLine(set, level, l, bank, pick = null) {
     /* WHERE A SLOPE IS IN PLAY the band is not an interval, it is an
        interval AT A POINT. Asked of the same two sectors the band was
        worked out from, so the flat case gives back the same numbers. */
-    if (bd.open.slopeCeil || bd.open.slopeFloor || bd.from.slopeCeil || bd.from.slopeFloor) {
+    if (edgeSlope(bd.e0) || edgeSlope(bd.e1)) {
       emitWall(dst, l, bank, bd.tex, (x, y) => bandEdges(level, bd, x, y), bd.openFront, peg,
                s.light + l.contrast, skyOf(s), charOf(s),
-               [bd.open.slopeCeil, bd.open.slopeFloor, bd.from.slopeCeil, bd.from.slopeFloor]);
+               [edgeSlope(bd.e0), edgeSlope(bd.e1)]);
     } else {
       addQuad(dst, l, bank, bd.tex, bd.z0, bd.z1, bd.openFront, peg,
               s.light + l.contrast, skyOf(s), charOf(s));
@@ -619,6 +619,13 @@ function addLine(set, level, l, bank, pick = null) {
     const holes = l.holes || [];
     for (let i = 0; i < holes.length; i++) {
       const h = holes[i];
+      /* A HOLE BETWEEN TWO ROOFS IS THE SAME ROOF, and nothing stands
+         in it. Every column in a town building ends in the roof storey,
+         so a window's own line — glass in the hole between its sill
+         and its head — also has the hole between its roof and the
+         room's roof over it, and the pane was being hung there too: a
+         sheet of coloured glass above the eaves over every window. */
+      if (h.front.roofTex && h.back.roofTex) continue;
       const bot = h.z0;
       const top = Math.min(h.z1, bot + (l.midHeight ?? Infinity));
       if (top <= bot) continue;
@@ -665,14 +672,20 @@ function emitWall(set, l, bank, tex, zAt, facingFront, peg, light, sk, ch, slope
   }
 }
 
-/** The bottom and top of a band at a point. An UPPER hangs from the
- *  shut storey's ceiling up to the open one's; a LOWER rises from the
- *  open storey's floor to the shut one's. Flat, these are the numbers
- *  lineBands already worked out. */
+/** The bottom and top of a band at a point: each edge is the surface
+ *  lineBands cut it at — some storey's floor or ceiling — asked at the
+ *  point, so a sloped ceiling gives its own height there and a flat one
+ *  gives the number lineBands already had. The first version worked the
+ *  edges out again from the band's kind, and got the top of a lower
+ *  band wrong wherever the shut storey it was named for was not the
+ *  storey that actually bounded it: a window under a roof came out as
+ *  brick from the sill to the eaves. */
+function edgeAt(level, e, x, y) {
+  return e.which === 'floor' ? level.floorAt(e.s, x, y) : level.ceilAt(e.s, x, y);
+}
+function edgeSlope(e) { return e.which === 'floor' ? e.s.slopeFloor : e.s.slopeCeil; }
 function bandEdges(level, bd, x, y) {
-  if (bd.kind === 'upper')
-    return [level.ceilAt(bd.from, x, y), Math.max(bd.z1, level.ceilAt(bd.open, x, y))];
-  return [level.floorAt(bd.open, x, y), level.floorAt(bd.from, x, y)];
+  return [edgeAt(level, bd.e0, x, y), edgeAt(level, bd.e1, x, y)];
 }
 
 /* Where the top edge of the texture sits, in world height. */

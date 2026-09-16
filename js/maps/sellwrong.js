@@ -1108,6 +1108,25 @@ export function buildSellWrong(opts = {}) {
 
   rm.build();
 
+  /* --- HANGING THE GLASS --------------------------------------------
+     A window in the church or the school is two recesses, an outer one
+     and an inner one touching the room, and the pane goes on the inner
+     recess's lines into the room — every two-sided line it has except
+     the one it shares with the outer recess. The jambs against solid
+     wall are two-sided too and get the texture as well, harmlessly: a
+     middle texture is drawn only in a hole, and a jamb has none. Done
+     here because the lines do not exist until rm.build() has run. */
+  if (town) {
+    for (const g of town.glass) {
+      const skip = new Set(mb.linesBetween(g.inner.sector, g.outer.sector));
+      for (const l of mb._own(g.inner.sector)) {
+        if (!l.frontCol.length || !l.backCol.length || skip.has(l)) continue;
+        l.middle = g.tex;
+        l.blocking = true;          // glass: you see through it and stop at it
+      }
+    }
+  }
+
   /* -----------------------------------------------------------------
      Dressing the openings
      ----------------------------------------------------------------- */
@@ -1616,6 +1635,9 @@ export function buildSellWrong(opts = {}) {
      ceiling, so a pitched roof is geometry over a footprint. See
      roofGeometry in js/mapgeo.js. */
   level.roofs = town ? town.roofPending : [];
+  /* the town's trees and shrubs, for js/forest.js to grow: sprites, not
+     sectors, which is why a yard has no rectangle for any of them */
+  level.plants = town ? town.plants : [];
   /* and where the town is, for whoever wants to drive into it */
   level.town = town ? { grid: town.grid, stations: town.stations, school: town.school, church: town.church } : null;
   /* Position, heading and which one it is, for whatever draws the cars. */

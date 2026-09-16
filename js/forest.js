@@ -256,7 +256,57 @@ export class Forest {
     this.burnAccum = 0;                   // sum of prog over every cell, for the fraction
     this.hotCells = 0;
 
-    if (rects.length) { this._seed(); this._plant(); }
+    if (rects.length) {
+      this._seed(); this._plant();
+      /* AND THE TOWN'S OWN PLANTING, which is not a scatter: a tree in a
+         front yard, shrubs along a foundation, a row down the school
+         lawn — placed by js/maps/town.js, which knows where the paths
+         are, and grown here because this is where plants are drawn. */
+      if (level.plants && level.plants.length) this._plantTown(level.plants);
+    }
+  }
+
+  /**
+   * Add the town's plants to the wood's arrays. A tree takes its cell —
+   * one to a cell, the way the wood plants them — so it stops you and
+   * the fire knows it is there; a shrub goes in with the understory and
+   * you walk through it. The cell under a town tree gets fuel, so the
+   * flamethrower can light it and it burns out on its own, but its
+   * neighbours have none, so a tree in a yard is a tree on fire and not
+   * a forest fire.
+   */
+  _plantTown(list) {
+    const byName = new Map(KINDS.map((k, i) => [k.name, i]));
+    const T = this.trees, C = this.covers;
+    const tx = Array.from(T.x), ty = Array.from(T.y), tk = Array.from(T.kind), ts = Array.from(T.scale),
+          tf = Array.from(T.flip), tseed = Array.from(T.seed), tcell = Array.from(T.cell);
+    const gx = Array.from(C.x), gy = Array.from(C.y), gk = Array.from(C.kind), gs = Array.from(C.scale),
+          gf = Array.from(C.flip), gseed = Array.from(C.seed), gcell = Array.from(C.cell);
+    let n = 0;
+    for (const p of list) {
+      const ki = byName.get(p.kind);
+      if (ki === undefined) continue;
+      const cx = this.cellX(p.x), cy = this.cellY(p.y), i = this.idx(cx, cy);
+      const k = KINDS[ki];
+      const canopy = !k.cover && !BUSH_KINDS.includes(ki);
+      if (canopy) {
+        if (this.cellTree[i] >= 0) continue;          // one tree to a cell
+        tx.push(p.x); ty.push(p.y); tk.push(ki); ts.push(p.scale ?? 1);
+        tf.push(hash2(cx, cy, 9) < 0.5 ? 1 : 0); tseed.push(hash2(cx, cy, 11)); tcell.push(i);
+        this.cellTree[i] = tx.length - 1;
+        this.tree[i] = 1;
+        if (!this.fuel[i]) { this.fuel[i] = 1; this.fuelCells++; }
+      } else {
+        gx.push(p.x); gy.push(p.y); gk.push(ki); gs.push(p.scale ?? 1);
+        gf.push(hash2(cx, cy, 13 + n) < 0.5 ? 1 : 0); gseed.push(hash2(cx, cy, 17 + n)); gcell.push(i);
+      }
+      n++;
+    }
+    this.trees = { x: Float32Array.from(tx), y: Float32Array.from(ty), kind: Uint8Array.from(tk), scale: Float32Array.from(ts),
+                   flip: Uint8Array.from(tf), seed: Float32Array.from(tseed), cell: Int32Array.from(tcell), n: tx.length };
+    this.covers = { x: Float32Array.from(gx), y: Float32Array.from(gy), kind: Uint8Array.from(gk), scale: Float32Array.from(gs),
+                    flip: Uint8Array.from(gf), seed: Float32Array.from(gseed), cell: Int32Array.from(gcell), n: gx.length };
+    this.townPlants = n;
   }
 
   /* ------------------------------------------------------------------
@@ -791,7 +841,7 @@ export class Forest {
                           fourteen big rectangles, so nine is plenty, and a
                           chunk none of whose points is in a visible region is
                           not drawn — see render() */
-                       sectors: this._chunkSectors(wx, wy, CH) };
+                       sectors: this._chunkSectors(wx, wy, CH, c.list.map(i => [src.x[i], src.y[i]])) };
           level.chunks.push(ch);
           level.byKey.set(c.cy * 4096 + c.cx, ch);
           this.mesh.add(m);
@@ -835,13 +885,26 @@ export class Forest {
   }
 
   /** The distinct sectors under a chunk's nine sample points. */
-  _chunkSectors(wx, wy, ch) {
+  _chunkSectors(wx, wy, ch, plants = null) {
     const out = [];
     for (let j = -1; j <= 1; j++)
       for (let i = -1; i <= 1; i++) {
         const s = this.level.sectorAt(wx + i * ch * 0.42, wy + j * ch * 0.42);
         if (s && !out.includes(s)) out.push(s);
       }
+    /* AND THE GROUND UNDER THE PLANTS THEMSELVES. Nine points across a
+       chunk are plenty in a wood of fourteen big regions and nothing
+       like enough in a town, where a chunk covers forty yards and the
+       nine points land in nine of them — or in the houses, which are no
+       region at all. So a chunk in the town also knows the region under
+       each of its plants, up to a few dozen, sampled evenly. */
+    if (plants && plants.length) {
+      const step = Math.max(1, Math.ceil(plants.length / 40));
+      for (let k = 0; k < plants.length && out.length < 64; k += step) {
+        const s = this.level.sectorAt(plants[k][0], plants[k][1]);
+        if (s && !out.includes(s)) out.push(s);
+      }
+    }
     return out;
   }
 

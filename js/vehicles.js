@@ -396,6 +396,31 @@ class Vehicle {
     this.blockers.length = 0;
   }
 
+  /** Anybody standing where the cylinders just landed is put outside
+   *  them. A van that pulls up on top of you is the commonest way to end
+   *  up inside one; you can walk out of a thing you are inside now (see
+   *  Player.thingInWay), and this is so that you do not have to. Out of
+   *  the SIDE of it, which is the short way and the way the door is. */
+  shoveClear() {
+    const g = this.fleet.game, p = g.player;
+    if (!p || p.dead || !this.blockers.length) return;
+    const r = carBlockRadius(this.def) + p.radius + 4;
+    let inside = false;
+    for (const b of this.blockers) if (dist2(p.x, p.y, b.x, b.y) < r * r) { inside = true; break; }
+    if (!inside) return;
+    const c = Math.cos(this.yaw), s = Math.sin(this.yaw);
+    const dx = p.x - this.x, dy = p.y - this.y;
+    const lon = dx * c + dy * s, lat = dx * -s + dy * c;
+    const side = lat >= 0 ? 1 : -1;
+    const tx = this.x + c * lon - s * side * r, ty = this.y + s * lon + c * side * r;
+    /* through the level's own collision, so a van parked against a wall
+       does not put you into the wall instead */
+    const [nx, ny] = g.level.slideMove(p.x, p.y, tx - p.x, ty - p.y, p.radius, p.z, p.height, false);
+    p.x = nx; p.y = ny;
+    const sec = g.level.sectorAt(p.x, p.y, p.sector);
+    if (sec) p.sector = sec.above === null ? sec : g.level.spanIn(sec, p.z, p.x, p.y);
+  }
+
   /* ------------------------------------------------------------------
      Being shot at, and catching
      ------------------------------------------------------------------ */
@@ -749,6 +774,7 @@ class Vehicle {
        exactly as tall as it was, and the tilt it came to rest at adds a
        little. Its own corners know, so they are asked rather than told. */
     this.block(this.cz + extentOf(this.corners, this.rx, this.rz).hi - this.ground);
+    this.shoveClear();
     this.smoulder = SMOULDER * 2;
     this.tick = 0;
   }
@@ -1280,6 +1306,7 @@ export class SwatVan extends Vehicle {
     this.cz = this.ridingHeight;
     this.place();
     this.block(this.hover + carHeight(this.def));
+    this.shoveClear();
     this.arrivedTic = this.fleet.game.tics;
     this.fleet.game.sound?.play('doorclose', this);
   }

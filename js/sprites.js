@@ -303,6 +303,66 @@ export function bakeSprites() {
     for (let x = 10; x < 23; x++) p.ink(x, 40, 'grey', 0.06);
   }, 32, 42, 602));
 
+  /* --- THE STREET LAMP, a post with an acorn globe on it, which is the
+     one lamp that is the same from every side and is therefore the one
+     a small town's Main Street has. A hundred and thirty-six tall: the
+     globe is at about eye height and a half, so it is in the frame from
+     across the street and over your head when you stand under it. The
+     post is painted a green so dark it is black, and the globe is drawn
+     bright because the thing is fullbright — see ACTORS.STREETLAMP —
+     and nothing in the sector's light is going to help it. --- */
+  bank.addFrame('LMPP', 'A', radial(p => {
+    /* SIXTY-FOUR TALL AND DRAWN AT TWICE THE SIZE, which is the 64-pixel
+       rule holding for a thing eight feet high: the picture is the
+       picture, and how big it stands in the world is a number. */
+    /* the base plate and the fluted foot */
+    for (let x = 2; x < 10; x++) p.ink(x, 63, 'grey', 0.06);
+    p.box(3, 58, 6, 5, 'olive', 0.10);
+    p.bevel(3, 58, 6, 5, 'olive', 0.20, 'grey', 0.04);
+    p.box(4, 55, 4, 3, 'olive', 0.12);
+    /* the post, lit down its left edge */
+    for (let y = 16; y < 55; y++) { p.ink(5, y, 'olive', 0.18); p.ink(6, y, 'olive', 0.11); }
+    /* the collar under the globe */
+    p.box(4, 14, 4, 2, 'olive', 0.14);
+    p.hline(3, 8, 14, 'olive', 0.22);
+    /* the globe: an acorn, widest a third of the way down, and lit from
+       inside so the middle is nearly white */
+    for (let y = 2; y < 14; y++) {
+      const t = (y - 2) / 12;
+      const half = 3.6 * Math.sin(Math.PI * Math.pow(t, 0.7)) + (t > 0.85 ? 0 : 0.4);
+      for (let x = 6 - half; x <= 6 + half; x++) {
+        const d = Math.abs(x - 6) / (half || 1);
+        p.ink(Math.round(x), y, 'yellow', Math.max(0.55, 0.96 - d * d * 0.35 - Math.abs(t - 0.4) * 0.25));
+      }
+    }
+    p.ink(5, 6, 'bone', 0.98); p.ink(5, 5, 'bone', 0.9);   // the hot spot
+    p.box(5, 0, 2, 2, 'olive', 0.16);                      // the finial
+  }, 12, 64, 611), { fullbright: true, scale: 2 });
+
+  /* --- THE HEADSTONES, two of them: a round-topped slab and a cross,
+     both granite, both with the panel where the name was and no name on
+     it. Thirty-two tall over a base you could trip on. --- */
+  bank.addFrame('GRV0', 'A', radial(p => {
+    for (let x = 3; x < 21; x++) p.ink(x, 33, 'grey', 0.06);
+    p.box(4, 29, 16, 4, 'grey', 0.26);                       // the base
+    for (let y = 8; y < 29; y++) for (let x = 6; x < 18; x++) p.ink(x, y, 'grey', 0.36 - (x - 6) * 0.008);
+    p.disc(12, 8, 6, 'grey', 0.38);                           // the round top
+    p.disc(11, 7, 5, 'grey', 0.42);
+    p.box(8, 12, 8, 12, 'grey', 0.28);                        // the panel
+    for (let y = 14; y < 22; y += 3) p.hline(9, 14 - (y === 20 ? 2 : 0), y, 'grey', 0.20);
+    for (let y = 24; y < 29; y++) p.ink(6, y, 'olive', 0.22); // moss on the north side
+  }, 24, 34, 605));
+  bank.addFrame('GRV1', 'A', radial(p => {
+    for (let x = 3; x < 21; x++) p.ink(x, 33, 'grey', 0.06);
+    p.box(4, 29, 16, 4, 'grey', 0.26);
+    p.box(7, 22, 10, 7, 'grey', 0.34);                        // the plinth
+    p.box(10, 2, 4, 21, 'grey', 0.40);                        // the upright
+    p.box(5, 7, 14, 4, 'grey', 0.40);                         // the arm
+    p.vline(10, 2, 22, 'grey', 0.48); p.hline(5, 18, 7, 'grey', 0.48);
+    p.vline(13, 2, 22, 'grey', 0.30); p.hline(5, 18, 10, 'grey', 0.30);
+    p.hline(8, 15, 25, 'grey', 0.22);                         // where the name was
+  }, 24, 34, 607));
+
   /* --- the reason the store is going to burn --- */
   bank.addFrame('GCAN', 'A', radial(p => {
     for (let y = 14; y < 36; y++) for (let x = 8; x < 25; x++)

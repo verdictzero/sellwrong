@@ -129,7 +129,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         1463 checks, no install and no browser
+  the smoke test         1549 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -3281,44 +3281,85 @@ height of whoever is asking — the same arithmetic with `spanIn` in front
 of it. Standing in a hall you may walk out of the front door; standing
 on the landing over it you may not, and it is the same line.
 
-A HOUSE
-- - - -
+A HOUSE IS A FACADE
+- - - - - - - - - -
 
-One floor plan, turned, with four dressings on it. A hall down one side
-with the stair in it, a front room, a kitchen, and the same again
-upstairs as bedrooms. It is a terrace: they are SUPPOSED to be the same
-house eight times, and the eye reads the roofline and the paint.
+The first cut of this town gave every house a hall, a stair, a kitchen
+and two bedrooms behind every door, and a check that walked every one of
+them from its own front hall. Nobody went in. A house at two in the
+morning is a thing you look AT, and what those interiors cost — eleven
+thousand regions of wallpaper — was spent where nobody was. So the
+insides are gone, at the user's request, and the outsides got what they
+cost.
 
-THE STAIR IS A COLUMN OF STEPPED BOXES. Tread i has its floor at 16i and
-its ceiling at 16i + 96, which walks up at sixteen a step under the
-twenty-four the engine allows and has ninety-six of headroom over every
-tread — a stepped soffit, which is what a staircase has. The next flight
-stacks over the same treads with the deck between them. No special case
-anywhere: a staircase is a column, and it is also exactly what a
-staircase is.
+THE SHELL of a house is one column of one storey: the roof, over the
+whole footprint, shut everywhere below the eaves. THE WALL is a strip
+twenty-four deep along each face, made of solid pieces — columns of the
+same one storey — with RECESSES cut in it. A recess is a small open
+sector sixteen deep with its floor at the sill and its ceiling at the
+head, one storey per window in a column; eight units of void behind it
+make its back wall a one-sided line, and a one-sided line wears its own
+storey's texture, which is what lets one window column be lit upstairs
+and dark down. The disagreement rule draws the rest without being told
+anything: from the ground in front, the wall is a lower band from the
+foundation to the eaves; where a recess is, the band stops at the sill,
+starts again at the head, and between them is a hole with a sill, a
+head, two jambs of brick and a pane at the back. A door is the same
+hole with a door in it, painted, because there is nothing behind it.
 
-The first cut of it had no door between the front room and the kitchen,
-and the check that walks every storey of every house from its own front
-hall found what that meant: the stair rises from the front of the hall
-to the back, so you arrive on the rear landing, and the next flight
-starts at the front again. Two landings in one house with a staircase
-between them and no way from one to the other. A house has a door
-between its front room and its kitchen. It has one now.
+THE FOUNDATION is a plinth: a strip eight deep at the foot of the wall
+with its floor at thirty-two, so the bottom of the wall is a band of its
+own and wears block — fieldstone for the church. At the door the plinth
+is a stoop thirty-two deep, with a step half its height in front of that
+and a path of flagstones out to the sidewalk. Two steps of sixteen up to
+a door at thirty-two is a porch, and both are under the twenty-four the
+engine lets you climb.
 
-THE SKIN BELONGS TO THE YARD, which is this engine's own idiom and not a
-compromise: a one-sided line takes its texture from whichever side has a
-sector on it, and outside a house that side is the yard. So a yard
-carries its own house's brick, the yards on the street side carry a wall
-with windows in it, and one repeat of that wall is one STOREY — 112, not
-the default 64, because worn at 64 a three-storey terrace came out with
-five and a quarter rows of windows up it and a house with more window
-rows than floors is the one thing on a street nobody has to be told is
-wrong.
+EVERYTHING THAT TOUCHES A WALL HAS ITS CEILING AT THE EAVES — the
+plinth, the stoop, the gable strips — because above the eaves the ground
+is shut and the roof storey is open, and that disagreement IS the gable.
+A sky-ceilinged sector against the same wall would draw brick from the
+ridge up to the sky.
 
-A yard's ceiling is the EAVES, so the brick stops where the roof starts.
-The step from there up to the open sky draws nothing, because both are
-sky and a step between two patches of sky is two different heights of
-nothing.
+TWO THINGS IN THE ENGINE HAD TO GIVE, both found by standing in front of
+a house and seeing no window in it. A band's two edges are the surfaces
+lineBands cut it at, and the drawing has to ask THOSE surfaces at the
+point: the first version worked the edges out again from the band's
+kind, and a window under a sloped roof came out as brick from the sill
+to the eaves, over every window in the town. And a hole between two roof
+storeys is the same roof and nothing stands in it: the pane in a church
+window was being hung there too, a sheet of coloured glass above the
+eaves.
+
+A terrace is one shell and one roof with sixteen front doors in it,
+which is what a terrace is. On Main Street the ground floor is a
+shopfront and there is no foundation: a shop stands on the pavement.
+
+THE CHURCH AND THE SCHOOL KEEP THEIR INSIDES and get more of them. The
+nave has pews down both sides of a centre aisle — a seat you can climb
+on and a back you cannot — a wainscot that is a ledge eight deep and
+forty tall along both long walls, which is the one way this engine puts
+two textures on one wall, a raised chancel with an altar and a cross let
+into the wall behind it, and twelve lancets of coloured glass, each a
+recess on the outside and a recess on the inside with the pane hung on
+the line between them, so you see in and out through it and stop at it.
+The choir loft is reached by a stair that turns back on itself: two
+flights side by side, the top of one sharing its air with the bottom of
+the next, and no landing rectangle at all. The school has six classrooms
+with desks in rows and a blackboard let into the west wall of each,
+lockers down the corridor you cannot walk through, steel windows you can
+see in through, and TWO STAIRS running along the corridor and open to
+it, which the first cut did not have: nobody could get upstairs, and the
+fire could only get there through the ceiling.
+
+THE STREET has lamps — one every 1536 along each sidewalk, staggered so
+the sides alternate, and one on every corner — each a fullbright sprite
+standing on a pool of light that is a brighter sector of pavement, which
+is the only way this renderer casts light. The yards have trees, the
+foundations have shrubs, the parks have flagstone paths across them and
+the cemetery has its stones, and all of it is sprites, placed by the
+town and grown by js/forest.js, which is why a yard has no rectangle for
+any of it.
 
 AND THE ROOF IS A STOREY. It was geometry first — two slopes and two
 gable triangles over a footprint, pushed into a batch, with nothing in
@@ -3328,9 +3369,10 @@ shoot through one. It was a picture of a roof.
 So a sector's floor or ceiling may be a HEIGHT OVER THE SECTOR rather
 than a number, in two kinds and no more: a PLANE, and a GABLE, which is
 two planes meeting at a ridge and is the one shape a plane cannot do.
-Every rect of a house gets one more sector on top of its column whose
-ceiling is the building's gable, shared by every rect so that a terrace
-is one roof and not sixteen.
+Every rect of a building gets one more sector on top of its column
+whose ceiling is the building's gable, shared by every rect so that a
+terrace is one roof and not sixteen — and for a house that one sector is
+the whole column.
 
 `floor` and `ceil` survive as the numbers they always were, and they are
 the SAFE end of the slope: a sloped floor's `floor` is its lowest point
@@ -3351,8 +3393,8 @@ all for every wall in the supermarket.
 
 There is precedent for geometry-over-a-footprint and it is still there:
 `roofFraming` hangs steel over a burnt-out region without any sector
-knowing, and the school and the church still wear a drawn roof rather
-than a built one.
+knowing, and the church spire is still drawn — a pyramid is four planes
+and a gable is two. The school and the church wear built roofs now.
 
 FIRE THAT CLIMBS
 - - - - - - - - -
@@ -3361,27 +3403,33 @@ The fuel grid has a plane per storey now. Plane 0 is the ground
 everywhere and is exactly the grid it always was, which is why nothing
 that indexes it by cy*cols+cx knows the rest is there.
 
-A fire on a ground floor finds the stairwell. The top tread of a flight
-reaches into the landing beside it — the one place in a house where two
-storeys share any air — and goes up it FOUR TIMES as readily as it goes
-along, because a staircase is a chimney with a handrail. The ceiling is
-the slow way, a tenth of that, straight up and same cell: by the time
-the kitchen ceiling has gone the landing has been alight for a minute.
-Both are needed. With only the stairs, one cell of one tread has to win
-a race against its own fuel running out, and it loses, and a house burns
-to the ceiling and stops.
+A fire on a ground floor finds the stair. The school's run along the
+corridor and are open to it down their length, so the top tread shares
+its air with the corridor above, and fire goes up that FOUR TIMES as
+readily as it goes along, because a staircase is a chimney with a
+handrail. The ceiling is the slow way, a tenth of that, straight up and
+same cell. Both are needed. With only the stairs, one cell of one tread
+has to win a race against its own fuel running out, and it loses, and a
+building burns to the ceiling and stops.
 
-AND A PARTY WALL IS A WALL FIRE GETS THROUGH. Sixteen units of void and
-two skins of plasterboard, at a tenth of the ordinary chance, between
-two regions that both say they are one — so the supermarket's own
-partitions are untouched by it. That is the difference between burning a
-house and burning a street.
+AND THE FUEL IS THREE HUNDRED AND OVER in both buildings, because the
+spread chance in js/fire.js climbs as the 2.4th power of the fuel up to
+three hundred and stops there, and a corridor at a hundred and twenty
+was a firebreak down the middle of the school: a fire poured into it
+went out in two minutes having reached one classroom. The houses do not
+burn at all now — a shell has nothing to hold fire — though their yards
+do, and the siding facing a burnt yard chars with it. A PARTY WALL is
+still a wall fire gets through, at a tenth of the ordinary chance,
+between two regions that both say they are one; nothing in the town says
+so any more, and the supermarket's partitions never did.
 
 WHAT IT COST, AND WHAT WAS DONE ABOUT IT
 - - - - - - - - - - - - - - - - - - - - -
 
-Eleven thousand regions against 327, and twenty-five thousand lines
-against a thousand. Four things break at that size and all four break
+Eleven and a half thousand regions against 327, and twenty-eight
+thousand lines against a thousand — fewer regions than the town with
+interiors had and more lines, because a recess is four lines for one
+small room. Four things break at that size and all four break
 quietly, so all four were fixed against the map that existed, before
 there was a town to find them with:
 
@@ -3994,7 +4042,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-1463 checks. Every one of them earns its place by having caught something
+1549 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -4557,18 +4605,32 @@ WHAT IS NOT DONE
     for a first pass; it will not survive a second. What the town has
     instead is light in windows, and a window that goes dark when its
     room burns
-  there are no utility poles down the streets and no furniture in the
-    houses. A bed is a sector forty up wearing a bed picture and the
-    machinery for it is the same machinery the produce bins use, so
-    this is content and not a problem
+  the houses have no insides. A house is a shell with a facade, and
+    its door is painted; the shops on Main Street are the same. The
+    first answer — a hall, a stair, two bedrooms behind every door — was
+    built, walked by the test and taken out again at the user's request,
+    because nobody went in. What is behind a front door is a game design
+    question this town does not answer
+  a house does not burn. Its yard does, and the siding facing the yard
+    chars with it, but a shell with no inside has nothing to hold fire;
+    the school and the church are the fuel in the town, and the terrace
+    that burnt end to end through its party walls is gone with the
+    party walls
+  the glass does not break. A pane is a texture in a hole you stop at;
+    a round through it leaves no hole and makes no sound
+  a lamp does not go out and a headstone does not fall: both are
+    sprites with no health, and the lamp's light is the pavement's
+    ambient rather than anything the lamp does
+  there are no utility poles down the streets
   a roof does not burn off. A sloped ceiling is a surface the engine
     knows about but not one the fuel grid has a cell for, so a house
     that burns out keeps its roof on. js/ruin.js already drops a deck
     and leaves its steel, and a gable is the obvious next thing to drop
-  the school and the church still wear a DRAWN roof rather than a built
-    one — roofGeometry, two quads and two triangles over a footprint,
-    which is what every roof was before there were slopes
-  a burnt-out first floor does not fall into the kitchen. js/ruin.js
+  the church spire is still a DRAWN roof — roofGeometry, four triangles
+    over the tower, which is what every roof was before there were
+    slopes. A pyramid is four planes and a gable is two
+  a burnt-out first floor does not fall into the classroom under it.
+    js/ruin.js
     drops a roof and leaves its steel; a storey landing on the one
     below it is the same idea one level down and is the best thing this
     engine could do that no other Doom-alike does

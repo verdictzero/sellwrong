@@ -457,7 +457,17 @@ export class Player {
     }
     /* Bumping into a monster stops you the same way a wall does — and
        being able to shove past them would make every corridor free. */
-    const blocked = this.thingInWay(nx, ny);
+    let blocked = this.thingInWay(nx, ny);
+    /* A VEHICLE YOU SLIDE ALONG, the way you slide along a wall and
+       round a tree: the whole move, then each axis alone. A van is
+       three cylinders in a row and the outside of one is most of a
+       fire lane's worth of corner; stopping dead against it was the one
+       place the movement still felt like walking into a post, and it
+       was also how you stayed in one — see thingInWay. */
+    if (blocked && blocked.vehicle) {
+      if (!this.thingInWay(nx, this.y)) { ny = this.y; blocked = null; }
+      else if (!this.thingInWay(this.x, ny)) { nx = this.x; blocked = null; }
+    }
     if (!blocked) { this.x = nx; this.y = ny; }
     else { this.momx *= 0.2; this.momy *= 0.2; }
     forest?.clampInside(this);
@@ -529,7 +539,8 @@ export class Player {
       const a = list[i];
       if (a.removed || !a.solid || a.dead || a.noclip) continue;
       const rr = this.radius + a.radius;
-      if (dist2(nx, ny, a.x, a.y) < rr * rr) {
+      const d2 = dist2(nx, ny, a.x, a.y);
+      if (d2 < rr * rr) {
         if (a.info.pushable) {           // trolleys move, they do not stop you
           const d = Math.hypot(a.x - nx, a.y - ny) || 1;
           a.x += ((a.x - nx) / d) * 6; a.y += ((a.y - ny) / d) * 6;
@@ -537,10 +548,21 @@ export class Player {
           a.updateSector();
           continue;
         }
-        return true;
+        /* ALREADY INSIDE IT. A squad van that pulled up on top of you,
+           an APC whose skirts came down over you, a launch that put you
+           down in the middle of one — and from inside a cylinder every
+           step is still inside it, so every step was refused and you
+           stood in the van until it drove off or you did. Doom has the
+           same bug, and the same fix: a thing you are already inside
+           never refuses a step that takes you NO NEARER its middle. You
+           can always walk out of one, and you can never walk further
+           in, which is the whole of what solidity is for. */
+        const was = dist2(this.x, this.y, a.x, a.y);
+        if (was < rr * rr && d2 >= was) continue;
+        return a;
       }
     }
-    return false;
+    return null;
   }
 
   /* ------------------------------------------------------------------

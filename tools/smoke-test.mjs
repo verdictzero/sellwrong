@@ -1669,11 +1669,16 @@ section('the wood');
   check('and full of trees', forest.treeCount > 20000, `${forest.treeCount}`);
   const c = level.clearing;
   let inClearing = 0;
+  /* the clearing runs over the town too, and the town plants its own
+     trees in its own yards — see _plantTown in js/forest.js — so the
+     claim is about the STORE's half of it */
   for (let i = 0; i < forest.treeCount; i++) {
     const x = forest.trees.x[i], y = forest.trees.y[i];
-    if (x > c[0] && x < c[2] && y > c[1] && y < c[3]) inClearing++;
+    if (x > c[0] && x < c[2] && y > Math.max(c[1], TOWN_EDGE) && y < c[3]) inClearing++;
   }
   check('no tree stands in the car park or the store', inClearing === 0, `${inClearing} did`);
+  note('the town planted', `${forest.townPlants ?? 0} trees and shrubs of its own`);
+  check('and the town has its trees', (forest.townPlants ?? 0) > 500, `${forest.townPlants}`);
   check('the store has no forest fuel under it', !forest.fuel[forest.idx(forest.cellX(2000), forest.cellY(1000))]);
   /* THE FUEL GRID STOPS AT THE STORE, and the claim is about what is
      INSIDE it rather than about four numbers. It used to be three typed
@@ -4823,6 +4828,25 @@ section('the van');
   check('you cannot walk into the middle of one', p0.thingInWay(one.x, one.y));
   check('nor into either end of it',
     car.carBlockers(one.def, one.x, one.y, one.yaw).every(b => p0.thingInWay(b.x, b.y)));
+  /* AND YOU CAN ALWAYS GET OUT OF ONE. Put down inside a cylinder —
+     which is what a van parking on you does — every step used to be
+     refused, because every step was still inside it, and you stood in
+     the van until it drove off. See Player.thingInWay, and shoveClear in
+     js/vehicles.js, which is a parked van putting you outside itself. */
+  {
+    const bl = car.carBlockers(one.def, one.x, one.y, one.yaw);
+    const mid = bl[1], nx = -Math.sin(one.yaw), ny = Math.cos(one.yaw);
+    const sx = p0.x, sy = p0.y;
+    p0.x = mid.x + nx * 2; p0.y = mid.y + ny * 2;
+    check('inside a vehicle, a step further in is still refused', !!p0.thingInWay(mid.x, mid.y));
+    check('but a step out of it is not', !p0.thingInWay(mid.x + nx * 14, mid.y + ny * 14));
+    one.shoveClear();
+    const r = car.carBlockRadius(one.def) + p0.radius;
+    const nearest = Math.min(...bl.map(b => Math.hypot(p0.x - b.x, p0.y - b.y)));
+    check('and a vehicle that parks on you puts you outside itself', nearest >= r - 1e-6,
+      `${nearest.toFixed(0)} from the nearest cylinder, ${r} needed`);
+    p0.x = sx; p0.y = sy;
+  }
 
   /* --- and what happens to one -------------------------------------- */
   {
@@ -7480,7 +7504,12 @@ section('the town');
     if (up.floor < s.ceil - 1e-6) bad++;
     /* a gap is a DECK (sixteen of joist) or a WALL (a whole storey of
        it, which is what the nave door has over it where the choir loft
-       opens) — anything deeper than that is a storey somebody forgot */
+       opens) — anything deeper than that is a storey somebody forgot.
+       Under a ROOF, or under the shut cap of the tower, it is as deep
+       as the wall over a recess is tall, and that is not a floor
+       anybody forgot: a door on a three-storey terrace has two storeys
+       of brick over it and then the roof. */
+    if (up.roofTex || up.ceil - up.floor < 1e-6) continue;
     if (up.floor - s.ceil > T.STOREY + 16) deep++;
   }
   check('every column stacks without overlap', bad === 0, `${bad} storeys start under the one below`);
@@ -7498,13 +7527,14 @@ section('the town');
   }
   check('spanAt agrees with sectorAt for every column of one', disagree === 0, `${disagree} of ${sampled}`);
 
-  /* AND IT PICKS THE RIGHT STOREY in a column that has several. */
-  const hall = level.sectors.find(s => /no 3 hall$/.test(s.name) && s.storey === 0);
-  if (check('a house has a hall with something over it', !!hall && hall.above !== null)) {
+  /* AND IT PICKS THE RIGHT STOREY in a column that has several: the
+     school's corridor, which has the first-floor corridor over it. */
+  const hall = level.sectors.find(s => s.name === 'C3 corridor' && s.storey === 0 && s.above !== null);
+  if (check('the school has a corridor with a corridor over it', !!hall)) {
     const hx = (hall.bbox[0] + hall.bbox[2]) / 2, hy = (hall.bbox[1] + hall.bbox[3]) / 2;
-    const ground = level.spanAt(hx, hy, 4), first = level.spanAt(hx, hy, T.STOREY + 4);
+    const ground = level.spanAt(hx, hy, hall.floor + 4), first = level.spanAt(hx, hy, hall.floor + T.STOREY + 4);
     check('standing in it you are on the ground floor', ground === hall);
-    check('and a storey up you are on the landing', first && first.storey === 1 && first.colBase === hall.index);
+    check('and a storey up you are on the floor above', first && first.storey === 1 && first.colBase === hall.index);
     check('and sectorAt still answers with the ground one', level.sectorAt(hx, hy) === hall);
   }
 
@@ -7534,25 +7564,21 @@ section('the town');
      map error with no honest answer; the builder counts them. */
   check('no edge has three columns on it', (level.edgeConflicts ?? 0) === 0, `${level.edgeConflicts}`);
 
-  /* EVERY STOREY IS REACHABLE. A walk from the ground floor of a house
-     must get to its top floor, which is the check that catches a
-     stairwell laid out one rect short. Done as the engine would do it:
-     step up no more than MAX_STEP through openings that are actually
-     open at the height you are at. */
+  /* EVERY ROOM IS REACHABLE, in the two buildings that still have an
+     inside. A walk in through the school's front door must get to
+     every classroom upstairs, and a walk in through the church door to
+     the choir loft — which is the check that catches a stair laid out
+     one tread short or a landing that turns back on nothing. Done as
+     the engine would do it: step up no more than MAX_STEP through
+     openings that are actually open at the height you are at. */
   {
     const U = await import('../js/util.js');
-    const houses = new Map();
-    for (const s of level.sectors) {
-      const m = /^(\S+ no \d+) /.exec(s.name);
-      if (m) (houses.get(m[1]) || houses.set(m[1], []).get(m[1])).push(s);
-    }
-    const walk = (secs) => {
-      const start = secs.find(s => /hall$/.test(s.name) && s.storey === 0);
-      if (!start) return null;
+    const walk = (start) => {
       const seen = new Set([start.index]), stack = [start];
       while (stack.length) {
         const s = stack.pop();
         for (const l of s.lines) {
+          if (l.blocking) continue;                           // glass
           const other = s.colBase === l.frontBase ? l.backCol : l.frontCol;
           for (const oi of other) {
             const o = level.sectors[oi];
@@ -7566,26 +7592,91 @@ section('the town');
       }
       return seen;
     };
-    let checked = 0, unreachable = 0, worst = '';
-    for (const [tag, secs] of houses) {
-      const seen = walk(secs);
-      if (!seen) continue;
-      checked++;
-      for (const s of secs) {
-        if (s.storey === 0 || seen.has(s.index)) continue;
-        /* A ROOF IS NOT A ROOM. The top of every column is the space
-           under the tiles — a sloped ceiling, no floor, no fuel and no
-           hatch — and a loft you cannot get into is a loft and not a
-           defect. What this claim is about is storeys people are meant
-           to stand in. */
-        if (s.roofTex) continue;
-        unreachable++;
-        if (!worst) worst = `${s.name} (storey ${s.storey})`;
-      }
-    }
-    note('houses walked from the front hall', checked);
-    check('every storey above the ground can be walked to', unreachable === 0, `${unreachable} cannot, e.g. ${worst}`);
-    check('and that was every house on the map', checked > 200, `${checked}`);
+    const reach = (tag, door, rooms) => {
+      const secs = level.sectors.filter(s => s.name.startsWith(tag));
+      const start = secs.find(s => s.name === door);
+      if (!check(`${tag.trim()} has a way in`, !!start)) return;
+      const seen = walk(start);
+      const want = secs.filter(s => rooms.test(s.name.slice(tag.length)));
+      const missed = want.filter(s => !seen.has(s.index));
+      note(`${tag.trim()} walked from its door`, `${seen.size} regions reached, ${want.length} rooms asked for`);
+      check(`every room in ${tag.trim()} can be walked to`, want.length > 20 && missed.length === 0,
+        `${missed.length} cannot, e.g. ${missed[0]?.name} (storey ${missed[0]?.storey})`);
+      check(`and that includes the upstairs`, want.some(s => s.storey > 0 && seen.has(s.index)));
+    };
+    reach('C3 ', 'C3 front door', /^(classroom [SN]\d( upstairs)?|corridor( upstairs)?|lobby( upstairs)?|office( upstairs)?|gym|passage( upstairs)?)$/);
+    reach('B3 ', 'B3 door', /^(nave floor|centre aisle|side aisle|chancel|narthex|choir loft|tower)$/);
+  }
+
+  /* THE FACADES, which are what the houses are now. A house is a shell
+     with recesses cut in its wall: every window is a hole from the sill
+     to the head with a pane on its back wall, every door a hole with a
+     door in it, and the foot of every wall shows its foundation. */
+  {
+    const U3 = await import('../js/util.js');
+    const recesses = level.sectors.filter(s => s.outdoor && /(window \d|door)$/.test(s.name) && !/school|C3|B3/.test(s.name));
+    const windows = recesses.filter(s => / window \d$/.test(s.name));
+    const doors = recesses.filter(s => / door$/.test(s.name));
+    note('recesses', `${windows.length} window storeys, ${doors.length} doors`);
+    check('the houses have windows, and plenty', windows.length > 1500, `${windows.length}`);
+    check('and doors', doors.length > 250, `${doors.length}`);
+    /* a window is a HOLE: open between its sill and its head, and shut
+       above and below, on the line it shares with the ground outside */
+    const w0 = windows.filter(s => s.storey === 0);
+    const holed = w0.filter(s => s.lines.some(l => l.frontCol.length && l.backCol.length &&
+      (l.holes || []).some(h => Math.abs(h.z0 - s.floor) < 1e-6 && Math.abs(h.z1 - s.ceil) < 1e-6)));
+    check('every ground-floor window is a hole in the wall from its sill to its head', holed.length === w0.length, `${w0.length - holed.length} are not`);
+    /* with the pane on a wall of its own at the back, wearing glass */
+    const paned = w0.filter(s => s.lines.some(l => (!l.frontCol.length || !l.backCol.length) && /^WIN(PANEL|PANED|SHADE)$/.test(l.middle)));
+    check('and a pane at the back of it', paned.length === w0.length, `${w0.length - paned.length} have not`);
+    const doored = doors.filter(s => s.lines.some(l => (!l.frontCol.length || !l.backCol.length) && /^FRNTDO/.test(l.middle)));
+    check('every door recess has a door in it', doored.length === doors.length, `${doors.length - doored.length} have not`);
+    check('a door sill is the height of the foundation, and a window sill is above it',
+      doors.every(s => s.floor === T.FOUND || s.floor === 24) && w0.every(s => s.floor >= T.FOUND));
+    /* the recess is sixteen deep, the wall twenty-four */
+    check('a recess is sixteen deep in a wall twenty-four thick',
+      windows.every(s => Math.min(s.bbox[2] - s.bbox[0], s.bbox[3] - s.bbox[1]) === T.NICHE) && T.ZONE === 24);
+    /* THE FOUNDATION: a plinth at the foot of every wall, its face
+       wearing block, and two steps up to the door */
+    const found = level.sectors.filter(s => / foundation$/.test(s.name));
+    check('every wall stands on a foundation', found.length > 600 && found.every(s => s.floor === T.FOUND && /FOUNDATN|STONEFND/.test(s.lowerTex)), `${found.length}`);
+    const steps = level.sectors.filter(s => / step$/.test(s.name)), stoops = level.sectors.filter(s => / stoop$/.test(s.name));
+    check('and a step and a stoop up to every door', steps.length > 250 && stoops.length === steps.length &&
+      steps.every(s => s.floor === T.FOUND / 2) && stoops.every(s => s.floor === T.FOUND), `${steps.length} steps, ${stoops.length} stoops`);
+    check('which you can walk up', T.FOUND / 2 <= U3.MAX_STEP);
+    check('and a path from the sidewalk', level.sectors.filter(s => / path$/.test(s.name) && s.floorTex === 'PAVERS').length > 250);
+    /* the recess is outdoors, so the interior LOD leaves it in the shell */
+    check('a recess is outdoors', recesses.every(s => s.outdoor));
+  }
+
+  /* THE GLASS in the church and the school: a pane hung in a hole you
+     can see through and stop at. */
+  {
+    const glass = level.lines.filter(l => l.frontCol.length && l.backCol.length && l.blocking && /^(STAINGLS|SCHWINLT|SCHWINDK)$/.test(l.middle));
+    note('panes of glass', glass.length);
+    check('the church has its coloured glass', glass.filter(l => l.middle === 'STAINGLS').length >= 12);
+    check('and the school its windows', glass.filter(l => /^SCHWIN/.test(l.middle)).length >= 30);
+    check('every pane hangs in a hole', glass.every(l => (l.holes || []).length > 0));
+    check('and stops you', glass.every(l => level.lineBlocks(l, 0, 56, false) === 'blocking'));
+  }
+
+  /* THE STREET FURNITURE: lamps on every sidewalk with a pool of light
+     under each, trees in the yards, stones in the cemetery. */
+  {
+    const lamps = level.things.filter(t => t.type === 'STREETLAMP');
+    const pools = level.sectors.filter(s => /^sidewalk under a lamp/.test(s.name));
+    note('street lamps', `${lamps.length}, over ${pools.length} pools of light`);
+    check('there are lamps down every street', lamps.length > 300, `${lamps.length}`);
+    check('each with a pool of light on the pavement brighter than the rest of it',
+      pools.length > 200 && pools.every(s => s.light > 0.6) && level.sectors.filter(s => /^sidewalk,/.test(s.name)).every(s => s.light < 0.5));
+    check('and every lamp stands on the pavement',
+      lamps.every(t => { const s = level.sectorAt(t.x, t.y); return s && /sidewalk|corner|path/.test(s.name); }));
+    check('the town has its trees', level.plants.length > 500, `${level.plants.length}`);
+    check('and none of them stands in the road or in a house',
+      level.plants.every(pl => { const s = level.sectorAt(pl.x, pl.y); return s && !s.roofTex && /yard|garden|lawn|churchyard|graveyard|green|park|cemetery/.test(s.name); }),
+      level.plants.filter(pl => { const s = level.sectorAt(pl.x, pl.y); return !(s && !s.roofTex && /yard|garden|lawn|churchyard|graveyard|green|park|cemetery/.test(s.name)); }).slice(0, 3).map(pl => level.sectorAt(pl.x, pl.y)?.name ?? 'nowhere').join(', '));
+    const stones = level.things.filter(t => t.type === 'GRAVESTONE');
+    check('the cemetery has its stones', stones.length > 100 && stones.every(t => /cemetery|graveyard/.test(level.sectorAt(t.x, t.y)?.name ?? '')), `${stones.length}`);
   }
 
   /* NOTHING IS OUTSIDE ITS OWN SHELL. RectMap throws on two rectangles
@@ -7633,8 +7724,17 @@ section('sloped roofs');
     roofs.every(s2 => s2.floor === s2.slopeCeil.base), `${roofs.filter(s2 => s2.floor !== s2.slopeCeil.base).length} do not`);
   check('a roof\'s ceil is the HIGHEST it gets, so nothing flat is told there is less room than there is',
     roofs.every(s2 => Math.abs(s2.ceil - (s2.slopeCeil.base + s2.slopeCeil.rise)) < 1e-6));
-  check('a three-storey house tops out at 464, sixteen under the mall\'s parapet',
+  check('a three-storey terrace tops out at 464, sixteen under the mall\'s parapet',
     roofs.some(s2 => Math.abs(s2.ceil - 464) < 1e-6) && 464 < 480);
+  /* AND A HOUSE IS ITS ROOF: the shell of a house is one column of one
+     storey, the roof, shut everywhere below the eaves */
+  {
+    const shells = roofs.filter(s2 => s2.storey === 0 && s2.below === null && (s2.bbox[2] - s2.bbox[0]) > 300 && (s2.bbox[3] - s2.bbox[1]) > 300);
+    check('a house is a shell: one column of one storey, which is its roof', shells.length > 100, `${shells.length}`);
+    const sh = shells[0];
+    check('and you cannot walk into it', sh.lines.filter(l => l.frontCol.length && l.backCol.length)
+      .every(l => level.lineBlocks(l, 0, 56, false) !== null));
+  }
 
   /* IT VARIES ACROSS ITS OWN FOOTPRINT — which is the whole point, and
      is what a flat number cannot say. */
@@ -7650,7 +7750,10 @@ section('sloped roofs');
      the reason for the whole change: a roof used to be a picture and
      you could walk and shoot straight through one. */
   {
-    const r = roofs.find(s2 => s2.slopeCeil.rise > 0 && (s2.bbox[2] - s2.bbox[0]) > 24);
+    /* a roof with a ROOM under it — the school's corridor, since a house
+       has nothing under its roof any more */
+    const r = roofs.find(s2 => s2.slopeCeil.rise > 0 && s2.below !== null && level.sectors[s2.below].fuel > 0 &&
+                               (s2.bbox[2] - s2.bbox[0]) > 400 && /corridor/.test(s2.name.replace(/roof$/, '') + level.sectors[s2.below].name));
     const x = (r.bbox[0] + r.bbox[2]) / 2, y = (r.bbox[1] + r.bbox[3]) / 2;
     /* THE OPENING NARROWS AS THE ROOF COMES DOWN, which is the whole of
        what a sloped ceiling does to anything trying to move under it:
@@ -7690,10 +7793,12 @@ section('sloped roofs');
      rather than from the safe end — which is the difference between
      standing in a loft and standing in the bedroom under it. */
   {
-    const r = roofs[0];
+    /* a roof with a room under it: a house's roof is its whole column
+       now, so the question has to be asked of the school */
+    const r = roofs.find(s2 => s2.below !== null && level.sectors[s2.below].fuel > 0);
     const x = (r.bbox[0] + r.bbox[2]) / 2, y = (r.bbox[1] + r.bbox[3]) / 2;
     check('a storey up under the ridge you are in the roof', level.spanAt(x, y, r.floor + 8) === r);
-    check('and on the floor below you are not', level.spanAt(x, y, 8) !== r);
+    check('and on the floor below you are not', level.spanAt(x, y, level.sectors[r.below].floor + 8) !== r);
   }
 
   /* THE WALL UNDER A GABLE IS A TRIANGLE, which is one quad's worth of
@@ -7724,7 +7829,7 @@ section('the town on fire');
   const fresh = MAP.buildSellWrong();
   const fire = new F.FireSystem({ level: fresh, fx: null, actors: [] });
   note('the fuel grid', `${fire.cols}x${fire.rows} x ${fire.levels} storeys = ${(fire.plane * fire.levels).toLocaleString()} cells`);
-  check('there is a plane per storey', fire.levels === 3, `${fire.levels}`);
+  check('there is a plane per storey', fire.levels >= 2, `${fire.levels}`);
   check('and the ground plane is exactly the grid it always was',
     fire.plane === fire.cols * fire.rows);
   note('the ways up', `${fire.up.size} cells can carry fire to the storey above`);
@@ -7741,27 +7846,30 @@ section('the town on fire');
   }
   check('rasterising the grid gives what querying it gave', cellMiss === 0, `${cellMiss} cells differ`);
 
-  /* A FIRE ON A GROUND FLOOR REACHES THE STOREY ABOVE. Poured over one
-     house's ground floor the way a player would, and then left. */
-  const TAG = 'D3 no 3 ';
-  const mine = fresh.sectors.filter(s => s.name.startsWith(TAG));
-  const ground = mine.filter(s => s.storey === 0 && s.fuel > 0);
-  check('the house it is poured on has a ground floor and an upstairs',
+  /* A FIRE ON A GROUND FLOOR REACHES THE STOREY ABOVE. Poured over the
+     whole of the school's ground floor — every classroom, the corridor,
+     the lobby and the office — the way a player with a full tank would,
+     and then left. The houses have
+     no inside to pour it into any more; the school has a stair. */
+  const TAG = 'C3 ';
+  const mine = fresh.sectors.filter(s => s.name.startsWith(TAG) && !s.outdoor);
+  const ground = mine.filter(s => s.storey === 0 && s.fuel > 0 && /^(lobby|passage|corridor|classroom [SN]\d|office|west stair|east stair)$/.test(s.name.slice(TAG.length)));
+  check('the school has a ground floor and an upstairs',
     ground.length > 4 && mine.some(s => s.storey > 0), `${ground.length} rooms`);
   for (let k = 0; k < 40; k++) for (const s of ground)
     fire.ignite((s.bbox[0] + s.bbox[2]) / 2, (s.bbox[1] + s.bbox[3]) / 2, 200, 40);
   for (let t = 0; t < 35 * 60 * 8 && fire.liveCells > 0; t++) fire.tic();
   const up = mine.filter(s => s.storey > 0 && s.charred);
-  note('one house, poured on downstairs', `${mine.filter(s => s.charred).length} of ${mine.length} regions charred, ${up.length} of them upstairs`);
+  note('the school, poured on downstairs', `${mine.filter(s => s.charred).length} of ${mine.length} regions charred, ${up.length} of them upstairs`);
   check('the fire climbs to the floor above', up.length > 0, `${up.length} upstairs regions charred`);
   check('and it went up the stairs to get there',
-    mine.some(s => s.storey > 0 && s.charred && /stair|landing/.test(s.name)) || up.length > 2,
-    up.map(s => s.name.slice(TAG.length)).join(', '));
+    mine.some(s => /stair/.test(s.name) && s.charred) && up.length > 2,
+    up.map(s => s.name.slice(TAG.length)).slice(0, 8).join(', '));
 
-  /* AND IT DOES NOT COME BACK DOWN SOMEBODY ELSE'S CHIMNEY: a house
-     four blocks away is not alight. */
-  const far = fresh.sectors.filter(s => s.name.startsWith('E5 no 1 ') && s.charred).length;
-  check('a house four blocks off is not alight', far === 0, `${far} regions`);
+  /* AND IT DOES NOT COME BACK DOWN SOMEBODY ELSE'S CHIMNEY: the church,
+     one block north across a street of tarmac, is not alight. */
+  const far = fresh.sectors.filter(s => s.name.startsWith('B3 ') && s.charred).length;
+  check('the church over the road is not alight', far === 0, `${far} regions`);
 
   /* THE STORE IS UNTOUCHED, which is the firebreak the ring road is. */
   const shop = fresh.sectors.filter(s => inMall(s) && s.charred).length;
