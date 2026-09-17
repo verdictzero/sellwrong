@@ -195,7 +195,7 @@ const RTU_Z = CEIL_SKY - 6;             // standing on the roof, under the copin
 /* what hangs off the canopy, and what is screwed to the shopfront */
 const GUTTER_H = 12, GUTTER_OUT = 10, PIPE_W = 8;
 const TRAY_H = 8, TRAY_OUT = 8;
-const PACK_W = 32, PACK_H = 24, SHUT_H = 24;
+const PACK_W = 32, PACK_H = 24, SHUT_H = 24, SHUT_RAIL_H = 14;
 
 /* =====================================================================
    THE SIGN BOX
@@ -251,7 +251,8 @@ const ENT_A0 = 1908, ENT_B0 = 2212;               // centred where they always w
 /* =====================================================================
    THE TENANCIES
 
-   Twenty in-line units, ten each side, and four of them have a name.
+   Twenty in-line units, ten each side, and three of them have a name
+   (it was four: see the laundrette).
 
    IT WAS SIX, three each side, and fourteen more went in at the user's
    request — seven a side, unbranded. That is a different building: the
@@ -264,13 +265,15 @@ const ENT_A0 = 1908, ENT_B0 = 2212;               // centred where they always w
    screen and the store is the lit part in the middle of it.
 
    WHY UNBRANDED. A named unit is a joke — CHEMIST, KEBAB, PHONES — and
-   four jokes along an elevation is a parade with character. Eighteen is
+   a few jokes along an elevation is a parade with character. Eighteen is
    a comedy routine, and worse, it is eighteen legible words competing
    with the one sign that is supposed to matter. So the new fourteen get
-   a painted fascia tray with nothing in it, in six colours, and what
-   tells one from the next is what tells one unnamed unit from the next
-   in a real parade: whether the lights are on, the roller is down, or
-   the glass has been whitewashed from the inside.
+   a fascia tray with nothing in it, and what tells one from the next is
+   what tells one unnamed unit from the next in a real parade: whether
+   the lights are on or the roller is down. A tray somebody still pays
+   for is painted, in one of six colours; a tray over a unit that has
+   been shut for years is chalked to nothing, which is three more. See
+   PLAIN_FRONTS below.
 
    `in` is true for the ones you can walk into, and the rule is now
    visible from the car park: if the lights are on, the door works. The
@@ -287,8 +290,34 @@ const PLAIN_PER_WING = 7;
 /* The three states an unnamed unit can be in, and the six trays somebody
    painted. Both are walked by one index, so the front and the fascia
    move together and the wing does not repeat until the two cycles do. */
-const PLAIN_FRONTS = ['UNITGLAS', 'UNITSHUT', 'UNITVOID'];
+/* THE THREE STATES AN UNNAMED UNIT CAN BE IN — and two of the three are
+   now METAL, at the user's request to make the empty ones read as empty.
+
+   It was lit glass, a roller, or glass whitewashed from the inside. The
+   whitewash has gone and the reason is that it was the wrong answer to
+   the question this parade is asking. Whitewash says "somebody is
+   fitting this out" — it is what a landlord does to a unit that is
+   between tenants and about to have another one. A roller left down for
+   three years says nobody is coming, and that is the state this place
+   is in. So an empty unit is SHUT, and there are two shutters rather
+   than one because thirteen of them out of a single texture is a
+   hundred and thirty metres of wallpaper: one mill-finish aluminium,
+   worn bright on the crowns and rusting in the joints, and one that was
+   painted blue and has chalked. See THE SHUT ONES in js/textures.js.
+
+   The proportions are untouched: one in three of the unnamed ones is
+   still open, because the cycle is still three long. */
+const PLAIN_FRONTS = ['UNITGLAS', 'UNITSHUT', 'UNITSHUT2'];
 const PLAIN_FASCIAS = 6;
+/* AND THE SIGN GOES WITH THE SHUTTER. A blank painted tray in one of
+   six colours over a unit that has been shut for years is a fascia
+   somebody still maintains, and the sign is the bigger surface of the
+   two: from the car park you read the board before you read the glass.
+   So a closed unit gets a DEAD board — chalked to nothing, stained
+   under its fixings, with the clean band across it where the sign panel
+   was bolted before somebody took it away. Three of those, for the same
+   reason there are two shutters. */
+const DEAD_FASCIAS = 3;
 
 /** One tenancy with no name on it. Deterministic in its wing and its
  *  index, so two runs of the map put the same shutters in the same
@@ -296,10 +325,26 @@ const PLAIN_FASCIAS = 6;
 const plainUnit = (side, k) => {
   const i = k * 2 + (side === 'east' ? 1 : 0);
   const front = PLAIN_FRONTS[i % PLAIN_FRONTS.length];
+  const open = front === 'UNITGLAS';
   return {
     name: `${side} unit ${k + 1}`,
     front,
-    fascia: 'FASPLAIN' + (i % PLAIN_FASCIAS),
+    /* a painted tray if anybody is still paying for it, a dead one if
+       not — the fascia and the front now say the same thing, which they
+       did not before.
+
+       AND THE CYCLE IS i/3, NOT i. Both boards are chosen from the same
+       counter the FRONT is chosen from, and the front's cycle is three
+       long — so once the board depends on which state the unit is in,
+       `i` no longer visits every residue within a state. A closed unit
+       is always i ≡ 1 or 2 (mod 3), so `i % 3` could only ever be 1 or
+       2 and the first dead board was never drawn anywhere on the
+       parade; an open unit is always i ≡ 0 (mod 3), so `i % 6` could
+       only be 0 or 3 and four of the six colours vanished. Dividing by
+       the front's period first gives a counter that advances once per
+       unit IN THAT STATE, which is what was wanted. */
+    fascia: open ? 'FASPLAIN' + (Math.floor(i / PLAIN_FRONTS.length) % PLAIN_FASCIAS)
+                 : 'FASVOID' + ((Math.floor(i / PLAIN_FRONTS.length) % DEAD_FASCIAS) || ''),
     /* THE LIGHTS ARE THE DOOR. The builder further down lays a sales
        floor, a counter and a back room into any unit with `in` on it,
        and the player finds out which those are by looking: lit glass is
@@ -313,14 +358,22 @@ const plainWing = side => Array.from({ length: PLAIN_PER_WING }, (_, k) => plain
    three nearest the doors — which is also where the rent is */
 const WEST_UNITS = [
   { name: 'chemist',    front: 'UNITGLAS', fascia: 'FASCHEM', in: true },
-  { name: 'laundrette', front: 'UNITSHUT', fascia: 'FASWASH', in: false },
-  { name: 'vacant unit west', front: 'UNITVOID', fascia: 'FASVOID', in: false },
+  /* THE LAUNDRETTE LOST ITS SIGN, which was the one exemption left after
+     every other shut unit got a dead board and is the one the check
+     caught. It is shut and it is empty; a WASH board over three years of
+     roller shutter is a sign somebody still maintains, which is exactly
+     the thing this pass was asked to stop. It keeps its NAME in here,
+     because that is what the sector is called and what the fire reports
+     — a laundrette that closed is still a laundrette. The three names
+     left on the building are the three units that still have a tenant. */
+  { name: 'laundrette', front: 'UNITSHUT', fascia: 'FASVOID2', in: false },
+  { name: 'vacant unit west', front: 'UNITSHUT2', fascia: 'FASVOID1', in: false },
   ...plainWing('west'),
 ];
 const EAST_UNITS = [
   { name: 'kebab shop', front: 'UNITGLAS', fascia: 'FASFOOD', in: true },
   { name: 'phone shop', front: 'UNITGLAS', fascia: 'FASPHON', in: false },
-  { name: 'vacant unit east', front: 'UNITSHUT', fascia: 'FASVOID', in: false },
+  { name: 'vacant unit east', front: 'UNITSHUT', fascia: 'FASVOID2', in: false },
   ...plainWing('east'),
 ];
 
@@ -917,9 +970,14 @@ export function buildSellWrong(opts = {}) {
        one along the top edge, one along the bottom, eight units proud —
        and the same paint is a TRAY bolted to the building, which is
        what every fascia on every parade in the world actually is. */
-    for (const b of bays) for (const z of [CEIL_SOFF, CEIL_EDGE - TRAY_H])
+    for (const b of bays) for (const z of [CEIL_SOFF, CEIL_EDGE - TRAY_H]) {
+      /* and the rim over a dead board is dimmer, because the tray light
+         inside it has not been on in years and the rim is the part of a
+         fascia that catches it */
+      const lit = z === CEIL_SOFF ? 0.54 : 0.64;
       prop(b.x0, -96 - TRAY_OUT, b.x1, -96, z, z + TRAY_H, 'SIGNEDGE',
-           { light: z === CEIL_SOFF ? 0.54 : 0.64 });
+           { light: /^FASVOID/.test(b.fascia) ? lit * 0.62 : lit });
+    }
 
     /* --- the shopfronts --------------------------------------------
        A roller housing over every in-line unit, because every unit on a
@@ -935,6 +993,18 @@ export function buildSellWrong(opts = {}) {
         const cx = (b.x0 + b.x1) / 2;
         prop(cx - PACK_W / 2, -WALL - 10, cx + PACK_W / 2, -WALL, 168, 168 + PACK_H,
              'WALLPACK', { light: b.in ? 1.10 : 0.16 });
+        /* AND THE BOTTOM RAIL, on the units whose roller is down.
+           A shutter curtain is the same thing all the way up, which is
+           what lets its texture tile four times cleanly over a 220-tall
+           shopfront (see THE SHUT ONES in js/textures.js) — and it also
+           means the texture cannot contain the one part of a shutter
+           that happens ONCE. Without it the metal runs off the bottom of
+           the wall and reads as a metal WALL; with it, it reads as a
+           curtain somebody pulled DOWN, which is the whole point. Eight
+           deep and flat against the shopfront, like the downpipes. */
+        if (/^UNITSHUT/.test(b.front))
+          prop(b.x0 + 12, -WALL - 8, b.x1 - 12, -WALL, FLOOR_WALK, FLOOR_WALK + SHUT_RAIL_H,
+               'SHUTRAIL', { topTex: 'SHUTRAIL', light: 0.44 });
       } else {
         /* the anchor has no roller: it has two sets of sliders, and a
            pack either side of each so the doors are the lit thing on
@@ -1613,7 +1683,7 @@ export function buildSellWrong(opts = {}) {
      the mouth of the car park. So the north end — the lane end, where
      you push one in — is left alone, and so is the join between the two
      halves, which is inside the thing. */
-  const RAIL_H = 48;
+  const TROLLEY_RAIL_H = 48;         // not SHUT_RAIL_H: a different rail
   let railLines = 0;
   for (const k of CORRAL_BAYS) {
     const mine = corralPieces.filter(c => c.k === k);
@@ -1633,7 +1703,7 @@ export function buildSellWrong(opts = {}) {
          nine trolleys locked in it. */
       if (mb.verts[l.v1][1] === wayIn && mb.verts[l.v2][1] === wayIn) continue;
       l.middle = 'TROLLRAI';
-      l.midHeight = RAIL_H;
+      l.midHeight = TROLLEY_RAIL_H;
       l.pegMiddle = 'bottom';
       l.blocking = true;
       l.texLocked = true;

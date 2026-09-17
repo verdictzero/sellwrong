@@ -139,7 +139,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         1890 checks, no install and no browser
+  the smoke test         1904 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -847,7 +847,7 @@ so it can be pointed at, and a hidden tab pauses too.
 THE PARADE
 ----------
 
-TWENTY IN-LINE UNITS, ten each side, and four of them have a name. It was
+TWENTY IN-LINE UNITS, ten each side, and three of them have a name. It was
 six, three each side, and fourteen more went in at the user's request.
 That is a different building: the frontage was six and a half thousand
 units long and is nearly thirteen now, about three hundred and seventy
@@ -856,6 +856,16 @@ superstore is a shopping parade with an anchor on it. Twenty is a STRIP
 MALL, and the difference is that the anchor stops being most of what you
 can see — from the mouth of the car park the building runs off both edges
 of the screen and the store is the lit part in the middle of it.
+
+THREE NAMES ARE LEFT ON THE BUILDING and they are the three units that
+still have a tenant in them: the chemist, the kebab shop and the phone
+shop. There were four. The laundrette's WASH board came off when every
+shut unit's sign went dead, because the laundrette is shut, which makes
+it an empty store, and a maintained sign over three years of roller
+shutter is the exact thing that change was asked to stop. It keeps its
+name in the map — a laundrette that closed is still a laundrette, and
+that is what the sector is called and what the fire reports — it just
+has nothing over the door any more.
 
 THE FOURTEEN ARE UNBRANDED, which is what was asked for and is also the
 only honest way to draw fourteen more. A fascia is one repeat of a
@@ -866,12 +876,56 @@ with character. Eighteen is noise. So the new ones carry the TRAY and the
 paint in it and nothing else — six colours, muted, because a row of
 saturated boards reads as bunting — and what tells one from the next is
 what tells one unnamed unit from the next in a real parade: whether the
-lights are on, the roller is down, or the glass has been whitewashed from
-the inside.
+lights are on or the roller is down.
 
 AND THE RULE IS VISIBLE FROM THE CAR PARK: if the lights are on, the door
 works. Seven of the twenty are open now, up from two, each with a run of
 shelving down both sides, a counter with a flap in it and a back room.
+
+THE OTHER THIRTEEN ARE METAL. There used to be a third state — glass
+whitewashed from the inside — and it went, at the user's request to make
+the empty ones read as empty, because it was the wrong answer to the
+question this parade is asking. Whitewash says somebody is FITTING OUT:
+it is what a landlord does to a unit that is between tenants and about to
+have another one. A roller left down for three years says nobody is
+coming, and that is the state this place is in.
+
+So an empty unit is shut, and there are two shutters rather than one
+because thirteen in a row out of a single texture is a hundred and thirty
+metres of wallpaper. One is mill-finish aluminium: the crowns of the laths
+worn bright where a decade of weather and hands and trolleys has been at
+them, the rust in the JOINTS where the water sits, a few dents with a
+bright lip on the top edge, and the ghost of a tag somebody scrubbed —
+which is better than a fresh one, because a shutter covered in bright
+paint is a shutter somebody still visits. The other was painted blue and
+has chalked: the colour gone flat and pale, the paint letting go in a
+handful of hard-edged patches rather than everywhere at once, and more
+rust through the holes.
+
+AND THE SIGN SAYS THE SAME THING THE GLASS DOES, which it did not before.
+Every unnamed unit carried a painted tray in one of six colours whether
+the lights were on or not, and the board is the bigger surface of the two:
+from the car park you read the fascia before you read the shopfront. A
+closed one now gets a DEAD board — chalked to almost nothing, stained
+under both its fixings, with the clean band across it where the sign panel
+was bolted before somebody unbolted it. Three of those, for the same
+reason there are two shutters.
+
+THE DEAD BOARDS ARE PALER THAN THE LIVE ONES, not darker, and it took a
+screenshot to see why that matters. They were first painted at the same
+tone as the live trays, and at the 0.46 the footway lights a shut unit
+with, a dark green board and a dark blue one both came out very nearly
+black — which reads as an unlit sign and not as an abandoned one. A dead
+board is not unlit. It is CHALKED, which is the binder going and the white
+filler coming out, so the failure state of paint is pale.
+
+AND THE ROLLER REACHES THE GROUND, which is one free box per shut unit.
+The curtain of a shutter is the same thing all the way up, and that is
+exactly what lets its texture tile four times cleanly over a 220-tall
+shopfront — so the texture cannot contain the one part of a shutter that
+happens ONCE. Without a bottom rail the metal runs off the bottom of the
+wall and reads as a metal WALL; with one, it reads as a curtain somebody
+pulled DOWN. Same argument as the coping, one storey lower.
 
 THE CAR PARK HAD TO GROW WITH IT, because the wood down each flank of the
 building is the strip between the lot's edge and the end of the parade —
@@ -964,10 +1018,11 @@ asks the question and nothing in the level had an answer to it.
 
 THE SHOPFRONTS get the housing every roller winds into and a light over
 every door — and THE LIGHT IS THE TENANCY. The parade already told you
-who was left by whether the glass was lit, whitewashed or shuttered; the
+who was left by whether the glass was lit or the roller was down; the
 fittings tell you now too, because a wall pack at full brightness says
 somebody pays that bill and a dead one says nobody has for years. Same
-rule, one more surface saying it.
+rule, one more surface saying it — and the fascia is a third, since a
+closed unit's board went dead as well. See THE PARADE.
 
 AND THE CAR PARK, which had no object in it taller than a van and
 therefore no scale at all. Lot lighting on the strip where two rows of
@@ -2751,8 +2806,10 @@ the post.
 A word is a shape the eye locks onto and counts, which is the one thing a
 tiling texture must not contain. What tiles honestly is the MATERIAL. So
 the fascia keeps its red tray and gets a panel joint at every repeat, which
-is a rhythm a fascia really has; the vacant unit keeps its whitewash, which
-has no shape to count; the trolley rail loses its BAY plate and keeps the
+is a rhythm a fascia really has; the vacant unit's board is a clean
+horizontal BAND across a dead tray, which is the only version of "you can
+see where the letters were" that tiles — a ghost word would be seven ghost
+words; the trolley rail loses its BAY plate and keeps the
 bracket it was bolted to; and the pylon is gone along with the eight
 rectangles that stood it up. One sign is left on the building and it is the
 only one that was never a repeat: the logo over the entrance, which gets
@@ -5133,7 +5190,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-1890 checks. Every one of them earns its place by having caught something
+1904 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

@@ -8469,7 +8469,7 @@ section('the town');
        a pipe and a board on the face of a wall — and the one that is
        LOWER THAN A STEP, which is the wheel stop and is a different
        bargain: see below. */
-    const FLAT = ['PORCHPST', 'DOWNPIPE', 'CORNRBRD', 'PILASTER', 'METERBOX', 'ROOFLADR'];
+    const FLAT = ['PORCHPST', 'DOWNPIPE', 'CORNRBRD', 'PILASTER', 'METERBOX', 'ROOFLADR', 'SHUTRAIL'];
     const STEPPABLE = ['WHEELSTP'];
     const low = props.filter(q => q.z0 < PLAYER_TOP && ![...FLAT, ...STEPPABLE].includes(q.tex));
     check('and nothing but a post, a pipe, a corner board and a wheel stop comes down to head height',
@@ -8626,6 +8626,66 @@ section('the town');
       `${packs.filter(q => q.light > 1).length} lit, ${packs.filter(q => q.light < 0.3).length} dead`);
     check('and every unit has the housing its roller winds into',
       of('SHUTBOX').length >= 18 && of('SHUTBOX').every(q => q.z1 <= SOFF));
+
+    /* --- AND WHAT AN EMPTY UNIT LOOKS LIKE ------------------------
+       Most of this parade is empty and it has to LOOK it, which used to
+       be true of the glass and not of anything else. Three claims:
+       every closed unit is metal, every closed unit's sign is dead, and
+       neither of those is drawn out of one texture. */
+    const fronts = level.sectors.filter(s => /^footway /.test(s.name) && s.name !== 'footway pier');
+    const inLine = fronts.filter(s => s.wallTex !== 'STORGLAS' && s.wallTex !== 'PILASTER');
+    const shut = inLine.filter(s => /^UNITSHUT/.test(s.wallTex));
+    const open = inLine.filter(s => s.wallTex === 'UNITGLAS');
+    note('the tenancies', `${open.length} lit, ${shut.length} shut, ${new Set(shut.map(s => s.wallTex)).size} shutters, ${new Set(shut.map(s => s.upperTex)).size} dead boards`);
+    check('every unit that is not open has a shutter down over it',
+      shut.length + open.length === inLine.length && shut.length >= 10,
+      `${inLine.length - shut.length - open.length} are neither`);
+    /* THE WHITEWASH IS GONE, and gone from the bank rather than merely
+       unreferenced — same standard the pylon sign was held to. */
+    check('and the whitewashed glass is gone from the map and from the bank',
+      !inLine.some(s => s.wallTex === 'UNITVOID') && !('UNITVOID' in tex.TEXTURE_SIZES));
+    check('and there is more than one shutter, because thirteen in a row out of one is wallpaper',
+      new Set(shut.map(s => s.wallTex)).size === 2);
+    /* A SHOPFRONT COMES OUT IN WHOLE REPEATS. This is the reason the two
+       shutters are declared 72 by 55 and not 64 by 64: a front is 432 by
+       220, so 64 gave six and three quarters across and three and a half
+       up, and the quarter and the half were visible as a seam. */
+    for (const n of ['UNITSHUT', 'UNITSHUT2']) {
+      const sz = tex.TEXTURE_SIZES[n];
+      const w = inLine[0].bbox[2] - inLine[0].bbox[0], h = inLine[0].ceil - inLine[0].floor;
+      check(`${n} tiles a shopfront in whole repeats`,
+        sz && w % sz.w === 0 && h % sz.h === 0,
+        sz ? `${w}/${sz.w} by ${h}/${sz.h}` : 'no size');
+    }
+    /* AND THE SIGN SAYS THE SAME THING THE GLASS DOES. A blank painted
+       tray over a unit that has been shut for years is a fascia somebody
+       still maintains, and the board is the bigger surface of the two. */
+    check('every shut unit has a dead board over it',
+      shut.every(s => /^FASVOID/.test(s.upperTex)));
+    check('and no open one does',
+      open.every(s => !/^FASVOID/.test(s.upperTex)));
+    /* THE CYCLE TRAP, which is worth a check because it cost a build to
+       spot: the board is chosen off the same counter as the front, and
+       the front's cycle is three long — so `i % 3` inside a state can
+       only ever reach the residues that state occupies. Picking the
+       board with `i` rather than `i / 3` meant the first dead board was
+       never drawn anywhere on the parade and four of the six live
+       colours vanished. What the fix has to produce is every board in
+       use, and that is what this asks. */
+    check('and all three dead boards are actually on the building',
+      new Set(shut.map(s => s.upperTex)).size === 3,
+      [...new Set(shut.map(s => s.upperTex))].join(' '));
+    check('and the live ones are not all the same colour either',
+      new Set(open.map(s => s.upperTex)).size >= 4,
+      [...new Set(open.map(s => s.upperTex))].join(' '));
+    /* AND THE ROLLER REACHES THE GROUND. A curtain that runs off the
+       bottom of the wall is a metal WALL; one that stops in a heavier
+       rail is a shutter somebody pulled down. It cannot be in the
+       texture — the curtain has to tile — so it is a free box. */
+    const rails = of('SHUTRAIL');
+    check('and every shutter comes down to a bottom rail on the footway',
+      rails.length === shut.length && rails.every(q => q.z0 === MAP.FLOOR_WALK),
+      `${rails.length} rails on ${shut.length} shutters`);
 
     /* THE SERVICE YARD. The skips and the condensing sets are REGIONS
        and not boxes — see WHAT IS IN THE SERVICE YARD — because a free

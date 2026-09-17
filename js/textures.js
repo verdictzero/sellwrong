@@ -1631,55 +1631,196 @@ T.UNITGLAS = () => {
   return p.snap(0.45);
 };
 
-T.UNITSHUT = () => {
-  /* Shut up: the roller down, and everybody who walks past has had a
-     go at it. */
-  const p = new Pix(64, 64, 143);
-  for (let y = 0; y < 64; y++) {
-    const rib = y % 6;
-    const t = rib === 0 ? 0.26 : rib === 1 ? 0.52 : rib === 5 ? 0.32 : 0.42;
-    for (let x = 0; x < 64; x++) p.ink(x, y, 'grey', t);
+/* --- THE SHUT ONES -------------------------------------------------
+
+   Most of this parade is empty, and what an empty parade IS, from the
+   car park, is a run of metal. Not graffiti, not boarding, not TO LET
+   signs: a hundred and thirty metres of roller shutter that somebody
+   pulled down for the last time a few years ago and has not been back
+   to. So these two are the most-seen surfaces on the whole building
+   after the tarmac, and they are drawn to be read at two distances —
+   as a grey band from the road, and as WORN METAL from the footway.
+
+   ONE REPEAT IS FOUR LATHS AND NOTHING ELSE, which is the whole of the
+   tiling decision. A shopfront runs from FLOOR_WALK to CEIL_SOFF, which
+   is 220, and these were declared 64 — so they tiled three and a half
+   times up the glass and the half was visible: whatever was at the
+   bottom of the tile appeared three and a half times up the shutter, at
+   three different heights. Declared 55 they tile exactly four times,
+   and declared 72 exactly six across a 432-wide unit, so there is no
+   partial repeat anywhere and no seam to find.
+
+   WHICH MEANS NOTHING IN HERE MAY HAPPEN ONCE. No bottom rail, no lock,
+   no guides — a shutter's curtain is the same thing all the way up and
+   that is exactly what makes it tileable. The bottom rail is a free box
+   standing on the footway (SHUTRAIL, and DRESSING THE PARADE in
+   js/maps/sellwrong.js), which is where a thing that happens once
+   belongs. Same argument as the coping and the parapet.
+   ------------------------------------------------------------------ */
+
+/** The curtain: `pitch` laths of a rolled profile, lit from the top of
+ *  each lath and dark in the joint under it, which is what makes a
+ *  stack of horizontal lines read as a corrugated sheet and not as a
+ *  barcode. `key`/`base` are what the metal is; everything else is what
+ *  has happened to it since. */
+const shutterCurtain = (p, seed, key, base, pitch = 8) => {
+  const n = fbm(p.w, p.h, 8, 3, seed);
+  for (let y = 0; y < p.h; y++) {
+    /* where in the lath this row is: 0 at the crown, 1 in the joint */
+    const k = (y % pitch) / pitch;
+    const roll = Math.cos(k * 6.0) * 0.5 + 0.5;          // crown bright, belly dark
+    for (let x = 0; x < p.w; x++)
+      p.ink(x, y, key, base + roll * 0.20 - 0.06 + n[y * p.w + x] * 0.07);
   }
+  /* the joint itself: a hard dark line with the next lath's lip over it */
+  for (let y = 0; y < p.h; y += pitch) {
+    p.hline(0, p.w - 1, (y + pitch - 1) % p.h, 'grey', 0.07);
+    p.hline(0, p.w - 1, y, key, base + 0.26);
+  }
+};
+
+/** Rust, which on a shutter comes out of the JOINTS and not out of the
+ *  flat: water sits in the lap between two laths and stays there. So
+ *  the bloom is seeded on the joint rows and grows down from them. */
+const shutterRust = (p, seed, amount, pitch = 8) => {
+  const rng = makeRng(seed);
+  const patch = fbm(p.w, p.h, 5, 3, seed + 11);
+  /* `amount` is a THRESHOLD on the field and not a strength, which is
+     the second go at this: an fbm hardly ever gets past 0.66, so
+     treating it as a strength and subtracting it from one put the cut
+     above almost every pixel and the first shutter came out clean.
+     Half the surface should have something on it. */
+  const cut = 1 - amount;
+  for (let y = 0; y < p.h; y++) for (let x = 0; x < p.w; x++) {
+    const inJoint = (y % pitch) >= pitch - 3;
+    const v = patch[y * p.w + x];
+    if (v < cut) continue;
+    const t = Math.min(1, (v - cut) / 0.30);
+    p.wash(x, y, 'rust', 0.20 + t * 0.22, (inJoint ? 0.72 : 0.38) * t);
+  }
+  /* and the streaks it leaves running down from a bad joint */
+  for (let k = 0; k < 14; k++) {
+    const x = Math.floor(rng() * p.w);
+    let y = Math.floor(rng() * p.h);
+    for (let d = 0; d < 6 + rng() * 22; d++) {
+      p.wash(x, (y + d) % p.h, 'rust', 0.26, 0.26 * (1 - d / 28));
+      if (rng() < 0.16) return;
+    }
+  }
+};
+
+T.UNITSHUT = () => {
+  /* Mill-finish aluminium, down for about three years. Semi worn and
+     semi rusty, which is a specific thing and not a vague one: the
+     crowns of the laths are POLISHED where a decade of hands and
+     trolleys and weather have been at them, and the rust is in the
+     joints where the water sits. Bright high spots, dirty low ones. */
+  const p = new Pix(64, 64, 143);
+  shutterCurtain(p, 143, 'grey', 0.42);
   const rng = makeRng(144);
-  for (let i = 0; i < 5; i++) {                       // tags
-    const cx = 6 + rng() * 52, cy = 14 + rng() * 38;
-    const key = ['red', 'green', 'purple', 'cyan'][Math.floor(rng() * 4)];
-    let x = cx, y = cy;
-    for (let s = 0; s < 14; s++) {
-      const nx = x + (rng() - 0.5) * 16, ny = y + (rng() - 0.5) * 11;
-      p.line(Math.round(x), Math.round(y), Math.round(nx), Math.round(ny), key, 0.5 + rng() * 0.3);
+  /* THE WEAR: the crowns polished through to bright metal, in patches,
+     because wear is never even. */
+  const worn = fbm(64, 64, 6, 3, 149);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+    if ((y % 8) > 2) continue;                          // the crown only
+    const w = worn[y * 64 + x];
+    if (w > 0.56) p.wash(x, y, 'grey', 0.66, (w - 0.56) * 1.5);
+  }
+  shutterRust(p, 151, 0.52);
+  /* THE DENTS. Somebody has kicked it and somebody has backed into it:
+     a shallow bowl is a dark patch with a BRIGHT LIP on its top edge,
+     because the lip is the only part of it still facing the light. */
+  for (let k = 0; k < 5; k++) {
+    const cx = Math.floor(rng() * 64), cy = Math.floor(rng() * 64), r = 3 + Math.floor(rng() * 5);
+    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      const d = Math.hypot(dx, dy) / r;
+      if (d > 1) continue;
+      p.wash(cx + dx, cy + dy, 'grey', 0.16, (1 - d) * 0.30);
+    }
+    for (let dx = -r; dx <= r; dx++) p.wash(cx + dx, cy - r, 'grey', 0.72, 0.34);
+  }
+  /* AND A TAG SOMEBODY SCRUBBED. Not a fresh one — there were five at
+     full strength on this and a shutter covered in bright paint is a
+     shutter somebody still visits. What is left of one is better: the
+     ghost of it, at a fifth of the alpha, which reads as a surface that
+     has been given up on rather than fought over. */
+  {
+    let x = 8 + rng() * 40, y = 16 + rng() * 32;
+    for (let seg = 0; seg < 16; seg++) {
+      const nx = x + (rng() - 0.5) * 18, ny = y + (rng() - 0.5) * 12;
+      p.line(Math.round(x), Math.round(y), Math.round(nx), Math.round(ny), 'purple', 0.30, 255);
       x = nx; y = ny;
     }
   }
-  for (let x = 0; x < 64; x++) { p.ink(x, 62, 'grey', 0.22); p.ink(x, 63, 'grey', 0.50); }
-  p.grime(0.55, 'rust', 0.22, 145);
+  streaks(p, 8, 145, 'grey', 0.16, 0.45);
+  p.grime(0.42, 'grey', 0.12, 153);
   return p.snap(0.5);
 };
 
-T.UNITVOID = () => {
-  /* Never let. Whitewash on the inside of the glass, and nothing else:
-     the agent's board that used to hang here came off at the user's
-     request, and it is a better wall without it. A shopfront is four
-     tiles across and four up, so the board was on the glass
-     twenty-eight times over — the same complaint as the fascia band,
-     and the same fix. What is left tiles the way whitewash does,
-     because whitewash has no shape to count. */
-  const p = new Pix(64, 64, 146);
-  const n = fbm(64, 64, 12, 3, 146);
+T.UNITSHUT2 = () => {
+  /* The other one, and the reason there are two is that thirteen shut
+     units in a row out of one texture is a hundred and thirty metres of
+     wallpaper. This one was PAINTED — a blue nobody would choose now —
+     and paint on a shutter does not wear like metal: it chalks, it goes
+     matt and pale all over, and then it lets go in flakes at the joints
+     and the rust comes through the holes rather than over the surface. */
+  const p = new Pix(64, 64, 155);
+  shutterCurtain(p, 155, 'blue', 0.26);
+  const rng = makeRng(157);
+  /* the chalking: a pale film over everything, heaviest where the sun
+     gets at it, which on a south-facing parade is everywhere */
+  const chalk = fbm(64, 64, 5, 3, 159);
   for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
-    p.ink(x, y, 'bone', 0.42 + n[y * 64 + x] * 0.22);
-  const rng = makeRng(147);                            // brush strokes
-  for (let i = 0; i < 22; i++) {
-    const y0 = Math.floor(rng() * 64), h = 2 + Math.floor(rng() * 4);
-    for (let y = y0; y < y0 + h && y < 64; y++)
-      for (let x = 0; x < 64; x++) p.ink(x, y, 'bone', 0.52 + Math.sin(x * 0.3 + i) * 0.06);
+    p.wash(x, y, 'bone', 0.48, 0.34 + chalk[y * 64 + x] * 0.22);
+  /* THE FLAKES, and there are far fewer of them than the first go had.
+     Paint coming off a shutter is not camouflage: it goes in a handful
+     of PATCHES with hard edges, and the first version scattered it over
+     a third of the surface at a fine scale, which drowned the laths and
+     turned the whole thing into mottling. What makes a flake read is
+     that it is a HOLE in something otherwise continuous. */
+  const flake = fbm(64, 64, 4, 2, 161);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+    if (flake[y * 64 + x] < 0.74) continue;
+    p.ink(x, y, 'grey', 0.28 + ((y % 8) < 3 ? 0.16 : 0));
+    if (flake[((y + 63) % 64) * 64 + x] < 0.74) p.ink(x, y, 'bone', 0.58);   // the lifted edge
   }
-  for (const mx of [0, 32]) { p.vline(mx, 0, 63, 'grey', 0.34); p.vline(mx + 1, 0, 63, 'grey', 0.18); }
-  /* Nothing else. The clean square the board left behind was the first
-     thing tried here and it was the same mistake in a smaller size: a
-     rectangle you can count, twenty-eight times over. */
-  for (let y = 48; y < 64; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'grey', 0.20);
-  p.grime(0.4, 'grey', 0.10, 148);
+  shutterRust(p, 163, 0.60);
+  for (let k = 0; k < 4; k++) {                          // dents, as above
+    const cx = Math.floor(rng() * 64), cy = Math.floor(rng() * 64), r = 3 + Math.floor(rng() * 4);
+    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      const d = Math.hypot(dx, dy) / r;
+      if (d > 1) continue;
+      p.wash(cx + dx, cy + dy, 'grey', 0.14, (1 - d) * 0.32);
+    }
+    for (let dx = -r; dx <= r; dx++) p.wash(cx + dx, cy - r, 'bone', 0.56, 0.16);
+  }
+  streaks(p, 10, 165, 'grey', 0.14, 0.5);
+  p.grime(0.46, 'grey', 0.12, 167);
+  return p.snap(0.5);
+};
+
+T.SHUTRAIL = () => {
+  /* THE BOTTOM RAIL, which is the one thing on a shutter that happens
+     once and is therefore the one thing that could not be in the
+     curtain. It matters more than it sounds like it should: a curtain
+     that runs off the bottom of the wall is a metal WALL, and a curtain
+     that stops in a heavier rail with a rubber strip under it is a
+     shutter that has been PULLED DOWN. That is the whole read.
+
+     Fourteen tall and one repeat, so the pressed section, the weather
+     strip and the shadow under it land in the same place along the
+     whole parade. */
+  const p = new Pix(64, 14, 169);
+  for (let y = 0; y < 14; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'grey', 0.46 - y * 0.012);
+  p.hline(0, 63, 0, 'grey', 0.66); p.hline(0, 63, 1, 'grey', 0.58);
+  p.hline(0, 63, 6, 'grey', 0.20);                   // the lip of the pressing
+  p.hline(0, 63, 7, 'grey', 0.50);
+  for (let y = 10; y < 14; y++) p.hline(0, 63, y, 'grey', 0.10);   // the rubber strip
+  const rng = makeRng(171);
+  for (let k = 0; k < 70; k++)                       // and it sits in the wet
+    p.wash(Math.floor(rng() * 64), 7 + Math.floor(rng() * 7), 'rust', 0.26, 0.12 + rng() * 0.34);
+  p.grime(0.40, 'grey', 0.10, 173);
   return p.snap(0.5);
 };
 
@@ -1705,10 +1846,105 @@ const fascia = (seed, text, bg, bgT, fg, fgT) => () => {
 T.FASCHEM = fascia(150, 'CHEMIST', 'green', 0.30, 'bone', 0.92);
 T.FASPHON = fascia(152, 'PHONES', 'blue', 0.34, 'yellow', 0.90);
 T.FASFOOD = fascia(154, 'KEBAB', 'red', 0.36, 'yellow', 0.92);
-T.FASWASH = fascia(156, 'WASH', 'cyan', 0.26, 'blue', 0.55);
-/* The dead one. Same tray as its neighbours and no name in it, because
-   the tenant took the letters when they left and nobody put any back. */
-T.FASVOID = fascia(158, '', 'grey', 0.22, 'grey', 0.55);
+/* THERE WAS A FOURTH NAME HERE — WASH, over the laundrette — and it
+   came off when every shut unit's board went dead. The laundrette is
+   shut, which makes it an empty store, and a maintained sign over three
+   years of roller shutter is the exact thing that pass was asked to
+   stop. Three names are left on the building and they are the three
+   units that still have a tenant in them. */
+/* --- AND THE DEAD ONES ---------------------------------------------
+
+   A blank tray is not an empty shop. The fourteen unnamed units carried
+   a painted board in one of six colours whether the lights were on or
+   not, and what that draws, at the user's request to make the empty ones
+   read as empty, is a parade where every fascia looks maintained and
+   only the glass tells you anything. The sign is the bigger surface and
+   it was saying nothing.
+
+   WHAT AN ABANDONED FASCIA LOOKS LIKE is three things, in this order of
+   how far off you can read them:
+
+     the colour has gone. Not darker — CHALKED, which is pale and flat
+     and slightly the wrong hue, because what is left is the filler in
+     the paint after the binder has gone;
+     there is a CLEAN BAND across it where the sign panel was bolted,
+     which the weather never got at, so the one part of the board that
+     still has its colour is the part nobody can see any more;
+     and everything below the fixings is stained, because water has been
+     coming out of two holes in a board for six years.
+
+   THE CLEAN BAND IS THE WHOLE IDEA and it is also the only version of
+   "you can see where the letters were" that is allowed to exist here. A
+   fascia tiles nearly seven times along one unit, so a ghost WORD would
+   be seven ghost words, which is the mistake the agent's board made and
+   the mistake the painted coping made. A horizontal band tiles
+   perfectly and says the same thing.
+
+   Three of them, because thirteen dead units out of one texture is
+   wallpaper. */
+const deadFascia = (seed, key, t) => () => {
+  const p = new Pix(64, 64, seed);
+  const n = fbm(64, 64, 8, 3, seed);
+  const chalk = fbm(64, 64, 4, 3, seed + 37);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+    p.ink(x, y, key, t + n[y * 64 + x] * 0.10);
+    /* the chalking, which is what takes the colour out: a pale film,
+       heavier where the sun has had longer at it */
+    p.wash(x, y, 'bone', 0.46, 0.30 + chalk[y * 64 + x] * 0.26);
+  }
+  /* the tray: a lit top return and a shadow under, once, because the
+     band is 96 and the texture is declared 96 */
+  for (let y = 0; y < 4; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'bone', 0.50 - y * 0.03);
+  p.hline(0, 63, 4, 'grey', 0.16);
+  for (let y = 58; y < 64; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'grey', 0.12 + (y > 61 ? 0 : 0.04));
+  /* THE CLEAN BAND where the panel was: unchalked, so it keeps the
+     colour the rest of the board has lost, with a hard edge top and
+     bottom where the panel's own edge kept the rain off */
+  /* KEPT, NOT RESTORED. First go painted the band at full strength over
+     the chalk and what it drew was a two-tone sign somebody had chosen —
+     a green board with a dark green stripe on it. The band is not a
+     colour, it is the ABSENCE of six years of weather, so it carries
+     the same film as the rest, only thinner. */
+  for (let y = 22; y < 44; y++) for (let x = 0; x < 64; x++) {
+    p.ink(x, y, key, t + 0.02 + n[y * 64 + x] * 0.09);
+    p.wash(x, y, 'bone', 0.46, 0.14 + chalk[y * 64 + x] * 0.12);
+  }
+  p.hline(0, 63, 21, 'grey', 0.14); p.hline(0, 63, 22, 'bone', 0.40);
+  p.hline(0, 63, 44, 'grey', 0.12); p.hline(0, 63, 43, 'bone', 0.34);
+  /* and the two fixings it was bolted through, one repeat apart, each
+     with six years of rust coming out of it */
+  const rng = makeRng(seed + 3);
+  for (const fx of [14, 46]) {
+    p.disc(fx, 30, 2, 'grey', 0.10);
+    p.ink(fx, 29, 'grey', 0.34);
+    for (let y = 32; y < 64; y++) {
+      const a = (1 - (y - 32) / 32) * 0.34;
+      p.wash(fx + (rng() < 0.25 ? 1 : 0), y, 'rust', 0.28, a);
+      if (rng() < 0.4) p.wash(fx - 1, y, 'rust', 0.26, a * 0.6);
+    }
+  }
+  streaks(p, 9, seed + 5, 'grey', 0.18, 0.5);
+  /* algae along the bottom edge, where the board stays wet */
+  for (let y = 50; y < 58; y++) for (let x = 0; x < 64; x++)
+    if (n[y * 64 + x] > 0.52) p.wash(x, y, 'olive', 0.22, (y - 50) / 8 * 0.40);
+  p.grime(0.46, 'grey', 0.12, seed + 7);
+  return p.snap(0.5);
+};
+/* The three: what each of them WAS. A green, a blue and a cream, which
+   is three of the six the shopfitter had in the van — so a dead board
+   and a live one on the same parade were painted out of the same tins,
+   and the difference between them is entirely what has happened since. */
+/* AND THEY ARE PALER THAN THE LIVE ONES, not darker, which took a shot
+   from the car park to see. The first values here were the same as the
+   painted trays' — around 0.20 — and at the 0.46 the footway lights a
+   shut unit with, a dark green board and a dark blue one both came out
+   very nearly black. Which is exactly backwards: a dead board is not an
+   unlit board, it is a CHALKED one, and chalking is the binder going
+   and the white filler coming out. The failure state of paint is pale. */
+T.FASVOID  = deadFascia(158, 'green', 0.32);
+T.FASVOID1 = deadFascia(180, 'blue',  0.32);
+T.FASVOID2 = deadFascia(184, 'bone',  0.36);
 
 /* --- AND FOURTEEN THAT NEVER HAD ONE ------------------------------
    Fourteen more tenancies went into the parade at the user's request and
@@ -2459,8 +2695,9 @@ export const CHARRABLE = [
   'STOCKFLR', 'STOCKWAL', 'DOORSTAF', 'DOCKDOOR', 'HAZARD', 'CONCRETE', 'EXITDOOR',
   /* the strip: the neighbours burn too, once you have walked the fire
      out of the anchor and along the footway */
-  'SHELFMIX', 'BAKECASE', 'UNITGLAS', 'UNITSHUT', 'UNITVOID', 'SOFFIT',
-  'FASCHEM', 'FASPHON', 'FASFOOD', 'FASWASH', 'FASVOID', 'PILASTER',
+  'SHELFMIX', 'BAKECASE', 'UNITGLAS', 'UNITSHUT', 'UNITSHUT2', 'SHUTRAIL', 'SOFFIT',
+  'FASCHEM', 'FASPHON', 'FASFOOD', 'PILASTER',
+  ...Array.from({ length: 3 }, (_, i) => 'FASVOID' + (i || '')),
   /* and the fourteen unnamed ones, which burn like any other board */
   ...Array.from({ length: 6 }, (_, i) => 'FASPLAIN' + i),
   /* and the sign goes with it, which is the shot worth having */
@@ -2759,7 +2996,7 @@ const SIZES = {
      the size of the thing it is a picture of, so ONE REPEAT IS ONE
      OBJECT: one length of coping, one luminaire, one wheel stop, one
      cabinet. Get that wrong and a wall pack becomes wallpaper of wall
-     packs, which is the mistake the agent's board on UNITVOID was. */
+     packs, which is the mistake the agent's TO LET board was. */
   COPING:   { w: 64, h: 14 },      // one length of pressed capping
   PIERCAP:  { w: 64, h: 12 },
   RTU:      { w: 64, h: 48 },      // the packaged unit's casing
@@ -2778,8 +3015,19 @@ const SIZES = {
   FASCHEM:  { w: 64, h: 96 },      // one repeat is one sign
   FASPHON:  { w: 64, h: 96 },
   FASFOOD:  { w: 64, h: 96 },
-  FASWASH:  { w: 64, h: 96 },
+  /* THE DEAD TRAYS, same band as every other fascia. */
   FASVOID:  { w: 64, h: 96 },
+  FASVOID1: { w: 64, h: 96 },
+  FASVOID2: { w: 64, h: 96 },
+  /* THE SHUT SHOPFRONTS, and these two are the only textures in the
+     game whose declared size is chosen to make a wall come out in WHOLE
+     repeats: a shopfront is 432 by 220, so 72 by 55 is six across and
+     four up with nothing left over. At 64 by 64 it was six and three
+     quarters by three and a half, and the quarter and the half were the
+     whole problem — see THE SHUT ONES. */
+  UNITSHUT:  { w: 72, h: 55 },
+  UNITSHUT2: { w: 72, h: 55 },
+  SHUTRAIL:  { w: 64, h: 14 },
   /* the unbranded ones, same band as every other fascia */
   ...Object.fromEntries(Array.from({ length: 6 }, (_, i) => ['FASPLAIN' + i, { w: 64, h: 96 }])),
   /* A ROOF WITH HOLES IN IT is masked and coarse: 128 world units to
