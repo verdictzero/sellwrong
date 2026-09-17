@@ -1651,6 +1651,24 @@ section('the wood');
      for an hour in Node in a second. */
   const F = await import('../js/forest.js');
   const forest = new F.Forest(level);
+  /* --- EVERY KIND HAS ITS ART --------------------------------------
+     A plant kind is a row in KINDS and a PAIR of files in
+     assets/forest/: the albedo and the burn map, named after the kind.
+     loadForestArt in js/main.js walks KINDS and fetches both, so a kind
+     added to the table without its art is a 404 in the page and an
+     invisible plant in the world — which is a thing this file cannot
+     see, because it hands the Forest a stub for the art. It can see the
+     files. */
+  {
+    const fsF = await import('node:fs');
+    const missing = [];
+    for (const k of F.KINDS) for (const suffix of ['', '_burn'])
+      if (!fsF.existsSync(new URL(`../assets/forest/${k.name}${suffix}.png`, import.meta.url)))
+        missing.push(`${k.name}${suffix}.png`);
+    check('every plant in the wood has an albedo and a burn map on disk',
+      missing.length === 0, missing.join(', '));
+    note('plant kinds', `${F.KINDS.length}, ${F.KINDS.filter(k => /^street_|^hedge_/.test(k.name)).length} of them the town's`);
+  }
   /* --- THE LOD: three chunk sizes, every plant drawn exactly once ------- */
   {
     const fL = new F.Forest(level);
@@ -7892,12 +7910,87 @@ section('the town');
       pools.length > 200 && pools.every(s => s.light > 0.6) && level.sectors.filter(s => /^sidewalk,/.test(s.name)).every(s => s.light < 0.5));
     check('and every lamp stands on the pavement',
       lamps.every(t => { const s = level.sectorAt(t.x, t.y); return s && /sidewalk|corner|path/.test(s.name); }));
+    /* PLANTABLE GROUND, which now includes the VERGE: the strip between
+       the sidewalk and the kerb is where an American town puts its
+       street trees, and it is the only name on this list that is not
+       somebody's garden. */
+    const PLANTABLE = /yard|garden|lawn|churchyard|graveyard|green|park|cemetery|verge/;
+    const onPlantable = pl => { const s = level.sectorAt(pl.x, pl.y); return !!s && !s.roofTex && PLANTABLE.test(s.name); };
     check('the town has its trees', level.plants.length > 500, `${level.plants.length}`);
     check('and none of them stands in the road or in a house',
-      level.plants.every(pl => { const s = level.sectorAt(pl.x, pl.y); return s && !s.roofTex && /yard|garden|lawn|churchyard|graveyard|green|park|cemetery/.test(s.name); }),
-      level.plants.filter(pl => { const s = level.sectorAt(pl.x, pl.y); return !(s && !s.roofTex && /yard|garden|lawn|churchyard|graveyard|green|park|cemetery/.test(s.name)); }).slice(0, 3).map(pl => level.sectorAt(pl.x, pl.y)?.name ?? 'nowhere').join(', '));
+      level.plants.every(onPlantable),
+      level.plants.filter(pl => !onPlantable(pl)).slice(0, 3).map(pl => `${pl.kind} on ${level.sectorAt(pl.x, pl.y)?.name ?? 'nowhere'}`).join(', '));
     const stones = level.things.filter(t => t.type === 'GRAVESTONE');
     check('the cemetery has its stones', stones.length > 100 && stones.every(t => /cemetery|graveyard/.test(level.sectorAt(t.x, t.y)?.name ?? '')), `${stones.length}`);
+    /* THE EIGHT STONES. The GRAVESTONE actor carries a `variant` that
+       swaps the fourth letter of its sprite name, and a graveyard where
+       every marker is the same slab is a car park with the lines rubbed
+       out. All eight have to be DEALT — a variant that is never chosen
+       is art in the bank and nothing on the ground. */
+    const variants = new Set(stones.map(t => t.variant));
+    check('and eight kinds of stone among them, every one of them used',
+      variants.size === 8 && [...variants].every(v => Number.isInteger(v) && v >= 0 && v < 8),
+      [...variants].sort((a, b) => a - b).join(','));
+    /* THE STREET TREES, which is what the verge is for. They are
+       broadleaves out of assets/forest/ and not the wood's firs: a
+       street of firs is a town in a national park. */
+    const F5 = await import('../js/forest.js');
+    const BROAD = F5.KINDS.filter(k => /^street_/.test(k.name)).map(k => k.name);
+    const street = level.plants.filter(pl => BROAD.includes(pl.kind));
+    check('six kinds of broadleaf line the streets', BROAD.length === 6, BROAD.join(', '));
+    check('and there are enough of them to read as an avenue', street.length > 400, `${street.length}`);
+    check('and they stand on the verge, the churchyard or the park, never on a corner',
+      street.every(pl => /verge|lawn|yard|green|park|cemetery/.test(level.sectorAt(pl.x, pl.y)?.name ?? '')),
+      street.filter(pl => !/verge|lawn|yard|green|park|cemetery/.test(level.sectorAt(pl.x, pl.y)?.name ?? '')).slice(0, 3)
+            .map(pl => `${Math.round(pl.x)},${Math.round(pl.y)} ${level.sectorAt(pl.x, pl.y)?.name}`).join(' | '));
+    /* THE BOX. A block of it is CANOPY (see isCanopy in js/forest.js),
+       so the wood keeps ONE to a 64-unit cell and a run planted any
+       tighter than that loses blocks to a rule it cannot see. Both ends
+       of that are checked here: the run is never tighter than the cell,
+       and never looser than the block is wide, because either one is a
+       hedge with holes in it. */
+    const box = level.plants.filter(pl => pl.kind === 'hedge_box');
+    const WIDE = F5.KINDS.find(k => k.name === 'hedge_box');
+    check('the town is hedged', box.length > 300, `${box.length} blocks of box`);
+    check('and every block of it stands on grass', box.every(onPlantable));
+    check('and no block is narrower than the pitch they are planted at, which would be a hedge with sky through it',
+      box.every(pl => pl.scale * WIDE.h * WIDE.aspect >= F5.CELL),
+      `${(Math.min(...box.map(pl => pl.scale)) * WIDE.h * WIDE.aspect).toFixed(1)} wide at ${F5.CELL}`);
+    {
+      /* nearest neighbour: a run is continuous, so nothing is alone and
+         nothing is closer than the cell that would swallow it */
+      let lonely = 0, crowded = 0;
+      for (const a of box) {
+        let best = Infinity;
+        for (const b of box) { if (a === b) continue; const d = Math.hypot(a.x - b.x, a.y - b.y); if (d < best) best = d; }
+        if (best > 72) lonely++;
+        if (best < F5.CELL - 0.5) crowded++;
+      }
+      check('and every one of them is part of a run, one cell from the next',
+        lonely === 0 && crowded === 0, `${lonely} on their own, ${crowded} sharing a cell`);
+    }
+  }
+
+  /* THE IRON ROUND THE CEMETERY. An enclosure in this engine is a
+     masked MIDDLE texture hung in the line between two sectors that are
+     both open to the sky, which is why the block has a verge outside
+     the fence at all: a fence with nothing behind it has nothing to
+     hang in. The ring is eight runs because the four paths have to get
+     out through it, and that is what is counted. */
+  {
+    const cemLines = level.lines.filter(l => l.middle === 'RAILING' &&
+      [...(l.frontCol || []), ...(l.backCol || [])].some(i => /cemetery/.test(level.sectors[i]?.name ?? '')));
+    note('cemetery railings', `${cemLines.length} runs`);
+    check('the cemetery is fenced on all four sides, twice each, either side of a gate',
+      cemLines.length === 8, `${cemLines.length}`);
+    check('and the iron stops you and stands six feet up',
+      cemLines.every(l => l.blocking && l.midHeight === 96 && l.pegMiddle === 'bottom'));
+    const gates = level.sectors.filter(s => /cemetery gate$/.test(s.name));
+    check('with four gates through it, paved, and no iron across them',
+      gates.length === 4 && gates.every(s => s.floorTex === 'PAVERS') &&
+      !level.lines.some(l => l.middle === 'RAILING' &&
+        [...(l.frontCol || []), ...(l.backCol || [])].some(i => /cemetery gate$/.test(level.sectors[i]?.name ?? ''))),
+      `${gates.length} gates`);
   }
 
   /* --- A BUILDING IS WHAT IT DOES AT ITS EDGES --------------------

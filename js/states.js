@@ -470,10 +470,12 @@ export const ACTORS = {
                 fullbright: true },
   /* A HEADSTONE. Granite, thirty-two tall, which is taller than a step
      and shorter than you: it stops you and you can see over it, and a
-     cemetery full of them is a maze you cannot get lost in. Two
-     drawings, chosen per stone — see `variants`. */
+     cemetery full of them is a maze you cannot get lost in. EIGHT
+     PHOTOGRAPHS, chosen per stone — see `variants` and THE HEADSTONES
+     in js/sprites.js: five slabs, an obelisk and two crosses, all of
+     them real granite with real lichen on it. */
   GRAVESTONE: { name: 'Headstone', spawn: 'GRAV_STAND', radius: 10, height: 32, solid: true,
-                variants: 2 },
+                variants: 8 },
   FUELCAN: { name: 'Fuel can', spawn: 'GCAN_STAND', radius: 12, height: 38, solid: false,
              shootable: true, health: 1, flammable: true, fuel: 400, explodes: true, pickup: 'fuel' },
   CRATE:   { name: 'Stock',   spawn: 'CRAT_STAND', radius: 20, height: 58, solid: true,

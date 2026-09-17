@@ -285,8 +285,188 @@ function bakeWeapon() {
   return { tile: packed, aspect, drawnH: h, top };
 }
 
+/* ---------- the lettering, out ----------
+
+   Every headstone in art/stones/ was photographed with a word cut into
+   it. The prediction was that the word would take care of itself: a
+   stone is drawn twenty-eight texels across, a five-letter word is four
+   texels tall at that size, and what comes out is the horizontal smudge
+   that weathered lettering actually is. Held against the baked tiles,
+   that was optimistic — up close it still read as letters, and this
+   game has one rule about writing on things and it is that there is
+   none of it, ever. The shopfronts keep it, the gravestones kept it
+   when they were drawn, and a photograph does not get an exemption.
+
+   SO THE BAND COMES OUT BEFORE THE TILE GOES IN, at full resolution,
+   where there is enough of it to replace convincingly. The band is
+   found rather than typed: carved letters are darker than the face they
+   are cut into, so the row whose mean is furthest BELOW the local
+   baseline is the middle of the lettering, and it is grown out while
+   the rows either side are still dark. What goes back is a vertical
+   interpolation between the clean rows above and below — which is what
+   a plain piece of stone between two plain pieces of stone looks like —
+   with the grain of a clean row mirrored back over it, because a
+   granite face with no speckle in it reads as airbrushed.
+*/
+function eraseLettering(img, box) {
+  const [x0, y0, x1, y1] = box;
+  const W = x1 - x0 + 1, H = y1 - y0 + 1;
+  const at = (x, y) => ((y0 + y) * img.w + (x0 + x)) * 4;
+  const lum = o => 0.299 * img.data[o] + 0.587 * img.data[o + 1] + 0.114 * img.data[o + 2];
+
+  const mean = new Float64Array(H), count = new Int32Array(H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const o = at(x, y);
+    if (img.data[o + 3] < 128) continue;
+    mean[y] += lum(o); count[y]++;
+  }
+  for (let y = 0; y < H; y++) mean[y] = count[y] ? mean[y] / count[y] : 0;
+
+  /* the baseline: the same rows blurred, with the middle left out, so a
+     dark band cannot lift its own baseline and hide from this */
+  const R = Math.max(6, Math.round(H * 0.14));
+  const base = new Float64Array(H);
+  for (let y = 0; y < H; y++) {
+    let sum = 0, n = 0;
+    for (let k = -R; k <= R; k++) {
+      const j = y + k;
+      if (j < 0 || j >= H || Math.abs(k) < R / 3 || !count[j]) continue;
+      sum += mean[j]; n++;
+    }
+    base[y] = n ? sum / n : mean[y];
+  }
+  let mid = -1, deep = 0;
+  for (let y = Math.round(H * 0.10); y < Math.round(H * 0.84); y++) {
+    if (count[y] < W * 0.35) continue;                    // a row that is mostly background
+    const d = base[y] - mean[y];
+    if (d > deep) { deep = d; mid = y; }
+  }
+  if (mid < 0 || deep < 2.5) return 0;                    // nothing carved into this one
+  /* GROWN GENEROUSLY AND THEN PADDED. A letter is deepest across its
+     waist and shallow at its serifs, so a tight threshold finds the
+     middle of the word and leaves its top and bottom standing — which
+     is exactly what the first cut of this did: the stones came out with
+     a legible ghost of the word on them. The threshold is a tenth of
+     the peak and the pad is another twentieth of the stone either side,
+     which costs a little clean granite and takes the whole word. */
+  let a = mid, b = mid;
+  while (a > 1 && base[a - 1] - mean[a - 1] > deep * 0.10) a--;
+  while (b < H - 2 && base[b + 1] - mean[b + 1] > deep * 0.10) b++;
+  const pad = Math.max(4, Math.round(H * 0.05));
+  a = Math.max(1, a - pad); b = Math.min(H - 2, b + pad);
+
+  /* WHAT GOES BACK IS REAL STONE. Interpolating between the rows either
+     side removes the letters and leaves a flat band where the granite
+     had texture, which up close is its own kind of wrong — the stone
+     comes out looking wiped. So a clean band of the SAME HEIGHT is
+     copied in from below the lettering, or from above it if there is
+     not the room, and only its BRIGHTNESS is interpolated: the face
+     keeps its own speckle and lichen and takes the light of where it
+     landed. A patch, in the sense a mason would mean it. */
+  const ca = Math.max(0, a - 1), cb = Math.min(H - 1, b + 1);
+  const bandH = b - a + 1;
+  let src0 = cb + 1, flip = false;
+  if (src0 + bandH > H - 1) { src0 = Math.max(0, ca - bandH); flip = true; }
+  let srcMean = 0, srcN = 0;
+  for (let k = 0; k < bandH; k++) {
+    const sy = src0 + k;
+    if (sy < 0 || sy >= H || !count[sy]) continue;
+    srcMean += mean[sy]; srcN++;
+  }
+  srcMean = srcN ? srcMean / srcN : (mean[ca] + mean[cb]) / 2;
+  for (let y = a; y <= b; y++) {
+    const t = (y - a + 1) / (b - a + 2);
+    const sy = Math.max(0, Math.min(H - 1, flip ? src0 + bandH - 1 - (y - a) : src0 + (y - a)));
+    /* the brightness this row ought to be, between the two clean rows */
+    const lift = (mean[ca] * (1 - t) + mean[cb] * t) - srcMean;
+    for (let x = 0; x < W; x++) {
+      const o = at(x, y);
+      if (img.data[o + 3] < 128) continue;
+      const os = at(x, sy);
+      /* WHERE THE PATCH RUNS OFF THE EDGE OF THE STONE, fall back to
+         the interpolation — and only if BOTH clean rows are stone
+         there. On a cross the arms stick out past the shaft, so the
+         rows above and below an arm are background; chromaCut zeroes
+         the alpha of a background pixel but leaves the magenta in its
+         colour, and interpolating between two of them painted a pink
+         bar across the arms of the cross. If either end is not stone,
+         the pixel is left exactly as it was. */
+      const oa = at(x, ca), ob = at(x, cb);
+      if (img.data[os + 3] < 128) {
+        if (img.data[oa + 3] < 128 || img.data[ob + 3] < 128) continue;
+        for (let c = 0; c < 3; c++)
+          img.data[o + c] = Math.max(0, Math.min(255, img.data[oa + c] * (1 - t) + img.data[ob + c] * t));
+        continue;
+      }
+      for (let c = 0; c < 3; c++)
+        img.data[o + c] = Math.max(0, Math.min(255, img.data[os + c] + lift));
+    }
+  }
+  return bandH;
+}
+
+/* ===== the cut-outs: a tile each, transparent where the key was =====
+
+   The third kind of artwork this game cannot draw. The logo is a logo
+   and the weapon is a photograph of a thing; these are photographs of
+   THINGS IN A CEMETERY — eight headstones and a section of the iron
+   fence round it — and the argument is the one at the top of this file:
+   there is no set of primitives that gets you to weathered granite with
+   lichen in the lettering.
+
+   EACH IS ONE TILE AT ITS OWN SIZE, which is the difference from the
+   weapon. A headstone is drawn twenty-four wide and a fence panel is
+   worn sixty-four by ninety-six; making both of them 64x64 would spend
+   three quarters of a stone's tile on nothing and squash the fence. So
+   the width and the height travel with the tile and whatever decodes it
+   reads them back.
+
+   THE LETTERING GOES BY ITSELF. Every one of these stones was
+   photographed with TEST cut into it, and at the size a headstone is
+   drawn — twenty-four texels across, which is what the sprite bank
+   wants — a five-letter word is four texels tall and comes out as the
+   horizontal smudge that weathered lettering actually is. Nothing had
+   to be painted out. It is the same rule the shopfronts keep: no name
+   on anything, ever. */
+const CUTOUTS = [
+  { file: 'stones/stone_round.png',     name: 'stone_round',     w: 28, h: 40, letters: true },
+  { file: 'stones/stone_worn.png',      name: 'stone_worn',      w: 28, h: 40, letters: true },
+  { file: 'stones/stone_plain.png',     name: 'stone_plain',     w: 28, h: 40, letters: true },
+  { file: 'stones/stone_tapered.png',   name: 'stone_tapered',   w: 28, h: 40, letters: true },
+  { file: 'stones/stone_rough.png',     name: 'stone_rough',     w: 28, h: 40, letters: true },
+  { file: 'stones/stone_obelisk.png',   name: 'stone_obelisk',   w: 28, h: 48, letters: true },
+  { file: 'stones/stone_cross.png',     name: 'stone_cross',     w: 32, h: 44, letters: true },
+  { file: 'stones/stone_crossback.png', name: 'stone_crossback', w: 30, h: 42, letters: true },
+  { file: 'stones/cemfence.png',        name: 'cemfence',        w: 64, h: 64 },
+];
+function bakeCutouts() {
+  const out = {};
+  for (const job of CUTOUTS) {
+    const img = chromaCut(readPNG(art(job.file)));
+    const [bx0, by0, bx1, by1] = alphaBounds(img);
+    const SW = bx1 - bx0 + 1, SH = by1 - by0 + 1;
+    const wiped = job.letters ? eraseLettering(img, [bx0, by0, bx1, by1]) : 0;
+    const small = resampleRGBA(img, [bx0, by0, bx1, by1], job.w, job.h);
+    const idx = new Uint8Array(job.w * job.h).fill(CLEAR);
+    let solid = 0;
+    for (let i = 0; i < job.w * job.h; i++) {
+      const o = i * 4;
+      if (small.data[o + 3] < 128) continue;
+      idx[i] = Math.min(254, nearest(small.data[o], small.data[o + 1], small.data[o + 2]));
+      solid++;
+    }
+    const packed = encode(rle(idx));
+    out[job.name] = { tile: packed, w: job.w, h: job.h, aspect: SW / SH };
+    console.log(`${job.name.padEnd(16)} artwork ${SW}x${SH} -> ${job.w}x${job.h}, ` +
+                `${(100 * solid / (job.w * job.h)).toFixed(0)}% solid, ${packed.length} chars` +
+                (job.letters ? `, ${wiped} rows of lettering taken out` : ''));
+  }
+  return out;
+}
+
 const logo = bakeLogo();
 const gun = bakeWeapon();
+const cutouts = bakeCutouts();
 
 const out = `/* GENERATED by tools/bake-art.mjs — do not edit by hand.
 
@@ -315,6 +495,15 @@ export const CLEAR_INDEX = ${CLEAR};
     deliberate: it is where the muzzle flame is drawn. */
 export const WEAPON_TILE = ${JSON.stringify(gun.tile)};
 export const WEAPON_TOP = ${gun.top};
+
+/** The cut-outs: eight headstones and a section of cemetery fence, each
+    one tile at its own size, ${CLEAR} where the chroma key was. \`aspect\` is
+    the artwork's own width over height, before it was fitted to the
+    tile — whatever draws one uses it so the picture is not stretched. */
+export const CUTOUTS = {
+${Object.entries(cutouts).map(([k, v]) =>
+  `  ${k}: { w: ${v.w}, h: ${v.h}, aspect: ${v.aspect.toFixed(4)}, tile: ${JSON.stringify(v.tile)} }`).join(',\n')},
+};
 `;
 fs.writeFileSync(new URL('../js/art-data.js', HERE), out);
 console.log(`wrote js/art-data.js (${out.length} bytes)`);

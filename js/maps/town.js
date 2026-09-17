@@ -325,8 +325,54 @@ export function buildTown(rm, mb, opts = {}) {
   /* ---- the furniture, which is things and not sectors ------------- */
   function lamp(x, y) { mb.thing('STREETLAMP', x, y, 0); out.lamps++; }
   function plant(kind, x, y, scale = 1) { out.plants.push({ kind, x, y, scale }); }
+  /* WHAT THE TOWN PLANTS, which is not what the wood grows. The wood is
+     firs; a street of firs is a town in a national park. These are the
+     photographed broadleaves out of assets/forest/ — see KINDS in
+     js/forest.js — and the hedge is clipped box, one block of it to a
+     cell, planted in rows. */
+  const BROADLEAF = ['street_round', 'street_broad', 'street_oval',
+                     'street_upright', 'street_dense', 'street_big'];
+  const broadleaf = () => BROADLEAF[Math.floor(R() * BROADLEAF.length)];
+  /* THE PITCH OF A HEDGE IS THE WOOD'S OWN CELL, and it has to be,
+     because a block of box is CANOPY (see isCanopy in js/forest.js) and
+     the wood keeps one canopy plant to a cell: two blocks in the same
+     64 units and the second is thrown away, which is a run of hedge
+     with holes in it in a pattern nobody can trace back. Stepped
+     exactly 64 along an axis, consecutive blocks land in consecutive
+     cells whatever the run starts at, and none of them is lost. The
+     box itself is 67 wide at scale 1, so at that pitch they touch. */
+  const HEDGE_PITCH = 64;
+  const hedged = [];                     // every block of box already laid
+  /** A run of clipped box from a to b, one block every HEDGE_PITCH. */
+  function hedgeRun(x0, y0, x1, y1, step = HEDGE_PITCH) {
+    const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy);
+    if (len < 1) return;
+    const n = Math.floor(len / step), ux = (dx / len) * step, uy = (dy / len) * step;
+    /* AND NEVER SMALLER THAN THE PITCH. The block is 67 units across at
+       scale 1 and they stand 64 apart, so anything under 0.95 leaves a
+       slot of sky between one block and the next and the run reads as a
+       row of topiary rather than as a hedge. */
+    for (let i = 0; i <= n; i++) {
+      const hx = x0 + ux * i, hy = y0 + uy * i;
+      /* WHERE TWO RUNS MEET THEY BOTH WANT THE CORNER, and the second
+         one to ask is asking for a block the wood will throw away: one
+         canopy plant to a cell, and the cell is the pitch. Refused
+         here, where it can be seen, rather than in _plantTown, where it
+         cannot. */
+      if (hedged.some(([ax, ay]) => Math.hypot(ax - hx, ay - hy) < HEDGE_PITCH - 0.1)) continue;
+      hedged.push([hx, hy]);
+      plant('hedge_box', hx, hy, 1.00 + R() * 0.14);
+    }
+  }
+  /* THE EIGHT STONES, dealt so the plain slabs are common and the
+     obelisk and the two crosses are not: a churchyard is mostly the
+     same stone over and over with something taller every twentieth row,
+     which is what makes the taller one worth looking at. */
+  const STONE_ODDS = [0.20, 0.38, 0.54, 0.68, 0.80, 0.88, 0.95, 1.00];
   function stone(x, y) {
-    mb.thing('GRAVESTONE', x, y, (R() - 0.5) * 0.3, { variant: R() < 0.72 ? 0 : 1 });
+    const r = R();
+    let v = 0; while (v < 7 && r > STONE_ODDS[v]) v++;
+    mb.thing('GRAVESTONE', x, y, (R() - 0.5) * 0.3, { variant: v });
     out.stones++;
   }
   /* a light fitting the game is told about by hand, so the filter that
@@ -438,21 +484,52 @@ export function buildTown(rm, mb, opts = {}) {
     piece(u, a1, false);
   }
 
+  /* STREET TREES, down the verge between the sidewalk and the kerb,
+     which is where an American town plants them and is why the strip is
+     called that. One every TREE_PITCH, off the pitch by a third of it
+     so the two sides of a street do not line up and the street reads as
+     an avenue rather than a corridor, and not within a lamp's pool or a
+     storm drain's grate.
+
+     THEY ARE PLANTED, NOT BUILT. A tree is a billboard in the wood's
+     own arrays (see _plantTown in js/forest.js) and costs this map no
+     sectors at all — which is the only reason a town can have eight
+     hundred of them. */
+  const TREE_PITCH = 512;
+  function vergeTrees(a0, a1, b, along) {
+    /* THE TOWN IS AT A NEGATIVE COORDINATE and JavaScript's % keeps the
+       sign of the left operand, so `b % 3` on the west side of the map
+       is -2 and the phase it makes is NEGATIVE — the run starts 341
+       units before the verge does and the first tree of every street
+       stands in the middle of the junction it was supposed to start
+       after. Thirty of them, one per corner, and every one of them in
+       the road. */
+    const phase = ((((b | 0) % 3) + 3) % 3) * (TREE_PITCH / 3);
+    for (let c = a0 + 160 + phase; c < a1 - 160; c += TREE_PITCH) {
+      /* a lamp stands every LAMP_PITCH with a pool of light round it,
+         and a tree in the pool is a tree in the lamp */
+      if (Math.abs(((c - a0) % LAMP_PITCH) - LAMP_PITCH / 4) < POOL + 40) continue;
+      const jit = (R() - 0.5) * 90;
+      const [x, y] = along === 'x' ? [c + jit, b] : [b, c + jit];
+      plant(broadleaf(), x, y, 0.82 + R() * 0.30);
+    }
+  }
+
   /** One run of street between two junctions, with its sidewalks. */
   function streetRun(sx0, sx1, y0, y1, along, tag, main = false) {
     const w = main ? MAIN_WALK : WALK;
     const v = main ? 0 : VERGE;
     if (along === 'x') {
       walkRun(sx0, sx1, y0, y0 + w, 'x', tag, 0, 'hi');
-      if (v) rm.add(sx0, y0 + w, sx1, y0 + w + v, vergeProps(`verge, ${tag}`));
+      if (v) { rm.add(sx0, y0 + w, sx1, y0 + w + v, vergeProps(`verge, ${tag}`)); vergeTrees(sx0, sx1, y0 + w + v / 2, 'x'); }
       carriage(sx0, y0 + w + v, sx1, y1 - w - v, 'x', tag);
-      if (v) rm.add(sx0, y1 - w - v, sx1, y1 - w, vergeProps(`verge, ${tag}`));
+      if (v) { rm.add(sx0, y1 - w - v, sx1, y1 - w, vergeProps(`verge, ${tag}`)); vergeTrees(sx0, sx1, y1 - w - v / 2, 'x'); }
       walkRun(sx0, sx1, y1 - w, y1, 'x', tag, 1, 'lo');
     } else {
       walkRun(y0, y1, sx0, sx0 + w, 'y', tag, 0, 'hi');
-      if (v) rm.add(sx0 + w, y0, sx0 + w + v, y1, vergeProps(`verge, ${tag}`));
+      if (v) { rm.add(sx0 + w, y0, sx0 + w + v, y1, vergeProps(`verge, ${tag}`)); vergeTrees(y0, y1, sx0 + w + v / 2, 'y'); }
       carriage(sx0 + w + v, y0, sx1 - w - v, y1, 'y', tag);
-      if (v) rm.add(sx1 - w - v, y0, sx1 - w, y1, vergeProps(`verge, ${tag}`));
+      if (v) { rm.add(sx1 - w - v, y0, sx1 - w, y1, vergeProps(`verge, ${tag}`)); vergeTrees(y0, y1, sx1 - w - v / 2, 'y'); }
       walkRun(y0, y1, sx1 - w, sx1, 'y', tag, 1, 'lo');
     }
   }
@@ -1369,10 +1446,21 @@ export function buildTown(rm, mb, opts = {}) {
     }
     F.add(-128, -D - SBASE, -SBASE, SBASE, lawn(`${tag} side lawn`));
     F.add(W + SBASE, -D - SBASE, W + 128, SBASE, lawn(`${tag} side lawn`));
-    /* trees along the front, the way a school planted in 1954 has them */
+    /* trees along the front, the way a school planted in 1954 has them:
+       broadleaves and not firs, because the firs are the WOOD and a
+       school with the wood's own trees down its frontage is a school in
+       a clearing rather than a school in a town */
     for (let u = -40; u < W + 40; u += 352) if (Math.abs(u - (DOOR0 + DOOR1) / 2) > 200)
-      plant(R() < 0.6 ? 'fir_medium' : 'fir_tall_2', ...F.at(u + (R() - 0.5) * 60, FY - 140 - R() * 120), 0.9 + R() * 0.3);
+      plant(R() < 0.82 ? broadleaf() : 'fir_medium', ...F.at(u + (R() - 0.5) * 60, FY - 140 - R() * 120), 0.9 + R() * 0.3);
     for (const u of [DOOR0 - 64, DOOR1 + 64 - 32]) plant('bush_large_1', ...F.at(u, 24), 0.9);
+    /* AND BOX ALONG THE FOUNDATION, which is the one piece of planting
+       every institutional building in America has: a clipped run tight
+       to the wall, broken at the entrance bay and carried round the
+       ends of the block. It hides the course where the brick meets the
+       ground, which is the course that never looks right. */
+    const HEDGE_V = SBASE + 44;
+    hedgeRun(...F.at(-96, HEDGE_V), ...F.at(BAY0 - 56, HEDGE_V));
+    hedgeRun(...F.at(BAY1 + 56, HEDGE_V), ...F.at(W + 96, HEDGE_V));
 
     const [scx, scy] = F.at(W / 2, -D / 2);
     out.school = { x: scx, y: scy };
@@ -1714,7 +1802,7 @@ export function buildTown(rm, mb, opts = {}) {
     const railed = (u0, u1, v0) => {
       if (u1 - u0 <= 0) return;
       const a = F.add(u0, v0, u1, FYc - RAILV, lawn(`${tag} churchyard`));
-      fence(a, F.add(u0, FYc - RAILV, u1, FYc, lawn(`${tag} churchyard verge`)), 'RAILING', 48);
+      fence(a, F.add(u0, FYc - RAILV, u1, FYc, lawn(`${tag} churchyard verge`)), 'RAILING', 96);
     };
     const waterProps = () => open(`${tag} water table`, {
       floor: PLINTH * 2, ceil: B.top, floorTex: 'CONCRETE', light: 0.32, ambient: 0.32,
@@ -1823,9 +1911,19 @@ export function buildTown(rm, mb, opts = {}) {
     /* the graveyard behind, in rows, and the trees a churchyard has */
     for (let v = backV - 200; v > back0 + 160; v -= 224)
       for (let u = bw0 + 224; u < bw1 - 160; u += 176) if (R() < 0.8) stone(...F.at(u + (R() - 0.5) * 24, v + (R() - 0.5) * 24));
+    /* THE TREES OF A CHURCHYARD ARE YEWS, which in this wood's art are
+       the tall firs, and the two by the gate are not: a church plants
+       something that turns in the fall where the street can see it. */
     for (const [u, v] of [[-500, -700], [-700, -1250], [1100, -600], [1300, -1300], [-300, 200], [1000, 300], [-900, -2000], [1400, -2100]])
       plant(R() < 0.5 ? 'fir_tall_1' : 'fir_tall_2', ...F.at(u + (R() - 0.5) * 120, v + (R() - 0.5) * 120), 0.95 + R() * 0.3);
     for (const u of [tu0 - 40, tu1 + 40]) plant('bush_large_1', ...F.at(u, 24), 0.9);
+    /* box inside the iron the whole way along the frontage, stopping
+       clear of the gate, and a lime each side of the path */
+    const HEDGE_V = FYc - RAILV - 80;
+    hedgeRun(...F.at(bw0 + 120, HEDGE_V), ...F.at(tu0 - BASE - 40, HEDGE_V));
+    hedgeRun(...F.at(tu1 + BASE + 40, HEDGE_V), ...F.at(bw1 - 120, HEDGE_V));
+    for (const u of [tu0 - BASE - 200, tu1 + BASE + 200])
+      plant(broadleaf(), ...F.at(u, HEDGE_V - 190), 1.0 + R() * 0.25);
 
     /* the spire: a roof with a tall rise and a small footprint, drawn
        rather than built — a pyramid is four planes and a gable is two */
@@ -1865,39 +1963,161 @@ export function buildTown(rm, mb, opts = {}) {
   }
 
   /* =================================================================
-     THE GREEN, THE PARK AND THE CEMETERY — a path across each way, four
-     lawns, and trees planted where a town plants them
+     THE GREEN, THE PARK AND THE CEMETERY
+
+     All three are the same piece of ground: a path across it each way,
+     four quarters between the paths, and a VERGE round the outside
+     that the quarters do not reach. The verge is there for one reason —
+     a fence is a masked texture hung in the line between two sectors
+     that are both open to the sky (see `fence` at the top of this
+     file), so an enclosure has to have ground on BOTH sides of it.
+
+     THE RING IS EIGHT PIECES AND NOT FOUR, because the path has to get
+     out. Where a path meets the block edge the ring is a GATE, paved
+     instead of grassed, and the fence simply stops either side of it:
+     eight pieces of verge, four gates, eight runs of iron.
+
+     What stands on it is the only difference between the three. The
+     cemetery is ironwork and ranked headstones; the green is clipped
+     box the whole way round, which is what a town square with a
+     committee looks like; the park is an avenue of limes with the
+     quarters left as grass.
      ================================================================= */
   function parkBlock(bx, by, tag, kind) {
     const [x0, x1] = bx, [y0, y1] = by;
-    const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, P = 48;
-    const g = n => open(`${tag} ${n}`, { floorTex: 'GRASSVRG', light: 0.26, ambient: 0.26, fuel: TOWN_FUEL.park, wallTex: 'BRICKPNT', upperTex: 'BRICKPNT' });
+    const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+    const M = 160;                       // the verge outside the fence
+    const P = 48;                        // half a path
+    const H = 40;                        // the box, inset from the fence
+    const cem = kind === 'cemetery';
+    const i0 = x0 + M, i1 = x1 - M, j0 = y0 + M, j1 = y1 - M;   // the fence line
+    /* LIT LIKE A LAWN AND NOT LIKE A YARD. The green is the one piece
+       of ground in the town with nothing standing over it, and at 0.26
+       — which is what the blocks behind the houses get — it read as mud
+       with gravestones on it. */
+    const g = n => open(`${tag} ${n}`, { floorTex: 'GRASSVRG', light: 0.34, ambient: 0.34,
+      fuel: TOWN_FUEL.park, wallTex: 'BRICKPNT', upperTex: 'BRICKPNT' });
     const path = n => open(`${tag} ${n}`, { floorTex: 'PAVERS', light: 0.34, ambient: 0.34, fuel: 0 });
-    rm.add(x0, my - P, x1, my + P, path('path across'));
-    rm.add(mx - P, y0, mx + P, my - P, path('path'));
-    rm.add(mx - P, my + P, mx + P, y1, path('path'));
-    rm.add(x0, y0, mx - P, my - P, g('lawn'));
-    rm.add(mx + P, y0, x1, my - P, g('lawn'));
-    rm.add(x0, my + P, mx - P, y1, g('lawn'));
-    rm.add(mx + P, my + P, x1, y1, g('lawn'));
-    const pitch = kind === 'cemetery' ? 640 : 448;
-    for (let y = y0 + 200; y < y1 - 120; y += pitch)
-      for (let x = x0 + 200; x < x1 - 120; x += pitch) {
-        const px = x + (R() - 0.5) * 220, py = y + (R() - 0.5) * 220;
-        if (Math.abs(px - mx) < 120 || Math.abs(py - my) < 120) continue;
-        const r = R();
-        if (r < (kind === 'cemetery' ? 0.45 : 0.72)) plant(['fir_tall_1', 'fir_tall_2', 'fir_medium'][Math.floor(R() * 3)], px, py, 0.9 + R() * 0.35);
-        else if (r < 0.9) plant(['bush_large_1', 'bush_large_2', 'bush_small_1'][Math.floor(R() * 3)], px, py, 0.9 + R() * 0.3);
+
+    /* ---- the four quarters, which is what the fence encloses ------- */
+    const lawn0 = rm.add(i0, j0, mx - P, my - P, g('lawn'));
+    const lawn1 = rm.add(mx + P, j0, i1, my - P, g('lawn'));
+    const lawn2 = rm.add(i0, my + P, mx - P, j1, g('lawn'));
+    const lawn3 = rm.add(mx + P, my + P, i1, j1, g('lawn'));
+    /* ---- the paths: a cross inside, and a gate through each side --- */
+    rm.add(i0, my - P, i1, my + P, path('path across'));
+    rm.add(mx - P, j0, mx + P, my - P, path('path'));
+    rm.add(mx - P, my + P, mx + P, j1, path('path'));
+    for (const [a, b, c, d] of [[mx - P, y0, mx + P, j0], [mx - P, j1, mx + P, y1],
+                                [x0, my - P, i0, my + P], [i1, my - P, x1, my + P]])
+      rm.add(a, b, c, d, path('gate'));
+    /* ---- the verge, in eight pieces, each paired with the quarter it
+       stands outside so the iron knows which line to hang in --------- */
+    for (const [[a, b, c, d], inner] of [
+      [[x0, y0, mx - P, j0], lawn0], [[mx + P, y0, x1, j0], lawn1],
+      [[x0, j1, mx - P, y1], lawn2], [[mx + P, j1, x1, y1], lawn3],
+      [[x0, j0, i0, my - P], lawn0], [[x0, my + P, i0, j1], lawn2],
+      [[i1, j0, x1, my - P], lawn1], [[i1, my + P, x1, j1], lawn3],
+    ]) {
+      const verge = rm.add(a, b, c, d, g('verge lawn'));
+      if (cem) fence(inner, verge, 'RAILING', 96);
+    }
+
+    /* ---- and what is planted on it --------------------------------- */
+    /** Clear of both paths by `m`? */
+    const offPath = (x, y, m) => Math.abs(x - mx) > P + m && Math.abs(y - my) > P + m;
+    /** A short return of box either side of every gate, which is how a
+     *  gate reads as an entrance rather than as a hole in a line. */
+    const gateReturns = (len = 220) => {
+      for (const s of [-1, 1]) {
+        hedgeRun(mx + s * (P + H), j0 + H, mx + s * (P + H), j0 + H + len);
+        hedgeRun(mx + s * (P + H), j1 - H - len, mx + s * (P + H), j1 - H);
+        hedgeRun(i0 + H, my + s * (P + H), i0 + H + len, my + s * (P + H));
+        hedgeRun(i1 - H - len, my + s * (P + H), i1 - H, my + s * (P + H));
       }
-    if (kind === 'cemetery') {
-      for (let y = y0 + 224; y < y1 - 160; y += 256)
-        for (let x = x0 + 192; x < x1 - 128; x += 192) {
-          if (Math.abs(x - mx) < 112 || Math.abs(y - my) < 112) continue;
-          if (R() < 0.85) stone(x + (R() - 0.5) * 20, y + (R() - 0.5) * 20);
+    };
+
+    if (cem) {
+      /* THE STONES GO IN RANKS. A row of headstones shares a line, and
+         the line is what makes it a cemetery rather than a field with
+         rubble in it — so the jitter is along the rank and in the
+         angle, and never across it. One specimen tree to a quarter and
+         the rank steps round it, the way a graveyard's rows step round
+         the yew that was there before any of them. */
+      gateReturns(300);
+      for (const [qx0, qx1, qy0, qy1] of [[i0, mx - P, j0, my - P], [mx + P, i1, j0, my - P],
+                                          [i0, mx - P, my + P, j1], [mx + P, i1, my + P, j1]]) {
+        const set = [];
+        for (let k = 0; k < 3; k++) {
+          const tx = qx0 + 280 + R() * (qx1 - qx0 - 560), ty = qy0 + 280 + R() * (qy1 - qy0 - 560);
+          if (set.some(([ax, ay]) => Math.hypot(ax - tx, ay - ty) < 420)) continue;
+          set.push([tx, ty]);
+          plant(k ? broadleaf() : 'fir_tall_1', tx, ty, 1.05 + R() * 0.30);
+          plant('bush_large_1', tx + 70 + R() * 40, ty + 30, 0.9 + R() * 0.2);
+        }
+        for (let sy = qy0 + 150; sy < qy1 - 110; sy += 248)
+          for (let sx = qx0 + 130; sx < qx1 - 100; sx += 168) {
+            const px = sx + (R() - 0.5) * 26;
+            if (set.some(([tx, ty]) => Math.hypot(px - tx, sy - ty) < 170)) continue;
+            if (R() < 0.88) stone(px, sy);
+          }
+      }
+    } else if (kind === 'green') {
+      /* THE GREEN IS EDGED THE WHOLE WAY ROUND, which is the one thing
+         a square has that a park does not, and the box stops short of
+         each gate so the openings line up with the paving. */
+      for (const b of [j0 + H, j1 - H]) {
+        hedgeRun(i0 + H, b, mx - P - H, b);
+        hedgeRun(mx + P + H, b, i1 - H, b);
+      }
+      for (const a of [i0 + H, i1 - H]) {
+        hedgeRun(a, j0 + H, a, my - P - H);
+        hedgeRun(a, my + P + H, a, j1 - H);
+      }
+      gateReturns();
+      for (let sy = j0 + 300; sy < j1 - 240; sy += 420)
+        for (let sx = i0 + 300; sx < i1 - 240; sx += 420) {
+          const px = sx + (R() - 0.5) * 140, py = sy + (R() - 0.5) * 140;
+          if (!offPath(px, py, 130)) continue;
+          const r = R();
+          if (r < 0.62) plant(broadleaf(), px, py, 0.90 + R() * 0.30);
+          else if (r < 0.86) plant(['bush_large_1', 'bush_large_2', 'bush_small_1'][Math.floor(R() * 3)], px, py, 0.9 + R() * 0.3);
+        }
+    } else {
+      /* THE PARK IS AN AVENUE. Limes ranked down both sides of both
+         paths at a fixed pitch so it reads as planted rather than
+         grown, box only at the crossing and at the gates — a hedge
+         down the whole path would wall the grass off from the people
+         it is for — and a clump in each corner.
+
+         NOTHING IS PLANTED ACROSS THE GRASS between them, because the
+         thing a park has and a wood does not is somewhere to stand. */
+      gateReturns(160);
+      for (const s of [-1, 1]) for (const t of [-1, 1]) {
+        hedgeRun(mx + s * (P + H), my + t * (P + H), mx + s * (P + H + 260), my + t * (P + H));
+        hedgeRun(mx + s * (P + H), my + t * (P + H), mx + s * (P + H), my + t * (P + H + 260));
+      }
+      for (let c = 340; c < (i1 - i0) / 2 - 220; c += 360)
+        for (const s of [-1, 1]) for (const t of [-1, 1]) {
+          plant(broadleaf(), mx + s * c, my + t * (P + 150), 0.95 + R() * 0.25);
+          plant(broadleaf(), mx + s * (P + 150), my + t * c, 0.95 + R() * 0.25);
+        }
+      for (const [cx, cy] of [[i0 + 460, j0 + 460], [i1 - 460, j0 + 460], [i0 + 460, j1 - 460], [i1 - 460, j1 - 460]])
+        for (let k = 0; k < 8; k++) {
+          const px = cx + (R() - 0.5) * 660, py = cy + (R() - 0.5) * 660;
+          if (!offPath(px, py, 260)) continue;
+          plant(R() < 0.5 ? broadleaf() : ['bush_large_1', 'bush_large_2', 'fir_medium'][Math.floor(R() * 3)],
+                px, py, 0.9 + R() * 0.35);
         }
     }
-    /* two lamps where the paths cross, standing on the path */
-    for (const [lx, ly] of [[mx - 72, my - 20], [mx + 72, my + 20]]) lamp(lx, ly);
+    /* LAMPS ON THE PAVING AND NOWHERE ELSE. Two at the crossing and one
+       down each arm of it — a lamp out on the grass is a lamp somebody
+       would have had to run a cable to, and the town's own rule (see
+       the street lamp check in tools/smoke-test.mjs) is that every one
+       of them stands on something you can walk on. */
+    for (const [lx, ly] of [[mx - 72, my - 20], [mx + 72, my + 20],
+                            [mx - 420, my - 20], [mx + 420, my + 20],
+                            [mx - 20, my - 420], [mx + 20, my + 420]]) lamp(lx, ly);
   }
 
   function plainBlock(bx, by, tag, floorTex, fuel, wallTex) {

@@ -61,7 +61,10 @@ weather.
                           shoppers, eleven pieces, three splats, a fireball;
                           the squad, fifty-one cells of SWAT; and the army,
                           fifty-one cells cut the same way
-  assets/forest/        the wood: ten plants with their burn maps, two grounds
+  assets/forest/        the wood: ten plants with their burn maps, two
+                          grounds — and the town's seven, six broadleaves
+                          and a block of clipped box, baked into the same
+                          format by tools/bake-plants.mjs
   assets/sky/night.png  the night as a Polyhaven photograph, which the game
                           wore until the sky was generated (js/skyart.js);
                           kept, no longer loaded, no longer shipped
@@ -86,6 +89,8 @@ weather.
   assets/music/         the user's three E1M1 remixes, mixed on the beat
                           by js/music.js
   tools/bake-art.mjs    node tools/bake-art.mjs — turns art/ into source
+  tools/bake-plants.mjs node tools/bake-plants.mjs — turns art/plants/
+                          into the pair of PNGs the wood plants
   tools/prep-people.mjs the crowd's art, crunched down from galvarius
   tools/prep-troops.mjs a troops sheet — the SWAT's or the army's — found
                           cell by cell and cut into a strip
@@ -129,7 +134,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         1649 checks, no install and no browser
+  the smoke test         1661 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -3641,6 +3646,39 @@ the cemetery has its stones, and all of it is sprites, placed by the
 town and grown by js/forest.js, which is why a yard has no rectangle for
 any of it.
 
+AND THE VERGE HAS TREES, which is what the verge is for. The strip
+between the sidewalk and the kerb is sixteen units wide and was laid in
+the first cut of the streets because an American street has one; what it
+did not have was the thing it is named after. It has six now — six
+photographed broadleaves, one every 512 with the pitch offset by a third
+between the two sides of a street so the rows do not line up, skipping
+any that would stand in a lamp's pool. A street of the WOOD'S trees is a
+town in a national park; six hundred limes down the verges is the single
+change that made the grid read as a place somebody lives.
+
+THE TOWN IS ALSO HEDGED, in clipped box, and the pitch of every run of
+it is 64 for a reason that is not aesthetic. A block of box is CANOPY in
+js/forest.js — one to a cell, and it stops you — and a cell is 64 units,
+so a run planted tighter silently loses blocks to a rule the map cannot
+see, while a run planted looser has sky between one block and the next.
+The block is 67 wide at scale one; the runs step exactly 64; where two
+runs meet, the second one to ask for the corner is refused. It edges the
+green, returns at every gate, runs along the school's foundation and
+stands inside the churchyard's iron.
+
+THE CEMETERY IS THE ONE THAT NEEDED ALL OF IT AT ONCE. The block is laid
+as a ring of verge, four gates and the ground inside, because a fence in
+this engine is a masked MIDDLE texture hung in the line between two
+sectors that are both open to the sky — a fence on the block's own edge
+would have nothing behind it. Eight runs of wrought iron go in the eight
+lines between the ring and the quarters, stopping either side of each
+gate. Inside, eight kinds of headstone are dealt so the plain slabs are
+common and the obelisk and the two crosses are not, and they are laid in
+RANKS: the jitter is along the row and in the angle and never across it,
+because the line is the whole difference between a cemetery and a field
+with rubble in it. The ranks step round three specimen trees a quarter,
+the way a graveyard's rows step round the yew that was there first.
+
 AND THE ROOF IS A STOREY. It was geometry first — two slopes and two
 gable triangles over a footprint, pushed into a batch, with nothing in
 the engine knowing it was there. You could walk through one. You could
@@ -3766,18 +3804,50 @@ survives the cut, in every texture: one big shape you can read across the
 store, one lit edge, and dirt at the bottom. Anything finer is gone by the
 second repeat.
 
-TWO THINGS ARE NOT DRAWN BY CODE, and could not be: the LOGO, because a
-procedural approximation of somebody's logo is not their logo, and the
-WEAPON, because it is a photograph of a piece of kit and there is no set
-of primitives that gets you there. They live in art/ as PNGs and
-tools/bake-art.mjs turns them into source — cut out (by brightness for
-the logo, by chroma key for the weapon), resampled, snapped to the game's
-own 256 colours, run-length encoded into js/art-data.js. Nothing is
-fetched at run time and there is still no build step: the build step is
-that file, run by hand, when the art changes.
+SOME THINGS ARE NOT DRAWN BY CODE, and could not be. It began as two —
+the LOGO, because a procedural approximation of somebody's logo is not
+their logo, and the WEAPON, because it is a photograph of a piece of kit
+and there is no set of primitives that gets you there — and the argument
+turned out to generalise. There is no set of primitives that gets you to
+weathered granite, or to wrought iron, or to a lime tree, either. So the
+list now runs: the logo, the weapon, EIGHT HEADSTONES, ONE PANEL OF
+CEMETERY IRON, SIX BROADLEAF STREET TREES and A BLOCK OF CLIPPED BOX.
 
-Neither gets an exemption from the 64-pixel rule; they get GEOMETRY
-instead. The logo is four 64x64 tiles hung as a two-by-two on the
+They live in art/ as PNGs and tools/bake-art.mjs turns them into source —
+cut out (by brightness for the logo, by chroma key for everything else),
+resampled, snapped to the game's own 256 colours, run-length encoded into
+js/art-data.js. Nothing is fetched at run time and there is still no
+build step: the build step is that file, run by hand, when the art
+changes.
+
+THE HEADSTONES GO IN THROUGH THE SPRITE BANK and the iron through the
+texture bank, off the same decoder: decodeArtTile in js/sprites.js reads
+a tile out of art-data.js, cutoutPix names one, and from there a stone is
+eight frames of a GRAVESTONE actor and the iron is T.RAILING. The stones
+were photographed with TEST cut into them, which is a word the game would
+have carried into every graveyard in the town; eraseLettering in the
+bakery finds the darkest band of rows relative to a blurred baseline and
+patches it with clean stone copied from below. It is the rule the
+shopfronts keep — no name on anything, ever.
+
+THE TREES AND THE HEDGE GO SOMEWHERE ELSE, because js/forest.js does not
+read art-data.js: it loads a PAIR of PNGs per plant out of assets/forest/,
+an albedo and a BURN MAP, and that is the format the wood has had since
+there was a wood. tools/bake-plants.mjs writes that pair. R, G and A of
+the burn map come straight off the artwork — a green texel is foliage and
+chars hard, a brown one is trunk and holds its coals — and B, which is
+WHEN a texel catches, is invented from one sentence: fire starts at the
+foot and goes up and out. Neither bakery is in CI; bake-art.mjs is
+checked by re-running it and diffing the source it writes, and
+bake-plants.mjs writes PNGs, where two zlibs that disagree by a byte
+would fail a diff nobody could act on.
+
+NONE OF THEM GETS AN EXEMPTION FROM THE 64-PIXEL RULE. The logo and the
+weapon get GEOMETRY instead; the iron is baked at 64x64 and DECLARED 96
+tall, which is the same trick every tall texture in js/textures.js uses,
+and the stones are sprites, which are twenty-eight texels across.
+
+The logo is four 64x64 tiles hung as a two-by-two on the
 entrance tower — two ceiling steps for the rows, one vertical split for
 the columns — because a sector engine cannot draw a big picture but it
 can draw four small ones next to each other, which is the same thing and
@@ -4330,7 +4400,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-1649 checks. Every one of them earns its place by having caught something
+1661 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

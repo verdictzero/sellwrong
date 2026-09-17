@@ -38,7 +38,7 @@ import * as THREE from 'three';
 import { Pix, fbm, valueNoise, speckle, drawTextCentred } from './pixel.js';
 import { makeRng, pRandom } from './util.js';
 import { ramp, PALETTE } from './palette.js';
-import { WEAPON_TILE, WEAPON_TOP, CLEAR_INDEX } from './art-data.js';
+import { WEAPON_TILE, WEAPON_TOP, CLEAR_INDEX, CUTOUTS } from './art-data.js';
 import { CELLS, ADULT, SHOPPERS, SPLATS, ASHES, BLASTS,
          SHOPPER_SPRITE, SPLAT_SPRITE, ASH_SPRITE, BLAST_SPRITE,
          TROOPS } from './people.js';
@@ -339,29 +339,25 @@ export function bakeSprites() {
     p.box(5, 0, 2, 2, 'olive', 0.16);                      // the finial
   }, 12, 64, 611), { fullbright: true, scale: 2 });
 
-  /* --- THE HEADSTONES, two of them: a round-topped slab and a cross,
-     both granite, both with the panel where the name was and no name on
-     it. Thirty-two tall over a base you could trip on. --- */
-  bank.addFrame('GRV0', 'A', radial(p => {
-    for (let x = 3; x < 21; x++) p.ink(x, 33, 'grey', 0.06);
-    p.box(4, 29, 16, 4, 'grey', 0.26);                       // the base
-    for (let y = 8; y < 29; y++) for (let x = 6; x < 18; x++) p.ink(x, y, 'grey', 0.36 - (x - 6) * 0.008);
-    p.disc(12, 8, 6, 'grey', 0.38);                           // the round top
-    p.disc(11, 7, 5, 'grey', 0.42);
-    p.box(8, 12, 8, 12, 'grey', 0.28);                        // the panel
-    for (let y = 14; y < 22; y += 3) p.hline(9, 14 - (y === 20 ? 2 : 0), y, 'grey', 0.20);
-    for (let y = 24; y < 29; y++) p.ink(6, y, 'olive', 0.22); // moss on the north side
-  }, 24, 34, 605));
-  bank.addFrame('GRV1', 'A', radial(p => {
-    for (let x = 3; x < 21; x++) p.ink(x, 33, 'grey', 0.06);
-    p.box(4, 29, 16, 4, 'grey', 0.26);
-    p.box(7, 22, 10, 7, 'grey', 0.34);                        // the plinth
-    p.box(10, 2, 4, 21, 'grey', 0.40);                        // the upright
-    p.box(5, 7, 14, 4, 'grey', 0.40);                         // the arm
-    p.vline(10, 2, 22, 'grey', 0.48); p.hline(5, 18, 7, 'grey', 0.48);
-    p.vline(13, 2, 22, 'grey', 0.30); p.hline(5, 18, 10, 'grey', 0.30);
-    p.hline(8, 15, 25, 'grey', 0.22);                         // where the name was
-  }, 24, 34, 607));
+  /* --- THE HEADSTONES, EIGHT OF THEM, and they are photographs.
+
+     They were two drawings — a round-topped slab and a cross, both
+     granite, both with the panel where the name was. What a drawing
+     cannot do is weathering: lichen in the lettering, a base sunk
+     crooked into the turf, a face worn until the carving is a shadow.
+     So they come in as real stones, cut out of their chroma key by
+     tools/bake-art.mjs and decoded here, and the town deals them round
+     its two burying grounds.
+
+     THE LETTERING TOOK CARE OF ITSELF. Every one was photographed with
+     a word cut into it, and at twenty-eight texels across a five-letter
+     word is four texels tall and comes out as the horizontal smudge
+     that weathered lettering actually is. No name on anything, ever,
+     which is the rule the shopfronts keep and this keeps by
+     arithmetic. --- */
+  const STONES = ['stone_round', 'stone_worn', 'stone_plain', 'stone_tapered',
+                  'stone_rough', 'stone_obelisk', 'stone_cross', 'stone_crossback'];
+  STONES.forEach((n, i) => bank.addFrame(`GRV${i}`, 'A', new Array(8).fill(cutoutPix(n))));
 
   /* --- the reason the store is going to burn --- */
   bank.addFrame('GCAN', 'A', radial(p => {
@@ -611,26 +607,46 @@ const ART_B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+
 const ART_B64R = (() => { const r = new Int16Array(128).fill(-1);
   for (let i = 0; i < 64; i++) r[ART_B64.charCodeAt(i)] = i; return r; })();
 
-function decodeWeapon() {
+/**
+ * Any tile tools/bake-art.mjs wrote, into a Pix of its own size:
+ * unbase64, walk the run-length pairs, and skip the index that means
+ * nothing. Transparent everywhere it is not drawn, which is what makes
+ * a headstone a cut-out rather than a square of granite.
+ *
+ * ONE DECODER FOR ALL OF THEM. It was the weapon's, at a hard 64x64,
+ * and the headstones needed twenty-eight by forty. The sizes travel
+ * with the tiles now; nothing else changed.
+ */
+export function decodeArtTile(tile, w, h) {
   const bytes = [];
   let acc = 0, bits = 0;
-  for (let i = 0; i < WEAPON_TILE.length; i++) {
-    const v = ART_B64R[WEAPON_TILE.charCodeAt(i)];
+  for (let i = 0; i < tile.length; i++) {
+    const v = ART_B64R[tile.charCodeAt(i)];
     if (v < 0) continue;
     acc = (acc << 6) | v; bits += 6;
     if (bits >= 8) { bits -= 8; bytes.push((acc >> bits) & 255); }
   }
-  const p = new Pix(64, 64, 1, false);
+  const p = new Pix(w, h, 1, false);
   p.clear();
   let at = 0;
-  for (let i = 0; i + 1 < bytes.length && at < 64 * 64; i += 2)
-    for (let n = bytes[i + 1]; n > 0 && at < 64 * 64; n--, at++) {
+  const N = w * h;
+  for (let i = 0; i + 1 < bytes.length && at < N; i += 2)
+    for (let n = bytes[i + 1]; n > 0 && at < N; n--, at++) {
       if (bytes[i] === CLEAR_INDEX) continue;
       const c = PALETTE[bytes[i]];
-      p.set(at % 64, (at / 64) | 0, c[0], c[1], c[2], 255);
+      p.set(at % w, (at / w) | 0, c[0], c[1], c[2], 255);
     }
   return p;
 }
+
+/** One of the cut-outs by name — see CUTOUTS in js/art-data.js. */
+export function cutoutPix(name) {
+  const c = CUTOUTS[name];
+  if (!c) throw new Error(`no cut-out called ${name}`);
+  return decodeArtTile(c.tile, c.w, c.h);
+}
+
+function decodeWeapon() { return decodeArtTile(WEAPON_TILE, 64, 64); }
 
 function weaponPix(w, h, draw, seed) {
   const p = new Pix(w, h, seed, false);   // drawn off the edge on purpose

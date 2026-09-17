@@ -75,7 +75,42 @@ export const KINDS = [
   { name: 'bush_small_2', h: 60,  aspect: 1.0, r: 12, w: 5 },
   { name: 'fern',         h: 46,  aspect: 1.0, r: 0,  w: 0, cover: true },
   { name: 'grass',        h: 40,  aspect: 1.0, r: 0,  w: 0, cover: true },
+
+  /* ---- AND WHAT THE TOWN PLANTS -----------------------------------
+     Broadleaves, which the wood has none of: it is a conifer wood and
+     the town is a town, and a street of firs is a town in a national
+     park. These are photographs, cut out of their chroma key and given
+     a burn map by tools/bake-plants.mjs, and they land in
+     assets/forest/ in the same two files every fir already had.
+
+     THE WEIGHT IS ZERO ON EVERY ONE OF THEM, which is what keeps them
+     out of the wood: the scatter in _plant picks by weight and skips
+     anything at nought, so not one of these is ever planted by the
+     forest itself. They arrive through _plantTown, from the list
+     js/maps/town.js builds, at a position somebody chose.
+
+     THE ASPECT IS THE ARTWORK'S and not the tile's. Every tile here is
+     128 by 256 because that is what the wood's are and powers of two
+     are cheap; the photographs are nearer two to three, so the tile is
+     squashed going in and stretched coming out, and what you see is
+     the shape of the tree that was photographed. */
+  { name: 'street_round',   h: 280, aspect: 0.683, r: 14, w: 0 },
+  { name: 'street_broad',   h: 300, aspect: 0.660, r: 15, w: 0 },
+  { name: 'street_oval',    h: 290, aspect: 0.666, r: 14, w: 0 },
+  { name: 'street_upright', h: 310, aspect: 0.610, r: 14, w: 0 },
+  { name: 'street_dense',   h: 268, aspect: 0.670, r: 13, w: 0 },
+  { name: 'street_big',     h: 330, aspect: 0.667, r: 16, w: 0 },
+  /* A HEDGE IS SHORT AND STILL STOPS YOU, which is the one thing the
+     height test below could not say. It is clipped box, just over head
+     height, and a row of them at the cell pitch is a hedge you walk
+     along rather than through — so it is CANOPY by name rather than by
+     being tall. */
+  { name: 'hedge_box',      h: 72,  aspect: 0.938, r: 26, w: 0, canopy: true },
 ];
+
+/** Canopy: one to a cell, in the trees array, and it stops you. Tall
+ *  enough, or told so — see hedge_box. */
+const isCanopy = k => !k.cover && (k.canopy ?? (k.h > 120));
 
 /* How far a flame steps out of the thing it is burning, toward the eye:
    a fraction of the flame's own width, and a fraction of the range. See
@@ -94,8 +129,8 @@ const FLAME_NUDGE_RANGE = 0.012;
    something you can run through with a fire behind you. Only trunks stop
    you, which is the rule the collision code already had — it looks at
    the canopy class and nothing else. */
-const TREE_KINDS  = KINDS.map((k, i) => i).filter(i => !KINDS[i].cover && KINDS[i].h > 120);
-const BUSH_KINDS  = KINDS.map((k, i) => i).filter(i => !KINDS[i].cover && KINDS[i].h <= 120);
+const TREE_KINDS  = KINDS.map((k, i) => i).filter(i => isCanopy(KINDS[i]));
+const BUSH_KINDS  = KINDS.map((k, i) => i).filter(i => !KINDS[i].cover && !isCanopy(KINDS[i]));
 const COVER_KINDS = KINDS.map((k, i) => i).filter(i => KINDS[i].cover);
 const TREE_WEIGHT = TREE_KINDS.reduce((a, i) => a + KINDS[i].w, 0);
 const BUSH_WEIGHT = BUSH_KINDS.reduce((a, i) => a + KINDS[i].w, 0);

@@ -88,14 +88,36 @@ WHERE IT DEPARTS FROM THE PLAN, and why:
     A BUILDING IS WHAT IT DOES AT ITS EDGES in README.txt.
   THERE ARE FENCES, which the plan did not ask for and a town without
     them looks wrong: chain link round the ball field and along the
-    school's frontage, wrought iron round the churchyard with the gate
-    where the path is. A fence is a masked texture hung in the hole
-    between two patches of open ground, not a sector.
+    school's frontage, wrought iron round the churchyard and the whole
+    way round the cemetery with the gates where the paths are. A fence
+    is a masked texture hung in the hole between two patches of open
+    ground, not a sector — which is why every enclosure in the town has
+    a VERGE outside it. A fence with nothing behind it has nothing to
+    hang in, so the block is laid as a ring of verge, four gates and the
+    ground inside, and the iron goes in the eight lines between them.
   THERE ARE LAMPS after all — one every 1536 along a sidewalk,
     staggered, one on every corner, each over a pool of light that is a
     brighter sector of pavement — and trees in the yards, shrubs along
     the foundations, paths across the parks and stones in the cemetery.
     All of it sprites; none of it sectors. No utility poles still.
+  AND THE TOWN IS PLANTED, which is the difference between a street grid
+    and a street. Six photographed broadleaves line every verge at a
+    pitch of 512, off by a third between the two sides so the street
+    reads as an avenue rather than a corridor, and never inside a lamp's
+    pool. Clipped box edges the green, returns at every gate, runs along
+    the school's foundation and inside the churchyard's iron. The
+    cemetery has eight kinds of headstone dealt so the plain slabs are
+    common and the obelisk and the crosses are not, laid in RANKS —
+    jittered along the row and in the angle, never across it, because
+    the line is what makes it a cemetery rather than a field with rubble
+    in it — and the ranks step round three specimen trees a quarter.
+    The art is photographs: see THE TWO ART PIPELINES in README.txt.
+  A BLOCK OF BOX IS CANOPY, which sets the pitch of every hedge in the
+    town at 64. The wood keeps one canopy plant to a cell and a cell is
+    64 units, so a run planted tighter loses blocks to a rule it cannot
+    see; a run planted looser has sky between one block and the next.
+    The blocks are 67 wide and stand 64 apart, and where two runs meet
+    the second one to ask for the corner is refused.
   THE FUEL IS THREE HUNDRED AND OVER in the school and the church,
     because the spread chance saturates at three hundred and a corridor
     at a hundred and twenty was a firebreak down the middle of the
@@ -764,7 +786,7 @@ order by anybody.
 THE TEST
 --------
 
-1649 checks pass today in about three minutes, with no install and no
+1661 checks pass today in about three minutes, with no install and no
 browser, and every one of them is there because something reached a
 screenshot. The column breaks assumptions that nothing currently
 asserts, so these come first, in phase 1, before the code they check:

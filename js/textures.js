@@ -32,6 +32,7 @@ import * as THREE from 'three';
 import { Pix, fbm, valueNoise, speckle, drawText, drawTextCentred, textWidth } from './pixel.js';
 import { makeRng } from './util.js';
 import { LOGO_TILES } from './art-data.js';
+import { cutoutPix } from './sprites.js';
 import { PALETTE } from './palette.js';
 
 export class TextureBank {
@@ -2569,7 +2570,7 @@ const SIZES = {
   CORNICE:  { w: 64, h: 24 },
   TIEBEAM:  { w: 64, h: 24 },
   ORGANPIP: { w: 64, h: 96 },
-  RAILING:  { w: 64, h: 48, masked: true },
+  RAILING:  { w: 64, h: 96, masked: true },   // one repeat is one section of iron
   ALTARRL:  { w: 64, h: 32 },
   HANDRAIL: { w: 64, h: 32 },
   GYMTRUSS: { w: 64, h: 32 },
@@ -3792,22 +3793,22 @@ T.ORGANPIP = () => {
 };
 
 T.RAILING = () => {
-  /* Wrought iron round the churchyard, forty-eight tall and MASKED, so
-     what you see between the uprights is the graveyard and not a
-     painted picture of it. A spear on every standard, a rail top and
-     bottom, and a heavier post every sixteen. */
-  const p = new Pix(64, 48, 823, false);
-  p.clear();
-  for (let x = 3; x < 64; x += 8) {
-    for (let y = 6; y < 46; y++) { p.ink(x, y, 'grey', 0.16, 255); p.ink(x + 1, y, 'grey', 0.26, 255); }
-    p.ink(x, 3, 'grey', 0.22, 255); p.ink(x + 1, 3, 'grey', 0.30, 255);          // the spear
-    p.ink(x, 4, 'grey', 0.18, 255); p.ink(x + 1, 4, 'grey', 0.28, 255);
-    p.ink(x, 2, 'grey', 0.26, 255); p.ink(x + 1, 2, 'grey', 0.34, 255);
-  }
-  for (const y of [10, 11, 40, 41]) for (let x = 0; x < 64; x++) p.ink(x, y, 'grey', y & 1 ? 0.16 : 0.28, 255);
-  for (const x of [0, 1, 2, 32, 33, 34]) for (let y = 0; y < 48; y++) p.ink(x, y, 'grey', 0.24, 255);   // the standards
-  for (const x of [0, 32]) { p.ink(x, 0, 'grey', 0.34, 255); p.ink(x + 1, 0, 'grey', 0.34, 255); p.ink(x + 2, 0, 'grey', 0.26, 255); }
-  return p.snap(0.3);
+  /* ONE SECTION OF THE IRON ROUND A CEMETERY, and it is a photograph:
+     scrollwork, a rosette at every crossing, spears along the top rail
+     and a heavier standard at each end. It was drawn — eight uprights
+     and two rails, which is a fence and is not THIS fence — and there
+     is no set of primitives that gets you to wrought iron.
+
+     MASKED, so what you see between the uprights is the graveyard.
+
+     BAKED AT 64x64 AND DECLARED 96 TALL, which is the rule every
+     texture in this file keeps and the reason there are no exceptions
+     to it: the bakery paints at 64 and SIZES says how much wall one
+     repeat covers. Here a repeat is one panel of iron, six feet up, and
+     the panels butt at the standards. Baked by tools/bake-art.mjs out
+     of art/stones/cemfence.png; no snap here, because every texel came
+     out of the palette already. */
+  return cutoutPix('cemfence');
 };
 
 T.ALTARRL = () => {
