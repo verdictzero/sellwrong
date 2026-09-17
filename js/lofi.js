@@ -405,6 +405,7 @@ export class LofiPipeline {
        searches, about 40ms, and then never again. */
     const atlas = buildLutAtlas();
     this.lut = new THREE.DataTexture(atlas.data, atlas.width, atlas.height, THREE.RGBAFormat);
+    this.lutData = atlas.data;
     this.lut.minFilter = THREE.NearestFilter;
     this.lut.magFilter = THREE.NearestFilter;
     this.lut.wrapS = this.lut.wrapT = THREE.ClampToEdgeWrapping;
@@ -482,6 +483,23 @@ export class LofiPipeline {
     this.material.uniforms.uTaps.value.set(s.taps[0], s.taps[1]);
     this.renderer.setSize(this.displayW, this.displayH, false);
     return s;
+  }
+
+  /**
+   * REBUILD THE LOOKUP CUBE, because the box of crayons changed.
+   *
+   * This texture is how the post pass snaps a frame to the palette —
+   * one fetch per pixel instead of searching 256 entries — so it is
+   * the palette, as far as the GPU is concerned. Rewritten in place
+   * rather than replaced, because the sky baker was handed this exact
+   * texture object at start-up (see SkyBaker) and holding the two in
+   * step by hand is a thing to get wrong once and never notice.
+   */
+  rebuildLut() {
+    const atlas = buildLutAtlas();
+    this.lutData.set(atlas.data);
+    this.lut.needsUpdate = true;
+    return this.lut;
   }
 
   /** RENDER: how much the world is drawn with. */

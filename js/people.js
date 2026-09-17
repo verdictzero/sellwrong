@@ -180,7 +180,7 @@ export const BLAST_SPRITE   = 'BLST';   // one set, frames A .. Z
 /** One cell per set, under SHO0, SHO1, ... — every side the same. */
 export function addStandees(bank, img, opts = {}) {
   const frames = stripFrames(img, CELLS.shoppers.w);
-  frames.forEach((p, i) => bank.addFrame(SHOPPER_SPRITE + i, 'A', new Array(8).fill(p), opts));
+  frames.forEach((p, i) => bank.addFrame(SHOPPER_SPRITE + i, 'A', new Array(8).fill(p), { ...opts, fromArt: true }));
   return frames.length;
 }
 
@@ -188,7 +188,7 @@ export function addStandees(bank, img, opts = {}) {
  *  frame for exactly the same reason. */
 export function addSplats(bank, img, opts = {}) {
   const frames = stripFrames(img, CELLS.splat.w);
-  frames.forEach((p, i) => bank.addFrame(SPLAT_SPRITE + i, 'A', new Array(8).fill(p), opts));
+  frames.forEach((p, i) => bank.addFrame(SPLAT_SPRITE + i, 'A', new Array(8).fill(p), { ...opts, fromArt: true }));
   return frames.length;
 }
 
@@ -207,9 +207,9 @@ export function addTroops(bank, img, key, opts = {}) {
     const views = cells.slice(at, at + t.views);
     at += t.views;
     const mirrored = views.map(p => p.mirrored());
-    bank.addFrame(t.sprite, L, TROOP_ROTATIONS.map(r => (r.mirror ? mirrored : views)[r.view]), opts);
+    bank.addFrame(t.sprite, L, TROOP_ROTATIONS.map(r => (r.mirror ? mirrored : views)[r.view]), { ...opts, fromArt: true });
   }
-  for (const L of t.flat) bank.addFrame(t.sprite, L, new Array(8).fill(cells[at++]), opts);
+  for (const L of t.flat) bank.addFrame(t.sprite, L, new Array(8).fill(cells[at++]), { ...opts, fromArt: true });
   return cells.length;
 }
 

@@ -58,7 +58,7 @@ export function stripFrames(img, cell) {
 /** A strip as one sprite set, lettered A onward — an animation. */
 export function addStrip(bank, name, img, cell, opts = {}) {
   const frames = stripFrames(img, cell);
-  frames.forEach((p, i) => bank.addFrame(name, STRIP_LETTERS[i], new Array(8).fill(p), opts));
+  frames.forEach((p, i) => bank.addFrame(name, STRIP_LETTERS[i], new Array(8).fill(p), { ...opts, fromArt: true }));
   return frames.length;
 }
 

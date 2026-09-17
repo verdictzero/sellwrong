@@ -28,7 +28,7 @@
    hoping.
    ===================================================================== */
 
-import { PALETTE, ramp, snapImageData } from './palette.js';
+import { ramp, snapImageData } from './palette.js';
 import { makeRng } from './util.js';
 
 /* --------------------------------------------------------------------

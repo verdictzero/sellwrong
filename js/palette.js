@@ -140,11 +140,35 @@ function rampColors(spec) {
 }
 
 /* ---- build the 256 ---- */
-export const PALETTE = (() => {
+/* --------------------------------------------------------------------
+   THE RAMPS ARE THE MATERIALS. THE PALETTE IS THE BOX OF CRAYONS.
+
+   These were the same thing for most of this project's life: the 256
+   WERE the ramps laid end to end, and ramp(key, t) handed back a
+   palette entry by index. That is the right way round for one palette
+   and it is the reason there could only ever be one — swap the box and
+   every index into it means a different colour, so every texture in the
+   game comes out scrambled rather than recoloured.
+
+   So they are two things now. RAMP_RGB is what a material IS: fifteen
+   ramps of arithmetic, computed once, never changing, and what
+   ramp(key, t) answers with. PALETTE is what the machine can actually
+   show, and it can be swapped — see setPalette. Painting picks the
+   material; snapping (snapImageData, nearestIndex) puts it in the box.
+
+   UNDER THE DEFAULT THE TWO ARE THE SAME LIST, so a colour asked for is
+   a colour the box has and the snap is the identity — which is why this
+   change is invisible until somebody swaps the box, and why the test
+   holds the default palette against the ramps entry for entry.
+   ------------------------------------------------------------------ */
+const RAMP_RGB = {};
+export const RAMP_PALETTE = (() => {
   const pal = [];
   for (const r of RAMPS) {
     RAMP[r.key] = { start: pal.length, n: r.n };
-    for (const c of rampColors(r)) pal.push(c);
+    const cols = rampColors(r);
+    RAMP_RGB[r.key] = cols;
+    for (const c of cols) pal.push(c);
   }
   /* Whatever is left over becomes pure saturated markers — useful when a
      placeholder needs to SCREAM that it is a placeholder. */
@@ -154,15 +178,84 @@ export const PALETTE = (() => {
   return pal.slice(0, 256);
 })();
 
+/* --------------------------------------------------------------------
+   THE UZEBOX BOX, which is a piece of hardware and not a mood board.
+
+   The Uzebox drives its picture straight out of an AVR's pins through a
+   resistor ladder: three bits of red, three of green and TWO OF BLUE,
+   which is 8 x 8 x 4 and is exactly 256. It is generated here rather
+   than pasted in, because 256 lines of hex is a table nobody can check
+   and three loops is a table that cannot be wrong; art/uzebox.hex is
+   the file it was checked against, entry for entry, by the test.
+
+   WHAT IT DOES TO THIS GAME, measured before it was offered: the 256
+   the ramps make land on 81 distinct entries of it, and the sky ramp's
+   twenty land on thirteen. Two bits of blue is the whole story — a
+   night sky that is a gradient in this game is four flat bands in that
+   box. That is not a defect in the palette, it is what the hardware
+   was; it is the reason this is a SETTING and not a replacement.
+   ------------------------------------------------------------------ */
+export const UZEBOX_PALETTE = (() => {
+  const step8 = [0x00, 0x24, 0x48, 0x6d, 0x91, 0xb6, 0xda, 0xff];
+  const step4 = [0x00, 0x55, 0xaa, 0xff];
+  const pal = [];
+  for (const b of step4) for (const g of step8) for (const r of step8) pal.push([r, g, b]);
+  return pal;
+})();
+
+/** The boxes there are, by the name the setting uses. */
+export const PALETTES = { ramps: RAMP_PALETTE, uzebox: UZEBOX_PALETTE };
+
+/* THE ACTIVE BOX, and it is a mutable array rather than a rebindable
+   one on purpose: a dozen modules imported PALETTE years ago and hold
+   the reference, so the contents are replaced in place and every one of
+   them is looking at the new box without being told. */
+export const PALETTE = RAMP_PALETTE.slice();
+export let paletteName = 'ramps';
+
+/**
+ * Swap the box of crayons.
+ *
+ * Everything already PAINTED out of the old one has to be painted again
+ * — the textures, the sprites, the lookup cube the post pass snaps with
+ * and the sky that was baked through it — and this function does none
+ * of that, because none of it lives here. See applyPalette in
+ * js/main.js, which is the one place that knows the whole list.
+ */
+export function setPalette(name) {
+  const pal = PALETTES[name];
+  if (!pal || name === paletteName) return false;
+  for (let i = 0; i < 256; i++) PALETTE[i] = pal[i].slice();
+  paletteName = name;
+  _snapCache.fill(-1);          // every answer it cached was about the old box
+  return true;
+}
+
 /* Pick a colour out of a named ramp with a 0..1 position. Every texture and
    every sprite in the game asks for its colours this way, which is what
-   keeps them looking like they came out of the same box. */
+   keeps them looking like they came out of the same box.
+
+   IT ANSWERS WITH THE MATERIAL and not with a palette entry — see the
+   note above. Under the default palette those are the same colour; under
+   any other, the snap at the end of the picture is what moves it. */
 export function ramp(key, t) {
-  const r = RAMP[key];
-  const i = Math.max(0, Math.min(r.n - 1, Math.round(t * (r.n - 1))));
-  return PALETTE[r.start + i];
+  const r = RAMP_RGB[key];
+  const i = Math.max(0, Math.min(r.length - 1, Math.round(t * (r.length - 1))));
+  return r[i];
 }
 export function rampCss(key, t) { const c = ramp(key, t); return `rgb(${c[0]},${c[1]},${c[2]})`; }
+/** A colour out of the ramp palette, moved into whatever box is active.
+ *  The photographs in js/art-data.js are stored as INDICES into the ramp
+ *  palette — that is what tools/bake-art.mjs wrote — so decoding one
+ *  means looking it up there and then snapping, or every headstone in
+ *  the cemetery changes colour when the box does. Under the default the
+ *  two are the same list and this is the identity. */
+export function fromRampPalette(index) {
+  const c = RAMP_PALETTE[index];
+  if (paletteName === 'ramps') return c;
+  return PALETTE[nearestIndex(c[0], c[1], c[2])];
+}
+
 export function rampIndex(key, t) {
   const r = RAMP[key];
   return r.start + Math.max(0, Math.min(r.n - 1, Math.round(t * (r.n - 1))));

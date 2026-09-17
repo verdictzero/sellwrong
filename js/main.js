@@ -39,6 +39,7 @@ import { atlasTexture, imageTexture } from './particles.js';
 import { bakeEffectAtlases } from './effects.js';
 import { bakeRainAtlas } from './rain.js';
 import { SkyBaker } from './skyart.js';
+import { setPalette, paletteName } from './palette.js';
 import { Weather, WEATHERS, WEATHER_ORDER, HOUR_STOPS } from './weather.js';
 import { Weapon3D } from './weapon3d.js';
 import { KINDS } from './forest.js';
@@ -138,6 +139,12 @@ const DEFAULT_PIXAR = 2;               // 2:3, at the user's request; 5:6 is the
               so spending less of it drops the far cold end
    ------------------------------------------------------------------- */
 const CROWD  = [{ v: 1, n: 'EVERYONE' }, { v: 0.5, n: 'HALF' }, { v: 0.25, n: 'A FEW' }];
+/* THE BOX OF CRAYONS. Not a picture setting like the others — it costs
+   nothing to draw either way, it is a different game to look at. RAMPS
+   is the fifteen material ramps this game was drawn out of; UZEBOX is a
+   real console's palette, three bits of red, three of green and two of
+   blue. See the note on applyPalette, and js/palette.js. */
+const PALETTE_SET = [{ v: 'ramps', n: 'RAMPS' }, { v: 'uzebox', n: 'UZEBOX' }];
 const FX     = [{ v: 1, n: 'FULL' }, { v: 0.5, n: 'FEWER' }, { v: 0.25, n: 'LEAST' }];
 const WOOD   = [{ v: 1, n: 'ALL OF IT' }, { v: 0.6, n: 'NEARER' }, { v: 0.35, n: 'NEAREST' }];
 
@@ -153,10 +160,13 @@ const PREF_KEY = 'sellwrong.prefs';
    5: the two debug switches default to on.
    6: the picture moved again — 320 rows of 2:3 pixels off a 960-row
    render — so a saved 240, 5:6 and 720 are not kept alive either. */
-const PREF_VERSION = 6;
+const PREF_VERSION = 7;
 const DEFAULT_PREFS = { v: PREF_VERSION, sens: 1, invert: false, lefty: false, haptics: true,
                         detail: DEFAULT_DETAIL, pixels: DEFAULT_PIXELS, pixar: DEFAULT_PIXAR,
                         crowd: 0, fx: 0, wood: 0, fps: false,
+                        /* the box of crayons: 0 is RAMPS, which is the game as
+                           it was drawn. See PALETTE_SET and applyPalette. */
+                        palette: 0,
                         /* the night's weather — see js/weather.js; the hour is not
                            kept, because a night starts at two */
                         weather: 0,
@@ -489,6 +499,7 @@ async function boot() {
     $('opt-crowd').textContent = 'CROWD: ' + CROWD[prefs.crowd].n;
     $('opt-fx').textContent = 'EFFECTS: ' + FX[prefs.fx].n;
     $('opt-wood').textContent = 'THE WOOD: ' + WOOD[prefs.wood].n;
+    $('opt-palette').textContent = 'PALETTE: ' + PALETTE_SET[prefs.palette].n;
     $('opt-time').textContent = 'TIME: ' + game.weather.label;
     $('opt-weather').textContent = 'WEATHER: ' + WEATHERS[WEATHER_ORDER[prefs.weather]].name;
     setTog('opt-fps', prefs.fps);
@@ -543,6 +554,9 @@ async function boot() {
   ladder('opt-crowd', 'crowd', CROWD);
   ladder('opt-fx', 'fx', FX);
   ladder('opt-wood', 'wood', WOOD);
+  /* the one setting that re-bakes the art: about three quarters of a
+     second, once, on a button nobody presses in a firefight */
+  ladder('opt-palette', 'palette', PALETTE_SET, () => applyPalette(PALETTE_SET[prefs.palette].v));
   ladder('opt-weather', 'weather', WEATHER_ORDER);
   /* THE HOUR IS NOT A PREFERENCE, it is where the night has got to; the
      button steps it to the next keyframe, for looking at the dawn
@@ -706,8 +720,76 @@ async function boot() {
   }
   requestAnimationFrame(frame);
 
+  /* ------------------------------------------------------------------
+     SWAPPING THE BOX OF CRAYONS
+
+     js/palette.js holds two palettes: the fifteen material RAMPS this
+     game was drawn out of, and the UZEBOX cube, which is a real piece
+     of hardware — three bits of red, three of green and two of blue,
+     wired to an AVR through a resistor ladder. setPalette changes which
+     one is active and that is ALL it changes; everything already
+     painted out of the old one is still painted out of the old one, and
+     bringing it back into step is this function, because this is the
+     only place that knows the whole list of what was painted.
+
+     WHAT HAS TO BE PAINTED AGAIN, in the order it matters:
+
+       THE LOOKUP CUBE, which is the palette as far as the GPU is
+       concerned — the post pass snaps every frame through it, so on its
+       own it changes the whole picture. Everything below is about
+       having the art AUTHORED in the new box rather than merely
+       filtered into it at the last moment, which is the difference
+       between a dither nailed to a wall and a dither nailed to the
+       screen. See the header of js/skyart.js for why that matters.
+
+       THE TEXTURES AND THE SPRITES, re-baked. The canvas behind each
+       one is replaced and the texture marked dirty, rather than a new
+       texture being made, because every material in the level is
+       holding the old texture object and re-making them would mean
+       rebuilding the world.
+
+       NOT THE FRAMES THAT CAME FROM A PHOTOGRAPH. The people, the
+       troops and the splats land on top of stand-ins of the same name
+       (js/spriteload.js), so re-baking blindly would put the stand-ins
+       back and the crowd would lose its faces. They carry `fromArt` and
+       are left alone; they ride the frame's own snap like the vehicles
+       and the wood do.
+
+       THE SKY, which is a picture baked through the lookup cube and is
+       therefore in the old box until it is baked again.
+     ------------------------------------------------------------------ */
+  function applyPalette(name) {
+    if (!setPalette(name)) return false;
+    pipeline.rebuildLut();
+    const freshTex = bakeTextures();
+    for (const [key, entry] of textures.map) {
+      const f = freshTex.map.get(key);
+      if (!f || !entry.texture) continue;
+      entry.pix = f.pix;
+      entry.texture.image = f.pix.toCanvas();
+      entry.texture.needsUpdate = true;
+    }
+    const freshSpr = bakeSprites();
+    for (const [key, entry] of sprites.frames) {
+      if (entry.fromArt) continue;
+      const f = freshSpr.frames.get(key);
+      if (!f) continue;
+      entry.views = f.views;
+      for (let r = 0; r < 8; r++) {
+        if (!entry.textures[r]) continue;
+        entry.textures[r].image = f.views[r].toCanvas();
+        entry.textures[r].needsUpdate = true;
+      }
+    }
+    skyBaker.bake(game.weather.frame);
+    return true;
+  }
+  /* and the choice the player last made, applied before the first frame */
+  const wanted = PALETTE_SET[prefs.palette]?.v;
+  if (wanted && wanted !== paletteName) applyPalette(wanted);
+
   /* let the console poke at it */
-  window.SELLWRONG = { game, pipeline, renderer, scene, camera, textures, sprites, world, level, input, touch, weapon3d, music, weather: game.weather, skyBaker,
+  window.SELLWRONG = { game, pipeline, renderer, scene, camera, textures, sprites, world, level, input, touch, weapon3d, music, weather: game.weather, skyBaker, applyPalette,
                        responders: game.responders, giblets: game.giblets };
 }
 

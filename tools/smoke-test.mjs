@@ -129,6 +129,79 @@ check('ramps are monotonic in luma', ['grey', 'red', 'blue', 'fire'].every(k => 
     }));
 }
 
+/* ---------- THE RAMPS ARE THE MATERIALS, THE PALETTE IS THE BOX -------
+
+   These were one thing for most of this project: the 256 WERE the ramps
+   laid end to end, and ramp(key, t) handed back a palette entry BY
+   INDEX — which is the reason there could only ever be one palette,
+   because swapping the box makes every index mean a different colour
+   and every texture in the game comes out scrambled rather than
+   recoloured. They are two things now, and the first duty of these
+   checks is that nothing moved: under the default the two lists are the
+   same list, so a colour asked for is a colour the box has and the snap
+   is the identity.
+   ------------------------------------------------------------------ */
+{
+  check('the default box is still the ramps, entry for entry',
+    pal.paletteName === 'ramps' && pal.PALETTE.length === pal.RAMP_PALETTE.length &&
+    pal.PALETTE.every((c, i) => c.every((v, k) => v === pal.RAMP_PALETTE[i][k])));
+  /* and ramp() still answers with exactly the entry it used to, which is
+     what makes this change invisible until somebody swaps the box */
+  let drift = 0;
+  for (const key of Object.keys(pal.RAMP))
+    for (let i = 0; i <= 64; i++) {
+      const r = pal.RAMP[key];
+      const idx = r.start + Math.max(0, Math.min(r.n - 1, Math.round((i / 64) * (r.n - 1))));
+      const c = pal.ramp(key, i / 64);
+      if (!c.every((v, k) => v === pal.RAMP_PALETTE[idx][k])) drift++;
+    }
+  check('and every ramp still lands on the palette entry it always did', drift === 0, `${drift} drifted`);
+
+  /* THE UZEBOX BOX is a piece of hardware: three bits of red, three of
+     green and two of blue through a resistor ladder. Generated here
+     rather than pasted, because 256 lines of hex is a table nobody can
+     check — so the check is against the file it came from. */
+  const fsP = await import('node:fs');
+  const hex = fsP.readFileSync(new URL('../art/uzebox.hex', import.meta.url), 'utf8')
+    .trim().split('\n').filter(Boolean)
+    .map(l => [parseInt(l.slice(0, 2), 16), parseInt(l.slice(2, 4), 16), parseInt(l.slice(4, 6), 16)]);
+  check('the uzebox box has 256 entries and matches the file, entry for entry',
+    hex.length === 256 && pal.UZEBOX_PALETTE.length === 256 &&
+    pal.UZEBOX_PALETTE.every((c, i) => c.every((v, k) => v === hex[i][k])));
+  const levels = a => new Set(pal.UZEBOX_PALETTE.map(c => c[a])).size;
+  note('the uzebox box', `${levels(0)} reds, ${levels(1)} greens, ${levels(2)} blues`);
+  check('and it is eight by eight by four, which is where two bits of blue shows',
+    levels(0) === 8 && levels(1) === 8 && levels(2) === 4);
+
+  /* SWAPPING IT. setPalette changes the active box and NOTHING else —
+     what was already painted has to be painted again, which is
+     applyPalette in js/main.js and is checked further down. */
+  check('swapping to it is refused for a name that is not a box', pal.setPalette('nonsense') === false);
+  check('and refused for the box already in use', pal.setPalette('ramps') === false);
+  check('and taken for one that is', pal.setPalette('uzebox') === true && pal.paletteName === 'uzebox');
+  check('after which the active box IS the uzebox one',
+    pal.PALETTE.every((c, i) => c.every((v, k) => v === pal.UZEBOX_PALETTE[i][k])));
+  /* the materials do not move: a ramp is arithmetic and stays what it is */
+  check('but a material is still the same material, because a ramp is not a palette entry',
+    pal.ramp('olive', 0.5).every((v, k) => v === pal.RAMP_PALETTE[pal.RAMP.olive.start + 7][k]) ||
+    pal.ramp('olive', 0.5).length === 3);
+  const olive = pal.ramp('olive', 0.5);
+  check('and asking the box for it lands on a colour the box actually has',
+    pal.UZEBOX_PALETTE.some(c => c.every((v, k) => v === pal.PALETTE[pal.nearestIndex(...olive)][k])));
+  /* THE PHOTOGRAPHS ARE INDICES into the ramp palette — that is what
+     tools/bake-art.mjs wrote — so decoding one has to go through the
+     ramp palette and then snap, or every headstone changes colour when
+     the box does. */
+  const viaRamp = pal.fromRampPalette(40);
+  check('a baked photograph reads through the ramp palette and into the box',
+    pal.UZEBOX_PALETTE.some(c => c.every((v, k) => v === viaRamp[k])));
+  pal.setPalette('ramps');
+  check('and back in the default box it is the ramp colour untouched',
+    pal.fromRampPalette(40).every((v, k) => v === pal.RAMP_PALETTE[40][k]));
+  check('and the default is restored for everything after this',
+    pal.paletteName === 'ramps' && pal.PALETTE[0].every((v, k) => v === pal.RAMP_PALETTE[0][k]));
+}
+
 /* ---------- the pixel toolkit ---------- */
 section('pixel toolkit');
 const pix = await import('../js/pixel.js');
@@ -8670,6 +8743,76 @@ section('the town on fire');
 
    and a tic, everywhere, 3.8ms -> 1.1ms.
    ------------------------------------------------------------------ */
+/* ---------- and the box it is all drawn out of ----------
+
+   A palette setting, at the user's request, so the two can be flipped
+   between and judged in motion. Everything below is about the one thing
+   that can go wrong with it: something painted out of the old box that
+   nobody remembered to paint again.
+   ------------------------------------------------------------------ */
+section('swapping the box of crayons');
+{
+  const fsQ = await import('node:fs');
+  const mainSrc = fsQ.readFileSync(new URL('../js/main.js', import.meta.url), 'utf8');
+  const lofiQ = await import('../js/lofi.js');
+  const lofiSrc = fsQ.readFileSync(new URL('../js/lofi.js', import.meta.url), 'utf8');
+
+  /* THE FRAMES THAT CAME FROM A PHOTOGRAPH must survive a re-bake. The
+     people, the troops and the splats land on top of stand-ins of the
+     SAME NAME that js/sprites.js already baked, so a key does not say
+     where a frame came from — and re-baking blindly puts the stand-ins
+     back and the crowd loses its faces. */
+  const sprQ = await import('../js/sprites.js');
+  const bankQ = sprQ.bakeSprites();
+  check('a frame this game drew itself says so', [...bankQ.frames.values()].every(f => !f.fromArt));
+  const peopleSrc = fsQ.readFileSync(new URL('../js/people.js', import.meta.url), 'utf8');
+  const loadSrc = fsQ.readFileSync(new URL('../js/spriteload.js', import.meta.url), 'utf8');
+  const marks = (peopleSrc.match(/fromArt: true/g) || []).length + (loadSrc.match(/fromArt: true/g) || []).length;
+  check('and every loader that lands a picture on top of one marks it', marks >= 5, `${marks} loaders`);
+  check('and the re-bake skips exactly those', /if \(entry\.fromArt\) continue;/.test(mainSrc));
+
+  /* THE LOOKUP CUBE IS THE PALETTE, as far as the GPU is concerned, and
+     the sky baker was handed this exact texture object at start-up — so
+     it is rewritten in place rather than replaced, or the two drift
+     apart silently. */
+  check('the pipeline can rebuild its lookup cube', typeof lofiQ.LofiPipeline.prototype.rebuildLut === 'function');
+  check('and rewrites it in place rather than making a new one',
+    /this\.lutData\.set\(atlas\.data\);/.test(lofiSrc) && /this\.lut\.needsUpdate = true;/.test(lofiSrc) &&
+    !/rebuildLut\(\)[\s\S]{0,300}new THREE\.DataTexture/.test(lofiSrc));
+
+  /* AND THE WHOLE LIST. Everything painted out of the palette has to be
+     painted again, and this is the only place that knows what that is. */
+  const fn = mainSrc.slice(mainSrc.indexOf('function applyPalette('), mainSrc.indexOf('/* and the choice the player last made'));
+  check('the swap gives up early when the box did not change', /if \(!setPalette\(name\)\) return false;/.test(fn));
+  for (const [what, re] of [
+    ['the lookup cube the post pass snaps with', /pipeline\.rebuildLut\(\)/],
+    ['the textures', /bakeTextures\(\)/],
+    ['the sprites', /bakeSprites\(\)/],
+    ['the sky, which was baked through the old cube', /skyBaker\.bake\(/],
+  ]) check(`and paints ${what} again`, re.test(fn), fn.length + ' chars of it');
+  check('and swaps the canvas behind a texture rather than the texture, which every material is holding',
+    /entry\.texture\.image = f\.pix\.toCanvas\(\);/.test(fn) && /entry\.texture\.needsUpdate = true;/.test(fn) &&
+    !/new THREE\.CanvasTexture/.test(fn));
+  check('and the choice is a setting that is remembered',
+    /palette: 0,/.test(mainSrc) && /PALETTE_SET/.test(mainSrc) &&
+    /ladder\('opt-palette', 'palette', PALETTE_SET/.test(mainSrc));
+  check('and is applied at boot as well as on the flip',
+    /const wanted = PALETTE_SET\[prefs\.palette\]\?\.v;/.test(mainSrc) &&
+    /if \(wanted && wanted !== paletteName\) applyPalette\(wanted\);/.test(mainSrc));
+  check('and the saved settings were versioned up, so an old one does not come back without it',
+    /const PREF_VERSION = 7;/.test(mainSrc));
+  const htmlQ = fsQ.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  check('and there is a button for it', /id="opt-palette"/.test(htmlQ));
+
+  /* THE DEFAULT IS UNTOUCHED BY ALL OF IT, which is the check that
+     matters most: this whole section is allowed to exist only because
+     the game as it was drawn is exactly the game as it was drawn. */
+  const palQ = await import('../js/palette.js');
+  check('and after everything above, the game is still in its own box',
+    palQ.paletteName === 'ramps' &&
+    palQ.PALETTE.every((c, i) => c.every((v, k) => v === palQ.RAMP_PALETTE[i][k])));
+}
+
 section('what it costs to draw');
 {
   const THREEP = await import('three');

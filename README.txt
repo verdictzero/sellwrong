@@ -57,9 +57,10 @@ weather.
                           and the flare at every street lamp after dark
   art/                  the logo, the old sprite weapon, the seven four-view
                           vehicle sheets and the atlas packed out of them —
-                          which nothing loads any more — and art/people/,
-                          the SWAT sheet and the army sheet as the user
-                          drew them
+                          which nothing loads any more — art/people/, the
+                          SWAT sheet and the army sheet as the user drew
+                          them, and art/uzebox.hex, the console palette the
+                          second box of crayons is checked against
   assets/people/        the crowd, and what is left of one: seventeen
                           shoppers, eleven pieces, three splats, a fireball;
                           the squad, fifty-one cells of SWAT; and the army,
@@ -137,7 +138,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         1756 checks, no install and no browser
+  the smoke test         1785 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -2958,6 +2959,12 @@ what they are worth, measured:
             are sorted nearest-and-hottest first, so spending less of it
             drops the far, cold end, which is the right end to drop
 
+PALETTE IS ON THAT MENU AND IS NOT ON THAT LIST, because it costs
+nothing to draw either way — it is a different game to look at. RAMPS is
+the fifteen material ramps this game was drawn out of; UZEBOX is a real
+console's box of crayons. See THE RAMPS ARE THE MATERIALS AND THE
+PALETTE IS THE BOX OF CRAYONS.
+
 NONE OF THEM TOUCHES THE SIMULATION. The shop is the same shop at every
 setting: the same seven hundred and thirty-six people, walking the same
 way, running from the same fire and getting out of the same doors. Only
@@ -3360,6 +3367,68 @@ and pink and dithered into crosshatch. Twenty entries came out of
 grey, cyan, purple and pink, and the test that says whether they are
 enough is the one that snaps every colour in the table and measures
 the miss.
+
+THE RAMPS ARE THE MATERIALS AND THE PALETTE IS THE BOX OF CRAYONS, and
+they were the same thing for most of this project's life: the 256 WERE
+the fifteen ramps laid end to end, and ramp(key, t) handed back a
+palette entry BY INDEX. That is the right way round for one palette and
+it is the reason there could only ever be one — swap the box and every
+index into it means a different colour, so every texture in the game
+comes out SCRAMBLED rather than recoloured.
+
+They are two things now, at the user's request, and the split is three
+lines: RAMP_RGB is what a material IS, fifteen ramps of arithmetic
+computed once and never changing, and what ramp(key, t) answers with;
+PALETTE is what the machine can show, and can be swapped. Painting picks
+the material, snapping puts it in the box. UNDER THE DEFAULT THE TWO ARE
+THE SAME LIST, so a colour asked for is a colour the box has and the
+snap is the identity — which is why the change is invisible until
+somebody swaps the box, and why the test holds the default against the
+ramps entry for entry and every ramp against the palette entry it always
+landed on.
+
+THE SECOND BOX IS THE UZEBOX'S, which the user sent as 256 lines of hex.
+It is not a mood board, it is a piece of hardware: an AVR driving a
+picture straight out of its pins through a resistor ladder, three bits
+of red, three of green and TWO OF BLUE, which is 8 x 8 x 4 and is
+exactly 256. It is generated in js/palette.js rather than pasted in,
+because 256 lines of hex is a table nobody can check and three loops is
+a table that cannot be wrong; art/uzebox.hex is kept as the file it is
+checked against, entry for entry.
+
+WHAT IT DOES, MEASURED BEFORE IT WAS OFFERED: the 256 the ramps make
+land on 81 distinct entries of that box, and the sky ramp's twenty land
+on thirteen. Two bits of blue is the whole story — a night sky that is a
+gradient here is four flat bands there. That is not a defect in the
+palette, it is what the hardware was, and it is the reason this is a
+SETTING and not a replacement.
+
+SWAPPING IT IS THE INTERESTING PART, because setPalette changes which
+box is active and that is ALL it changes: everything already painted out
+of the old one is still painted out of the old one. applyPalette in
+js/main.js is the one place that knows the whole list, and the list is
+the lookup cube the post pass snaps every frame through (which on its
+own changes the whole picture), the textures, the sprites, and the sky,
+which is a picture baked THROUGH that cube and is therefore in the old
+box until it is baked again. About three quarters of a second, once, on
+a button nobody presses in a firefight.
+
+TWO THINGS IT DELIBERATELY DOES NOT REPAINT. The frames that came from a
+PHOTOGRAPH — the people, the troops, the splats — land on top of
+stand-ins of the SAME NAME that js/sprites.js already baked, so a frame's
+key does not say where it came from; re-baking blindly would put the
+stand-ins back and the crowd would lose its faces. They carry `fromArt`
+and are skipped, and they ride the frame's own snap the way the vehicles
+and the wood do. And the canvas behind a texture is replaced rather than
+the texture itself, because every material in the level is holding the
+old texture object and re-making them would mean rebuilding the world.
+
+AND THE PHOTOGRAPHS ARE INDICES. js/art-data.js stores the logo, the
+weapon, the headstones, the cemetery iron and the street lamp as palette
+indices into the RAMP palette, which is what tools/bake-art.mjs wrote —
+so decoding one goes through the ramp palette and then snaps
+(fromRampPalette), or every headstone in the cemetery changes colour
+when the box does.
 
 THE WEATHER IS A ROW multiplied over the hour's: clear, overcast, rain
 and mist. Each says how far the air lets you see — WHICH IS THE DRAW
@@ -4712,7 +4781,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-1756 checks. Every one of them earns its place by having caught something
+1785 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
