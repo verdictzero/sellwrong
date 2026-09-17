@@ -198,6 +198,54 @@ const TRAY_H = 8, TRAY_OUT = 8;
 const PACK_W = 32, PACK_H = 24, SHUT_H = 24, SHUT_RAIL_H = 14;
 
 /* =====================================================================
+   THE GLAZING
+
+   A shop window was a texture: one flat quad with mullions and a stall
+   riser painted on it, hung on the front of the building, and from two
+   metres away it read as a picture of a window taped to a wall. What a
+   shopfront actually is, counted from the pavement in, is SIX THINGS:
+
+     the FRAME              aluminium, standing proud of the wall
+     an INSET               the reveal behind it
+     PANE A                 the outer sheet
+     a GAP, outlined black  the cavity between the sheets
+     PANE B                 the inner sheet
+     an INSET               and the shop behind that
+
+   Every one of them is real here, and the sixteen units of wall
+   thickness is exactly enough room to build it in. The frame is free
+   boxes; the two insets are a pair of six-deep sectors cut into the
+   wall; the panes are MIDDLE textures in the holes between them, so you
+   look through one sheet, across a cavity, through the second sheet and
+   at the shop. What that buys over a painted window is PARALLAX: walk
+   along the footway and the gloss on the outer sheet slides across the
+   gloss on the inner one, which is the single thing that says glass.
+
+   THE REVEAL STOPS FOUR UNITS SHORT of the shop floor, and the sliver
+   of wall it leaves is deliberate. Take it away and the shopfront
+   becomes a three-thousand-unit PORTAL into the supermarket: the flood
+   opens the whole shop floor to anybody standing in the car park, and
+   the interior LOD — which exists precisely so that a store is not
+   drawn from outside — has nothing left to do. So what is at the back
+   of the reveal is a painted interior on a one-sided wall, out of focus
+   because it is behind two sheets of glass. See STORIN and UNITIN.
+
+   ONE PANE IS ONE REPEAT. The module is 96 by 160 and it is not
+   negotiable: every pane on the parade is exactly that, and the
+   leftover in a run goes into the MULLIONS, which are an extrusion and
+   may be any width at all. Get this the other way round — panes sized
+   to fit and a fixed mullion — and every run has a different fraction
+   of a sheet of glass in it. Same rule as the shutters, the parapet and
+   the coping.
+   ===================================================================== */
+const PANE_W = 96;                       // one sheet, and one repeat of GLAZEA
+const PANE_Z0 = FLOOR_WALK + 32;         // the head of the stall riser
+const PANE_Z1 = PANE_Z0 + 160;           // one repeat up, and the transom
+const MULL_MIN = 20;                     // the least frame there may be between two
+const GAP_D = 6, BACK_D = 6;             // the cavity, and the inset behind it
+const FRAME_OUT = 9, FRAME_H = 14;       // how far the section stands proud, and the rail
+
+/* =====================================================================
    THE SIGN BOX
 
    The logo is a picture, and a picture cannot be a texture here because
@@ -824,11 +872,18 @@ export function buildSellWrong(opts = {}) {
     upperTex: 'PARAPET',                 // what the lot sees above the canopy
     lowerTex: 'KERB', fuel: FUEL.none, name,
   });
+  /* WHAT THE FOOTWAY'S OWN WALL IS. For a shut unit it is the shutter,
+     and that is the whole of it. For a GLAZED one it is no longer the
+     glass — the glass is a hole now, with two sheets hung in it (see
+     THE GLAZING) — so what is left of that wall is the frame: the
+     mullions between the panes and the returns at the ends of a run.
+     Which is what a shopfront is made of when you take the glass out. */
+  const framed = front => (front === 'UNITGLAS' || front === 'STORGLAS' ? 'SHOPFRAM' : front);
   const walkProps = (name, front, fascia, light) => ({
     /* A lid over your head and open on one side: not a room, not the
        open air. The soffit downlights are why it is lit at all. */
     floor: FLOOR_WALK, ceil: CEIL_SOFF, light, outdoor: true, sky: 0.55,
-    floorTex: 'CONCRETE', ceilTex: 'SOFFIT', wallTex: front,
+    floorTex: 'CONCRETE', ceilTex: 'SOFFIT', wallTex: framed(front),
     upperTex: fascia,                    // the sign band, seen from the lot
     lowerTex: 'KERB', fuel: FUEL.footway, name,
   });
@@ -860,7 +915,7 @@ export function buildSellWrong(opts = {}) {
   for (let i = 0; i < bays.length; i++) {
     const b = bays[i];
     const light = b.front === 'UNITGLAS' ? 0.62 : b.anchor ? 0.68 : 0.46;
-    rm.add(b.x0, -96, b.x1, -WALL, walkProps(`footway ${b.name}`, b.front, b.fascia, light));
+    b.walk = rm.add(b.x0, -96, b.x1, -WALL, walkProps(`footway ${b.name}`, b.front, b.fascia, light));
     if (b.anchor) {
       /* Three pieces, and the middle one comes forward over the doors —
          except the middle one is itself four, because the two under the
@@ -1046,6 +1101,120 @@ export function buildSellWrong(opts = {}) {
       for (let k = 0; k + 1 < n; k++)
         prop(xs[k], dy, xs[k + 1], dy + 44, RTU_Z + 38, RTU_Z + 70,
              'DUCTWORK', { topTex: 'DUCTWORK', light: 0.58, topLight: 0.72 });
+    }
+  }
+
+  /* =================================================================
+     THE GLAZING — see the note at the top of this file
+
+     Laid here, with the rest of the shopfront, because it needs the
+     bays and it needs the footway rects the bays made; and it has to
+     happen before rm.build(), because a reveal is two rectangles and
+     rectangles are the only thing RectMap takes. The PANES themselves
+     go in much further down, after the build, because a pane is a
+     middle texture on a line and there are no lines until then.
+     ================================================================= */
+  const glazing = [];                              // one entry per sheet pair
+  const GAP_Y1 = -WALL + GAP_D, BACK_Y1 = GAP_Y1 + BACK_D;
+  /* A CAVITY IS OUTDOORS, the same way a window reveal in the town is:
+     it is a hole in an outside wall, so the interior LOD has to leave
+     it in the shell. Get this wrong and the glass disappears out of the
+     building at seven thousand units and leaves black rectangles in the
+     front of it — the wall round the hole is outdoor and stays. */
+  const cavity = (name, extra) => ({
+    floor: PANE_Z0, ceil: PANE_Z1, light: 0.52, outdoor: true, sky: 0.15,
+    /* the black outline, on all four sides of the hole at once: the two
+       jambs are one-sided walls and the floor and the lid are flats, so
+       one texture on three slots is the whole of it */
+    floorTex: 'GLAZGAP', ceilTex: 'GLAZGAP', wallTex: 'GLAZGAP',
+    /* and what the footway sees where this disagrees with it: the stall
+       riser under the glass and the transom over it. The DISAGREEMENT
+       RULE skins a band with the SHUT sector's own texture, and against
+       a footway running floor to soffit the shut one is always this. */
+    lowerTex: 'SHOPSILL', upperTex: 'SHOPFRAM',
+    fuel: FUEL.none, name, ...extra,
+  });
+
+  /**
+   * One glazed run — the stretch of shopfront between two things that
+   * are not glass, which is a door, an entrance or the end of a unit.
+   *
+   * As many WHOLE panes as will fit, and the leftover shared out
+   * between the mullions. A mullion is an extrusion and does not care
+   * how wide it is; a sheet of glass is 96 or it is wrong.
+   */
+  const glazeRun = (b, x0, x1, inside, lit) => {
+    const n = Math.floor((x1 - x0 - MULL_MIN) / (PANE_W + MULL_MIN));
+    if (n < 1) return 0;
+    const mull = ((x1 - x0) - n * PANE_W) / (n + 1);
+    for (let i = 0; i < n; i++) {
+      /* ROUNDED, AND THE MULLION WEARS THE ROUNDING. The leftover in a
+         run divides into fractions — a 1708-wide run takes fourteen
+         panes and mullions of 24.27 — and a pane 95.9999 wide is a pane
+         that is not one repeat. So the pane's left edge snaps to the
+         unit and its width is PANE_W exactly; the mullions either side
+         come out a unit different from each other, which is a thing
+         nobody has ever noticed about a shopfront. */
+      const a = Math.round(x0 + mull + i * (PANE_W + mull)), c = a + PANE_W;
+      const gap = rm.add(a, -WALL, c, GAP_Y1, cavity(`${b.name} glazing`));
+      const back = rm.add(a, GAP_Y1, c, BACK_Y1, cavity(`${b.name} glazing`,
+        { wallTex: inside, light: lit, ambient: lit, sky: 0.05 }));
+      glazing.push({ walk: b.walk, gap, back });
+      /* THE MULLION each side of it, and each one laid once: the pane
+         on the left of a mullion owns it, and the last pane in the run
+         also owns the return at the end. */
+      prop(i ? Math.round(a - mull) : x0, -WALL - FRAME_OUT, a, -WALL,
+           PANE_Z0, PANE_Z1, 'SHOPFRAM', { light: 0.54 });
+      if (i === n - 1)
+        prop(c, -WALL - FRAME_OUT, x1, -WALL, PANE_Z0, PANE_Z1, 'SHOPFRAM', { light: 0.54 });
+    }
+    /* AND THE CILL AND THE HEAD, one of each for the whole run, because
+       a shopfront's bottom rail is one length of aluminium and not one
+       per pane. The cill is below eye height so you see the top of it;
+       the head is above, so you see the underside — which is what
+       botTex is for (see boxGeometry in js/mapgeo.js). */
+    /* THE CILL STRADDLES THE JOINT, ten below the glass and four over
+       it, the way a real one laps the bottom edge of the sheet. Sat
+       wholly under the pane it covered the top two thirds of the stall
+       riser and left only the splash line showing — a dark strip with a
+       bright rail over it and the pavement visible behind, which from
+       the car park read as a HANDRAIL standing in front of a recess
+       rather than as the bottom of a shopfront. */
+    prop(x0, -WALL - FRAME_OUT, x1, -WALL, PANE_Z0 - FRAME_H + 4, PANE_Z0 + 4, 'SHOPFRAM',
+         { topTex: 'SHOPFRAM', light: 0.50, topLight: 0.56 });
+    prop(x0, -WALL - FRAME_OUT, x1, -WALL, PANE_Z1, PANE_Z1 + FRAME_H, 'SHOPFRAM',
+         { botTex: 'SHOPFRAM', light: 0.60, botLight: 0.28 });
+    return n;
+  };
+
+  for (const b of bays) {
+    if (b.anchor) {
+      /* three runs, because the two sets of sliding doors interrupt it.
+         The stub between them is 144 wide and takes exactly one pane,
+         which is the narrowest run on the parade and the reason the
+         module is 96 and not the 108 it wanted to be. */
+      for (const [a, c] of [[ANCHOR_X0, ENT_A0], [ENT_A0 + ENTRY_W, ENT_B0],
+                            [ENT_B0 + ENTRY_W, ANCHOR_X1]])
+        glazeRun(b, a, c, 'STORIN', 0.88);
+      continue;
+    }
+    /* a shutter has no glass behind it worth drawing: you cannot see it,
+       and ninety-two sectors nobody will ever look at is ninety-two
+       sectors */
+    if (b.front !== 'UNITGLAS') continue;
+    const mid = (b.x0 + b.x1) / 2;
+    if (b.in) {
+      /* the door takes the middle 120, the same as the rect the unit's
+         own way in is built from further down this file */
+      glazeRun(b, b.x0, mid - 60, 'UNITIN', 0.80);
+      glazeRun(b, mid + 60, b.x1, 'UNITIN', 0.80);
+    } else {
+      /* THE THIRD STATE. The phone shop's roller is up and its lights
+         are off, which is a thing a parade does that neither a lit unit
+         nor a shuttered one says: somebody still holds the lease. What
+         is behind the glass is the cavity texture at cavity light, so
+         the window is a black mirror with the canopy in it. */
+      glazeRun(b, b.x0, b.x1, 'GLAZGAP', 0.14);
     }
   }
 
@@ -1593,6 +1762,31 @@ export function buildSellWrong(opts = {}) {
      wall are two-sided too and get the texture as well, harmlessly: a
      middle texture is drawn only in a hole, and a jamb has none. Done
      here because the lines do not exist until rm.build() has run. */
+  /* --- AND THE PARADE'S OWN, WHICH IS TWO SHEETS DEEP ---------------
+     See THE GLAZING at the top of this file. Each reveal is a pair of
+     six-deep sectors in the wall thickness; the OUTER sheet hangs in
+     the hole between the footway and the cavity, and the INNER sheet in
+     the hole between the cavity and the inset behind it. Both blocking,
+     because glass is a thing you see through and stop at.
+
+     No texLocked, and that is not an oversight. finishTextures only
+     takes a middle back off a ONE-SIDED line (see assignLineTextures in
+     js/level.js); on a two-sided one it leaves the middle alone and
+     skins the bands from the shut sector's own textures, which is
+     exactly what the stall riser and the transom want. The fences lock
+     theirs because they also override the band skins. */
+  let paneLines = 0;
+  for (const g of glazing) {
+    for (const l of mb.linesBetween(g.walk.sector, g.gap.sector)) {
+      l.middle = 'GLAZEA'; l.blocking = true; paneLines++;
+    }
+    for (const l of mb.linesBetween(g.gap.sector, g.back.sector)) {
+      l.middle = 'GLAZEB'; l.blocking = true; paneLines++;
+    }
+  }
+  if (paneLines !== glazing.length * 2)
+    throw new Error(`${glazing.length} reveals wanted two sheets each and got ${paneLines}`);
+
   let townFenceLines = 0;
   if (town) {
     for (const g of town.glass) {

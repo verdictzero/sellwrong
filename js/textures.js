@@ -1631,6 +1631,338 @@ T.UNITGLAS = () => {
   return p.snap(0.45);
 };
 
+/* --- THE SHOPFRONT, IN LAYERS ---------------------------------------
+
+   A shop window is not a wall with glass painted on it, and drawing it
+   that way is what every flat elevation in this project had in common
+   with every other one. A shopfront is an ASSEMBLY, and from the
+   pavement you can count the parts:
+
+     the FRAME               aluminium, standing proud of the wall
+     an INSET                the reveal behind it
+     PANE A                  the outer sheet, with the sky on it
+     a GAP, outlined black    the cavity between the sheets
+     PANE B                  the inner sheet
+     an INSET                and the shop behind that
+
+   All six are real. The frame is free boxes; the two insets are sectors
+   in the sixteen units of wall thickness; the panes are MIDDLE textures
+   hung in the holes between them, so you look THROUGH one, across a
+   cavity, through the other and into the store. See THE GLAZING in
+   js/maps/sellwrong.js for the geometry — what follows is the paint.
+
+   SEMI-TRANSPARENT MEANS STIPPLED, and that is not a compromise, it is
+   the only thing this engine will do. Nothing in this game has partial
+   alpha: snapImageData in js/palette.js sets every surviving pixel to
+   255 and says "no partial alpha, ever" while it does it, and a wall
+   material is alpha-TESTED and never blended. So a half-silvered sheet
+   of glass is drawn the way a half-silvered sheet of glass was drawn in
+   1996 — an ordered dither of pixels that are there and pixels that are
+   not.
+
+   WHICH MEANS THE MIPMAPS ARE THE DESIGN. A fifty-per-cent checker
+   averages to fifty per cent one mip level down, and an alpha test at
+   0.5 turns that into all or nothing: a pane that vanishes at ten
+   metres, or one that goes solid. So the veil is DENSER AT THE EDGES OF
+   THE PANE THAN IN THE MIDDLE. Walk away and the mip chain averages it;
+   the border firms up into solid glass and the middle opens out. Which
+   is the right way round — the pane you can see through is the one you
+   are standing at, and from the far side of the car park a shopfront is
+   a sheet of reflection anyway.
+   ------------------------------------------------------------------ */
+
+/* The 4x4 ordered matrix. The same one the palette snap nudges colour
+   with, used here on ALPHA instead: a pixel is there if its threshold
+   is under the coverage asked for at that point. Ordered rather than
+   random because a random half is a half that crawls. */
+const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+const stipple = (x, y, cover) => (BAYER4[(y & 3) * 4 + (x & 3)] + 0.5) / 16 < cover;
+
+/** A box blur over the colour only, leaving alpha alone. What is behind
+ *  a shop window is out of focus because it is behind a shop window,
+ *  and a texture of it drawn sharp reads as a photograph taped to the
+ *  glass. Two passes is as much as 64 pixels can take. */
+function defocus(p, passes = 2) {
+  for (let k = 0; k < passes; k++) {
+    const src = new Uint8ClampedArray(p.data);
+    for (let y = 0; y < p.h; y++) for (let x = 0; x < p.w; x++) {
+      let r = 0, g = 0, b = 0, n = 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const i = p.idx(x + dx, y + dy);
+        if (i < 0) continue;
+        r += src[i]; g += src[i + 1]; b += src[i + 2]; n++;
+      }
+      const i = p.idx(x, y);
+      p.data[i] = r / n; p.data[i + 1] = g / n; p.data[i + 2] = b / n;
+    }
+  }
+}
+
+/**
+ * One sheet of glass, drawn as coverage and reflection together.
+ *
+ *   base   how much of the middle of the pane is there at all
+ *   sky    how much more of it is there at the top, where the soffit
+ *          and whatever is left of the sky are in it
+ *   lo/hi  the reflection, dark at the bottom (a car park at night is
+ *          the darkest thing there is) and pale at the top
+ *   shift  where the gloss crosses, so two sheets do not agree
+ *   gloss  [from, to, coverage, brightness] per band
+ */
+const pane = (seed, o) => () => {
+  const p = new Pix(64, 64, seed);
+  const n = fbm(64, 64, 8, 3, seed + 3);
+  for (let y = 0; y < 64; y++) {
+    const v = y / 63;
+    for (let x = 0; x < 64; x++) {
+      const u = x / 63, w = n[y * 64 + x];
+      /* THE EDGE IS THE PART THAT HAS TO SURVIVE THE MIP CHAIN — see
+         the note above. It is also true: a pane is dirtiest and
+         brightest where the bead holds it. */
+      const edge = Math.max(Math.max(0, 1 - Math.min(u, 1 - u) / 0.085),
+                            Math.max(0, 1 - Math.min(v, 1 - v) / 0.055));
+      let cover = o.base + edge ** 1.5 * (0.97 - o.base) + (1 - v) * o.sky;
+      let key = o.key, t = o.lo + (1 - v) * (o.hi - o.lo);
+      /* THE GLOSS, AND IT IS ARTIFICIAL ON PURPOSE. A real reflection in
+         a shopfront is the car park, and nobody has ever drawn the car
+         park on a window. What everybody draws instead is two hard
+         parallel bands raked across it from the top left, which is
+         where the light in every texture in this project comes from.
+         Rakes exactly one height per width, so it wraps both ways. */
+      const d = (u + (1 - v) + o.shift) % 1;
+      for (const g of o.gloss) if (d > g[0] && d < g[1]) {
+        cover = Math.max(cover, g[2]); key = g[4]; t = g[3];
+      }
+      cover *= 0.80 + w * 0.40;
+      if (cover >= 0.97) { p.ink(x, y, key, t); continue; }
+      if (!stipple(x, y, cover)) continue;
+      p.ink(x, y, key, t * (0.86 + w * 0.28));
+    }
+  }
+  /* THE BEAD. A black rubber gasket all the way round, and it is what
+     turns a rectangle of dither into an OBJECT — without it the pane
+     has no edge and the eye reads the whole reveal as one smear. */
+  for (let i = 0; i < 64; i++) {
+    p.ink(i, 0, 'grey', 0.07); p.ink(i, 1, 'grey', 0.12);
+    p.ink(i, 63, 'grey', 0.04); p.ink(i, 62, 'grey', 0.08);
+    p.ink(0, i, 'grey', 0.07); p.ink(1, i, 'grey', 0.12);
+    p.ink(63, i, 'grey', 0.04); p.ink(62, i, 'grey', 0.08);
+  }
+  /* and what is ON it: the tide line the rain leaves up the bottom
+     third, and the flecks nobody has washed off since the shop opened */
+  const rng = makeRng(seed + 17);
+  for (let i = 0; i < o.dirt; i++) {
+    const x = Math.floor(rng() * 64), y = 40 + Math.floor(rng() * 24);
+    p.ink(x, y, 'bone', 0.30 + rng() * 0.22);
+    if (rng() < 0.4) p.ink(x, y + 1, 'bone', 0.22);
+  }
+  for (let i = 0; i < o.runs; i++) {
+    const x = Math.floor(rng() * 64), top = 6 + Math.floor(rng() * 34);
+    const len = 8 + Math.floor(rng() * 22);
+    for (let d = 0; d < len; d++) {
+      if (rng() < 0.45) continue;
+      p.ink(x, top + d, 'bone', 0.26 + (d / len) * 0.14);
+    }
+  }
+  return p.snap(0.35);
+};
+
+/* PANE A — the outer sheet. More of the sky is in it and more of the
+   gloss, because it is the one the canopy lights actually reach. */
+T.GLAZEA = pane(146, {
+  base: 0.30, sky: 0.12, key: 'blue', lo: 0.21, hi: 0.42, shift: 0.10,
+  gloss: [[0.30, 0.47, 0.90, 0.60, 'grey'], [0.52, 0.585, 0.88, 0.88, 'grey']],
+  dirt: 90, runs: 9,
+});
+/* PANE B — the inner sheet, thinner and crossed the other way. Two
+   sheets whose gloss agreed would read as one sheet with a bright line
+   on it; two that disagree read as DEPTH, which is the whole point of
+   there being two. */
+T.GLAZEB = pane(150, {
+  base: 0.18, sky: 0.07, key: 'blue', lo: 0.16, hi: 0.32, shift: 0.55,
+  gloss: [[0.24, 0.34, 0.70, 0.42, 'grey'], [0.39, 0.425, 0.66, 0.62, 'grey']],
+  dirt: 40, runs: 4,
+});
+
+T.GLAZGAP = () => {
+  /* THE CAVITY BETWEEN THE SHEETS, which is the black outline. It is
+     the jambs, the floor and the ceiling of a sector six units deep, so
+     what it actually draws is four slivers seen almost edge-on — and
+     four black slivers round a pane of glass is exactly the line a
+     window wants and the one a flat texture cannot give it.
+
+     It is not pure black. Pure black in a 256-colour palette is a hole
+     in the screen; this is the grey ramp at a twentieth, with a little
+     more of it at the top where light gets past the head. */
+  const p = new Pix(64, 64, 152);
+  const n = fbm(64, 64, 4, 2, 153);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'grey', 0.022 + (1 - y / 64) * 0.046 + n[y * 64 + x] * 0.008);
+  /* the dust and the flies that have been in there for years */
+  const rng = makeRng(154);
+  for (let i = 0; i < 26; i++) {
+    const x = Math.floor(rng() * 64), y = 52 + Math.floor(rng() * 12);
+    p.ink(x, y, 'grey', 0.10 + rng() * 0.08);
+  }
+  for (let y = 60; y < 64; y++) for (let x = 0; x < 64; x++)
+    p.wash(x, y, 'bone', 0.16, 0.20 * (y - 59) / 4);
+  return p.snap(0.25);
+};
+
+T.SHOPFRAM = () => {
+  /* The section. Every part of a shopfront that is not glass is one
+     aluminium extrusion or another — mullion, transom, head, cill — and
+     an extrusion is the SAME THING all the way along, which is why one
+     texture does all of them and why it tiles honestly in both
+     directions at any partial repeat.
+
+     So there is nothing drawn on it that happens once: no cap, no
+     screw, no joint. The form comes from the geometry, because every
+     piece of this is a free box with six faces and its own light on
+     each. Same argument as the shutter curtain in THE SHUT ONES. */
+  const p = new Pix(64, 64, 155);
+  const n = fbm(64, 64, 16, 3, 156);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'grey', 0.29 + n[y * 64 + x] * 0.07);
+  /* brushed anodising: short strokes along the extrusion, fine enough
+     that a section cut anywhere still looks like the same metal */
+  const rng = makeRng(157);
+  for (let i = 0; i < 1100; i++) {
+    const x = Math.floor(rng() * 64), y0 = Math.floor(rng() * 64);
+    const len = 3 + Math.floor(rng() * 11);
+    const t = rng() < 0.5 ? 0.38 : 0.22;
+    for (let d = 0; d < len; d++) p.wash(x, y0 + d, 'grey', t, 0.30);
+  }
+  p.grime(0.34, 'grey', 0.08, 158);
+  return p.snap(0.45);
+};
+
+T.SHOPSILL = () => {
+  /* THE STALL RISER: the panel under the glass, from the pavement up to
+     knee height, which on a parade like this is the one surface a
+     trolley, a boot and a delivery sack trolley all hit. Drawn at 64 by
+     64 and declared 96 by 32, so one repeat is exactly one pane bay of
+     it and the nosing lands once at the top rather than four times up.
+
+     The nosing at the top is the cill extrusion and it is the same
+     metal as SHOPFRAM; everything under it is a laminate panel that
+     stopped being any colour in particular a long time ago. */
+  const p = new Pix(64, 64, 159);
+  const n = fbm(64, 64, 8, 3, 160);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'olive', 0.33 + n[y * 64 + x] * 0.12 + (1 - y / 64) * 0.07);
+  /* the cill, and the shadow it throws down the panel */
+  for (let y = 0; y < 5; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'grey', y < 2 ? 0.44 : y < 3 ? 0.34 : 0.16);
+  for (let y = 5; y < 10; y++) for (let x = 0; x < 64; x++)
+    p.shade(x, y, 0.72 + (y - 5) * 0.055);
+  /* the kicks, at the height a trolley axle is */
+  const rng = makeRng(161);
+  for (let k = 0; k < 50; k++) {
+    const x = Math.floor(rng() * 64), y = 26 + Math.floor(rng() * 20);
+    const w = 2 + Math.floor(rng() * 7);
+    for (let d = 0; d < w; d++) p.wash(x + d, y, 'bone', 0.46, 0.34 + rng() * 0.34);
+  }
+  /* and the splash line: rain comes off the canopy edge and gets the
+     bottom of everything on this parade */
+  for (let y = 48; y < 64; y++) for (let x = 0; x < 64; x++)
+    p.wash(x, y, 'grey', 0.20, 0.12 + ((y - 48) / 16) * 0.26);
+  streaks(p, 9, 162, 'grey', 0.10, 0.34);
+  p.grime(0.46, 'grey', 0.10, 163);
+  return p.snap(0.5);
+};
+
+/* --- AND WHAT IS BEHIND THE GLASS ----------------------------------
+
+   The back of the reveal, four units short of the shop's own wall, and
+   it is the fifth layer: what the two sheets and the cavity are FOR.
+
+   These are painted out of focus on purpose — see defocus above. They
+   are also painted BRIGHT, because a shop window at night is a lit box
+   in a dark wall and that contrast is the entire reason anybody looks
+   at one. The pane in front of them is a dither, so the light comes
+   through it in pieces, which is what makes the glass read as glass.
+   ------------------------------------------------------------------ */
+
+T.STORIN = () => {
+  /* The anchor, over the tills: the lid first, then the ends of twelve
+     gondola runs, then the lino coming back at you. Nothing in it is
+     legible and nothing in it is meant to be. */
+  const p = new Pix(64, 64, 164);
+  const rng = makeRng(165);
+  p.fill('bone', 0.22);
+  /* the ceiling, and two runs of fittings in it going away from you */
+  for (let y = 0; y < 15; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'bone', 0.30 + (1 - y / 15) * 0.16);
+  for (const [y, h, t] of [[3, 3, 0.96], [10, 2, 0.80]])
+    for (let d = 0; d < h; d++) for (let x = 0; x < 64; x++)
+      p.ink(x, y + d, 'bone', t - d * 0.10);
+  /* the far wall, and the aisle ends against it */
+  for (let y = 15; y < 42; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'bone', 0.40 - (y - 15) / 27 * 0.12);
+  const KEYS = ['red', 'yellow', 'green', 'blue', 'bone', 'rust', 'olive'];
+  for (let i = 0; i < 26; i++) {
+    const x = Math.floor(rng() * 64), w = 3 + Math.floor(rng() * 8);
+    const top = 18 + Math.floor(rng() * 12), h = 4 + Math.floor(rng() * 16);
+    const key = KEYS[Math.floor(rng() * KEYS.length)], t = 0.30 + rng() * 0.36;
+    for (let yy = top; yy < top + h && yy < 46; yy++)
+      for (let xx = x; xx < x + w; xx++) p.ink(xx, yy, key, t * (0.86 + rng() * 0.28));
+  }
+  /* the checkouts across the front, backlit, and the floor under them */
+  for (let y = 42; y < 52; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'grey', 0.22 + ((x >> 3) & 1) * 0.06);
+  for (let y = 52; y < 64; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'bone', 0.46 - (y - 52) / 12 * 0.12);
+  for (const x of [8, 26, 44, 58]) for (let y = 52; y < 64; y++)
+    p.wash(x + ((y - 52) >> 2), y, 'bone', 0.80, 0.40 - (y - 52) * 0.02);
+  defocus(p, 2);
+  /* THE FITTINGS GO ON AFTER THE BLUR. Blurred with everything else
+     they became a pale band and the ceiling stopped being a ceiling —
+     and a strip light is the one thing in a supermarket that is not out
+     of focus through the window, because it is the brightest thing in
+     the building by a factor of ten. */
+  for (const [y, t] of [[3, 0.98], [4, 0.86], [10, 0.82], [11, 0.66]])
+    for (let x = 0; x < 64; x++) p.ink(x, y, 'bone', t);
+  p.grime(0.22, 'grey', 0.08, 166);
+  return p.snap(0.4);
+};
+
+T.UNITIN = () => {
+  /* A unit that still trades: one room, four metres deep, with a shelf
+     run down the side and a counter across it. Warmer than the anchor
+     and much less of it — a small shop is lit by four tubes and a
+     chiller, not by a field of them. */
+  const p = new Pix(64, 64, 167);
+  const rng = makeRng(168);
+  p.fill('bone', 0.20);
+  for (let y = 0; y < 11; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'bone', 0.26 + (1 - y / 11) * 0.10);
+  for (let x = 0; x < 64; x++) { p.ink(x, 4, 'yellow', 0.86); p.ink(x, 5, 'yellow', 0.70); }
+  /* the back wall and the shelving against it */
+  for (let y = 11; y < 44; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'olive', 0.26 - (y - 11) / 33 * 0.06);
+  for (let y = 14; y < 42; y += 7) for (let x = 0; x < 64; x++) {
+    p.ink(x, y, 'grey', 0.34); p.ink(x, y + 1, 'grey', 0.14);
+  }
+  for (let i = 0; i < 40; i++) {
+    const x = Math.floor(rng() * 64), y = 15 + Math.floor(rng() * 4) * 7;
+    const w = 2 + Math.floor(rng() * 4), h = 3 + Math.floor(rng() * 3);
+    const key = ['red', 'yellow', 'blue', 'green', 'bone'][Math.floor(rng() * 5)];
+    for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++)
+      p.ink(xx, yy, key, 0.32 + rng() * 0.34);
+  }
+  /* the counter, and the floor in front of it */
+  for (let y = 44; y < 54; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'brown', 0.30 - (y - 44) * 0.008);
+  for (let x = 0; x < 64; x++) p.ink(x, 44, 'brown', 0.52);
+  for (let y = 54; y < 64; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'bone', 0.36 - (y - 54) / 10 * 0.10);
+  defocus(p, 2);
+  for (let x = 0; x < 64; x++) { p.ink(x, 4, 'bone', 0.94); p.ink(x, 5, 'yellow', 0.72); }
+  p.grime(0.26, 'grey', 0.08, 169);
+  return p.snap(0.4);
+};
+
 /* --- THE SHUT ONES -------------------------------------------------
 
    Most of this parade is empty, and what an empty parade IS, from the
@@ -2697,6 +3029,10 @@ export const CHARRABLE = [
      out of the anchor and along the footway */
   'SHELFMIX', 'BAKECASE', 'UNITGLAS', 'UNITSHUT', 'UNITSHUT2', 'SHUTRAIL', 'SOFFIT',
   'FASCHEM', 'FASPHON', 'FASFOOD', 'PILASTER',
+  /* and the shopfront, all five layers of it: glass sooted from the
+     inside is the first thing a fire does that you can see from the
+     car park, and it goes on the panes AND on what is behind them */
+  'GLAZEA', 'GLAZEB', 'GLAZGAP', 'STORIN', 'UNITIN', 'SHOPSILL', 'SHOPFRAM',
   ...Array.from({ length: 3 }, (_, i) => 'FASVOID' + (i || '')),
   /* and the fourteen unnamed ones, which burn like any other board */
   ...Array.from({ length: 6 }, (_, i) => 'FASPLAIN' + i),
@@ -3028,6 +3364,24 @@ const SIZES = {
   UNITSHUT:  { w: 72, h: 55 },
   UNITSHUT2: { w: 72, h: 55 },
   SHUTRAIL:  { w: 64, h: 14 },
+  /* THE SHOPFRONT, IN LAYERS — see that section above for what the five
+     of them are. The module is one PANE: 96 wide by 160 tall, which is
+     the hole cut in the wall between the stall riser and the head, so
+     one repeat of a pane texture is one pane and there is no partial
+     repeat of a sheet of glass anywhere on the parade. The riser under
+     it is the same 96 across, so the cill nosing lands once.
+
+     SHOPFRAM is the exception and is meant to be: it is an aluminium
+     EXTRUSION, the same section all the way along, so it is declared at
+     a size that has nothing to do with any piece it is cut into and
+     tiles honestly at any partial repeat. */
+  GLAZEA:   { w: 96, h: 160, masked: true },
+  GLAZEB:   { w: 96, h: 160, masked: true },
+  GLAZGAP:  { w: 96, h: 160 },
+  STORIN:   { w: 96, h: 160 },
+  UNITIN:   { w: 96, h: 160 },
+  SHOPSILL: { w: 96, h: 32 },
+  SHOPFRAM: { w: 48, h: 48 },
   /* the unbranded ones, same band as every other fascia */
   ...Object.fromEntries(Array.from({ length: 6 }, (_, i) => ['FASPLAIN' + i, { w: 64, h: 96 }])),
   /* A ROOF WITH HOLES IN IT is masked and coarse: 128 world units to

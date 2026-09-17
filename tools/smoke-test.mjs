@@ -8469,7 +8469,8 @@ section('the town');
        a pipe and a board on the face of a wall — and the one that is
        LOWER THAN A STEP, which is the wheel stop and is a different
        bargain: see below. */
-    const FLAT = ['PORCHPST', 'DOWNPIPE', 'CORNRBRD', 'PILASTER', 'METERBOX', 'ROOFLADR', 'SHUTRAIL'];
+    const FLAT = ['PORCHPST', 'DOWNPIPE', 'CORNRBRD', 'PILASTER', 'METERBOX', 'ROOFLADR', 'SHUTRAIL',
+                  'SHOPFRAM'];
     const STEPPABLE = ['WHEELSTP'];
     const low = props.filter(q => q.z0 < PLAYER_TOP && ![...FLAT, ...STEPPABLE].includes(q.tex));
     check('and nothing but a post, a pipe, a corner board and a wheel stop comes down to head height',
@@ -8633,9 +8634,17 @@ section('the town');
        every closed unit is metal, every closed unit's sign is dead, and
        neither of those is drawn out of one texture. */
     const fronts = level.sectors.filter(s => /^footway /.test(s.name) && s.name !== 'footway pier');
-    const inLine = fronts.filter(s => s.wallTex !== 'STORGLAS' && s.wallTex !== 'PILASTER');
+    const inLine = fronts.filter(s => s.name !== 'footway sellwrong' && s.wallTex !== 'PILASTER');
     const shut = inLine.filter(s => /^UNITSHUT/.test(s.wallTex));
-    const open = inLine.filter(s => s.wallTex === 'UNITGLAS');
+    /* AN OPEN UNIT'S WALL IS THE FRAME NOW AND NOT THE GLASS. The glass
+       stopped being a texture on that wall and became a HOLE with two
+       sheets hung in it, so what is left of the wall is the mullions
+       between the panes and the returns at the ends of the run — which
+       is what a shopfront is once you take the glass out of it. Asked
+       by wallTex rather than by name because the point of the check is
+       that the building says which units are alive, and it still does.
+       See THE GLAZING in js/maps/sellwrong.js. */
+    const open = inLine.filter(s => s.wallTex === 'SHOPFRAM');
     note('the tenancies', `${open.length} lit, ${shut.length} shut, ${new Set(shut.map(s => s.wallTex)).size} shutters, ${new Set(shut.map(s => s.upperTex)).size} dead boards`);
     check('every unit that is not open has a shutter down over it',
       shut.length + open.length === inLine.length && shut.length >= 10,
@@ -8686,6 +8695,105 @@ section('the town');
     check('and every shutter comes down to a bottom rail on the footway',
       rails.length === shut.length && rails.every(q => q.z0 === MAP.FLOOR_WALK),
       `${rails.length} rails on ${shut.length} shutters`);
+
+    /* --- AND WHAT A SHOP WINDOW IS MADE OF ------------------------
+       At the user's request, and it is the biggest single change the
+       front of this building has had: a shopfront was one flat quad
+       with mullions painted on it and is now SIX LAYERS, five of which
+       are geometry. See THE GLAZING in js/maps/sellwrong.js.
+
+       The checks below are the five layers, in order, plus the two
+       things that make the whole idea affordable: that a pane comes out
+       in whole repeats, and that a shopfront three thousand units long
+       did not quietly become a portal into the supermarket. */
+    const WALL = 16;                  // the void between two rooms IS the wall
+    const reveal = level.sectors.filter(s => / glazing$/.test(s.name || ''));
+    const outer = level.lines.filter(l => l.middle === 'GLAZEA');
+    const inner = level.lines.filter(l => l.middle === 'GLAZEB');
+    const backs = reveal.filter(s => s.wallTex !== 'GLAZGAP' || s.bbox[1] > -WALL + 1);
+    note('the shopfront', `${outer.length} panes, ${reveal.length} pieces of reveal, ${new Set(reveal.map(s => s.wallTex)).size} things behind the glass`);
+    check('a shop window is a hole in the wall and not a picture of one',
+      outer.length >= 40 && reveal.length === outer.length * 2,
+      `${outer.length} panes, ${reveal.length} sectors`);
+    check('and every one of them is two sheets deep',
+      inner.length === outer.length, `${outer.length} outer, ${inner.length} inner`);
+    check('and you stop at glass, both sheets of it',
+      outer.every(l => l.blocking) && inner.every(l => l.blocking));
+    /* AND NOT ONLY ON PAPER. A blocking flag is a claim about the
+       collision code, and the collision code is the thing that has let
+       a wall through before — see "does not tunnel through a wall". */
+    {
+      const g = reveal.find(s => s.name === 'sellwrong glazing');
+      const gx = (g.bbox[0] + g.bbox[2]) / 2;
+      const end = level.slideMove(gx, -70, 0, 200, 16, MAP.FLOOR_WALK, MAP.FLOOR_WALK + 56);
+      check('and walking at a shop window does not put you in the shop',
+        end[1] < -WALL, `ended at y ${Math.round(end[1])}`);
+    }
+    /* ONE REPEAT IS ONE PANE, which is the reason the module is 96 by
+       160 and the reason the mullions take the leftover instead. Get it
+       the other way round and every run on the parade has a different
+       fraction of a sheet of glass in it. */
+    for (const n of ['GLAZEA', 'GLAZEB']) {
+      const sz = tex.TEXTURE_SIZES[n];
+      check(`${n} is one repeat to one pane`,
+        sz && reveal.every(s => s.bbox[2] - s.bbox[0] === sz.w) &&
+        reveal.every(s => s.ceil - s.floor === sz.h),
+        sz ? `${reveal[0].bbox[2] - reveal[0].bbox[0]} by ${reveal[0].ceil - reveal[0].floor} against ${sz.w} by ${sz.h}` : 'no size');
+      check(`and ${n} is masked, or it is not glass`, !!tex.TEXTURE_SIZES[n].masked);
+    }
+    /* SEMI-TRANSPARENT MEANS STIPPLED. Nothing in this game has partial
+       alpha — snapImageData says so — so a half-silvered pane is an
+       ordered dither of pixels that are there and pixels that are not,
+       and this asks for both halves: no partial alpha anywhere in it,
+       and somewhere between a quarter and three quarters of it there. */
+    for (const n of ['GLAZEA', 'GLAZEB']) {
+      const pix = tex.TEXTURE_GENERATORS[n]();
+      let clear = 0, part = 0;
+      for (let i = 3; i < pix.data.length; i += 4) {
+        if (pix.data[i] === 0) clear++;
+        else if (pix.data[i] !== 255) part++;
+      }
+      const cover = 1 - clear / (pix.w * pix.h);
+      check(`${n} is stippled, not blended`, part === 0, `${part} partial pixels`);
+      check(`and it is glass rather than a wall or a hole`,
+        cover > 0.25 && cover < 0.75, `${(cover * 100).toFixed(0)}% of it is there`);
+    }
+    /* THE CAVITY IS THE BLACK OUTLINE, on all four sides of the hole at
+       once: two jambs, a floor and a lid, all of them the same near
+       black. It is the line that makes a sheet of glass an object. */
+    const gaps = reveal.filter(s => Math.abs(s.bbox[1] - (-WALL)) < 1);
+    check('the gap between the sheets is outlined black all the way round',
+      gaps.length === outer.length &&
+      gaps.every(s => s.wallTex === 'GLAZGAP' && s.floorTex === 'GLAZGAP' && s.ceilTex === 'GLAZGAP'),
+      `${gaps.length} cavities`);
+    /* AND THE REVEAL STOPS SHORT OF THE SHOP FLOOR. Let it reach and the
+       whole front of the anchor becomes a three-thousand-unit portal:
+       the flood opens the shop floor to anybody in the car park and the
+       interior LOD has nothing left to do. What is at the back of a
+       reveal is a PAINTED interior on a one-sided wall. */
+    check('and the whole shopfront is not a window into the supermarket',
+      reveal.every(s => s.bbox[3] < 0), `deepest ${Math.max(...reveal.map(s => s.bbox[3]))}`);
+    check('and there is something painted behind every sheet of glass',
+      backs.length === outer.length && backs.every(s => s.wallTex !== 'GLAZGAP' || s.light < 0.2),
+      `${backs.length} backs`);
+    check('and a supermarket, a shop and a dead unit do not look alike through it',
+      new Set(backs.map(s => s.wallTex)).size === 3,
+      [...new Set(backs.map(s => s.wallTex))].join(' '));
+    /* THE FRAME is the one layer that is not a sector, because a sector
+       engine cannot put anything proud of a wall. Free boxes, flat
+       against the face, which is the rule the whole parade keeps. */
+    const fram = of('SHOPFRAM');
+    check('and the frame stands proud of the wall it is screwed to',
+      fram.length >= 80 && fram.every(q => Math.abs(q.y1 - (-WALL)) < 0.01 &&
+        q.y1 - q.y0 > 0 && q.y1 - q.y0 <= 10), `${fram.length} sections`);
+    check('and every run has a cill under it and a head over it',
+      fram.some(q => q.topTex === 'SHOPFRAM') && fram.some(q => q.botTex === 'SHOPFRAM'));
+    /* AND NOT BEHIND A SHUTTER. You cannot see through a roller, so a
+       reveal behind one is ninety sectors nobody will ever look at. */
+    const shutNames = new Set(shut.map(s => s.name.replace(/^footway /, '')));
+    check('and nothing was glazed behind a roller shutter',
+      !reveal.some(s => shutNames.has(s.name.replace(/ glazing$/, ''))),
+      [...shutNames].slice(0, 2).join(' '));
 
     /* THE SERVICE YARD. The skips and the condensing sets are REGIONS
        and not boxes — see WHAT IS IN THE SERVICE YARD — because a free

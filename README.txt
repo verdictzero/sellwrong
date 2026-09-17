@@ -139,7 +139,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         1904 checks, no install and no browser
+  the smoke test         1937 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -1072,6 +1072,105 @@ below — every side is wound outward and there is nothing at the bottom —
 which is fine for a chimney and wrong for the three things in this game
 you stand directly beneath: a porch roof, a shop awning and the canopy
 over a fire exit. All three had that hole in them and all three are shut.
+
+
+A SHOP WINDOW IN SIX LAYERS
+---------------------------
+
+At the user's request, and it is the biggest single change the front of
+this building has had. A shop window was ONE QUAD: a texture with
+mullions, a transom and a stall riser painted on it, hung flat on the
+front of the wall. From the far side of the car park that reads; from the
+footway it reads as a picture of a window taped to a wall, because the
+one thing glass does that nothing else does — hold a reflection on a
+surface that is IN FRONT OF what you are looking at — needs two surfaces
+and it only had one.
+
+A shopfront, counted from the pavement inwards, is six things:
+
+  the FRAME               aluminium, standing proud of the wall
+  an INSET                the reveal behind it
+  PANE A                  the outer sheet, with the sky on it
+  a GAP, outlined black   the cavity between the sheets
+  PANE B                  the inner sheet
+  an INSET                and the shop behind that
+
+All six are built. The sixteen units of wall thickness — the void
+between two rooms, the one rule the whole map keeps — turns out to be
+exactly enough room for the last four of them:
+
+  y  -25   the frame, as free boxes: cill, head and a mullion each side
+  y  -16   PANE A, a middle texture in the hole
+  y  -10   PANE B, a middle texture in the next hole
+  y   -4   the back of the reveal, painted with what is inside
+  y    0   the shop floor
+
+The two cavities are a pair of six-deep sectors cut into the wall, and
+the panes hang in the holes between them the same way the yard's chain
+link, the town's pickets and the church's stained glass hang in theirs.
+The cavity between the sheets is skinned near-black on all four sides at
+once — two jambs, a floor and a lid — and that black outline is the line
+that makes a sheet of glass an object instead of a gap. What it buys
+over a painted window is PARALLAX: walk along the footway and the gloss
+on the outer sheet slides across the gloss on the inner one, and that
+sliding is the only thing in a game that ever says glass.
+
+SEMI-TRANSPARENT MEANS STIPPLED, AND THAT IS NOT A COMPROMISE. Nothing
+in this game has partial alpha. snapImageData in js/palette.js sets every
+surviving pixel to 255 and says "no partial alpha, ever" in a comment
+while it does it, and a wall material here is alpha-TESTED, never
+blended. So a half-silvered pane is drawn the way a half-silvered pane
+was drawn in 1996: an ordered dither of pixels that are there and pixels
+that are not, off the same 4x4 Bayer matrix the palette snap uses,
+applied to alpha instead of to colour.
+
+WHICH MEANS THE MIPMAPS ARE THE DESIGN. A fifty-per-cent checker averages
+to fifty per cent one mip level down, and an alpha test at 0.5 turns that
+into all or nothing — a pane that vanishes at ten metres or one that goes
+solid. So the veil is DENSER AT THE EDGES OF THE PANE THAN IN THE MIDDLE.
+Stand at it and the middle is a third there and you look through it;
+walk away and the mip chain averages the alpha, the border firms up into
+solid glass and the middle opens out. Which is the right way round: from
+the far side of a car park a shopfront IS a sheet of reflection, and the
+pane you can see through is the one you are standing at.
+
+THE GLOSS IS ARTIFICIAL ON PURPOSE. A real reflection in a shopfront is
+the car park, and nobody has ever drawn the car park on a window. What
+everybody draws is two hard parallel bands raked across it from the top
+left — which is also where the light in every texture in this project
+comes from — and that is what these are. The outer sheet's bands and the
+inner sheet's are shifted against each other, because two sheets whose
+gloss agreed would read as one sheet with a bright line on it.
+
+THE REVEAL STOPS FOUR UNITS SHORT OF THE SHOP FLOOR, and that sliver of
+wall is the whole reason this is affordable. Let it reach and the front
+of the anchor becomes a three-thousand-unit PORTAL: the visibility flood
+opens the entire shop floor to anybody standing in the car park, and the
+interior LOD — which exists precisely so a supermarket is not drawn from
+outside it — has nothing left to do. So the back of a reveal is a
+one-sided wall with a PAINTED interior on it, out of focus because it is
+behind two sheets of glass, and there are three of them: the anchor's
+lit aisles and strip lights, a small unit's shelf run and counter, and
+the near-black of a unit whose roller is up and whose lights are off.
+That third one is a state this parade did not have — somebody still holds
+the lease — and the phone shop is in it.
+
+ONE PANE IS ONE REPEAT, which is the rule everything on this building
+keeps. The module is 96 by 160 and it is not negotiable; the leftover in
+a run goes into the MULLIONS, which are an aluminium extrusion and may be
+any width at all. Do it the other way round — panes sized to fit, a fixed
+mullion — and every run on the parade has a different fraction of a sheet
+of glass in it. The pane's left edge snaps to the unit as well, so a
+1708-wide run comes out as fourteen sheets of exactly 96 and mullions
+that differ from each other by a unit, which is a thing nobody has ever
+noticed about a shopfront.
+
+Forty-six panes: twenty-nine across the anchor in three runs, two in each
+of the seven small units that still trade, three across the phone shop.
+A hundred sections of frame. Seven new textures. The cost, measured
+against the same four viewpoints before and after, is nineteen draw calls
+at the mouth of the car park, twelve in the middle of it, five on the
+footway and none at all from the town.
 
 
 THE ONE IDEA
@@ -5190,7 +5289,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-1904 checks. Every one of them earns its place by having caught something
+1937 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
