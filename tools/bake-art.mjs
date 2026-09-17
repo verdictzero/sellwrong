@@ -5,9 +5,12 @@
      node tools/bake-art.mjs
 
    Everything else in this game is drawn by code at start-up. Two things
-   cannot be: the LOGO, because a procedural approximation of somebody's
-   logo is not their logo, and the WEAPON, because it is a photograph of
-   a thing and there is no set of primitives that gets you there.
+   could not be, to begin with: the LOGO, because a procedural
+   approximation of somebody's logo is not their logo, and the WEAPON,
+   because it is a photograph of a thing and there is no set of
+   primitives that gets you there. The argument generalised — the
+   headstones, the cemetery iron and the STREET LAMP came in the same
+   way, and each is a section of this file.
 
    So they come in as pictures and leave as SOURCE. This reads the PNGs
    in art/, finds the artwork inside each one, resamples it, snaps every
@@ -200,6 +203,42 @@ function alphaBounds(img) {
       if (y < y0) y0 = y; if (y > y1) y1 = y;
     }
   return [x0, y0, x1, y1];
+}
+
+/* A CUT-OUT IS ONE PIECE. Anything that is not connected to the largest
+   mass of the picture — a watermark, a sparkle, somebody's corner logo —
+   is not the thing that was photographed, and goes. The lamp's own
+   photograph carries a sparkle in its bottom corner in a pale magenta
+   that the chroma test above happens to catch; "happens to" is not a
+   guarantee anybody should ship a picture on, and this is the
+   guarantee. Eight-connected, over the alpha the key has already cut,
+   and it reports what it dropped so a run that ate half a stone would
+   say so. */
+function keepLargest(img) {
+  const { w, h } = img;
+  const lab = new Int32Array(w * h).fill(-1);
+  const sizes = [], stack = [];
+  for (let i = 0; i < w * h; i++) {
+    if (img.data[i * 4 + 3] < 128 || lab[i] >= 0) continue;
+    const id = sizes.length;
+    sizes.push(0); lab[i] = id; stack.push(i);
+    while (stack.length) {
+      const j = stack.pop();
+      sizes[id]++;
+      const x = j % w, y = (j / w) | 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const xx = x + dx, yy = y + dy;
+        if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+        const k = yy * w + xx;
+        if (lab[k] < 0 && img.data[k * 4 + 3] >= 128) { lab[k] = id; stack.push(k); }
+      }
+    }
+  }
+  let big = 0;
+  for (let i = 1; i < sizes.length; i++) if (sizes[i] > sizes[big]) big = i;
+  let dropped = 0;
+  for (let i = 0; i < w * h; i++) if (lab[i] >= 0 && lab[i] !== big) { img.data[i * 4 + 3] = 0; dropped++; }
+  return { pieces: sizes.length, dropped };
 }
 
 /** Resample carrying alpha, weighting colour by coverage. */
@@ -443,6 +482,7 @@ function bakeCutouts() {
   const out = {};
   for (const job of CUTOUTS) {
     const img = chromaCut(readPNG(art(job.file)));
+    const strays = keepLargest(img);
     const [bx0, by0, bx1, by1] = alphaBounds(img);
     const SW = bx1 - bx0 + 1, SH = by1 - by0 + 1;
     const wiped = job.letters ? eraseLettering(img, [bx0, by0, bx1, by1]) : 0;
@@ -459,14 +499,132 @@ function bakeCutouts() {
     out[job.name] = { tile: packed, w: job.w, h: job.h, aspect: SW / SH };
     console.log(`${job.name.padEnd(16)} artwork ${SW}x${SH} -> ${job.w}x${job.h}, ` +
                 `${(100 * solid / (job.w * job.h)).toFixed(0)}% solid, ${packed.length} chars` +
-                (job.letters ? `, ${wiped} rows of lettering taken out` : ''));
+                (job.letters ? `, ${wiped} rows of lettering taken out` : '') +
+                (strays.dropped ? `, ${strays.dropped} px of stray pieces dropped` : ''));
   }
   return out;
+}
+
+/* ===== THE STREET LAMP: one photograph, two tiles, and a watermark =====
+
+   A cobra-head street light on its tapered pole, photographed against a
+   chroma key, and the fourth kind of thing this game cannot draw: it is
+   a picture of a THING, like the weapon, and a bracket arm with a
+   luminaire on the end of it is not a set of primitives.
+
+   IT IS NOT A SPRITE. A sprite turns to face you, and a lamp post that
+   turns to face you is a lamp post whose arm swings round to point at
+   you wherever you stand. The lamp is GEOMETRY: two masked quads that
+   js/mapgeo.js stands in the plane ACROSS the street (see THE STREET
+   LAMP IS GEOMETRY there), so the arm reaches out over the carriageway
+   from whichever side you look at it, and edge-on it is a line, which is
+   what a lamp post is edge-on.
+
+   TWO TILES, CUT WHERE THE THING IS, which is the 64-pixel rule holding
+   for a thing 256 units tall. Two parts of the photograph want texels:
+   the HEAD — the arm and the luminaire, across the whole width and the
+   top seventh of the height — which is wide and short, and the POST —
+   the pole and its base plate, a quarter of the width and all the rest
+   of the height — which is narrow and tall. One tile for the lot, 64
+   tall, gives the pole a single texel; a grid of eight, the way the
+   logo is four, spends six of them on the air either side of the pole
+   and costs a draw call each. So the head is a 64-wide tile at its own
+   aspect, the post is a strip of 24 by 64, and SIZES in js/textures.js
+   declares each at the lamp's own size. Where the head stops and the
+   post begins is MEASURED off the photograph, not typed: the first row
+   under the arm where nothing but the pole is solid, held for twelve
+   rows so the arm's own underside cannot fake it.
+
+   THE WATERMARK. The file carries a sparkle in its bottom right corner,
+   twenty pixels across, in a pale magenta. The key test catches it on
+   this file; keepLargest above is what makes that a rule rather than a
+   coincidence, and it is run on every cut-out in this file for the same
+   reason. The tool prints what it dropped.
+
+   THE FOOT AND THE LENS come out of the same pass. The foot is where
+   the pole stands, as a fraction of the width — it is not the middle of
+   the picture, because the arm is all on one side — and the map stands
+   the quads so that fraction lands on the thing's own x,y. The lens is
+   the underside of the luminaire, which is where js/lamplight.js hangs
+   the light. Both are fractions of the artwork so that nothing
+   downstream knows how big the photograph was. */
+function bakeLamp() {
+  const img = chromaCut(readPNG(art('streetlamp.png')));
+  const strays = keepLargest(img);
+  const [bx0, by0, bx1, by1] = alphaBounds(img);
+  const SW = bx1 - bx0 + 1, SH = by1 - by0 + 1;
+  const solidAt = (x, y) => img.data[((by0 + y) * img.w + bx0 + x) * 4 + 3] >= 128;
+  const runAt = y => {
+    let a = SW, b = -1;
+    for (let x = 0; x < SW; x++) if (solidAt(x, y)) { if (x < a) a = x; if (x > b) b = x; }
+    return [a, b];
+  };
+  /* the pole: its columns and its mean, off the middle of the height,
+     where there is nothing else in the picture */
+  let pl = SW, pr = -1, px = 0, pn = 0;
+  for (let y = Math.round(SH * 0.3); y < SH * 0.9; y++) {
+    const [a, b] = runAt(y);
+    if (b < 0) continue;
+    pl = Math.min(pl, a); pr = Math.max(pr, b);
+    for (let x = a; x <= b; x++) if (solidAt(x, y)) { px += x + 0.5; pn++; }
+  }
+  const foot = px / pn / SW;
+  /* where the head stops: the first row with nothing right of the pole,
+     held for twelve rows */
+  let split = 0;
+  for (let y = 0; y < SH && !split; y++) {
+    let clear = true;
+    for (let k = 0; k < 12 && y + k < SH; k++) if (runAt(y + k)[1] > pr + 3) { clear = false; break; }
+    if (clear) split = y;
+  }
+  /* the base plate's columns, off the bottom of the picture */
+  let bl = pl, br = pr;
+  for (let y = Math.round(SH * 0.95); y < SH; y++) {
+    const [a, b] = runAt(y);
+    if (b < 0) continue;
+    bl = Math.min(bl, a); br = Math.max(br, b);
+  }
+  /* the lens: the bottom of the luminaire's own box, right of the arm's
+     middle, and the middle of that box across */
+  let hx0 = SW, hx1 = -1, hy1 = -1;
+  for (let y = 0; y < split; y++)
+    for (let x = Math.round(SW * 0.55); x < SW; x++)
+      if (solidAt(x, y)) { hx0 = Math.min(hx0, x); hx1 = Math.max(hx1, x); hy1 = Math.max(hy1, y); }
+  const lens = [((hx0 + hx1) / 2 + 0.5) / SW, (hy1 + 1) / SH];
+  const parts = {
+    lamp_head: { box: [0, 0, SW, split],        w: 64, h: Math.max(1, Math.round(64 * split / SW)) },
+    lamp_post: { box: [bl, split, br + 1, SH],  w: 24, h: 64 },
+  };
+  const tiles = {};
+  for (const [name, p] of Object.entries(parts)) {
+    const [x0, y0, x1, y1] = p.box;                      // x1, y1 exclusive
+    const small = resampleRGBA(img, [bx0 + x0, by0 + y0, bx0 + x1 - 1, by0 + y1 - 1], p.w, p.h);
+    const idx = new Uint8Array(p.w * p.h).fill(CLEAR);
+    let solid = 0;
+    for (let i = 0; i < p.w * p.h; i++) {
+      const o = i * 4;
+      if (small.data[o + 3] < 128) continue;
+      idx[i] = Math.min(254, nearest(small.data[o], small.data[o + 1], small.data[o + 2]));
+      solid++;
+    }
+    const packed = encode(rle(idx));
+    tiles[name] = { tile: packed, w: p.w, h: p.h, aspect: (x1 - x0) / (y1 - y0),
+                    box: [x0 / SW, y0 / SH, x1 / SW, y1 / SH] };
+    console.log(`${name.padEnd(16)} artwork ${x1 - x0}x${y1 - y0} -> ${p.w}x${p.h}, ` +
+                `${(100 * solid / (p.w * p.h)).toFixed(0)}% solid, ${packed.length} chars`);
+  }
+  console.log(`streetlamp:      artwork ${SW}x${SH}, aspect ${(SW / SH).toFixed(4)}, foot at ${foot.toFixed(3)} of ` +
+              `the width, head over post at ${(split / SH).toFixed(3)} of the height, lens at ` +
+              `${lens.map(v => v.toFixed(3)).join(', ')}; ${strays.pieces - 1} stray piece(s), ` +
+              `${strays.dropped} px, dropped`);
+  return { tiles, aspect: SW / SH, foot, lens };
 }
 
 const logo = bakeLogo();
 const gun = bakeWeapon();
 const cutouts = bakeCutouts();
+const lamp = bakeLamp();
+Object.assign(cutouts, lamp.tiles);
 
 const out = `/* GENERATED by tools/bake-art.mjs — do not edit by hand.
 
@@ -496,14 +654,27 @@ export const CLEAR_INDEX = ${CLEAR};
 export const WEAPON_TILE = ${JSON.stringify(gun.tile)};
 export const WEAPON_TOP = ${gun.top};
 
-/** The cut-outs: eight headstones and a section of cemetery fence, each
-    one tile at its own size, ${CLEAR} where the chroma key was. \`aspect\` is
-    the artwork's own width over height, before it was fitted to the
-    tile — whatever draws one uses it so the picture is not stretched. */
+/** The cut-outs: eight headstones, a section of cemetery fence and the
+    two tiles of the street lamp, each one tile at its own size, ${CLEAR}
+    where the chroma key was. \`aspect\` is the artwork's own width over
+    height, before it was fitted to the tile — whatever draws one uses it
+    so the picture is not stretched. The lamp's two carry a \`box\` as
+    well: which part of the whole photograph the tile is, as fractions
+    of its width and height, left, top, right, bottom. */
 export const CUTOUTS = {
 ${Object.entries(cutouts).map(([k, v]) =>
-  `  ${k}: { w: ${v.w}, h: ${v.h}, aspect: ${v.aspect.toFixed(4)}, tile: ${JSON.stringify(v.tile)} }`).join(',\n')},
+  `  ${k}: { w: ${v.w}, h: ${v.h}, aspect: ${v.aspect.toFixed(4)},` +
+  (v.box ? ` box: [${v.box.map(b => b.toFixed(4)).join(', ')}],` : '') +
+  ` tile: ${JSON.stringify(v.tile)} }`).join(',\n')},
 };
+
+/** THE STREET LAMP, as fractions of its own photograph: how wide it is
+    for its height, where the pole stands across the width (the arm is
+    all on one side, so it is not the middle), and where the underside
+    of the luminaire is — the lens — which is where its light hangs.
+    See bakeLamp in tools/bake-art.mjs, and THE STREET LAMP IS GEOMETRY
+    in js/mapgeo.js for what stands on these numbers. */
+export const LAMP = { aspect: ${lamp.aspect.toFixed(4)}, foot: ${lamp.foot.toFixed(4)}, lens: [${lamp.lens.map(v => v.toFixed(4)).join(', ')}] };
 `;
 fs.writeFileSync(new URL('../js/art-data.js', HERE), out);
 console.log(`wrote js/art-data.js (${out.length} bytes)`);

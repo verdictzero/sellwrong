@@ -7910,6 +7910,22 @@ section('the town');
       pools.length > 200 && pools.every(s => s.light > 0.6) && level.sectors.filter(s => /^sidewalk,/.test(s.name)).every(s => s.light < 0.5));
     check('and every lamp stands on the pavement',
       lamps.every(t => { const s = level.sectorAt(t.x, t.y); return s && /sidewalk|corner|path/.test(s.name); }));
+    /* THE ARM REACHES OVER THE ROAD. A lamp is a photograph stood flat
+       across the street (THE STREET LAMP IS GEOMETRY in js/mapgeo.js)
+       and the picture is a pole with its arm on one side, so the
+       thing's angle is which way the arm goes — and it had better go
+       over the carriageway, a junction or a path, not over somebody's
+       garden. The two allowed misses are the plain corners on the
+       outside of the town's two bends, where the apron of pavement is
+       wider than an arm is long. */
+    const over = (t, d) => level.sectorAt(t.x + Math.cos(t.angle) * d, t.y + Math.sin(t.angle) * d)?.name ?? 'nowhere';
+    check('every lamp knows which way its arm reaches', lamps.every(t => Number.isFinite(t.angle)));
+    const missed = lamps.filter(t => !/junction|parking|street|crossing|path/.test(over(t, 40)));
+    check('and the arm reaches over the road, the junction or the path, all but the outside of the two bends',
+      missed.length <= 2 && missed.every(t => /^corner/.test(over(t, 40))),
+      `${missed.length} over ${[...new Set(missed.map(t => over(t, 40)))].join(', ')}`);
+    check('and the pool under a lamp says it is lit by one, and nothing else does',
+      pools.every(s => s.lampLit) && level.sectors.filter(s => s.lampLit).length === pools.length);
     /* PLANTABLE GROUND, which now includes the VERGE: the strip between
        the sidewalk and the kerb is where an American town puts its
        street trees, and it is the only name on this list that is not
@@ -7991,6 +8007,157 @@ section('the town');
       !level.lines.some(l => l.middle === 'RAILING' &&
         [...(l.frontCol || []), ...(l.backCol || [])].some(i => /cemetery gate$/.test(level.sectors[i]?.name ?? ''))),
       `${gates.length} gates`);
+  }
+
+  /* THE STREET LAMP IS A PHOTOGRAPH AND IT IS NOT A SPRITE. Two tiles
+     out of tools/bake-art.mjs, stood up by js/mapgeo.js in the plane
+     across the street; a pool of pavement the shader turns cold after
+     dark; a flare per lamp out of js/lamplight.js. Every link in that
+     chain is checkable without a GPU, and each of them is. */
+  {
+    const AD = await import('../js/art-data.js');
+    const T6 = await import('../js/textures.js');
+    const S6 = T6.STREET_LAMP;
+    const head = AD.CUTOUTS.lamp_head, post = AD.CUTOUTS.lamp_post;
+    /* --- the bake: two tiles, inside the 64-pixel rule, each a slice of one photograph --- */
+    check('the lamp is two tiles, both of them 64 or under',
+      !!head && !!post && head.w <= 64 && head.h <= 64 && post.w <= 64 && post.h <= 64,
+      `${head?.w}x${head?.h} and ${post?.w}x${post?.h}`);
+    check('the head is the top of the picture across its whole width',
+      head.box[0] === 0 && head.box[1] === 0 && head.box[2] === 1 && head.box[3] > 0.05 && head.box[3] < 0.25, head.box.join(','));
+    check('and the post is the rest of it down to the ground, no wider than the base plate',
+      post.box[1] === head.box[3] && post.box[3] === 1 && post.box[0] === 0 && post.box[2] > 0.1 && post.box[2] < 0.4, post.box.join(','));
+    /* THE WATERMARK. The photograph carries a sparkle in its bottom right
+       corner, well clear of the lamp. Had it survived the cut, the
+       artwork's box would have grown right by a fifth and the whole lamp
+       would be squat; and the head tile's bottom right, which is the air
+       under the luminaire, would not be air. */
+    check('the photograph is as tall as a street lamp is, so nothing outside the lamp set its width',
+      AD.LAMP.aspect > 0.33 && AD.LAMP.aspect < 0.37, `${AD.LAMP.aspect}`);
+    const spr6 = await import('../js/sprites.js');
+    const hp = spr6.cutoutPix('lamp_head');
+    let underHead = 0;
+    for (let y = Math.round(hp.h * 0.62); y < hp.h; y++)
+      for (let x = Math.round(hp.w * 0.62); x < hp.w; x++) if (hp.data[(y * hp.w + x) * 4 + 3] > 8) underHead++;
+    check('and the air under the luminaire is air', underHead === 0, `${underHead} texels`);
+    check('the pole stands near the left of the picture and the lens hangs out to the right, under the head',
+      AD.LAMP.foot > 0.08 && AD.LAMP.foot < 0.16 && AD.LAMP.lens[0] > 0.6 && AD.LAMP.lens[0] < 0.9 &&
+      AD.LAMP.lens[1] > 0 && AD.LAMP.lens[1] < head.box[3], `foot ${AD.LAMP.foot}, lens ${AD.LAMP.lens.join(',')}`);
+    /* --- the bank: declared at the lamp's own size, masked, and derived from one place --- */
+    const sz = T6.TEXTURE_SIZES;
+    check('both tiles are in the texture bank, masked, at the size the lamp stands',
+      sz.LAMPHEAD?.masked && sz.LAMPPOST?.masked && sz.LAMPHEAD.w === S6.head.w && sz.LAMPHEAD.h === S6.head.h &&
+      sz.LAMPPOST.w === S6.post.w && sz.LAMPPOST.h === S6.post.h);
+    check('the lamp is 256 tall and the two tiles meet at the split',
+      S6.height === 256 && Math.abs(S6.head.h + S6.post.h - S6.height) < 1e-6 && Math.abs(S6.width - 256 * AD.LAMP.aspect) < 1e-6);
+    /* --- the actor: a radius and nothing to draw --- */
+    const st6 = await import('../js/states.js');
+    const sb6 = spr6.bakeSprites();
+    check('there is no lamp sprite any more, and the actor is a post you walk into',
+      sb6.count('LMPP') === 0 && !sb6.frames.has('LMPPA') && !st6.ACTORS.STREETLAMP.spawn &&
+      st6.ACTORS.STREETLAMP.solid && st6.ACTORS.STREETLAMP.height === 256 && !st6.STATES.LMPP_STAND);
+    /* --- the geometry, in isolation: one lamp into a recorder --- */
+    const mg6 = await import('../js/mapgeo.js');
+    const lamps6 = level.things.filter(t => t.type === 'STREETLAMP');
+    const t6 = lamps6.find(t => Math.abs(t.angle - Math.PI / 2) < 1e-9);
+    const rec = {};
+    const set6 = { get: n => rec[n] || (rec[n] = { quads: [], quad(p, u, l, sk, ch, lp) { this.quads.push({ p, u, l, sk, ch, lp }); } }) };
+    const nq = mg6.lampGeometry(set6, level, t6);
+    const s6 = level.sectorAt(t6.x, t6.y);
+    check('a lamp is two tiles with two faces each', nq === 4 && rec.LAMPHEAD?.quads.length === 2 && rec.LAMPPOST?.quads.length === 2);
+    const H6 = rec.LAMPHEAD.quads[0], P6 = rec.LAMPPOST.quads[0];
+    const ys = q => q.p.map(v => -v[2]), zs = q => q.p.map(v => v[1]);
+    check('it stands in the plane across the street, its foot on the thing and its arm out the way the angle says',
+      H6.p.every(v => Math.abs(v[0] - t6.x) < 1e-6) &&
+      Math.abs(Math.min(...ys(H6)) - (t6.y - S6.foot * S6.width)) < 1e-6 &&
+      Math.abs(Math.max(...ys(H6)) - (t6.y + (1 - S6.foot) * S6.width)) < 1e-6);
+    check('from the floor to 256 over it, the head on top of the post',
+      Math.min(...zs(P6)) === s6.floor && Math.abs(Math.max(...zs(H6)) - (s6.floor + 256)) < 1e-6 &&
+      Math.abs(Math.max(...zs(P6)) - Math.min(...zs(H6))) < 1e-6);
+    check('lit by the pool it stands in, under the sky, and marked as lit by its own lamp',
+      H6.l === s6.light && H6.sk === 1 && H6.lp === 1 && P6.lp === 1);
+    const F6 = rec.LAMPHEAD.quads[0], B6 = rec.LAMPHEAD.quads[1];
+    let agree = true;
+    for (let i = 0; i < 4; i++) {
+      const j = B6.p.findIndex(pb => pb.every((c, k) => Math.abs(c - F6.p[i][k]) < 1e-9));
+      if (j < 0 || Math.abs(B6.u[j][0] - F6.u[i][0]) > 1e-9 || Math.abs(B6.u[j][1] - F6.u[i][1]) > 1e-9) agree = false;
+    }
+    check('and both faces put the same texel at the same point, so the arm reaches over the road from either side', agree);
+    check('with the whole tile once across the quad, the same way up as every wall',
+      F6.u.some(u => u[0] === 0) && F6.u.some(u => u[0] === 1) && F6.u.some(u => u[1] === 0) && F6.u.some(u => u[1] === -1));
+    /* --- and the whole town, built --- */
+    const geo6 = mg6.buildLevelGeometry(level, tex.bakeTextures());
+    let heads = 0, posts = 0, hv = 0, inShell = 0, poolLit = 0, poolAll = 0, walkLit = 0;
+    const walk = (o, shell) => {
+      if (o.geometry) {
+        if (o.name === 'LAMPHEAD') { heads++; hv += o.geometry.getAttribute('position').count; if (shell) inShell++; }
+        if (o.name === 'LAMPPOST') posts++;
+        if (o.name === 'LAMPPOOL' || o.name === 'SIDEWALK') {
+          const a = o.geometry.getAttribute('lamp');
+          for (let i = 0; i < a.count; i++) {
+            if (o.name === 'LAMPPOOL') { poolAll++; if (a.array[i] === 1) poolLit++; }
+            else if (a.array[i] === 1) walkLit++;
+          }
+        }
+      }
+      for (const c of o.children || []) walk(c, shell || o.name === 'shell');
+    };
+    walk(geo6.group, false);
+    check('the town stands every lamp up, two faces of two tiles each, in the shell of its block',
+      hv === lamps6.length * 12 && heads === posts && inShell === heads && heads > 20, `${hv} vertices in ${heads} batches`);
+    check('and every pool of pavement carries the lamp mark, and no plain sidewalk does',
+      poolAll > 0 && poolLit === poolAll && walkLit === 0, `${poolLit} of ${poolAll}, ${walkLit} astray`);
+    /* --- the shader --- */
+    const mat6 = await import('../js/material.js');
+    const wm = mat6.createWallMaterial({});
+    check('the world shader knows when the lamps are on', /float lampsOn\(float sl\)/.test(mat6.WORLD_SHADE_GLSL));
+    check('and tints a lamp-lit surface cold after dark, ahead of the banding',
+      /attribute float lamp;/.test(wm.vertexShader) && /vLamp = lamp;/.test(wm.vertexShader) &&
+      /albedo \*= mix\(vec3\(1\.0\), LAMP_LIGHT, vLamp \* lampsOn\(skyLight\)\);[\s\S]*float l = worldBand\(/.test(wm.fragmentShader));
+    check('in a light that is green-white, the same one the flare is drawn in',
+      mat6.LAMP_LIGHT.length === 3 && mat6.LAMP_LIGHT[1] === 1 && mat6.LAMP_LIGHT[0] < mat6.LAMP_LIGHT[2] && mat6.LAMP_LIGHT[2] < 1 &&
+      new RegExp(`vec3\\(${mat6.LAMP_LIGHT.map(v => v.toFixed(3)).join(', ')}\\)`).test(wm.fragmentShader));
+    /* --- the light: one mesh, the nearest lamps in sight, eased, after dark --- */
+    const LL = await import('../js/lamplight.js');
+    check('the lamps are off by day and on at night, on the shader\'s own curve',
+      LL.lampsOn(1.0) === 0 && LL.lampsOn(0.5) === 0 && LL.lampsOn(0.08) === 1 && LL.lampsOn(0.22) === 1 &&
+      LL.lampsOn(0.36) > 0.45 && LL.lampsOn(0.36) < 0.55);
+    const THREE6 = await import('three');
+    const scene6 = new THREE6.Scene();
+    const sl = new LL.StreetLights({ level });
+    check('every lamp in the town gets a lens point, up under its head',
+      sl.setLamps(level) === lamps6.length && sl.lamps.every(L => L.z > 200 && L.z < 260));
+    sl.attach(scene6);
+    check('one mesh for all of them: additive, no depth, forty slots',
+      scene6.children.length === 1 && sl.mesh.material.blending === THREE6.AdditiveBlending &&
+      sl.mesh.material.depthTest === false && sl.mesh.geometry.getAttribute('centre').count === LL.LAMP_SLOTS * 4);
+    const L0 = sl.lamps[0];
+    const ex = L0.x - 300, ey = L0.y;
+    level.visibleSectors(ex, ey, 0, 1.2, 4000);
+    check('nothing is drawn by day', sl.render(ex, ey, 61, 1, 0, 0) === 0 && !sl.mesh.visible);
+    const n1 = sl.render(ex, ey, 61, 1, 0, 1);
+    for (let i = 0; i < 24; i++) sl.render(ex, ey, 61, 1, 0, 1);
+    /* slot 0 is the nearest lamp, in the renderer's axes (the map's y is
+       minus z), and the buffer is float32, so it is compared to a hair */
+    const nearest = sl.lamps.reduce((a, b) => (Math.hypot(b.x - ex, b.y - ey) < Math.hypot(a.x - ex, a.y - ey) ? b : a));
+    check('and at night the nearest lamps in sight are, the nearest first, eased up to full',
+      n1 > 0 && n1 <= LL.LAMP_SLOTS && sl.mesh.visible && nearest.vis === 1 && sl.glow.array[0] > 0.5 &&
+      sl.mesh.geometry.drawRange.count === n1 * 6 &&
+      Math.abs(sl.centre.array[0] - nearest.x) < 0.01 && Math.abs(sl.centre.array[2] + nearest.y) < 0.01,
+      `${n1} drawn, slot 0 at ${sl.centre.array[0].toFixed(1)},${(-sl.centre.array[2]).toFixed(1)} for ${nearest.x.toFixed(1)},${nearest.y.toFixed(1)}`);
+    check('a lamp behind the eye is not dealt in', sl.render(ex, ey, 61, -1, 0, 1) < n1);
+    level.sightBlocked = () => true;
+    for (let i = 0; i < 40; i++) sl.render(ex, ey, 61, 1, 0, 1);
+    check('a lamp the eye cannot see goes out, eased', L0.vis === 0 && sl.glow.array[0] === 0);
+    delete level.sightBlocked;
+    for (let i = 0; i < 40; i++) sl.render(ex, ey, 61, 1, 0, 1);
+    check('and comes back when it can', L0.vis === 1);
+    check('and past the far edge there is nothing', sl.render(ex, ey - 100000, 61, 1, 0, 1) === 0 && !sl.mesh.visible);
+    check('the flare is a streak with a bloom in it, sized by its distance and fading with it',
+      /vGlow = glow \* k \* sqrt\(k\)/.test(sl.mesh.material.vertexShader) && /corner \* size \* d/.test(sl.mesh.material.vertexShader) &&
+      /float streak/.test(sl.mesh.material.fragmentShader) && /float sphere/.test(sl.mesh.material.fragmentShader));
+    sl.detach(scene6);
+    check('and it can be taken down', scene6.children.length === 0 && sl.mesh === null);
   }
 
   /* --- A BUILDING IS WHAT IT DOES AT ITS EDGES --------------------

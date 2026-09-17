@@ -42,6 +42,7 @@ import { Effects, SMOKE_PUFFS } from './effects.js';
 import { Giblets } from './people.js';
 import { Responders } from './responders.js';
 import { Gunships } from './vtol.js';
+import { StreetLights } from './lamplight.js';
 import { Vehicles } from './vehicles.js';
 import { BoreSystem } from './bore.js';
 import { Weather, climate, CLEAR_FAR } from './weather.js';
@@ -170,6 +171,12 @@ export class Game {
        js/vtol.js. Without the model there is no air support, which is
        the same bargain every other asset makes. */
     this.gunships = new Gunships(this, vtol || null);
+    /* THE STREET LAMPS' LIGHT: the flare at every luminaire after dark.
+       The lamps themselves are geometry (js/mapgeo.js) and things (for
+       their radius); this is the part of them that is on. */
+    this.streetLights = new StreetLights(this);
+    this.streetLights.setLamps(level);
+    if (scene) this.streetLights.attach(scene);
     this.idle = false;                 // the title: the world stands still and the eye wanders
     this._nozzle = { x: 0, y: 0, z: 0 };
     this._scared = [];                 // scratch for Game.scare
@@ -1177,6 +1184,7 @@ export class Game {
     this.decals.render(ex, ey, vx, vy);
     this.tracers.render(ex, ey, ez);
     this.gunships.render(ex, ey, ez, vx, vy);
+    this.streetLights.render(ex, ey, ez, vx, vy);
     this.renderProjectiles(billboardRot);
     this.bore.render(billboardRot);
 

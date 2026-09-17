@@ -323,7 +323,15 @@ export function buildTown(rm, mb, opts = {}) {
   });
 
   /* ---- the furniture, which is things and not sectors ------------- */
-  function lamp(x, y) { mb.thing('STREETLAMP', x, y, 0); out.lamps++; }
+  /* A LAMP HAS A DIRECTION, and it is which way the ARM reaches. The
+     lamp is not a sprite (see THE STREET LAMP IS GEOMETRY in
+     js/mapgeo.js): it is a photograph stood up as a flat cut-out in
+     the plane across the street, and the picture is a pole with a
+     bracket arm on one side of it, so every caller says where the road
+     is. Radians, the map's own convention: 0 is +x, a quarter turn is
+     +y. The pool on the pavement under it says `lampLit`, which is the
+     one word the pavement's shader needs to turn cold after dark. */
+  function lamp(x, y, arm) { mb.thing('STREETLAMP', x, y, arm); out.lamps++; }
   function plant(kind, x, y, scale = 1) { out.plants.push({ kind, x, y, scale }); }
   /* WHAT THE TOWN PLANTS, which is not what the wood grows. The wood is
      firs; a street of firs is a town in a national park. These are the
@@ -468,7 +476,7 @@ export function buildTown(rm, mb, opts = {}) {
     const piece = (p0, p1, pool) => {
       if (p1 - p0 < 1) return;
       const props = pool
-        ? walkProps(`sidewalk under a lamp, ${tag}`, { light: 0.66, ambient: 0.66, floorTex: 'LAMPPOOL' })
+        ? walkProps(`sidewalk under a lamp, ${tag}`, { light: 0.66, ambient: 0.66, floorTex: 'LAMPPOOL', lampLit: true })
         : walkProps(`sidewalk, ${tag}`);
       if (along === 'x') rm.add(p0, b0, p1, b1, props); else rm.add(b0, p0, b1, p1, props);
     };
@@ -479,7 +487,9 @@ export function buildTown(rm, mb, opts = {}) {
       piece(c - POOL, c + POOL, true);
       u = c + POOL;
       const k = kerb === 'lo' ? b0 + 16 : b1 - 16;
-      if (along === 'x') lamp(c, k); else lamp(k, c);
+      /* the arm reaches over the kerb: across the walk, toward the road */
+      const toRoad = kerb === 'lo' ? -1 : 1;
+      if (along === 'x') lamp(c, k, toRoad * Math.PI / 2); else lamp(k, c, toRoad < 0 ? Math.PI : 0);
     }
     piece(u, a1, false);
   }
@@ -577,15 +587,16 @@ export function buildTown(rm, mb, opts = {}) {
       if (sy < 0) rm.add(qx0, ay, qx1, qy0, corner); else rm.add(qx0, qy1, qx1, by, corner);
       const centre = (sx < 0 ? 'W' : 'E'); const cn = (sy < 0 ? 'S' : 'N') + centre;
       rm.add(qx0, qy0, qx1, qy1, { ...corner, arc: { centre: cn, disc: corner, rest: roadProps } });
-      /* the lamp, on the pavement inside the arc */
+      /* the lamp, on the pavement inside the arc, its arm out over the
+         junction — which is the way the pavement is not */
       const k = (R - 22) / Math.SQRT2;
-      lamp(px + sx * (R - k), py + sy * (R - k));
+      lamp(px + sx * (R - k), py + sy * (R - k), Math.atan2(-sy, -sx));
     };
     /* A PLAIN CORNER, where a closed side meets anything: pavement, with
        the lamp at the tip as before */
     const plainCorner = (px, py, sx, sy, cw, ch) => {
       rm.add(sx < 0 ? px - cw : px, sy < 0 ? py - ch : py, sx < 0 ? px : px + cw, sy < 0 ? py : py + ch, corner);
-      lamp(px + sx * 20, py + sy * 20);
+      lamp(px + sx * 20, py + sy * 20, Math.atan2(-sy, -sx));
     };
     const bend = (!s && !w) || (!s && !e) || (!n && !w) || (!n && !e);
 
@@ -614,7 +625,8 @@ export function buildTown(rm, mb, opts = {}) {
       rm.add(mx0, my0, mx1, my1, { ...roadProps, arc: { centre: cn, disc: roadProps, rest: corner } });
       /* a lamp on the pavement outside the bend, at the arc's middle */
       const Ro = mx1 - mx0, k = (Ro + 22) / Math.SQRT2;
-      lamp((e ? mx1 : mx0) + (e ? -k : k), (s ? my0 : my1) + (s ? k : -k));
+      /* its arm toward the corner the disc is centred on, which is where the road is */
+      lamp((e ? mx1 : mx0) + (e ? -k : k), (s ? my0 : my1) + (s ? k : -k), Math.atan2(s ? -1 : 1, e ? 1 : -1));
       out.bends++;
     } else {
       road(mx0, my0, mx1, my1, 'ASPHOLD', `junction, ${tag}`);
@@ -2115,9 +2127,9 @@ export function buildTown(rm, mb, opts = {}) {
        would have had to run a cable to, and the town's own rule (see
        the street lamp check in tools/smoke-test.mjs) is that every one
        of them stands on something you can walk on. */
-    for (const [lx, ly] of [[mx - 72, my - 20], [mx + 72, my + 20],
-                            [mx - 420, my - 20], [mx + 420, my + 20],
-                            [mx - 20, my - 420], [mx + 20, my + 420]]) lamp(lx, ly);
+    for (const [lx, ly, arm] of [[mx - 72, my - 20, Math.PI / 2], [mx + 72, my + 20, -Math.PI / 2],
+                                 [mx - 420, my - 20, Math.PI / 2], [mx + 420, my + 20, -Math.PI / 2],
+                                 [mx - 20, my - 420, 0], [mx + 20, my + 420, Math.PI]]) lamp(lx, ly, arm);
   }
 
   function plainBlock(bx, by, tag, floorTex, fuel, wallTex) {

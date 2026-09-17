@@ -153,6 +153,15 @@ export const world = {
   emberRamp: { value: EMBER_RAMP.map(c => new THREE.Vector3(c[0], c[1], c[2])) },
 };
 
+/* THE COLOUR OF A STREET LAMP'S LIGHT, in one place. Mercury vapour: a
+   cold white with green in it, which is what every American street was
+   lit by from the fifties until the sodium came. Two things are drawn
+   in it and they have to agree, or the pool on the ground is a
+   different lamp from the one over it: the pavement under a lamp is
+   tinted by it here (vLamp, below), and js/lamplight.js draws the flare
+   at the luminaire in it. */
+export const LAMP_LIGHT = [0.70, 1.0, 0.86];
+
 /* The uniform declarations every lit fragment shader needs, matching
    `worldUniforms()` below one for one. */
 export const WORLD_UNIFORMS_GLSL = /* glsl */`
@@ -439,6 +448,14 @@ vec3 sootOn(vec3 c, float soot, vec3 wpos) {
   return out_ + (vec3(0.62, 0.19, 0.030) * edge + vec3(0.55, 0.40, 0.16) * core) * flick;
 }
 
+/* WHEN THE STREET LAMPS ARE ON, off the sky's light: they come on as
+   the sky goes under a half and are full by the time it is at a fifth,
+   which is dusk to dark and dark to dawn — and a storm dark enough to
+   trip a photocell. The same curve is in js/lamplight.js (lampsOn
+   there), so the flare over a lamp and the pool under it switch
+   together. */
+float lampsOn(float sl) { return 1.0 - smoothstep(0.22, 0.50, sl); }
+
 float worldBand(float lightIn, float depth, float sky, float fullbright) {
   /* Distance diminishing. Linear in depth, because Doom's was too, and
      because an inverse-square falloff in a corridor lit by nothing in
@@ -515,6 +532,7 @@ varying float vDepth;
 varying vec3  vWorld;
 varying float vSky;
 varying float vChar;
+varying float vLamp;
 
 #ifdef PER_VERTEX_LIGHT
   attribute float light;
@@ -535,10 +553,15 @@ varying float vChar;
   /* how burnt this surface's region is: 0 untouched, about a half
      charred, 1 gutted. Set by js/mapgeo.js, read by emberOf. */
   attribute float charred;
+  /* whether this surface is lit by a STREET LAMP: 1 on the pool of
+     pavement under one and on the lamp's own post, 0 everywhere else.
+     Set by js/mapgeo.js; what it does is in the fragment shader. */
+  attribute float lamp;
 #else
   uniform float light;
   uniform float sky;
   uniform float charred;
+  uniform float lamp;
 #endif
 
 #ifdef INK
@@ -568,6 +591,7 @@ void main() {
   vLight = light;
   vSky = sky;
   vChar = charred;
+  vLamp = lamp;
   #ifdef INK
     vInk = ink;
   #endif
@@ -608,6 +632,10 @@ varying float vDepth;
 varying vec3  vWorld;
 varying float vSky;
 varying float vChar;
+varying float vLamp;
+
+/* the street lamps' colour — see LAMP_LIGHT at the top of this file */
+const vec3 LAMP_LIGHT = vec3(${LAMP_LIGHT.map(v => v.toFixed(3)).join(', ')});
 
 #ifdef INK
   varying vec4 vInk;
@@ -880,6 +908,16 @@ void main() {
     float burn = 0.0;
     vec3 albedo = t.rgb;
   #endif
+  /* THE POOL UNDER A STREET LAMP IS A COLD LIGHT. A sector has one light
+     and it is a number, so the pool of pavement under a lamp is a
+     brighter sector and that is all the map can say. What it cannot say
+     is what COLOUR the light is, and a mercury-vapour lamp's is not the
+     sky's: it is the cold green-white the flare over it is drawn in. So
+     a surface the map marks as lamp-lit — the pool, and the lamp's own
+     post — has its albedo tinted by it, only after dark (by day the sky
+     lifts the pavement to full and the lamp is off), and ahead of the
+     banding so it steps with everything else. */
+  albedo *= mix(vec3(1.0), LAMP_LIGHT, vLamp * lampsOn(skyLight));
   float l = worldBand(vLight, vDepth, vSky, fullbright);
   vec3 c = worldShade(albedo, l, vDepth, vWorld, fullbright);
   /* The coals go on AFTER the smoke, so a burnt aisle glows through it —

@@ -68,7 +68,11 @@ export class PlaneGeometry extends BufferGeometry {}
 export class SphereGeometry extends BufferGeometry {}
 export class Texture extends Stub { constructor(img) { super(); this.image = img; this.isTexture = true; } }
 export class CylinderGeometry extends BufferGeometry {}
-export class Float32BufferAttribute { constructor(a, n) { this.array = a; this.itemSize = n; } }
+export class Float32BufferAttribute {
+  constructor(a, n) { this.array = a; this.itemSize = n; }
+  get count() { return this.array.length / this.itemSize; }
+  setUsage() { return this; }
+}
 export class BufferAttribute extends Float32BufferAttribute {}
 /* the forest's chunks are instanced: the geometry keeps its instance
    count and its attributes, so a test can count what each chunk holds */

@@ -31,7 +31,7 @@
 import * as THREE from 'three';
 import { Pix, fbm, valueNoise, speckle, drawText, drawTextCentred, textWidth } from './pixel.js';
 import { makeRng } from './util.js';
-import { LOGO_TILES } from './art-data.js';
+import { LOGO_TILES, CUTOUTS as ART_CUTOUTS, LAMP as ART_LAMP } from './art-data.js';
 import { cutoutPix } from './sprites.js';
 import { PALETTE } from './palette.js';
 
@@ -2528,6 +2528,33 @@ export function guttedSurfaces(s, opts = {}) {
 }
 
 /* --------------------------------------------------------------------
+   HOW BIG A STREET LAMP IS, and where its parts are
+
+   TWO HUNDRED AND FIFTY-SIX TALL. The old lamp was a hundred and
+   twenty-eight, an acorn globe on a Main Street post a foot and a half
+   over your head; this is a road light, and a road light's head hangs
+   over the carriageway above anything that drives down it. The rest is
+   the photograph's own proportions, read off it by the bakery and
+   carried here as fractions: how wide it is for its height, where the
+   pole stands across that width, where the underside of the luminaire
+   is, and which slice of the whole picture each of the two tiles is.
+
+   Every number the map and the light need is derived HERE and nowhere
+   else — js/mapgeo.js stands the quads on `head`, `post` and `foot`,
+   js/lamplight.js hangs the flare on `lens` — so the day the height
+   changes, one line changes.
+   ------------------------------------------------------------------ */
+export const STREET_LAMP = (() => {
+  const height = 256, width = height * ART_LAMP.aspect;
+  const part = name => {
+    const [u0, v0, u1, v1] = ART_CUTOUTS[name].box;
+    return { u0, v0, u1, v1, w: (u1 - u0) * width, h: (v1 - v0) * height };
+  };
+  return { height, width, foot: ART_LAMP.foot, lens: ART_LAMP.lens,
+           head: part('lamp_head'), post: part('lamp_post') };
+})();
+
+/* --------------------------------------------------------------------
    Textures whose world footprint is not their pixel size
 
    Two different reasons appear here and they are worth separating.
@@ -2571,6 +2598,10 @@ const SIZES = {
   TIEBEAM:  { w: 64, h: 24 },
   ORGANPIP: { w: 64, h: 96 },
   RAILING:  { w: 64, h: 96, masked: true },   // one repeat is one section of iron
+  /* THE STREET LAMP: one repeat of each tile is that part of the lamp,
+     at the size STREET_LAMP stands it. See the note on T.LAMPHEAD. */
+  LAMPHEAD: { w: STREET_LAMP.head.w, h: STREET_LAMP.head.h, masked: true },
+  LAMPPOST: { w: STREET_LAMP.post.w, h: STREET_LAMP.post.h, masked: true },
   ALTARRL:  { w: 64, h: 32 },
   HANDRAIL: { w: 64, h: 32 },
   GYMTRUSS: { w: 64, h: 32 },
@@ -3810,6 +3841,24 @@ T.RAILING = () => {
      out of the palette already. */
   return cutoutPix('cemfence');
 };
+
+/* ---------- THE STREET LAMP, which is a photograph in two tiles ----------
+
+   A cobra-head road light on a tapered pole, cut out of its chroma key
+   by tools/bake-art.mjs (bakeLamp there, and the argument for two tiles
+   rather than one or eight). It is not a sprite and it is not on a
+   line: js/mapgeo.js stands the two tiles up as quads in the plane
+   across the street, at every STREETLAMP thing the town lays — see THE
+   STREET LAMP IS GEOMETRY there — and js/lamplight.js hangs the light
+   under the luminaire.
+
+   BAKED AT 64 AND 24 ACROSS AND DECLARED AT THE LAMP'S OWN SIZE, which
+   is the RAILING's rule and every tall texture's: the bakery paints
+   small and SIZES says how much world one repeat covers. Here a repeat
+   of the head is the whole head and a repeat of the post is the whole
+   post, and STREET_LAMP below is where those sizes come from. */
+T.LAMPHEAD = () => cutoutPix('lamp_head');
+T.LAMPPOST = () => cutoutPix('lamp_post');
 
 T.ALTARRL = () => {
   /* The communion rail, and the rail along the front of the choir loft:

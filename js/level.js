@@ -362,6 +362,12 @@ export class MapBuilder {
       /* the game's own business, carried along for the ride */
       fuel: props.fuel ?? 0,          // how well this region burns
       outdoor: !!props.outdoor,
+      /* LIT BY A STREET LAMP: the pool of pavement under one. A sector's
+         light is a number, and this is the one word a light with a
+         COLOUR needs that the number cannot say — the shader tints such
+         a floor cold after dark (vLamp in js/material.js), and the lamp
+         over it is drawn in the same colour by js/lamplight.js. */
+      lampLit: !!props.lampLit,
       /* How much of this region's light arrives from the sky rather than
          from a fitting. Drives the distance falloff, so a car park does
          not diminish like a corridor. Defaults to the outdoor answer;

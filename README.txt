@@ -134,7 +134,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         1661 checks, no install and no browser
+  the smoke test         1699 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -3638,13 +3638,115 @@ it. Masked belongs on a MIDDLE texture, in the hole between two open
 sectors. Everything that is a band paints its own dark.
 
 THE STREET has lamps — one every 1536 along each sidewalk, staggered so
-the sides alternate, and one on every corner — each a fullbright sprite
-standing on a pool of light that is a brighter sector of pavement, which
-is the only way this renderer casts light. The yards have trees, the
-foundations have shrubs, the parks have flagstone paths across them and
-the cemetery has its stones, and all of it is sprites, placed by the
-town and grown by js/forest.js, which is why a yard has no rectangle for
-any of it.
+the sides alternate, and one on every corner — each a photographed road
+light stood flat across the street, over a pool of light that is a
+brighter sector of pavement, which is the only way this renderer casts
+light. The yards have trees, the foundations have shrubs, the parks have
+flagstone paths across them and the cemetery has its stones, and all of
+it but the lamps is sprites, placed by the town and grown by
+js/forest.js, which is why a yard has no rectangle for any of it.
+
+THE STREET LAMP IS A PHOTOGRAPH, AND IT IS NOT A SPRITE. It was a sprite:
+an acorn globe on a post, twelve by sixty-four, drawn by js/sprites.js and
+stood at twice the size, fullbright. The user sent a photograph of a real
+one — a cobra-head road light on a tapered aluminium pole — and a
+photograph of a lamp post cannot be a sprite, for a reason that took a
+minute to see. A sprite turns to face the camera plane. This picture is a
+pole with a bracket arm reaching out on ONE SIDE of it, so as a sprite the
+arm would swing round to point at you wherever you stood, and a street of
+them would be a street of lamps all pointing at the player. Doom never
+had the problem, because Doom's lamps were symmetrical.
+
+So it is a FLAT CUT-OUT, stood in the world at a fixed angle: two masked
+quads in the vertical plane ACROSS the street, the foot of the picture on
+the thing's own x,y and the arm reaching the way the thing's angle says,
+which the town sets toward the road — over the parking lane on a straight,
+into the junction on a corner, across the path in a park. Walk down a
+street and every lamp on it shows you its profile with its head out over
+the carriageway. Stand under one and look straight across the road and it
+is edge-on, a line, and then nothing: that is what a flat cut-out is, it
+is what the user asked for over a billboard, and it is also what a lamp
+post is edge-on. Both faces are drawn, and unlike a fence — whose two
+faces each read left to right from their own side — both put the SAME
+texel at the same point in the world, so the arm reaches over the road
+from whichever side you see it; from behind, the picture is its own mirror
+image, and a lamp post is not chiral. It goes in the block's SHELL with
+the roofs, because a lamp is what you read a street by from the far end of
+it. See THE STREET LAMP IS GEOMETRY in js/mapgeo.js. The actor is still
+there for its radius, with no sprite, the way the LAMP fitting is there
+for relight().
+
+TWO TILES, CUT WHERE THE THING IS. The photograph is 172 by 493 and the
+64-pixel rule holds for it as for everything: one tile for the lot at 64
+tall gives the pole a single texel, and a grid of eight, the way the logo
+is four, spends six of them on the air either side of the pole and costs a
+draw call each. So the HEAD — the arm and the luminaire, across the whole
+width and the top eighth of the height — is a 64-wide tile at its own
+aspect, and the POST — the pole and its base plate, a quarter of the width
+and all the rest — is a strip of 24 by 64, and SIZES declares each at the
+lamp's own size, 256 tall, which is a road light and not a Main Street
+post. Where the head stops and the post begins is MEASURED off the
+photograph by the bakery, not typed: the first row under the arm where
+nothing but the pole is solid. So are the foot (the pole's mean column, as
+a fraction of the width — not the middle, the arm is all on one side) and
+the lens (the underside of the luminaire), and they travel in art-data.js
+as fractions so that nothing downstream knows how big the photograph was.
+
+AND THE WATERMARK. The file carried a sparkle in its bottom right corner,
+twenty pixels across, in a pale magenta that the chroma key test happens
+to catch; "happens to" is not a guarantee anybody should ship a picture
+on. So a cut-out now keeps only its LARGEST CONNECTED PIECE — the lamp is
+one piece, pole to luminaire by way of the arm, and anything not touching
+it is a watermark, a sparkle or somebody's corner logo and goes. It runs
+on every cut-out in the bakery, changed none of the stones or the iron by
+a byte, and prints what it dropped.
+
+THE LAMP IS ALSO ON, after dark, and that is two things, neither of them
+the lamp. A photograph of a lamp is a lamp that is off; what a lamp IS at
+night, from across a street, is a point of cold light with a line across
+it and the pavement under it going pale.
+
+  THE PAVEMENT is the map's. The pool under a lamp was already a brighter
+  sector of pavement, which is the only way this renderer casts light; but
+  a sector's light is a NUMBER, and a mercury-vapour lamp's light is not
+  the sky's colour — it is the cold white with green in it that every
+  American street was lit by from the fifties until the sodium came. So a
+  surface the map marks as lamp-lit (one float per vertex, `lamp`, on the
+  pool and on the lamp's own post) has its albedo tinted by LAMP_LIGHT,
+  only after dark — lampsOn is a smoothstep on the sky's light, on as it
+  goes under a half and full by a fifth, so by day the sky lifts the
+  pavement to full and the lamp is off — and ahead of the banding, so it
+  steps with everything else. One attribute and one multiply, and the
+  tint and the flare are the same constant in js/material.js, or the pool
+  on the ground would be a different lamp from the one over it.
+
+  THE POINT AND THE LINE are js/lamplight.js: one ANAMORPHIC FLARE per
+  lamp, the gunship's searchlight shader in miniature — a horizontal
+  streak, bluer than the light because it is the lens's colour and not the
+  lamp's, with a bloom at the centre that goes to white at the heart — and
+  SUBTLE, at the user's request: a fifth of the frame across where the
+  gunship's is most of it, and fading with the distance and a half to
+  nothing at 2400, its size pulled in with it, so a lamp at the end of the
+  street is a point with a hair across it and the one over your head is a
+  lamp. The gunship has one lamp and one mesh with a uniform for where it
+  is; the town has four hundred and four, and four hundred meshes with
+  four hundred uniform updates a frame is the crowd's problem again. So
+  the flares are ONE BUFFER of forty quads with the centre of each in an
+  ATTRIBUTE, and every frame the nearest lamps that could be seen at all —
+  within range, not well behind the eye, in a region the portal flood can
+  see into — are dealt into the slots. It is one draw call whether that
+  is three lamps or forty. Then the test that costs something: a SIGHT
+  LINE from the eye to the lens, the same call a trooper uses to decide
+  whether it can see you, so a lamp behind a house does not flare through
+  the house — asked of a third of the slots a frame and eased onto over a
+  sixth of a second, for the reason the gunship's is: a flare that pops off
+  at a wall edge reads as the flare being broken.
+
+What it costs: two draw calls per block that has a lamp in it, one for
+all the flares, and about thirteen sight lines a frame. What it does not
+do: the head is sector-lit and dark at night behind its own bloom, the
+post is lit by the pool it stands in and not by itself, and nothing casts
+a shadow, because nothing in this game does.
 
 AND THE VERGE HAS TREES, which is what the verge is for. The strip
 between the sidewalk and the kerb is sixteen units wide and was laid in
@@ -3811,7 +3913,8 @@ and there is no set of primitives that gets you there — and the argument
 turned out to generalise. There is no set of primitives that gets you to
 weathered granite, or to wrought iron, or to a lime tree, either. So the
 list now runs: the logo, the weapon, EIGHT HEADSTONES, ONE PANEL OF
-CEMETERY IRON, SIX BROADLEAF STREET TREES and A BLOCK OF CLIPPED BOX.
+CEMETERY IRON, SIX BROADLEAF STREET TREES, A BLOCK OF CLIPPED BOX and
+ONE STREET LAMP.
 
 They live in art/ as PNGs and tools/bake-art.mjs turns them into source —
 cut out (by brightness for the logo, by chroma key for everything else),
@@ -3830,6 +3933,12 @@ bakery finds the darkest band of rows relative to a blurred baseline and
 patches it with clean stone copied from below. It is the rule the
 shopfronts keep — no name on anything, ever.
 
+THE STREET LAMP GOES IN THROUGH THE TEXTURE BANK TOO, as two tiles, and
+nobody hangs it on a line: js/mapgeo.js stands the pair up as a flat
+cut-out on every STREETLAMP thing the town lays. It has a section of its
+own further down — THE STREET LAMP IS A PHOTOGRAPH, AND IT IS NOT A SPRITE
+— because the reason it is not a sprite is the interesting part.
+
 THE TREES AND THE HEDGE GO SOMEWHERE ELSE, because js/forest.js does not
 read art-data.js: it loads a PAIR of PNGs per plant out of assets/forest/,
 an albedo and a BURN MAP, and that is the format the wood has had since
@@ -3845,7 +3954,10 @@ would fail a diff nobody could act on.
 NONE OF THEM GETS AN EXEMPTION FROM THE 64-PIXEL RULE. The logo and the
 weapon get GEOMETRY instead; the iron is baked at 64x64 and DECLARED 96
 tall, which is the same trick every tall texture in js/textures.js uses,
-and the stones are sprites, which are twenty-eight texels across.
+and the stones are sprites, which are twenty-eight texels across. The
+lamp gets both: two tiles, a head 64 across and a post 24, each declared
+at the lamp's own size, and cut where the thing is rather than on a grid
+— see bakeLamp in the bakery for why not one tile and why not eight.
 
 The logo is four 64x64 tiles hung as a two-by-two on the
 entrance tower — two ceiling steps for the rows, one vertical split for
@@ -4400,7 +4512,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-1661 checks. Every one of them earns its place by having caught something
+1699 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
@@ -4979,9 +5091,10 @@ WHAT IS NOT DONE
     party walls
   the glass does not break. A pane is a texture in a hole you stop at;
     a round through it leaves no hole and makes no sound
-  a lamp does not go out and a headstone does not fall: both are
-    sprites with no health, and the lamp's light is the pavement's
-    ambient rather than anything the lamp does
+  a lamp does not go out and a headstone does not fall: the stone is a
+    sprite with no health and the lamp is geometry with a radius, and
+    the lamp's light — the pool's tint and the flare at its head — runs
+    on the sky's clock rather than on anything you can shoot
   there are no utility poles down the streets
   a roof does not burn off. A sloped ceiling is a surface the engine
     knows about but not one the fuel grid has a cell for, so a house

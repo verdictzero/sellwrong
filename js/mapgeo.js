@@ -34,11 +34,13 @@
 import * as THREE from 'three';
 import { createWallMaterial } from './material.js';
 import { roofFraming } from './ruin.js';
+import { STREET_LAMP } from './textures.js';
 
 /* A batch collects triangles for one texture and hands back a mesh. */
 class Batch {
   constructor(name) {
     this.name = name; this.pos = []; this.uv = []; this.light = []; this.sky = []; this.char = [];
+    this.lamp = [];
   }
   get empty() { return this.pos.length === 0; }
 
@@ -58,22 +60,28 @@ class Batch {
      dead-straight line. The shader reads the fire's own 32-unit cell
      grid by world position instead (burnAt in js/material.js), which
      needs nothing from the geometry at all. */
-  tri(ax, ay, az, au, av, bx, by, bz, bu, bv, cx, cy, cz, cu, cv, l, sk = 0, ch = 0) {
+  /* `lp` is whether this triangle is lit by a STREET LAMP: 1 on the
+     pool of pavement under one and on the lamp's own post, 0 on
+     everything else. The shader tints such a surface's light cold after
+     dark — see vLamp in js/material.js — which is how a sector, whose
+     light is one number, gets a light with a colour. */
+  tri(ax, ay, az, au, av, bx, by, bz, bu, bv, cx, cy, cz, cu, cv, l, sk = 0, ch = 0, lp = 0) {
     this.pos.push(ax, ay, az, bx, by, bz, cx, cy, cz);
     this.uv.push(au, av, bu, bv, cu, cv);
     this.light.push(l, l, l);
     this.sky.push(sk, sk, sk);
     this.char.push(ch, ch, ch);
+    this.lamp.push(lp, lp, lp);
   }
 
   /* A quad as two triangles, given four corners in winding order. */
-  quad(p, u, l, sk = 0, ch = 0) {
+  quad(p, u, l, sk = 0, ch = 0, lp = 0) {
     this.tri(p[0][0], p[0][1], p[0][2], u[0][0], u[0][1],
              p[1][0], p[1][1], p[1][2], u[1][0], u[1][1],
-             p[2][0], p[2][1], p[2][2], u[2][0], u[2][1], l, sk, ch);
+             p[2][0], p[2][1], p[2][2], u[2][0], u[2][1], l, sk, ch, lp);
     this.tri(p[0][0], p[0][1], p[0][2], u[0][0], u[0][1],
              p[2][0], p[2][1], p[2][2], u[2][0], u[2][1],
-             p[3][0], p[3][1], p[3][2], u[3][0], u[3][1], l, sk, ch);
+             p[3][0], p[3][1], p[3][2], u[3][0], u[3][1], l, sk, ch, lp);
   }
 
   geometry() {
@@ -83,6 +91,7 @@ class Batch {
     g.setAttribute('light', new THREE.Float32BufferAttribute(this.light, 1));
     g.setAttribute('sky', new THREE.Float32BufferAttribute(this.sky, 1));
     g.setAttribute('charred', new THREE.Float32BufferAttribute(this.char, 1));
+    g.setAttribute('lamp', new THREE.Float32BufferAttribute(this.lamp, 1));
     g.computeBoundingSphere();
     return g;
   }
@@ -204,7 +213,11 @@ export function buildLevelGeometry(level, bank) {
   /* the roofs, which belong to no sector at all — see roofGeometry */
   const blockRoofs = new Map();
   for (const r of level.roofs || []) push(blockRoofs, blockOf((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2), r);
-  const blockKeys = [...new Set([...blockSectors.keys(), ...blockLines.keys(), ...blockRoofs.keys()])];
+  /* and the street lamps, which are things the town laid and geometry
+     this file stands up — see lampGeometry */
+  const blockLamps = new Map();
+  for (const t of level.things || []) if (t.type === 'STREETLAMP') push(blockLamps, blockOf(t.x, t.y), t);
+  const blockKeys = [...new Set([...blockSectors.keys(), ...blockLines.keys(), ...blockRoofs.keys(), ...blockLamps.keys()])];
 
   /* AND THE INTERIORS ARE LOD. The buffer is two to four hundred rows
      tall. You cannot see through a forty-eight-unit window at forty
@@ -272,6 +285,9 @@ export function buildLevelGeometry(level, bank) {
        See roofGeometry. A roof is the most shell thing there is. */
     for (const s of blockSectors.get(k) || []) if (s.roof) roofGeometry(set, s);
     for (const r of blockRoofs.get(k) || []) roofGeometry(set, { roof: r, light: r.light });
+    /* AND THE STREET LAMPS, in the shell: a lamp is the thing you see
+       from the far end of a street after the houses have gone to boxes */
+    for (const t of blockLamps.get(k) || []) lampGeometry(set, level, t);
     shellG.add(set.toGroup(bank));
     if (inner.map.size) innerG.add(inner.toGroup(bank));
   }
@@ -418,6 +434,78 @@ export function noteTextureSize(name, w, h) { ROOF_SIZES.set(name, { w, h }); }
 function bank_h(set, name) { return ROOF_SIZES.get(name) || { w: 64, h: 64 }; }
 
 /* --------------------------------------------------------------------
+   THE STREET LAMP IS GEOMETRY
+
+   It was a sprite: an acorn globe on a post, drawn by js/sprites.js,
+   fullbright, turned to face you like every other thing in the game.
+   It is a PHOTOGRAPH now — a cobra-head road light on a tapered pole,
+   cut out of its chroma key by tools/bake-art.mjs — and a photograph of
+   a lamp post cannot be a sprite. A sprite turns to face the camera
+   plane, and this picture is a pole with a bracket arm reaching out on
+   one side of it: as a sprite, the arm would swing round to point at
+   you wherever you stood, and a street of them would be a street of
+   lamps all pointing at the player.
+
+   So it is a FLAT CUT-OUT, stood in the world at a fixed angle: two
+   masked quads (the head tile and the post tile, see STREET_LAMP in
+   js/textures.js) in the vertical plane ACROSS the street, the foot of
+   the picture on the thing's own x,y and the arm reaching the way the
+   thing's angle says, which the town sets toward the road. Walk down
+   the street and every lamp on it shows you its profile with its head
+   out over the carriageway; stand under one and look across the road
+   and it is edge-on, a line, which is what a lamp post is edge-on.
+   Both faces are drawn, and — unlike a fence, whose two faces each
+   read left to right from their own side — both faces put the SAME u
+   at the same point in the world, so the arm reaches over the road
+   from whichever side you see it. Seen from behind, the picture is its
+   own mirror image, and a lamp post is not chiral.
+
+   It is not on a line. Everything else this file draws is a surface of
+   a sector or the boundary between two, and a lamp standing in the
+   middle of a pavement is neither; it is a thing, like a headstone,
+   and the map lays it as one. The actor is still there for its radius
+   (ACTORS.STREETLAMP, which has no sprite any more); this is what you
+   see. It goes in the block's SHELL, with the roofs, because a lamp is
+   what you read a street by from the far end of it.
+
+   ITS LIGHT IS TWO OTHER THINGS. The pool on the pavement is a sector
+   the town lays (walkRun in js/maps/town.js) and this file marks as
+   lamp-lit so the shader can turn it cold after dark; the lamp's own
+   post is marked the same, being lit by its own light. The flare at
+   the luminaire — the point of light and the streak across it that a
+   lamp actually is from across a street at night — is js/lamplight.js,
+   and hangs on STREET_LAMP.lens.
+   ------------------------------------------------------------------ */
+export function lampGeometry(set, level, t) {
+  const s = level.sectorAt(t.x, t.y);
+  if (!s) return 0;
+  const S = STREET_LAMP;
+  const ax = Math.cos(t.angle), ay = Math.sin(t.angle);
+  const z0 = level.floorAt(s, t.x, t.y);
+  const lit = Math.max(0.02, Math.min(1.4, s.light)), sk = skyOf(s);
+  let quads = 0;
+  for (const [tex, p] of [['LAMPHEAD', S.head], ['LAMPPOST', S.post]]) {
+    const b = set.get(tex);
+    /* where this tile lies along the arm, measured from the foot, and
+       how high it stands: the tile's box is a slice of the whole
+       picture and the whole picture is `width` by `height` */
+    const r0 = (p.u0 - S.foot) * S.width, r1 = (p.u1 - S.foot) * S.width;
+    const x1 = t.x + ax * r0, y1 = t.y + ay * r0, x2 = t.x + ax * r1, y2 = t.y + ay * r1;
+    const top = z0 + (1 - p.v0) * S.height, bot = z0 + (1 - p.v1) * S.height;
+    /* one repeat of the tile is the whole slice: u from 0 at the foot
+       end to 1 at the arm end, v from 0 at the top down to -1, which is
+       the same way up every wall in this file is (see vAt) */
+    const vT = vAt(top, top, top - bot), vB = vAt(bot, top, top - bot);
+    b.quad([[x2, top, -y2], [x1, top, -y1], [x1, bot, -y1], [x2, bot, -y2]],
+           [[1, vT], [0, vT], [0, vB], [1, vB]], lit, sk, 0, 1);
+    b.quad([[x1, top, -y1], [x2, top, -y2], [x2, bot, -y2], [x1, bot, -y1]],
+           [[0, vT], [1, vT], [1, vB], [0, vB]], lit, sk, 0, 1);
+    quads += 2;
+  }
+  return quads;
+}
+
+/* --------------------------------------------------------------------
    Floors and ceilings
 
    Flats are aligned to the world grid, not to the sector, which is why
@@ -470,6 +558,8 @@ function addFlats(set, level, s, bank) {
 
   const sky = s.ceilTex === 'SKY';
   const lit = s.light, sk = skyOf(s), ch = charOf(s);
+  /* the pool of pavement under a street lamp — see lampGeometry */
+  const lp = s.lampLit ? 1 : 0;
 
   if (s.floorTex && s.floorTex !== 'NONE') {
     const t = bank.get(s.floorTex);
@@ -491,7 +581,7 @@ function addFlats(set, level, s, bank) {
         p0[0], zf(p0[0], p0[1]), -p0[1], (p0[0] - ax) / t.w, -(p0[1] - ay) / t.h,
         p1[0], zf(p1[0], p1[1]), -p1[1], (p1[0] - ax) / t.w, -(p1[1] - ay) / t.h,
         p2[0], zf(p2[0], p2[1]), -p2[1], (p2[0] - ax) / t.w, -(p2[1] - ay) / t.h,
-        lit, sk, ch);
+        lit, sk, ch, lp);
     }
   }
 
