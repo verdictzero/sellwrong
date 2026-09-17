@@ -20,7 +20,16 @@ export class CanvasTexture extends Stub {
   constructor(c) { super(); this.image = c; this.repeat = new Vector2(1, 1); this.offset = new Vector2(); }
   clone() { const t = new CanvasTexture(this.image); Object.assign(t, this); return t; }
 }
-export class DataTexture extends Stub { constructor(d, w, h) { super(); this.image = { data: d, width: w, height: h }; } }
+/* format and type are carried because code reads them back: the burn
+   grid is a RedFormat texture and the test that it is one byte a cell
+   has to be able to see that. */
+export class DataTexture extends Stub {
+  constructor(d, w, h, format, type) {
+    super();
+    this.image = { data: d, width: w, height: h };
+    this.format = format; this.type = type;
+  }
+}
 export class Vector2 { constructor(x = 0, y = 0) { this.x = x; this.y = y; } set(x, y) { this.x = x; this.y = y; return this; } }
 export class Vector4 extends Vector2 { constructor(x = 0, y = 0, z = 0, w = 0) { super(x, y); this.z = z; this.w = w; } }
 export class Sphere { constructor(c, r) { this.center = c; this.radius = r; } }
@@ -29,8 +38,11 @@ export class Color { constructor() {} setRGB() { return this; } setHex() { retur
 /* A group has a place and a turn, because the gunship (js/vtol.js) is a
    tree of them — the turret on the nose, the gun on the turret — and
    the test flies one. Nothing reads a matrix back. */
+/* An Object3D carries a userData bag in real three.js and things hang
+   state off it — js/mapgeo.js keeps a block's LOD decision there — so a
+   Group without one is a stub that throws where the game does not. */
 export class Group {
-  constructor() { this.children = []; this.position = new Vector3(); this.scale = new Vector3(1, 1, 1); this.rotation = new Vector3(); this.rotation.order = 'XYZ'; this.visible = true; this.name = ''; }
+  constructor() { this.children = []; this.position = new Vector3(); this.scale = new Vector3(1, 1, 1); this.rotation = new Vector3(); this.rotation.order = 'XYZ'; this.visible = true; this.name = ''; this.userData = {}; }
   add(o) { this.children.push(o); }
   remove(o) { const i = this.children.indexOf(o); if (i >= 0) this.children.splice(i, 1); }
   clear() { this.children.length = 0; }
@@ -68,10 +80,15 @@ export class PlaneGeometry extends BufferGeometry {}
 export class SphereGeometry extends BufferGeometry {}
 export class Texture extends Stub { constructor(img) { super(); this.image = img; this.isTexture = true; } }
 export class CylinderGeometry extends BufferGeometry {}
+/* Update ranges are how r159 onward says "only this part of the buffer
+   moved" — js/standees.js sends one crowd's worth of a batch and not the
+   whole thing — so the stub carries them or the batcher throws headless. */
 export class Float32BufferAttribute {
-  constructor(a, n) { this.array = a; this.itemSize = n; }
+  constructor(a, n) { this.array = a; this.itemSize = n; this.updateRanges = []; }
   get count() { return this.array.length / this.itemSize; }
   setUsage() { return this; }
+  addUpdateRange(start, count) { this.updateRanges.push({ start, count }); }
+  clearUpdateRanges() { this.updateRanges.length = 0; }
 }
 export class BufferAttribute extends Float32BufferAttribute {}
 /* the forest's chunks are instanced: the geometry keeps its instance

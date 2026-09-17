@@ -39,7 +39,7 @@
    who ever lived had to do the same thing.
    ===================================================================== */
 
-import { pointInPoly, polyArea2, closestOnSeg, segIntersect, dist2, MAX_STEP, angleNorm } from './util.js';
+import { pointInPoly, polyArea2, closestOnSeg, segIntersect, dist2, MAX_STEP, angleNorm, pseudoAngle, PSEUDO_PI } from './util.js';
 
 /* Vertices that land within this of each other are the same vertex. Map
    coordinates are integers in practice, so this only ever catches float
@@ -556,6 +556,54 @@ export class MapBuilder {
    Level — the built map, plus everything that asks it questions
    ===================================================================== */
 
+/* HOW MANY TIMES A REGION IS WALKED AGAIN before it is given the whole
+   window and left alone. A region reached through several openings keeps
+   the hull of them, and each widening is another walk of everything
+   behind it; this is what bounds that. Six was the first number and
+   three is the measured one — the town has hundreds of openings onto one
+   street. With the radius below in place it is worth about a sixth of a
+   millisecond in the park and nothing anywhere else — the radius is what
+   did the work — but three re-walks is as conservative as six and cheaper,
+   so three it is. */
+const VIS_REWALK = 3;
+/* AND HOW MANY REGIONS THE WALK IS WORTH. See the note at the top of the
+   loop in visibleSectors: past this it is not hiding anything it did not
+   already hide, and it says so instead of proving it. */
+const VIS_BUDGET = 3000;
+
+/* --------------------------------------------------------------------
+   HOW FAR THE FLOOD IS WORTH RUNNING
+
+   The walk used to go as far as the eye could see, which with clear air
+   is fourteen thousand units — the whole town — and cost five
+   milliseconds a frame to report that most of an open street grid is
+   visible from an open street grid.
+
+   Measured, at five places, against the radius it was run to:
+
+     radius    a shop aisle        a town street
+      2000     44 regions          45 regions
+      3000     50                  54
+      4000     50                  143
+      6400     50                  604
+     14000     52                3001
+
+   The shop SATURATES at three thousand: past that the flood has already
+   found everything a wall could hide, and every further unit of radius
+   buys nothing and costs the town. Four thousand is that number with
+   room in it — every indoor space in the game fits inside it, and so do
+   the fire's sprites (FLAME_MID is 1500) and the street lamps' flares
+   (LAMP_FAR is 2400), which are the two things besides the crowd that
+   ask.
+
+   PAST IT THE ANSWER IS YES, and that is not a fudge: nothing was
+   walked out there, so nothing can be said, and the rule this whole
+   file keeps is that an unknown is drawn rather than hidden. What
+   decides at that range is the frustum and the caller's own distance
+   cull, which is what decides in an engine with no portals at all. See
+   isVisible. */
+export const VIS_FAR = 4096;
+
 const BLOCK = 128;      // Doom's blockmap cell, and still the right size
 
 /** Same turn at every corner, collinear vertices allowed. */
@@ -649,6 +697,8 @@ export class Level {
     }
     this._visStamp = 1;
     this.visList = [];
+    /* the flood gave up and everything is visible — see VIS_BUDGET */
+    this._visAll = false;
     this._visStack = [];
 
     /* Where the STORE is, for the systems that only care about the
@@ -1049,7 +1099,20 @@ export class Level {
     const stamp = ++this._visStamp;
     const list = this.visList;
     list.length = 0;
+    this._visAll = false;
+    /* where this was run from and how far, so that isVisible can tell a
+       region the walk decided about from one it never reached */
+    this._visEyeX = ex; this._visEyeY = ey;
+    this._visR2 = maxDist === Infinity ? Infinity : maxDist * maxDist;
     const sectors = this.sectors;
+    /* THE WINDOW, IN THE UNITS THIS WALKS IN. Every angle below is a
+       pseudoAngle (see js/util.js): monotonic in the true angle, already
+       wrapped, and half a turn is PSEUDO_PI rather than pi. Nothing here
+       does anything to an angle but compare it, so the substitution is
+       exact — and it took four hundred thousand atan2 calls a frame out
+       of the town. */
+    const half = halfFov >= Math.PI ? PSEUDO_PI
+               : pseudoAngle(Math.cos(halfFov), Math.sin(halfFov));
     const start = this.sectorAt(ex, ey);
     /* off the map — in the wood past the last sector, say — there is
        nothing to flood from, so everything in reach is visible */
@@ -1058,11 +1121,15 @@ export class Level {
       for (const s of sectors) {
         const cx = Math.max(s.bbox[0], Math.min(s.bbox[2], ex)), cy = Math.max(s.bbox[1], Math.min(s.bbox[3], ey));
         if ((cx - ex) * (cx - ex) + (cy - ey) * (cy - ey) > md2) continue;
-        s._vis = stamp; s._vlo = -halfFov; s._vhi = halfFov; s._vn = 0; list.push(s);
+        s._vis = stamp; s._vlo = -half; s._vhi = half; s._vn = 0; list.push(s);
       }
       return list;
     }
     const md2 = maxDist * maxDist;
+    /* which way the eye looks, so a direction can be turned into the
+       eye's own frame with a rotation instead of a subtraction — see
+       pseudoAngle on why an angle cannot simply be subtracted here */
+    const cy0 = Math.cos(yaw), sy0 = Math.sin(yaw);
     const stack = this._visStack;
     stack.length = 0;
     const enter = (s, lo, hi) => {
@@ -1072,13 +1139,24 @@ export class Level {
         return;
       }
       if (lo >= s._vlo && hi <= s._vhi) return;          // seen through a wider opening already
-      if (++s._vn > 6) { lo = -halfFov; hi = halfFov; }   // enough: the whole window, once
+      if (++s._vn > VIS_REWALK) { lo = -half; hi = half; }  // enough: the whole window, once
       else { lo = Math.min(lo, s._vlo); hi = Math.max(hi, s._vhi); }
       s._vlo = lo; s._vhi = hi;
       stack.push(s, lo, hi);
     };
-    enter(start, -halfFov, halfFov);
+    enter(start, -half, half);
     while (stack.length) {
+      /* THE BUDGET, AND WHY THERE IS ONE. This walk is worth its cost
+         exactly as long as it is HIDING things. Indoors it is: an aisle
+         reaches fifty regions of sixteen thousand and the crowd in the
+         rest of the shop is not drawn. Out in the town it is not — the
+         streets are one connected outdoor space and the honest answer
+         is "most of the map", which the walk arrives at after two
+         hundred thousand line visits and which the frustum would have
+         given for nothing. So past this many regions it gives up and
+         says everything: conservative, which is the safe direction, and
+         O(1) rather than O(the town). See _visAll and isVisible. */
+      if (list.length >= VIS_BUDGET) { this._visAll = true; break; }
       const hi = stack.pop(), lo = stack.pop(), s = stack.pop();
       const lines = s.lines;
       for (let i = 0; i < lines.length; i++) {
@@ -1090,34 +1168,48 @@ export class Level {
            overlap; for a column of one this is the one sector on the
            far side and the same shut test as before. */
         const other = s.colBase === l.frontBase ? l.backCol : l.frontCol;
-        if (!other.length) continue;
         const outCount = other.length;
-        for (let k = 0; k < outCount; k++) {
-        const o = sectors[other[k]];
-        if (o === s) continue;
-        /* shut: a door with its ceiling on the floor, or a step that
-           has closed the gap — the same rule sightBlocked uses */
-        if (Math.min(s.ceil, o.ceil) - Math.max(s.floor, o.floor) <= 0) continue;
-        /* too far: the nearest point of the opening is past the air */
+        if (!outCount) continue;
+        /* --- everything about the LINE, once, outside the storey loop.
+           All three of these used to be inside it and none of them
+           depends on which storey is on the far side, so a column three
+           deep paid for them three times. --- */
+        /* too far: the nearest point of the opening is past the air.
+           Inline, because closestOnSeg returns an array and this ran
+           two hundred thousand times a frame. */
         if (maxDist !== Infinity) {
-          const [qx, qy] = closestOnSeg(l.x1, l.y1, l.x2, l.y2, ex, ey);
-          if ((qx - ex) * (qx - ex) + (qy - ey) * (qy - ey) > md2) continue;
+          const sx = l.x2 - l.x1, sy = l.y2 - l.y1;
+          const len2 = sx * sx + sy * sy;
+          let t = len2 < 1e-9 ? 0 : ((ex - l.x1) * sx + (ey - l.y1) * sy) / len2;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          const qx = l.x1 + sx * t - ex, qy = l.y1 + sy * t - ey;
+          if (qx * qx + qy * qy > md2) continue;
         }
         /* the angle the opening spans, as seen from the eye, relative
-           to where the eye is looking */
-        const a1 = angleNorm(Math.atan2(l.y1 - ey, l.x1 - ex) - yaw);
-        const a2 = angleNorm(Math.atan2(l.y2 - ey, l.x2 - ex) - yaw);
-        let plo = a1 < a2 ? a1 : a2, phi = a1 < a2 ? a2 : a1;
-        if (phi - plo > Math.PI) {
-          /* it goes round behind the eye: two pieces, either side */
-          const c1 = Math.max(lo, -Math.PI), h1 = Math.min(hi, plo);
-          if (h1 > c1) enter(o, c1, h1);
-          const c2 = Math.max(lo, phi), h2 = Math.min(hi, Math.PI);
-          if (h2 > c2) enter(o, c2, h2);
-          continue;
-        }
-        const clo = plo > lo ? plo : lo, chi = phi < hi ? phi : hi;
-        if (chi > clo) enter(o, clo, chi);
+           to where the eye is looking — the direction turned into the
+           eye's frame, then measured on the diamond */
+        const d1x = l.x1 - ex, d1y = l.y1 - ey, d2x = l.x2 - ex, d2y = l.y2 - ey;
+        const a1 = pseudoAngle(d1x * cy0 + d1y * sy0, d1y * cy0 - d1x * sy0);
+        const a2 = pseudoAngle(d2x * cy0 + d2y * sy0, d2y * cy0 - d2x * sy0);
+        const plo = a1 < a2 ? a1 : a2, phi = a1 < a2 ? a2 : a1;
+        const wraps = phi - plo > PSEUDO_PI;
+        /* and now the storeys, which is the only part that differs */
+        for (let k = 0; k < outCount; k++) {
+          const o = sectors[other[k]];
+          if (o === s) continue;
+          /* shut: a door with its ceiling on the floor, or a step that
+             has closed the gap — the same rule sightBlocked uses */
+          if (Math.min(s.ceil, o.ceil) - Math.max(s.floor, o.floor) <= 0) continue;
+          if (wraps) {
+            /* it goes round behind the eye: two pieces, either side */
+            const c1 = lo > -PSEUDO_PI ? lo : -PSEUDO_PI, h1 = hi < plo ? hi : plo;
+            if (h1 > c1) enter(o, c1, h1);
+            const c2 = lo > phi ? lo : phi, h2 = hi < PSEUDO_PI ? hi : PSEUDO_PI;
+            if (h2 > c2) enter(o, c2, h2);
+            continue;
+          }
+          const clo = plo > lo ? plo : lo, chi = phi < hi ? phi : hi;
+          if (chi > clo) enter(o, clo, chi);
         }
       }
     }
@@ -1127,7 +1219,25 @@ export class Level {
   /** Was this sector in the flood this frame, or the last? The last
    *  frame too, so a region does not pop the instant a doorway's edge
    *  crosses it. */
-  isVisible(s) { return s._vis >= this._visStamp - 1; }
+  isVisible(s) {
+    if (this._visAll) return true;
+    if (s._vis >= this._visStamp - 1) return true;
+    /* PAST THE FLOOD'S OWN RADIUS NOTHING WAS WALKED, so nothing is
+       known, and an unknown is drawn rather than hidden — see VIS_FAR.
+       The nearest corner of the region against the eye, which is the
+       same measure the off-the-map branch of the flood uses. */
+    if (this._visR2 === Infinity) return false;
+    const b = s.bbox, ex = this._visEyeX, ey = this._visEyeY;
+    const cx = ex < b[0] ? b[0] : ex > b[2] ? b[2] : ex;
+    const cy = ey < b[1] ? b[1] : ey > b[3] ? b[3] : ey;
+    const dx = cx - ex, dy = cy - ey;
+    return dx * dx + dy * dy > this._visR2;
+  }
+
+  /** How far the last flood was run, squared — what isVisible calls
+   *  "out of range". Whatever asks a question per block rather than per
+   *  region can skip the whole block with it. */
+  get visRadius2() { return this._visR2; }
 
   /** Every GROUND sector whose polygon overlaps a circle. Walk the
    *  column from one if the storeys are wanted too. */

@@ -37,8 +37,6 @@
    lit them.
    ===================================================================== */
 
-import * as THREE from 'three';
-import { createSpriteMaterial } from './material.js';
 import { STATES, ACTORS, stateOf } from './states.js';
 import { angleNorm, angleDiff, pRandom, dist, dist2 } from './util.js';
 import { swayOf } from './people.js';
@@ -249,7 +247,13 @@ export class Actor {
        radius. Everything downstream tests `state` and stops. */
     if (info.spawn) this.setState(info.spawn);
 
-    this.mesh = null;
+    /* WHAT IT DREW LAST FRAME, and not a mesh. An actor used to own a
+       Mesh and a ShaderMaterial; it hands its numbers to the batcher
+       instead — see js/standees.js — so what is kept here is only what
+       something else might ask about: whether it was drawn, and where
+       the quad went, in renderer coordinates. */
+    this.drawn = false;
+    this.drawX = 0; this.drawY = 0; this.drawZ = 0;
     this._lastKey = '';
 
     /* into the blockmap, if it is the kind of thing anybody has to walk
@@ -340,7 +344,7 @@ export class Actor {
     if (this.removed) return;
     this.removed = true;
     this.game.blockmap?.remove(this);
-    if (this.mesh) { this.game.scene.remove(this.mesh); this.mesh.geometry.dispose(); this.mesh.material.dispose(); this.mesh = null; }
+    this.drawn = false;
     if (this.burnSprite) { this.burnSprite.remove(); this.burnSprite = null; }
   }
 
@@ -1067,16 +1071,6 @@ export class Actor {
      chosen fresh each render. Nothing is cached across frames because
      both can change every tic and the lookup is a Map hit.
      ------------------------------------------------------------------ */
-  ensureMesh() {
-    if (this.mesh) return;
-    const geo = new THREE.PlaneGeometry(1, 1);
-    geo.translate(0, 0.5, 0);          // the foot of the quad is the origin
-    const mat = createSpriteMaterial(null, { alphaTest: 0.5, transparent: false, width: 64, height: 64 });
-    this.mesh = new THREE.Mesh(geo, mat);
-    this.mesh.frustumCulled = false;   // the quad is spun in the shader,
-    this.game.scene.add(this.mesh);    // so its bounds are a lie
-  }
-
   /* ------------------------------------------------------------------
      DO NOT DRAW WHAT CANNOT BE SEEN
 
@@ -1123,11 +1117,9 @@ export class Actor {
         (d2 > CULL_NEAR * CULL_NEAR && this.sector && lv.isVisible && !lv.isVisible(this.sector)) ||
         (d2 > CULL_NEAR * CULL_NEAR && (viewX !== 0 || viewY !== 0) &&
          dx * viewX + dy * viewY < Math.sqrt(d2) * CULL_COS)) {
-      if (this.mesh) this.mesh.visible = false;
+      this.drawn = false;
       return;
     }
-    this.ensureMesh();
-    this.mesh.visible = true;
 
     /* Which of the eight views. rot 0 is head-on. */
     let rot = 0;
@@ -1145,15 +1137,21 @@ export class Actor {
       : this.state.sprite);
     const entry = this.game.sprites.get(spr, this.state.frame);
     const key = entry.key + rot;
-    const u = this.mesh.material.uniforms;
+    /* THE PICTURE IS THE BATCH. Everything that is drawn from this
+       texture goes into one draw call, so the texture is looked up here
+       and handed to the batcher with the rest of the numbers — see
+       js/standees.js, and the INSTANCED_SPRITE block in js/material.js
+       for why none of this changes how it looks. The lookup is cached
+       on the frame key the way the uniform write used to be, because
+       SpriteBank.texture uploads a rotation the first time it is asked
+       and the cache is what stops that being asked every frame. */
     if (key !== this._lastKey) {
       this._lastKey = key;
-      u.map.value = this.game.sprites.texture(entry, rot);
-      const s = entry.scale;
-      u.spriteScale.value.set(entry.w * s, entry.h * s);
+      this._tex = this.game.sprites.texture(entry, rot);
+      const sc = entry.scale;
+      this._w = entry.w * sc; this._h = entry.h * sc;
     }
-    u.billboardRot.value = billboardRot;
-    u.fullbright.value = (this.info.fullbright || this.state.fullbright) ? 1 : 0;
+    const fullbright = (this.info.fullbright || this.state.fullbright) ? 1 : 0;
     /* `lit` on the type is a multiplier on the room's light, and one
        thing declares it: the SWAT, whose sheet is navy on black and who
        came out of the van at night as a silhouette with a visor. Doom
@@ -1162,27 +1160,27 @@ export class Actor {
        and the navy is two per cent there, so twice it is four — and
        most of the work is a tone curve in tools/prep-swat.mjs; this is
        the last third. */
-    u.light.value = (this.sector ? this.sector.light : 0.7) * (this.info.lit || 1);
+    const light = (this.sector ? this.sector.light : 0.7) * (this.info.lit || 1);
     /* HOW FROZEN, straight onto the shader that does the colour map.
        It runs up before the threshold as well as at it, so somebody the
        spray has caught but not yet held goes pale and blue first — the
        player can see it working, which is the whole of the feedback this
        weapon has. */
-    if (u.frost) u.frost.value = Math.min(1, this.frost / Actor.FREEZE_AT);
+    const frost = Math.min(1, this.frost / Actor.FREEZE_AT);
     /* AND HOW FAR THROUGH BEING EATEN, on the same terms. See the ASH
        block in js/material.js: the sprite is consumed from the feet up
        behind a line of coals, and at 1 there is nothing of it left —
        which is a tenth of a second before collapse() takes the actor
        away, so the drawing is empty rather than popping out. */
-    if (u.ash) u.ash.value = this.ash;
+    const ash = this.ash;
     /* AND HOW ALIGHT. Same idea as the frost and the same place in the
        shader: a colour MAP rather than a tint, because a person on fire
        is not their own colours with orange light on them. */
-    if (u.alight) u.alight.value = this.lit;
+    const alight = this.lit;
     /* A car in the back row of the car park has to diminish the way the
        tarmac under it does, or it turns into a silhouette while the bay
        around it stays lit. */
-    if (u.sky) u.sky.value = this.sector ? (this.sector.sky ?? (this.sector.outdoor ? 1 : 0)) : 0;
+    const sky = this.sector ? (this.sector.sky ?? (this.sector.outdoor ? 1 : 0)) : 0;
     /* A standee leans where it stands, or a shop floor of them is a shop
        floor of cardboard. Two sines, phased off the actor's own id, and
        nothing in the simulation moves — this is a drawing offset and the
@@ -1207,17 +1205,24 @@ export class Actor {
     const sink = this.ash > 0 ? this.ash * this.height * 0.72 : 0;
     if (this.info.sway && !this.held) {
       const s = swayOf(this, this.game.tics);
-      this.mesh.position.set(this.x + s.dx, this.z + (entry.lift || 0) + s.dz, -(this.y + s.dy));
+      this.drawX = this.x + s.dx; this.drawY = this.z + (entry.lift || 0) + s.dz; this.drawZ = -(this.y + s.dy);
     } else if (this.bored > 0) {
       /* AND SOMEBODY WITH A DRILL IN THEIR HEAD SHAKES: a couple of
          units either way, fresh every frame, which on a standee reads
          as a fit rather than as a sway. Drawing offset only; the body
          is exactly where the collision says it is. */
       const jx = (pRandom() / 255 - 0.5) * 3.6, jy = (pRandom() / 255 - 0.5) * 3.6;
-      this.mesh.position.set(this.x + jx, this.z + (entry.lift || 0), -(this.y + jy));
+      this.drawX = this.x + jx; this.drawY = this.z + (entry.lift || 0); this.drawZ = -(this.y + jy);
     } else {
-      this.mesh.position.set(this.x, this.z + (entry.lift || 0) - sink, -this.y);
+      this.drawX = this.x; this.drawY = this.z + (entry.lift || 0) - sink; this.drawZ = -this.y;
     }
+    /* and into the batch for its picture. `drawn` is this actor's own
+       decision — it got past the culling and submitted itself — and not
+       the batcher's answer, which is about buffer room and is nobody
+       else's business. */
+    this.drawn = true;
+    this.game.standees.add(this._tex, this.drawX, this.drawY, this.drawZ,
+                           this._w, this._h, light, sky, fullbright, frost, ash, alight);
   }
 }
 

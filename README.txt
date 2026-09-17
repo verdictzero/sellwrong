@@ -48,10 +48,13 @@ weather.
                           the church. See TOWN.txt for the plan and for
                           where this departs from it
   js/                   the game — js/weather.js, js/skyart.js and
-                          js/rain.js are the newest of it: the hour, the
-                          weather and the wind; the sky baked in the page
-                          for them; and what falls out of it. See THE AIR,
-                          THE HOUR AND THE WEATHER, and WHAT YOU CAN SEE
+                          js/rain.js are the hour, the weather and the
+                          wind; the sky baked in the page for them; and
+                          what falls out of it. See THE AIR, THE HOUR AND
+                          THE WEATHER, and WHAT YOU CAN SEE.
+                          js/standees.js and js/lamplight.js are the
+                          newest: a crowd in one draw call per picture,
+                          and the flare at every street lamp after dark
   art/                  the logo, the old sprite weapon, the seven four-view
                           vehicle sheets and the atlas packed out of them —
                           which nothing loads any more — and art/people/,
@@ -134,7 +137,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         1699 checks, no install and no browser
+  the smoke test         1749 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -2797,6 +2800,144 @@ the screen, nearest, no arithmetic at all. The palette search used to run
 once per SCREEN pixel — two million of them on a 1080p monitor — and now
 runs once per chunky pixel, which at 320x200 is sixty-four thousand.
 
+THE FRAME WAS MEASURED, AND THEN CUT
+------------------------------------
+
+The town was built, and then the landscaping went in, and then somebody
+played it on a phone and got twelve frames a second. So the frame was
+taken apart with a profiler in a headless browser — every subsystem
+wrapped, timed per frame and per tic, at four places in the map — and
+what it found was four things, three of which were nobody's fault and
+one of which was a comment that had stopped being true.
+
+Before, and after. A frame's own CPU, and the draw calls the renderer
+issued for the world:
+
+                     draw calls        the portal flood      a tic
+  a shop aisle     424 ->  197        0.25ms -> 0.12ms
+  the car park     974 ->  240        0.52   -> 0.46        3.8ms -> 1.1ms
+  a town street    677 ->  548       18.1    -> 0.34        everywhere
+  the park         918 ->  798       34.8    -> 1.58
+
+THE COMMENT THAT HAD STOPPED BEING TRUE was over the burn grid. The
+shader reads how sooty a surface is out of a picture of the fire's own
+cell grid (see THE PICTURE in js/game.js), and the code that filled it
+in SCANNED THE WHOLE GRID every tic looking for the cells that had
+moved. It was written when the grid was the supermarket — 225 by 207,
+forty-six thousand cells — and the sentence over it said so. The town
+made it 605 by 810, which is four hundred and ninety thousand cells, and
+seventeen million cell reads a second to find the twenty that changed.
+It was two thirds of every tic in the game whether or not anything was
+alight. The fire keeps a list of what it touched now and the drain walks
+that, which is tens of cells; and the picture, which was RGBA in the
+power of two over the grid — a megabyte of texels, four megabytes sent
+to the GPU on every tic where one cell moved — is one byte a cell at the
+grid's own size, and goes up at twelve hertz rather than thirty-five.
+Nine times smaller, three times less often, and the scan is gone.
+
+THE PORTAL FLOOD WAS THE BIGGEST ONE. It cost eighteen milliseconds a
+frame on a town street and thirty-five in the park — on its own, a
+ceiling of twenty-eight frames a second, before anything was drawn. It
+was doing exactly what it was written to do; the trouble is that what it
+was written for is a SHOP, where it is magnificent (an aisle sees fifty
+regions of sixteen thousand and the rest of the crowd is not drawn), and
+a town is not a shop. An open street grid hides nothing, so the walk
+went through two hundred thousand line crossings to conclude that ten
+thousand of the map's sixteen thousand regions were visible, which the
+frustum would have said for nothing. Four changes, in the order they
+were worth:
+
+  ITS RADIUS. Measured against the radius it is run to, the SHOP
+  SATURATES at three thousand units — past that the flood has already
+  found everything a wall could hide, and every further unit buys
+  nothing and costs the town. It runs to four thousand now (VIS_FAR),
+  which fits every indoor space in the game, the fire's sprites and the
+  street lamps' flares. Past it isVisible says "visible", because
+  nothing out there was walked and an unknown is drawn rather than
+  hidden — which is what an engine with no portals at all does.
+  Eighteen milliseconds to under half of one.
+
+  THE ANGLES. The walk does exactly one thing with an angle: it clips
+  intervals against each other. So it does not need the angle, it needs
+  something that SORTS the same way — and that is the diamond angle,
+  which walks the unit diamond instead of the unit circle, is monotonic
+  in atan2 over the whole turn, comes out already wrapped, and costs a
+  divide instead of a transcendental. Four hundred thousand atan2 calls
+  a frame, gone. See pseudoAngle in js/util.js.
+
+  THE WORK DONE PER LINE, which was being done per STOREY. The distance
+  test and the two angles depend on the line and not on which floor of
+  the building is on the far side of it, and they were inside the loop
+  over the floors. And the distance test called a helper that RETURNS AN
+  ARRAY, two hundred thousand times a frame.
+
+  A BUDGET. Past three thousand regions the walk gives up and says
+  everything is visible. It is the honest answer in an open town and it
+  bounds the worst case at O(1) instead of O(the town).
+
+  None of it is allowed to hide something you can see, and the test is
+  the one that was already there: cast real rays with sightBlocked and
+  every region a ray reaches must be in the flood's set. Nine thousand
+  ray points at four places, zero misses.
+
+A CROWD IN ONE DRAW CALL PER PICTURE. Every sprite in the game owned a
+Mesh and a ShaderMaterial, because the quad is spun and scaled by
+uniforms and uniforms belong to a material — so the seven hundred and
+seventy-two things you can see across the car park were seven hundred
+and seventy-two draw calls, four fifths of the frame's. And they share
+TWENTY-EIGHT PICTURES between them, because a shopper is one drawing
+that faces every way (js/spriteload.js says so at the top). So they are
+twenty-eight draw calls: one InstancedBufferGeometry per texture, with
+where each one is, how big, how lit and its four flags in instance
+buffers. See js/standees.js.
+
+THE SHADER IS THE SAME SHADER, and that is the part worth copying. The
+four values the fragment stage reads per sprite — fullbright, frost,
+ash, alight — are declared as VARYINGS under one define, with the names
+they already had, so not one line of the body of either stage knows
+which way it is being drawn. A crowd drawn in batches cannot look
+different from a crowd drawn one at a time, because it is the same code.
+The test holds the two materials' shader source against each other and
+checks they differ only in a define.
+
+AND THE AIR DECIDES THE DRAW DISTANCE. Every surface is mixed toward a
+texel of the sky by its distance, and the mix is nearly complete well
+before the air's far limit: at eighty-five per cent of airFar a surface
+is ninety-three per cent sky, so what is drawn there is the sky with a
+four per cent memory of a roof in it. A block past that is not submitted
+at all, and because it is a fraction of the CURRENT air it follows the
+weather for free — rain pulls airFar in to five thousand and the town
+closes up with it, which is what a town in the rain does.
+
+AND A BATCH TOO SMALL TO SEE IS NOT WORTH A DRAW CALL. Each one knows
+how much WORLD it covers (accumulated as it is built, in Batch.tri), so
+its share of the screen is that over the square of the distance. Area
+and not triangle count, because a road is two triangles and an acre; and
+area and not the bounding sphere, because a batch's sphere is its whole
+block. The threshold FOLLOWS THE PIXEL DIAL: at 960 rows a pixel is
+about 2.3e-6 of a steradian and at 320 it is nine times that, so nine
+times as much can go — which is the right way round, because the buffer
+that cannot show the detail is on the machine that cannot afford to draw
+it. At the default it drops six batches of five hundred and fifty, and
+at the coarsest it drops a third of them.
+
+WHAT IS LEFT, HONESTLY. Five hundred draw calls down a town street, and
+they are not waste: twenty-seven blocks are visible and each is about
+twenty textures, and every one of those batches covers more than four
+pixels. Cutting it further means fewer TEXTURES per block, which means
+an atlas, which means tiling a sub-rectangle with fract() in the shader
+and losing the mip seams — a real project, and not one to start without
+first measuring whether draw calls or fill rate is the wall on the
+machine that is slow. On the test rig they are: the world pass takes six
+milliseconds at 1.5 megapixels and 4.6 at 0.06, so it is the submitting
+and not the shading.
+
+AND THE READOUT WAS LYING. The FPS line said "1 draws". renderer.info
+resets at every render() call and the pipeline makes four of them — the
+world, the overlays, the post pass and the blit — so by the time the
+line was written the counter held the blit's own quad. It keeps the
+world pass's count now, which is the number the culling exists to move.
+
 WHAT TO SPEND THE FRAME ON. Four settings, and they are in the order of
 what they are worth, measured:
 
@@ -2808,9 +2949,11 @@ what they are worth, measured:
             thousand plants in distance-culled chunks, and pulling the
             range in was worth two to three times the frame rate on its
             own — the single biggest thing in the frame
-  CROWD     how many of the standees are drawn. Seven hundred billboards
-            are seven hundred draw calls, because a quad the shader
-            turns cannot be batched with the next one
+  CROWD     how many of the standees are drawn. It used to be the third
+            most valuable dial on this list because seven hundred
+            billboards were seven hundred draw calls; they are
+            twenty-eight now, one per picture, and it is worth much less
+            than it was — see A CROWD IN ONE DRAW CALL PER PICTURE
   EFFECTS   how much of the fire's sprite pool gets used. The candidates
             are sorted nearest-and-hottest first, so spending less of it
             drops the far, cold end, which is the right end to drop
@@ -3300,9 +3443,11 @@ drawn, whichever LOD size was picked), and the fire's sprite pool asks
 it before sorting. From the stockroom with its door shut it draws the
 stockroom: 98 draw calls where the cone left about five hundred.
 Facing the wood from the car park, 179, the store behind you gone
-entirely. Facing the store from the car park it is still nine hundred,
-because you can see seven hundred shoppers through the glass and every
-one of them is a draw call, which is a different problem.
+entirely. Facing the store from the car park it was still nine hundred, because
+you could see seven hundred shoppers through the glass and every one of
+them was a draw call — which was a different problem, and is dealt with
+under A CROWD IN ONE DRAW CALL PER PICTURE. It is two hundred and forty
+now.
 
 THE TEST CASTS RAYS AT IT. sightBlocked already walks a real ray, so
 from five standing positions, every hundredth of a radian across the
@@ -3933,6 +4078,30 @@ bakery finds the darkest band of rows relative to a blurred baseline and
 patches it with clean stone copied from below. It is the rule the
 shopfronts keep — no name on anything, ever.
 
+THE CHURCH IS BUILT OF STONE, at the user's request, and it is drawn
+rather than photographed: coursed ashlar, squared blocks sixteen to a
+course with the perpends staggered against the course below, a lit arris
+along the top of every block and the bed joint in shadow under it. It
+was white clapboard, which is a true thing about a certain kind of
+meeting house and was the wrong building — this one has buttresses, a
+water table, a fieldstone foundation and a stone cornice under its
+spire, and a clapboard wall between those disagrees with everything it
+is attached to. Every exterior face wears it now: the nave, the tower,
+the buttresses (which were a painted corner board) and the window
+reveals. The roof stays shingle, because a stone church has a shingle
+roof like any other.
+
+AND THE STEEPLE HAS AN UNDERSIDE. A roof in this game is ONE-SIDED, like
+every other surface: the slopes face out and from underneath a roof is
+not there at all. That is right for every roof over a room, because what
+is under it is a ceiling and you see the ceiling — and it is wrong for
+exactly one thing, which is the spire, because the spire stands on the
+tower's cornice over a storey that is SHUT. Stand in the churchyard,
+look up, and you saw straight through the steeple into the sky. A roof
+may now say what its underside is made of and gets a flat cap at its
+springing, facing down: a boxed soffit, which is what a real steeple has
+and is where a real one stops.
+
 THE STREET LAMP GOES IN THROUGH THE TEXTURE BANK TOO, as two tiles, and
 nobody hangs it on a line: js/mapgeo.js stands the pair up as a flat
 cut-out on every STREETLAMP thing the town lays. It has a section of its
@@ -4512,7 +4681,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-1699 checks. Every one of them earns its place by having caught something
+1749 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

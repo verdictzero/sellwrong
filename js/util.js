@@ -131,6 +131,36 @@ export const cross2 = (ax, ay, bx, by, px, py) => (bx - ax) * (py - ay) - (by - 
    Returns [x, y, t] with t clamped into 0..1, so it is the segment and
    not the infinite line — which matters at corners, where the nearest
    thing to you is an endpoint rather than a face. */
+/* --------------------------------------------------------------------
+   A MONOTONIC STAND-IN FOR atan2
+
+   The portal flood (Level.visibleSectors) does one thing with angles:
+   it CLIPS intervals against each other. It compares them, it takes
+   minima and maxima of them, and it asks whether one spans more than
+   half a turn. It never adds two of them and it never takes a sine of
+   one — so it does not need the angle, it needs something that SORTS
+   the same way the angle does.
+
+   This is that: the diamond angle, which walks the unit diamond instead
+   of the unit circle. It is monotonic in atan2 over the whole turn, it
+   comes out already wrapped into (-2, 2] where atan2's range is
+   (-pi, pi], and it costs one divide against a transcendental. The
+   scale is the only thing to remember: HALF A TURN IS 2, not pi.
+
+   It was worth a function because the flood was calling atan2 four
+   hundred thousand times a frame in the town and that was most of a
+   thirty-five millisecond frame.
+   ------------------------------------------------------------------ */
+export function pseudoAngle(dx, dy) {
+  const s = Math.abs(dx) + Math.abs(dy);
+  if (s === 0) return 0;
+  const p = dx / s;                       // -1 .. 1
+  return dy < 0 ? p - 1 : 1 - p;          // -2 .. 0 below, 0 .. 2 above
+}
+
+/** Half a turn, in the units pseudoAngle speaks. */
+export const PSEUDO_PI = 2;
+
 export function closestOnSeg(ax, ay, bx, by, px, py) {
   const dx = bx - ax, dy = by - ay;
   const len2 = dx * dx + dy * dy;

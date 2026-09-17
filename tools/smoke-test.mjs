@@ -1081,11 +1081,18 @@ section('fire');
                attack: false, use: false, run: false, sample() {}, sensitivity: 0 },
     });
     const f3 = g3.fire;
-    const side = mat.world.burnSide.value;
-    note('the burn picture', `${side}x${side} for a ${f3.cols}x${f3.rows} grid of ` +
-      `${f3.CELL}-unit cells`);
-    check('the picture holds the whole fire grid',
-      side >= f3.cols && side >= f3.rows, `${side} against ${f3.cols}x${f3.rows}`);
+    const bt = mat.world.burnGrid.value;
+    note('the burn picture', `${bt.image.width}x${bt.image.height} for a ${f3.cols}x${f3.rows} grid of ` +
+      `${f3.CELL}-unit cells, ${(bt.image.data.length / 1024).toFixed(0)}K a upload`);
+    /* IT IS THE SIZE OF THE GRID AND ONE BYTE A CELL. It was the power of
+       two over the grid, in RGBA with the same number in three of the
+       channels: a megabyte of texels and four megabytes of upload, for a
+       town, on every tic where one cell moved. Nine times smaller, and
+       both halves of that are checkable. */
+    check('the picture is exactly the fire grid, one byte a cell',
+      bt.image.width === f3.cols && bt.image.height === f3.rows &&
+      bt.image.data.length === f3.cols * f3.rows && bt.format === THREE3.RedFormat,
+      `${bt.image.width}x${bt.image.height}, ${bt.image.data.length} bytes`);
     check('and it says where the grid is and how big a cell is',
       mat.world.burnOrigin.value.x === f3.originX &&
       mat.world.burnOrigin.value.y === f3.originY &&
@@ -1112,12 +1119,13 @@ section('fire');
     })();
     check('there is a cell of shop floor to test with', !!pick);
     f3.fuel[pick.i] = f3.fuel0[pick.i] * 0.25;         // three quarters gone
+    f3.gridDirtyAll = true;                            // poked behind the fire's back
     g3.ticBurnGrid();
     const data = mat.world.burnGrid.value.image.data;
     const texel = (x, y) => {
       const cx = Math.floor((x - f3.originX) / f3.CELL);
       const cy = Math.floor((y - f3.originY) / f3.CELL);
-      return data[(cy * side + cx) * 4];
+      return data[cy * f3.cols + cx];
     };
     note('one cell, three quarters burnt', `${pick.name} at ${pick.x | 0},${pick.y | 0} reads ${texel(pick.x, pick.y)}`);
     check('a cell three quarters burnt reads three quarters of the way up',
@@ -1127,6 +1135,42 @@ section('fire');
        else in the picture entirely. */
     check('and nothing else in the shop caught it',
       texel(pick.x + f3.CELL * 3, pick.y) === 0 && texel(pick.x, pick.y + f3.CELL * 3) === 0);
+    /* --- AND THE FIRE SAYS WHICH CELLS MOVED, so that finding them does
+       not mean looking at all of them. Scanning the grid cost two thirds
+       of every tic in the game once the town made it half a million
+       cells; the fire keeps a list instead (gridDirty in js/fire.js) and
+       this is the check that the list is actually what drives the
+       picture — a cell changed WITHOUT telling anybody stays stale, and
+       the same cell changed through the fire's own hand does not. */
+    {
+      const j = pick.i;
+      f3.gridDirty.length = 0; f3.gridDirtyAll = false;
+      f3.fuel[j] = f3.fuel0[j] * 0.5;                  // half gone, quietly
+      g3.ticBurnGrid();
+      check('a cell that changed behind the fire\'s back is not in the picture',
+        Math.abs(texel(pick.x, pick.y) - 191) <= 2, `${texel(pick.x, pick.y)}`);
+      f3._touch(j);
+      check('and the fire put it on the list when asked', f3.gridDirty.length === 1 && f3.gridDirty[0] === j);
+      g3.ticBurnGrid();
+      check('and draining the list is what moves it', Math.abs(texel(pick.x, pick.y) - 128) <= 2,
+        `${texel(pick.x, pick.y)}`);
+      check('and the list is emptied by the draining', f3.gridDirty.length === 0);
+      /* a fire that burns marks its own cells: light it and let it run a
+         few tics, because a cell whose heat is still climbing has not
+         eaten anything yet and so has not moved the picture */
+      const ps = lv3.sectorAt(pick.x, pick.y);
+      const lit = f3.ignite(pick.x, pick.y, ps.floor + 8, 200);
+      f3.gridDirty.length = 0;
+      /* enough tics to cross FIRE_INTERVAL a few times — the fire does
+         not burn on every tic, and a cell that has only had its heat
+         raised has not eaten anything yet */
+      for (let k = 0; k < 16; k++) f3.tic();
+      check('and a fire that is burning fills the list by itself',
+        lit > 0 && f3.gridDirty.length > 0, `${lit} cells lit, ${f3.gridDirty.length} marked`);
+      /* put it back the way the rest of this block found it */
+      f3.fuel[j] = f3.fuel0[j] * 0.25; f3.gridDirtyAll = true; g3.ticBurnGrid();
+    }
+
     /* the car park has no fuel, so it can never soot */
     const lot = lv3.sectors.find(s2 => s2.name === 'bays' || s2.floorTex === 'BAYROW');
     if (lot) {
@@ -1517,6 +1561,7 @@ section('what you can see');
      worthless: a flood that says everything is visible passes the ray
      test and does no work. */
   const lv = MAP.buildSellWrong();
+  const LV = await import('../js/level.js');
   const half = Math.atan(Math.tan(36 * Math.PI / 180) * 1.6) + 0.25;
   const rayCheck = (x, y, yaw, far = 6000) => {
     lv.visibleSectors(x, y, yaw, half, 14000);
@@ -1577,12 +1622,45 @@ section('what you can see');
       check('open the door and the flood goes through it', open > fromStock, `${open}`);
     } else note('the stockroom door', 'not found by the shape looked for; the check is skipped');
   }
-  /* THE HYSTERESIS: a region seen last frame counts this frame */
-  lv.visibleSectors(1000, 3000, -Math.PI / 2, half, 14000);
+  /* THE HYSTERESIS: a region seen last frame counts this frame.
+
+     AT THE RADIUS THE GAME ACTUALLY RUNS IT AT, which is VIS_FAR and not
+     the fourteen thousand units of clear air: past that radius the flood
+     is not run and isVisible says so (everything is visible), and past
+     VIS_BUDGET regions it gives up and says the same — so a check about
+     what the flood DECIDED has to be made where the flood decides. Both
+     of those contracts are checked on their own below. */
+  lv.visibleSectors(1000, 3000, -Math.PI / 2, half, LV.VIS_FAR);
   const stock = lv.sectorAt(1000, 3000);
-  lv.visibleSectors(2000, -1200, -Math.PI / 2, half, 14000);
+  lv.visibleSectors(2000, -1200, -Math.PI / 2, half, LV.VIS_FAR);
   check('a region seen last frame is still visible this frame, and gone the frame after',
-    lv.isVisible(stock) && (lv.visibleSectors(2000, -1200, -Math.PI / 2, half, 14000), !lv.isVisible(stock)));
+    lv.isVisible(stock) && (lv.visibleSectors(2000, -1200, -Math.PI / 2, half, LV.VIS_FAR), !lv.isVisible(stock)));
+
+  /* --- THE TWO WAYS THE FLOOD DECLINES TO ANSWER, both of which say
+     "visible", because the rule this file keeps is that an unknown is
+     drawn rather than hidden. --- */
+  {
+    /* PAST THE RADIUS. Nothing out there was walked, so nothing is known
+       about it — the frustum and the caller's own distance cull decide,
+       which is what decides in an engine with no portals at all. */
+    lv.visibleSectors(2000, -1200, -Math.PI / 2, half, 1200);
+    const near = lv.visList.length;
+    const far = lv.sectors.find(s2 => {
+      const b = s2.bbox, cx = (b[0] + b[2]) / 2, cy = (b[1] + b[3]) / 2;
+      return Math.hypot(cx - 2000, cy + 1200) > 4000;
+    });
+    check('a region past the radius the flood was run to is called visible',
+      !!far && lv.isVisible(far) && far._vis !== lv._visStamp, far?.name);
+    check('and one inside it still has to have been reached',
+      lv.sectors.some(s2 => !lv.isVisible(s2)), `${near} reached`);
+    /* PAST THE BUDGET. An open street grid hides nothing and the walk
+       stops proving it. */
+    lv.visibleSectors(2000, -1200, -Math.PI / 2, half, 14000);
+    check('a flood that runs past its budget gives up and says everything',
+      lv._visAll && lv.visList.length <= 3000 && lv.sectors.every(s2 => lv.isVisible(s2)),
+      `${lv.visList.length} walked, gave up ${lv._visAll}`);
+    check('and one that does not, does not', (lv.visibleSectors(1800, 1600, Math.PI / 2, half, LV.VIS_FAR), !lv._visAll));
+  }
   /* THE AIR BOUNDS IT: past airFar nothing is entered */
   const farAll = (lv.visibleSectors(2000, -1200, -Math.PI / 2, half, 14000), lv.visList.length);
   const farNear = (lv.visibleSectors(2000, -1200, -Math.PI / 2, half, 600), lv.visList.length);
@@ -3175,7 +3253,7 @@ section('the crowd');
       for (let t = 0; t < 200; t++) {
         g.tics = t;
         a.render(a.x - 300, a.y, 0, 1, 0);
-        const q = { x: a.mesh.position.x, y: a.mesh.position.y, z: a.mesh.position.z };
+        const q = { x: a.drawX, y: a.drawY, z: a.drawZ };
         if (prev) moved += Math.hypot(q.x - prev.x, q.y - prev.y, q.z - prev.z);
         prev = q;
       }
@@ -3193,11 +3271,11 @@ section('the crowd');
        shopper hangs in the air with nothing under it — the front eats
        the drawing from the feet up and the quad does not move itself. */
     a.render(a.x - 300, a.y, 0, 1, 0);
-    const low = a.mesh.position.y;
+    const low = a.drawY;
     a.ash = 0.9;
     a.render(a.x - 300, a.y, 0, 1, 0);
-    check('and settle towards the floor as they go', a.mesh.position.y < low - 10,
-      `${low.toFixed(0)} -> ${a.mesh.position.y.toFixed(0)}`);
+    check('and settle towards the floor as they go', a.drawY < low - 10,
+      `${low.toFixed(0)} -> ${a.drawY.toFixed(0)}`);
     a.ash = 0;
   }
 }
@@ -3344,14 +3422,14 @@ section('the lights');
                attack: false, use: false, run: false, sample() {}, sensitivity: 0 },
     });
     note('lights kept', `${g4.lamps.length} of ${lv4.things.filter(t => t.type === 'LAMP').length} placed`);
-    check('a light has no state and no mesh', g4.lamps.length > 30 &&
-      g4.lamps.every(a => !a.state && !a.mesh), `${g4.lamps.length} of them`);
+    check('a light has no state and nothing to draw', g4.lamps.length > 30 &&
+      g4.lamps.every(a => !a.state && !a.drawn), `${g4.lamps.length} of them`);
     check('and it hangs in the ceiling it is painted in',
       g4.lamps.every(a => a.sector && a.z > a.sector.ceil - 64 && a.z < a.sector.ceil));
     /* it draws nothing, and asking it to must not throw or make a mesh */
     for (const a of g4.lamps.slice(0, 8)) a.render(0, 0, 0);
     check('and asking it to draw does nothing at all',
-      g4.lamps.slice(0, 8).every(a => !a.mesh));
+      g4.lamps.slice(0, 8).every(a => !a.drawn));
   }
 }
 
@@ -3689,27 +3767,27 @@ await (async () => {
      edge-on and invisible, so it is not drawn, and three.js cannot work
      that out for itself because the quad's bounds are a lie. */
   const someone = g5.actors.find(a => a.type === 'SHOPPER' && a.state);
-  const wipe = () => { if (someone.mesh) someone.mesh.visible = false; };
+  const wipe = () => { someone.drawn = false; };
   someone.x = 1000; someone.y = 1000;
   /* in front of the eye, close: drawn */
   wipe(); someone.render(1000, 600, 0, 0, 1);
-  check('a shopper in front of you is drawn', !!someone.mesh && someone.mesh.visible);
+  check('a shopper in front of you is drawn', someone.drawn);
   /* behind: not */
   wipe(); someone.render(1000, 1400, 0, 0, 1);
-  check('and one behind you is not', !someone.mesh.visible);
+  check('and one behind you is not', !someone.drawn);
   /* DEAD ABEAM: four hundred units to the right of an eye looking
      straight ahead, which is ninety degrees off the axis and so past
      even the generous cone */
   wipe(); someone.render(600, 1000, 0, 0, 1);
-  check('nor one square out to the side', !someone.mesh.visible);
+  check('nor one square out to the side', !someone.drawn);
   /* and a long way off: not, whatever the angle */
   wipe(); someone.render(1000, -6000, 0, 0, 1);
-  check('nor one on the far side of the wood', !someone.mesh.visible);
+  check('nor one on the far side of the wood', !someone.drawn);
   /* and within arm's reach it is drawn whatever the angle, because at
      that range the quad is wider than the screen */
   wipe(); someone.render(1010, 1010, 0, 0, 1);
   check('but one at your elbow is drawn whichever way you face',
-    someone.mesh.visible);
+    someone.drawn);
 })();
 
 /* ---------- the wiring ---------- */
@@ -5001,7 +5079,7 @@ section('the van');
      vehicle is three of them, each carrying a pointer back to it. */
   const blocks = gm.actors.filter(a => a.type === 'CARBODY');
   check('each vehicle is three of Doom cylinders', blocks.length === V.count * 3 && blocks.every(a => a.solid));
-  check('and none of them has a state or a sprite to draw', blocks.every(a => !a.state && !a.mesh));
+  check('and none of them has a state or a sprite to draw', blocks.every(a => !a.state && !a.drawn));
   check('and every one of them knows which vehicle it is part of',
     blocks.every(a => a.vehicle && V.all.includes(a.vehicle)));
   check('and a hatchback gets a smaller cylinder than a van',
@@ -7888,6 +7966,77 @@ section('the town');
     check('a recess is outdoors', recesses.every(s => s.outdoor));
   }
 
+  /* THE CHURCH IS BUILT OF STONE, at the user's request, and the steeple
+     has an underside. It was white clapboard between a fieldstone
+     foundation, a stone water table and a stone cornice, which is a wall
+     that disagrees with everything it is attached to; and the spire was
+     a one-sided roof over a shut storey, so from the churchyard you
+     looked up through the steeple at the sky. */
+  {
+    const T7 = await import('../js/textures.js');
+    check('there is a coursed ashlar for the church and no clapboard left on it',
+      typeof T7.TEXTURE_GENERATORS.CHURCHST === 'function' &&
+      T7.TEXTURE_GENERATORS.CHURCHWD === undefined);
+    const stoneP = T7.TEXTURE_GENERATORS.CHURCHST();
+    check('and it is 64 pixels like everything else', stoneP.w === 64 && stoneP.h === 64);
+    /* THE COURSING IS THE PICTURE, and a wall with no bed joints in it
+       is a painted wall: every sixteenth row is the shadow of one, so
+       the four of them have to be darker than the stone between. */
+    const rowMean = y => { let t = 0; for (let x = 0; x < 64; x++) t += stoneP.data[(y * 64 + x) * 4]; return t / 64; };
+    const joints = [0, 16, 32, 48].map(rowMean), faces = [6, 22, 38, 54].map(rowMean);
+    check('with a bed joint every course, darker than the stone over it',
+      joints.every((j, i2) => j < faces[i2]), `${joints.map(v => v | 0)} against ${faces.map(v => v | 0)}`);
+    /* and nothing black in it, which is what lichen at the wrong
+       brightness looked like the first time */
+    let blackest = 255;
+    for (let i2 = 0; i2 < 64 * 64; i2++) {
+      const o = i2 * 4;
+      blackest = Math.min(blackest, Math.max(stoneP.data[o], stoneP.data[o + 1], stoneP.data[o + 2]));
+    }
+    check('and no texel of it is black, which weathering at the wrong brightness looks like',
+      blackest > 24, `darkest texel ${blackest}`);
+    /* EVERY EXTERIOR FACE OF THE CHURCH IS THAT STONE. The nave, the
+       tower, the buttresses and the window reveals, and not the roof,
+       which is shingle on a stone church as on any other. */
+    const churchSec = level.sectors.filter(s2 => /^B3 /.test(s2.name));
+    const outside = churchSec.filter(s2 => /tower|buttress|nave|foundation|water table|eaves|narthex|belfry/.test(s2.name));
+    const clad = new Set();
+    for (const s2 of outside) for (const k of ['wallTex', 'upperTex', 'lowerTex']) if (s2[k]) clad.add(s2[k]);
+    check('the church stands in stone and no part of its outside is clapboard',
+      clad.has('CHURCHST') && !clad.has('CHURCHWD') && !clad.has('CLAPBRD') && !clad.has('VINYLSID'),
+      [...clad].sort().join(' '));
+    /* THE STEEPLE HAS A BOTTOM. The spire is a roof over a shut storey,
+       so unlike every other roof in the game there is no ceiling under
+       it — see the soffit block in js/mapgeo.js. */
+    const spire = (level.roofs || []).find(r => r.rise >= 300 && r.base > 400);
+    check('the spire is a roof standing on the tower', !!spire, spire ? `base ${spire.base} rise ${spire.rise}` : 'not found');
+    check('and it is shingled all the way round rather than being a gable with a wall in it',
+      spire.tex === 'SHINGLE' && spire.gableTex === 'SHINGLE');
+    check('and it has an underside, or you look up through the steeple at the sky',
+      !!spire.soffit && spire.soffit !== 'NONE', `${spire.soffit}`);
+    /* and the soffit is really built, facing DOWN */
+    const mg7 = await import('../js/mapgeo.js');
+    const rec7 = {};
+    const set7 = { get: n => rec7[n] || (rec7[n] = { tris: [], quad(pp) { this.tris.push(pp); },
+                                                    tri() {} }) };
+    mg7.roofGeometry(set7, { roof: spire, light: 0.4 });
+    const soff = rec7[spire.soffit];
+    check('the soffit is one flat quad at the springing of the spire',
+      !!soff && soff.tris.length === 1 && soff.tris[0].every(v => v[1] === spire.base),
+      soff ? `${soff.tris.length} quads` : 'none');
+    /* WOUND THE OTHER WAY FROM A FLOOR, so it is seen from below.
+       addFlats emits a floor from a ring that is COUNTER-clockwise in
+       map space and that faces up, so clockwise faces down — and the
+       cross product of the first two edges, taken in map space (the
+       renderer's z is the map's minus y), is negative for clockwise. */
+    const q7 = soff.tris[0];
+    const mapY = v => -v[2];
+    const cross = (q7[1][0] - q7[0][0]) * (mapY(q7[2]) - mapY(q7[0])) -
+                  (mapY(q7[1]) - mapY(q7[0])) * (q7[2][0] - q7[0][0]);
+    check('and wound so it faces down, which is the only side anybody sees it from',
+      cross < 0, `${cross}`);
+  }
+
   /* THE GLASS in the church and the school: a pane hung in a hole you
      can see through and stop at. */
   {
@@ -8462,6 +8611,236 @@ section('the town on fire');
 }
 
 /* ---------- the site ---------- */
+/* ---------- what it costs to draw ----------
+
+   THE FRAME WAS MEASURED AND THEN CUT, and every one of these checks is
+   an invariant one of those cuts stands on. The numbers, at four places
+   in the map, before and after (a frame's own CPU, and the draw calls
+   the renderer issued for the world):
+
+     a shop aisle   424 draws ->  197     the flood 0.25ms -> 0.12
+     the car park   974       ->  240              0.52    -> 0.46
+     a town street  677       ->  548             18.1     -> 0.34
+     the park       918       ->  798             34.8     -> 1.58
+
+   and a tic, everywhere, 3.8ms -> 1.1ms.
+   ------------------------------------------------------------------ */
+section('what it costs to draw');
+{
+  const THREEP = await import('three');
+  const mgP = await import('../js/mapgeo.js');
+  const utilP = await import('../js/util.js');
+
+  /* --- THE PSEUDO-ANGLE, which is what took the flood apart ---------
+     The portal flood compares and clips angles and never does anything
+     else with one, so it does not need the angle — it needs something
+     that sorts the same way. This is that, and the only thing that can
+     be wrong with it is the sorting. */
+  {
+    let bad = 0, prev = -Infinity, worst = 0;
+    for (let a = -Math.PI + 1e-9; a <= Math.PI; a += Math.PI / 2048) {
+      const v = utilP.pseudoAngle(Math.cos(a), Math.sin(a));
+      if (v <= prev) bad++;
+      worst = Math.max(worst, Math.abs(v - a / Math.PI * utilP.PSEUDO_PI) / utilP.PSEUDO_PI);
+      prev = v;
+    }
+    check('the pseudo-angle rises with the real one over the whole turn, without exception',
+      bad === 0, `${bad} places it did not`);
+    check('and half a turn is PSEUDO_PI in it',
+      utilP.pseudoAngle(-1, 0) === utilP.PSEUDO_PI && utilP.pseudoAngle(1, 0) === 0 &&
+      utilP.pseudoAngle(0, 1) === utilP.PSEUDO_PI / 2 && utilP.pseudoAngle(0, -1) === -utilP.PSEUDO_PI / 2);
+    check('and it is not the real one, which is the point of it',
+      worst > 0.02, `closest it gets is ${(worst * 100).toFixed(0)}% off`);
+    check('and the origin does not throw', utilP.pseudoAngle(0, 0) === 0);
+  }
+
+  /* --- THE FLOOD IS STILL CONSERVATIVE, which is the only thing it
+     must be. Rewritten to use the above, with the per-line work lifted
+     out of the storey loop and the distance test stopped allocating;
+     none of that is allowed to hide a region a ray can reach. --- */
+  {
+    const lvP = MAP.buildSellWrong();
+    const halfP = Math.atan(Math.tan(36 * Math.PI / 180) * 1.6) + 0.25;
+    let rays = 0, bad = 0;
+    for (const [x, y, yaw] of [[1800, 1600, Math.PI / 2], [2000, -1200, -Math.PI / 2],
+                               [-8900, -3384, 0], [64, -20100, Math.PI / 2]]) {
+      lvP.visibleSectors(x, y, yaw, halfP, mgP.INTERIOR_DIST);
+      const s0 = lvP.sectorAt(x, y), z = (s0 ? s0.floor : 0) + 49;
+      for (let a = -halfP + 0.02; a < halfP; a += 0.03)
+        for (let d = 64; d < 2600; d += 64) {
+          const tx = x + Math.cos(yaw + a) * d, ty = y + Math.sin(yaw + a) * d;
+          const sec = lvP.sectorAt(tx, ty);
+          if (!sec) continue;
+          const tz = Math.min(sec.ceil - 8, Math.max(sec.floor + 8, z));
+          if (lvP.sightBlocked(x, y, z, tx, ty, tz)) break;
+          rays++;
+          if (!lvP.isVisible(sec)) bad++;
+        }
+    }
+    check('the rewritten flood still hides nothing a ray can reach',
+      bad === 0, `${bad} of ${rays} points`);
+    note('rays against the flood', `${rays} points a ray reached at four places`);
+    /* AND IT IS CHEAP, which is the whole reason for the rewrite: on a
+       town street it was eighteen milliseconds a frame. */
+    const t0 = performance.now();
+    for (let i2 = 0; i2 < 30; i2++) lvP.visibleSectors(-8900, -3384, 0, halfP, 4096);
+    const ms = (performance.now() - t0) / 30;
+    note('a flood down a town street', `${ms.toFixed(2)}ms`);
+    check('and a flood down a town street costs under three milliseconds', ms < 3, `${ms.toFixed(2)}ms`);
+  }
+
+  /* --- THE CROWD IS ONE DRAW CALL PER PICTURE ---------------------- */
+  {
+    const St = await import('../js/standees.js');
+    const matS = await import('../js/material.js');
+    const sceneS = new THREEP.Scene();
+    const st = new St.Standees({});
+    st.attach(sceneS);
+    st.begin(0.5);
+    const texA = { id: 'a' }, texB = { id: 'b' };
+    for (let i2 = 0; i2 < 200; i2++) st.add(i2 % 3 ? texA : texB, i2, 1, 2, 32, 48, 0.6, 1, 0, 0, 0, 0);
+    st.end();
+    check('a crowd of two hundred sharing two pictures is two draw calls',
+      st.batchCount === 2 && st.drawn === 200 && sceneS.children.length === 2,
+      `${st.batchCount} batches, ${st.drawn} standees`);
+    const b0 = st.order[0];
+    check('and the buffers grew to hold them rather than being allocated per frame',
+      b0.cap >= b0.n && b0.mesh.geometry.instanceCount === b0.n);
+    check('and each instance carries its own place, size, light and flags',
+      b0.a.pos.array[0] === 0 && b0.a.size.array[0] === 32 && b0.a.size.array[1] === 48 &&
+      Math.abs(b0.a.light.array[0] - 0.6) < 1e-6 &&      // a float32 buffer, so to a hair
+      b0.a.sky.array[0] === 1 && b0.a.flags.itemSize === 4);
+    /* a second frame empties them without throwing anything away */
+    const caps = st.order.map(b => b.cap);
+    st.begin(0);
+    st.end();
+    check('a frame with nobody in it draws nothing and keeps its buffers',
+      st.drawn === 0 && st.batchCount === 0 && st.order.every((b, i2) => b.cap === caps[i2]) &&
+      st.order.every(b => !b.mesh.visible));
+    /* THE SHADER IS THE SAME SHADER. What was a uniform is a varying of
+       the same name under one define, so the body of neither stage
+       knows which way it is being drawn — and that is checkable by
+       reading it. */
+    const sm = matS.createStandeeMaterial(texA);
+    const pm = matS.createSpriteMaterial(texA, { alphaTest: 0.5 });
+    check('the batched sprite and the single one are the same two shaders',
+      sm.vertexShader === pm.vertexShader && sm.fragmentShader === pm.fragmentShader);
+    check('and they differ only in a define',
+      sm.defines.INSTANCED_SPRITE === '' && pm.defines.BILLBOARD === '' &&
+      !('BILLBOARD' in sm.defines) && !('INSTANCED_SPRITE' in pm.defines));
+    check('where the four per-sprite values become varyings of the same name',
+      /#ifdef INSTANCED_SPRITE[\s\S]{0,400}varying float fullbright;/.test(sm.fragmentShader) &&
+      /varying float frost;/.test(sm.fragmentShader) && /varying float ash;/.test(sm.fragmentShader) &&
+      /varying float alight;/.test(sm.fragmentShader));
+    check('and the instance attributes exist and the shared yaw is still a uniform',
+      /attribute vec3  iPos;/.test(sm.vertexShader) && /attribute vec4  iFlags;/.test(sm.vertexShader) &&
+      /uniform float billboardRot;/.test(sm.vertexShader) && !!sm.uniforms.billboardRot);
+    check('and a standee is a cut-out, so nothing has to be sorted',
+      sm.transparent === false && sm.depthWrite === true && sm.uniforms.alphaTest.value === 0.5);
+    /* NOTHING IN THE GAME OWNS A SPRITE MESH ANY MORE */
+    const fsS = await import('node:fs');
+    const actSrc = fsS.readFileSync(new URL('../js/actor.js', import.meta.url), 'utf8');
+    check('and an actor does not make a mesh at all',
+      !/ensureMesh/.test(actSrc) && !/new THREE\.Mesh/.test(actSrc) && /standees\.add\(/.test(actSrc));
+  }
+
+  /* --- THE GEOMETRY LOD -------------------------------------------- */
+  {
+    check('a batch that covers no world is dropped at any distance, and one that covers a block never is',
+      mgP.minSolidFor(960) > 0 && mgP.minSolidFor(320) > mgP.minSolidFor(960));
+    /* IT FOLLOWS THE PIXEL. Half the rows is a pixel four times the
+       solid angle, so four times as much can go — which is the right
+       way round, because the buffer that cannot show the detail is on
+       the machine that cannot afford it. */
+    check('the threshold is four times looser at half the rows',
+      Math.abs(mgP.minSolidFor(480) / mgP.minSolidFor(960) - 4) < 1e-9,
+      `${mgP.minSolidFor(480) / mgP.minSolidFor(960)}`);
+    check('and it never divides by nothing', Number.isFinite(mgP.minSolidFor(0)) && Number.isFinite(mgP.minSolidFor()));
+
+    const lvG = MAP.buildSellWrong();
+    const bankG = tex.bakeTextures();
+    const geoG = mgP.buildLevelGeometry(lvG, bankG);
+    let meshes = 0, withArea = 0, area = 0;
+    const walkG = o => { if (o.geometry && o.userData && o.userData.area !== undefined) { meshes++; if (o.userData.area > 0) withArea++; area += o.userData.area; }
+                         for (const c of o.children || []) walkG(c); };
+    walkG(geoG.group);
+    check('every batch of the level knows how much world it covers',
+      meshes > 500 && withArea === meshes, `${withArea} of ${meshes}`);
+    note('the level, as area', `${meshes} batches over ${(area / 1e6).toFixed(1)} million square units`);
+
+    /* THE AIR DECIDES THE DRAW DISTANCE. A block past FAR_AIR of it is
+       not submitted, and with no air given nothing is dropped. */
+    const blockAt = k => geoG.blockGroups.get(k);
+    const someBlock = [...geoG.blockGroups.keys()].map(k => {
+      const [bx, by] = k.split(',').map(Number);
+      return { k, x: (bx + 0.5) * mgP.BATCH_BLOCK, y: (by + 0.5) * mgP.BATCH_BLOCK };
+    });
+    const eye = someBlock[0];
+    const farOne = someBlock.reduce((a, b) => (Math.hypot(b.x - eye.x, b.y - eye.y) > Math.hypot(a.x - eye.x, a.y - eye.y) ? b : a));
+    const farD = Math.hypot(farOne.x - eye.x, farOne.y - eye.y);
+    lvG.visibleSectors(eye.x, eye.y, 0, 1.2, mgP.INTERIOR_DIST);
+    geoG.applyVisibility(lvG, eye.x, eye.y, mgP.INTERIOR_DIST, Infinity, 960);
+    check('with no air at all, the far side of the town is still drawn', blockAt(farOne.k).visible);
+    geoG.applyVisibility(lvG, eye.x, eye.y, mgP.INTERIOR_DIST, farD * 0.5, 960);
+    check('and inside half the air to it, it is not', !blockAt(farOne.k).visible,
+      `${(farD | 0)} away, air ${(farD * 0.5) | 0}`);
+    check('but the block the eye stands in always is',
+      (geoG.applyVisibility(lvG, eye.x, eye.y, mgP.INTERIOR_DIST, farD * 0.5, 960), blockAt(eye.k).visible));
+    check('and the cut is a fraction of the air rather than a number of units',
+      mgP.FAR_AIR > 0.5 && mgP.FAR_AIR < 1);
+
+    /* AND THE SMALL BATCHES INSIDE IT. At a coarse enough grid the
+       threshold has to start biting, or the mechanism is dead code. */
+    geoG.applyVisibility(lvG, eye.x, eye.y, mgP.INTERIOR_DIST, Infinity, 960);
+    /* how many batches are actually submitted: visible, and with every
+       group above them visible too */
+    const countOn = () => {
+      let n = 0;
+      const w = o => {
+        if (o.geometry && o.userData.area !== undefined) {
+          let v = true;
+          for (let q = o; q; q = q.parent) if (!q.visible) { v = false; break; }
+          if (v) n++;
+        }
+        for (const c of o.children || []) w(c);
+      };
+      w(geoG.group);
+      return n;
+    };
+    const onFine = countOn();
+    geoG.applyVisibility(lvG, eye.x, eye.y, mgP.INTERIOR_DIST, Infinity, 90);
+    const onCoarse = countOn();
+    check('a coarse enough picture drops the batches too small to show in it',
+      onCoarse < onFine, `${onFine} batches at 960 rows, ${onCoarse} at 90`);
+    /* and back again, so it is a decision and not a demolition */
+    geoG.applyVisibility(lvG, eye.x, eye.y, mgP.INTERIOR_DIST, Infinity, 960);
+    check('and puts them back when the picture is fine again', countOn() === onFine,
+      `${countOn()} against ${onFine}`);
+  }
+
+  /* --- THE BURN GRID, which was two thirds of every tic ------------- */
+  {
+    const fsB = await import('node:fs');
+    const gameSrc = fsB.readFileSync(new URL('../js/game.js', import.meta.url), 'utf8');
+    check('the burn picture is drained from a list rather than found by scanning',
+      /gridDirty/.test(gameSrc) && !/for \(let y = 0; y < rows; y\+\+\)/.test(gameSrc));
+    check('and it is not sent to the GPU on every tic', /BURN_UPLOAD_EVERY/.test(gameSrc));
+  }
+
+  /* --- AND THE READOUT TELLS THE TRUTH ABOUT THE FRAME -------------- */
+  {
+    const fsL = await import('node:fs');
+    const lofiSrc = fsL.readFileSync(new URL('../js/lofi.js', import.meta.url), 'utf8');
+    const mainSrc = fsL.readFileSync(new URL('../js/main.js', import.meta.url), 'utf8');
+    check('the pipeline keeps what the WORLD pass cost before its own passes overwrite it',
+      /this\.sceneCalls = r\.info\.render\.calls;/.test(lofiSrc));
+    check('and the readout shows that rather than the blit, which was always 1',
+      /pipeline\.sceneCalls/.test(mainSrc) && !/\$\{renderer\.info\.render\.calls\} draws/.test(mainSrc));
+    check('and the geometry LOD is told how big a pixel is, from the grid',
+      /game\.viewRows = pipeline\.gridHeight;/.test(mainSrc));
+  }
+}
+
 section('the site');
 {
   /* The deploy is a copy, and a copy can leave something out. The fire

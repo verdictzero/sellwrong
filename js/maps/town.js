@@ -1529,7 +1529,7 @@ export function buildTown(rm, mb, opts = {}) {
     const cx = x0 + (x1 - x0 - NAVE_W) / 2;
     const cyTop = y1 - FYc;                              // the tower's front face
     const F = frame(cx, cyTop, 'N');                     // u along +x, v north
-    const dress = { wall: 'CHURCHWD', gable: 'CHURCHWD', roof: 'SHINGLE' };
+    const dress = { wall: 'CHURCHST', gable: 'CHURCHST', roof: 'SHINGLE' };
     /* the body, with a pitched roof — steeper than a house's, because a
        church's is */
     const B = building(tag, frame(cx, cyTop - TOWER, 'N'), NAVE_W, BODY_D, 3, dress,
@@ -1542,7 +1542,7 @@ export function buildTown(rm, mb, opts = {}) {
        street, which is what a church looks like from its own front */
     B.slope = gableSlope('y', cx + NAVE_W / 2, NAVE_W / 2, B.eaves, B.rise);
     /* the tower, with a spire drawn over it — see roofPending */
-    const T = { tag: `${tag} tower`, wall: 'CHURCHWD', gable: 'CHURCHWD', jamb: 'CHURCHWD', foundation: 'STONEFND',
+    const T = { tag: `${tag} tower`, wall: 'CHURCHST', gable: 'CHURCHST', jamb: 'CHURCHST', foundation: 'STONEFND',
                 base: FOUND, top: FOUND + 3 * STOREY + CLEAR, slope: null };
     const Bz = FOUND;
     const holy = { light: 0.34, ambient: 0.34, ceilTex: 'PLASTER', wallTex: 'CHURCHIN', upperTex: 'CHURCHIN', lowerTex: 'CHURCHIN', fuel: TOWN_FUEL.nave };
@@ -1567,8 +1567,8 @@ export function buildTown(rm, mb, opts = {}) {
     const BELF0 = T.top - 176, BELF1 = T.top - 48;        // 288..416
     const bv0 = tv0 + 40, bv1 = -40;                      // and across the tower
     const belfSkin = { ...recess, floorTex: 'SILLWOOD', ceilTex: 'WINREVEL', wallTex: 'WINREVEL',
-                       lowerTex: 'CHURCHWD', upperTex: 'CHURCHWD' };
-    const louvreBack = () => ({ floor: BELF1, ceil: BELF1, lowerTex: 'LOUVRE', upperTex: 'CHURCHWD',
+                       lowerTex: 'CHURCHST', upperTex: 'CHURCHST' };
+    const louvreBack = () => ({ floor: BELF1, ceil: BELF1, lowerTex: 'LOUVRE', upperTex: 'CHURCHST',
                                 wallTex: 'LOUVRE', name: `${tag} belfry louvre` });
     const belfSt = [{ floor: BELF0, ceil: BELF1, light: 0.46, ambient: 0.46, name: `${tag} belfry` }];
     out.louvres = (out.louvres || 0) + 4;
@@ -1611,7 +1611,7 @@ export function buildTown(rm, mb, opts = {}) {
          and the glass on the inner line. */
       const st = [{ floor: Bz + 48, ceil: Bz + 176, name }];
       const outer = Fx.add(u0, v0 - NICHE, u0 + WIN_W, v0, col(B, st,
-        { ...recess, light: 0.85, ambient: 0.85, floorTex: 'SILLWOOD', ceilTex: 'WINREVEL', wallTex: 'WINREVEL', lowerTex: 'CHURCHWD', upperTex: 'CHURCHWD' }));
+        { ...recess, light: 0.85, ambient: 0.85, floorTex: 'SILLWOOD', ceilTex: 'WINREVEL', wallTex: 'WINREVEL', lowerTex: 'CHURCHST', upperTex: 'CHURCHST' }));
       const inner = Fx.add(u0, v0 - ZONE, u0 + WIN_W, v0 - NICHE, col(B, st,
         { ...recess, light: 0.5, ambient: 0.5, floorTex: 'SILLWOOD', ceilTex: 'WINREVEL', wallTex: 'WINREVEL', lowerTex: 'CHURCHIN', upperTex: 'CHURCHIN' }));
       out.windows++;
@@ -1688,7 +1688,7 @@ export function buildTown(rm, mb, opts = {}) {
         solid(B, F, side ? NAVE_W - ZONE : 0, v, side ? NAVE_W : ZONE, wv);
         const st = [{ floor: Bz + 48, ceil: Bz + 176, name: `${tag} nave window` }];
         const outer = F.add(ou, wv, ou + NICHE, wv + WIN_W, col(B, st,
-          { ...recess, light: 0.85, ambient: 0.85, floorTex: 'SILLWOOD', ceilTex: 'WINREVEL', wallTex: 'WINREVEL', lowerTex: 'CHURCHWD', upperTex: 'CHURCHWD' }));
+          { ...recess, light: 0.85, ambient: 0.85, floorTex: 'SILLWOOD', ceilTex: 'WINREVEL', wallTex: 'WINREVEL', lowerTex: 'CHURCHST', upperTex: 'CHURCHST' }));
         const inner = F.add(iu, wv, iu + 8, wv + WIN_W, col(B, st,
           { ...recess, light: 0.5, ambient: 0.5, floorTex: 'SILLWOOD', ceilTex: 'WINREVEL', wallTex: 'WINREVEL', lowerTex: 'CHURCHIN', upperTex: 'CHURCHIN' }));
         out.glass.push({ inner, outer, tex: 'STAINGLS' });
@@ -1833,11 +1833,15 @@ export function buildTown(rm, mb, opts = {}) {
        between its shut top and the roof lip beside it is not a surface,
        it is the roof overhanging, and a texture there is a board
        standing in the air above the gutter. */
-    const buttTop = { ...topOf(B), lowerTex: 'CORNRBRD', wallTex: 'CORNRBRD', upperTex: 'NONE',
+    /* STONE, like the wall it braces. It was CORNRBRD — the painted
+       board that closes the corner of a clapboard building — which was
+       right when the church was clapboard and is a board glued to a
+       stone wall now. */
+    const buttTop = { ...topOf(B), lowerTex: 'CHURCHST', wallTex: 'CHURCHST', upperTex: 'NONE',
                       name: `${tag} buttress` };
     const buttSet = () => underEaves(B, open(`${tag} buttress set-off`, {
       floor: BUTT_SET, ceil: B.top, floorTex: 'WATERTBL', light: 0.34, ambient: 0.34,
-      lowerTex: 'CORNRBRD', upperTex: 'CORNRBRD', wallTex: 'CORNRBRD', fuel: 0 }));
+      lowerTex: 'CHURCHST', upperTex: 'CHURCHST', wallTex: 'CHURCHST', fuel: 0 }));
     /* a strip [o0,o1] out from one side's wall face, from v0 to v1 */
     const outStrip = (side, o0, o1, v0, v1, props) => (v1 - v0 > 0) && (side
       ? F.add(NAVE_W + o0, v0, NAVE_W + o1, v1, props)
@@ -1944,8 +1948,16 @@ export function buildTown(rm, mb, opts = {}) {
        footprint is the tower plus the sixteen the cornice stands out —
        which is what stops it reading as the tower carrying on to a
        point. */
+    /* ONE MATERIAL ALL THE WAY UP: the two triangular ends are shingled
+       like the slopes, because a steeple is a steeple and not a gable
+       with a stone wall in it. And a SOFFIT, because the storey under
+       the spire is shut and without one you stand in the churchyard and
+       look up through the steeple at the sky — see the soffit block in
+       js/mapgeo.js. Stone, so the underside reads as the cornice it
+       sits on carrying round. */
     out.roofPending.push({ x0: sx - BASE, y0: sy - BASE, x1: sx + TOWER + BASE, y1: sy + TOWER + BASE,
-      base: T.top, rise: 320, tex: 'SHINGLE', gableTex: 'CHURCHWD', along: 'y', light: 0.38, sky: 1 });
+      base: T.top, rise: 320, tex: 'SHINGLE', gableTex: 'SHINGLE', soffit: 'CHURCHST',
+      along: 'y', light: 0.38, sky: 1 });
     const [chx, chy] = F.at(NAVE_W / 2, (av0 + av1) / 2);
     out.church = { x: chx, y: chy };
   }

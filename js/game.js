@@ -21,8 +21,8 @@
 
 import * as THREE from 'three';
 import { TICRATE, PLAYER_EYE, angleNorm, angleDiff, dist, dist2, pRandom, clamp } from './util.js';
-import { Level } from './level.js';
-import { buildLevelGeometry } from './mapgeo.js';
+import { Level, VIS_FAR } from './level.js';
+import { buildLevelGeometry, INTERIOR_DIST } from './mapgeo.js';
 import { Actor, ACTIONS, ActorGrid } from './actor.js';
 import { ACTORS } from './states.js';
 import { Player } from './player.js';
@@ -43,6 +43,7 @@ import { Giblets } from './people.js';
 import { Responders } from './responders.js';
 import { Gunships } from './vtol.js';
 import { StreetLights } from './lamplight.js';
+import { Standees } from './standees.js';
 import { Vehicles } from './vehicles.js';
 import { BoreSystem } from './bore.js';
 import { Weather, climate, CLEAR_FAR } from './weather.js';
@@ -60,6 +61,9 @@ const THING_TO_ACTOR = {
    340 is a little over one grid step, so every point on the shop floor is
    reached by two or three of them and losing one is a noticeable dent
    rather than a blackout — until you shoot out the neighbours too. */
+/* HOW OFTEN THE BURN PICTURE GOES TO THE GPU, in tics. Three of them is
+   about twelve hertz; see ticBurnGrid for why it is not thirty-five. */
+const BURN_UPLOAD_EVERY = 3;
 const LAMP_RANGE = 340;
 const LAMP_GAIN = 0.30;
 
@@ -90,6 +94,12 @@ export class Game {
        setting, it is only the drawing that is cheaper.
        ------------------------------------------------------------------ */
     this.quality = { crowd: 1, effects: 1, wood: 1 };
+    /* HOW MANY ROWS OF PIXELS THE PICTURE HAS, set by js/main.js from
+       the pipeline's GRID each frame. It is what tells the geometry LOD
+       how big a pixel is — see minSolidFor in js/mapgeo.js — and it
+       defaults to the tallest grid, which is the setting that drops the
+       least, so anything that never sets it loses nothing. */
+    this.viewRows = 960;
     /* THE HOUR AND THE WEATHER — see js/weather.js. Ticked with the
        world, applied with the frame; everything about the atmosphere
        is set from it and nothing else touches those uniforms. */
@@ -177,6 +187,10 @@ export class Game {
     this.streetLights = new StreetLights(this);
     this.streetLights.setLamps(level);
     if (scene) this.streetLights.attach(scene);
+    /* THE CROWD, BATCHED BY PICTURE. Every sprite in the game goes
+       through this rather than owning a mesh — see js/standees.js. */
+    this.standees = new Standees(this);
+    if (scene) this.standees.attach(scene);
     this.idle = false;                 // the title: the world stands still and the eye wanders
     this._nozzle = { x: 0, y: 0, z: 0 };
     this._scared = [];                 // scratch for Game.scare
@@ -922,17 +936,32 @@ export class Game {
      a ceiling the cells under it, which is also more nearly true than
      "the sector this surface was filed under".
 
-     One byte a cell, in a square texture big enough to hold the grid.
-     225 by 207 at the moment, so 256 square: 64K, uploaded only on the
-     tics where a byte actually changed.
+     ONE BYTE A CELL AND NOT FOUR, in a texture the exact size of the
+     grid rather than the power of two over it. Both of those were free
+     and neither was: this was written as RGBA with the same value in r,
+     g and b, in a square big enough to hold a 225 by 207 supermarket —
+     256 square, 256K, and the sentence above it said 64K because it
+     counted texels and not bytes. The town's grid is 605 by 810, which
+     rounded up to 1024 square and FOUR MEGABYTES, and three.js has no
+     way to upload part of a texture, so every tic on which one cell
+     moved sent all four of them to the GPU. At thirty-five tics that is
+     a hundred and forty megabytes a second to say that a shelf is
+     sooty. It is 605 by 810 single channel now — 478K, which is a
+     factor of nine — and it goes up at most every UPLOAD_EVERY tics,
+     which the eye cannot tell from every tic because what it is drawing
+     is a stain spreading across a floor.
+
+     NPOT AND SINGLE CHANNEL ARE BOTH SAFE HERE and js/forest.js is the
+     precedent: its own mask is a RedFormat DataTexture at the size of
+     its grid. Neither needs mipmaps and neither wraps, which is the
+     whole of what a non-power-of-two texture cannot do.
      ------------------------------------------------------------------ */
   _initBurnGrid() {
     const f = this.fire;
     if (!f) return;
-    let side = 1;
-    while (side < f.cols || side < f.rows) side *= 2;
-    this._burnData = new Uint8Array(side * side * 4);
-    const tex = new THREE.DataTexture(this._burnData, side, side);
+    this._burnData = new Uint8Array(f.cols * f.rows);
+    const tex = new THREE.DataTexture(this._burnData, f.cols, f.rows,
+                                      THREE.RedFormat, THREE.UnsignedByteType);
     /* LINEAR, which is the whole point: the fire's cells are 32 units
        across and the eye is two metres from the floor, so a nearest
        filter would trade one straight seam for a grid of little ones. */
@@ -944,34 +973,61 @@ export class Game {
     world.burnGrid.value = tex;
     world.burnOrigin.value.set(f.originX, f.originY);
     world.burnCell.value = f.CELL;
-    world.burnSide.value = side;
     world.burnCols.value = f.cols;
     world.burnRows.value = f.rows;
     this._burnTex = tex;
-    this._burnSide = side;
+    this._burnPending = false;
+    this._burnNextUpload = 0;
   }
 
-  /** Push the fire's per-cell progress into it. Only uploads when a byte
-   *  actually changed, which for a shop that is not on fire is never. */
+  /**
+   * Push the fire's per-cell progress into it.
+   *
+   * ONLY THE CELLS THAT MOVED. The fire keeps the list — see gridDirty
+   * in js/fire.js — because it is the only thing that knows, and the
+   * alternative was scanning four hundred and ninety thousand cells
+   * thirty-five times a second to find the twenty that changed, which
+   * cost two thirds of every tic in the game whether or not anything
+   * was alight. The list is drained here and nowhere else.
+   */
   ticBurnGrid() {
     const f = this.fire;
     if (!f || !this._burnData) return;
-    const d = this._burnData, side = this._burnSide;
-    const fuel = f.fuel, fuel0 = f.fuel0, cols = f.cols, rows = f.rows;
+    const d = this._burnData;
+    const fuel = f.fuel, fuel0 = f.fuel0;
     let dirty = false;
-    for (let y = 0; y < rows; y++) {
-      const row = y * cols, out = y * side;
-      for (let x = 0; x < cols; x++) {
-        const t = fuel0[row + x];
-        if (t <= 0) continue;                    // never had anything to burn
-        const v = 255 - Math.min(255, Math.round(255 * fuel[row + x] / t));
-        const o = (out + x) * 4;
-        if (d[o] === v) continue;
-        d[o] = v; d[o + 1] = v; d[o + 2] = v; d[o + 3] = 255;
-        dirty = true;
+    /* the whole grid, once, at the start — and again if the fire ever
+       had more to say than a list could hold */
+    if (f.gridDirtyAll) {
+      f.gridDirtyAll = false;
+      f.gridDirty.length = 0;
+      for (let i = 0; i < d.length; i++) {
+        const t = fuel0[i];
+        const v = t <= 0 ? 0 : 255 - Math.min(255, Math.round(255 * fuel[i] / t));
+        if (d[i] !== v) { d[i] = v; dirty = true; }
       }
+    } else {
+      const list = f.gridDirty;
+      for (let k = 0; k < list.length; k++) {
+        const i = list[k];
+        const t = fuel0[i];
+        if (t <= 0) continue;                    // never had anything to burn
+        const v = 255 - Math.min(255, Math.round(255 * fuel[i] / t));
+        if (d[i] === v) continue;
+        d[i] = v; dirty = true;
+      }
+      list.length = 0;
     }
-    if (dirty) this._burnTex.needsUpdate = true;
+    if (dirty) this._burnPending = true;
+    /* AND UP TO THE GPU, on a slower clock than the simulation: three.js
+       r160 can only send a whole texture, so an upload is half a
+       megabyte however little of it moved. A stain creeping across a
+       floor at twelve hertz is a stain creeping across a floor. */
+    if (this._burnPending && this.tics >= this._burnNextUpload) {
+      this._burnTex.needsUpdate = true;
+      this._burnPending = false;
+      this._burnNextUpload = this.tics + BURN_UPLOAD_EVERY;
+    }
   }
 
   /** Clear a room. Anything that can be frightened and is within
@@ -1153,23 +1209,29 @@ export class Game {
        sprite is as wide as it is and the title's camera breathes. */
     const vfov = (this.camera.fov || 72) * Math.PI / 180;
     const halfFov = Math.atan(Math.tan(vfov / 2) * (this.camera.aspect || 1.6)) + 0.25;
-    this.level.visibleSectors(ex, ey, yaw, halfFov, climate.airFar);
+    /* NO FURTHER THAN THE FLOOD IS WORTH RUNNING. Clear air reaches
+       fourteen thousand units and the walk is not worth a tenth of that
+       — see VIS_FAR in js/level.js, and isVisible, which knows that a
+       region past the radius was never walked and says so. */
+    this.level.visibleSectors(ex, ey, yaw, halfFov, Math.min(climate.airFar, VIS_FAR));
     /* AND THE STATIC GEOMETRY TAKES IT TOO. The flood says which regions
        are visible; the blocks those regions are in are the ones drawn,
        and the rest of the town is not submitted at all. */
-    this.geo.applyVisibility(this.level, ex, ey);
+    /* AND THE AIR DECIDES THE DRAW DISTANCE. Everything past a fraction
+       of airFar is sky already — see the note on applyVisibility — so
+       the weather pulls the town in and out with it. */
+    this.geo.applyVisibility(this.level, ex, ey, INTERIOR_DIST, climate.airFar, this.viewRows);
     /* AND HOW MUCH OF THE CROWD TO DRAW. Off the actor's own id rather
        than off a counter, so the same people are the ones left out from
        frame to frame — a crowd that reshuffles which half of it exists
        is worse than half a crowd. */
     const crowd = this.quality.crowd;
+    this.standees.begin(billboardRot);
     for (const a of this.actors) {
-      if (crowd < 1 && a.type === 'SHOPPER' && (a.id % 16) >= crowd * 16) {
-        if (a.mesh) a.mesh.visible = false;
-        continue;
-      }
+      if (crowd < 1 && a.type === 'SHOPPER' && (a.id % 16) >= crowd * 16) { a.drawn = false; continue; }
       a.render(p.x, p.y, billboardRot, vx, vy);
     }
+    this.standees.end();
     this.fire.render(p.x, p.y, billboardRot);
     /* the wood's range is a fraction of a clear night's, because that
        is what its own range was written against, and the weather pulls

@@ -41,6 +41,7 @@ class Batch {
   constructor(name) {
     this.name = name; this.pos = []; this.uv = []; this.light = []; this.sky = []; this.char = [];
     this.lamp = [];
+    this.area = 0;
   }
   get empty() { return this.pos.length === 0; }
 
@@ -66,6 +67,15 @@ class Batch {
      dark — see vLamp in js/material.js — which is how a sector, whose
      light is one number, gets a light with a colour. */
   tri(ax, ay, az, au, av, bx, by, bz, bu, bv, cx, cy, cz, cu, cv, l, sk = 0, ch = 0, lp = 0) {
+    /* HOW MUCH WORLD THIS BATCH COVERS, accumulated as it is built.
+       It is what decides whether the batch is worth a draw call from
+       far away — see the LOD in applyVisibility — and a triangle's area
+       is half the cross product of two of its edges. Counted here
+       because here is the only place that sees a triangle. */
+    const ux = bx - ax, uy = by - ay, uz = bz - az;
+    const vx = cx - ax, vy = cy - ay, vz = cz - az;
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    this.area += Math.sqrt(nx * nx + ny * ny + nz * nz) * 0.5;
     this.pos.push(ax, ay, az, bx, by, bz, cx, cy, cz);
     this.uv.push(au, av, bu, bv, cu, cv);
     this.light.push(l, l, l);
@@ -113,6 +123,10 @@ class BatchSet {
       const mesh = new THREE.Mesh(b.geometry(), mat);
       mesh.frustumCulled = true;
       mesh.name = name;
+      /* what the LOD in applyVisibility reads: how much world this
+         batch covers, so that its share of the screen can be had by
+         dividing by the square of the distance to it */
+      mesh.userData.area = b.area;
       group.add(mesh);
     }
     return group;
@@ -141,6 +155,27 @@ class BatchSet {
    which the mall already sits on — see THE GRID in TOWN.txt.
    ------------------------------------------------------------------ */
 export const BATCH_BLOCK = 3648;
+/* HOW MUCH OF THE AIR A BLOCK HAS TO BE INSIDE to be drawn at all, and
+   from how far off the small batches in it start dropping out. See the
+   note on applyVisibility for both. */
+export const FAR_AIR = 0.85;
+const LOD_FROM = 2400;
+/* THE SMALLEST SHARE OF THE SCREEN A BATCH IS DRAWN FOR, as world area
+   over distance squared — which is its solid angle, near enough, for
+   anything small. Four pixels' worth, and a pixel is a different size
+   on every buffer this game draws into: the pipeline's height is a
+   setting and runs from sixty rows to a thousand (see js/lofi.js), so
+   the threshold FOLLOWS IT rather than being written for one of them.
+   At 960 rows in a 72-degree field a pixel is about 2.3e-6 of a
+   steradian; at 320 it is nine times that, and nine times as much can
+   go. Which is the right way round: the buffer that cannot show the
+   detail is the one on the machine that cannot afford to draw it. */
+const PIXELS_TO_KEEP = 4;
+const REF_ROWS = 960, REF_PIXEL_SOLID = 2.3e-6;
+export function minSolidFor(rows) {
+  const scale = (REF_ROWS / Math.max(60, rows || REF_ROWS)) ** 2;
+  return PIXELS_TO_KEEP * REF_PIXEL_SOLID * scale;
+}
 /* How near you have to be for a block's insides to be drawn. Two block
    pitches: far enough that you never see one arrive, near enough that
    twenty-two of the town's twenty-five blocks are outsides only. */
@@ -173,7 +208,7 @@ export function buildLevelGeometry(level, bank) {
   /* the roofs read their texture sizes from here, being geometry rather
      than a surface any sector owns */
   for (const r of [...(level.roofs || []), ...level.sectors.map(s => s.roof).filter(Boolean)]) {
-    for (const n of [r.tex || 'SHINGLE', r.gableTex || r.tex || 'SHINGLE']) {
+    for (const n of [r.tex || 'SHINGLE', r.gableTex || r.tex || 'SHINGLE', r.soffit].filter(Boolean)) {
       const e = bank.get(n);
       if (e) noteTextureSize(n, e.w, e.h);
     }
@@ -290,6 +325,10 @@ export function buildLevelGeometry(level, bank) {
     for (const t of blockLamps.get(k) || []) lampGeometry(set, level, t);
     shellG.add(set.toGroup(bank));
     if (inner.map.size) innerG.add(inner.toGroup(bank));
+    /* a rebuilt block's batches are all visible again, so the LOD has
+       to forget what it had decided about the ones that are gone */
+    g.userData.lodOff = false;
+    g.userData.lodD2 = -1; g.userData.lodSolid = -1;
   }
 
   /**
@@ -325,12 +364,58 @@ export function buildLevelGeometry(level, bank) {
    * the frustum keeps every block in front of you whether or not a
    * house is standing in the way.
    */
-  function applyVisibility(lv, ex = null, ey = null, innerDist = INTERIOR_DIST) {
+  /* --------------------------------------------------------------------
+     TWO THINGS DECIDE WHETHER A BATCH IS DRAWN, AND BOTH ARE ABOUT SIZE
+
+     The town is twenty-five blocks and every block is about thirty
+     textures, so the frustum alone submits eight hundred draw calls
+     down a street — and measured on a street, two thirds of them
+     carried sixty-four triangles or fewer and half of THOSE were
+     further away than seven thousand units. A two-triangle strip of
+     road line, in its own draw call, five kilometres off.
+
+     THE AIR HAS ALREADY HIDDEN THE FAR ONES. Every surface in the game
+     is mixed toward a texel of the sky by its distance (worldShade in
+     js/material.js), and the mix is nearly complete well before the
+     air's own far limit: at eighty-five per cent of airFar a surface is
+     ninety-three per cent sky. What is drawn there is the sky with a
+     four per cent memory of a roof in it, and not drawing it leaves the
+     sky, which is the same picture. So a block past FAR_AIR of the
+     current air is not submitted. It follows the weather for free —
+     rain pulls airFar in to five thousand and the town closes up with
+     it, which is what a town in the rain does.
+
+     AND A BATCH TOO SMALL TO SEE IS NOT WORTH A DRAW CALL. Each one
+     knows how much WORLD it covers (see Batch.tri), so its share of the
+     screen is that over the square of the distance, and below a few
+     pixels of it there is nothing there to draw. Area and not triangle
+     count, because a road is two triangles and an acre, and area and
+     not the bounding sphere, because a batch's sphere is its whole
+     block and says nothing about the thin strip inside it.
+
+     BOTH ARE CONSERVATIVE AT THE RESOLUTION THE GAME RUNS AT. The
+     threshold is set against the tallest buffer the pipeline will make,
+     so a batch kept at 960 rows is kept at 320 rows too — where it
+     would cover nine times fewer pixels and could have gone.
+     ------------------------------------------------------------------ */
+  function applyVisibility(lv, ex = null, ey = null, innerDist = INTERIOR_DIST,
+                          airFar = Infinity, rows = REF_ROWS) {
     const d2 = innerDist * innerDist;
+    const far = airFar === Infinity ? Infinity : airFar * FAR_AIR;
+    const far2 = far === Infinity ? Infinity : far * far;
+    const minSolid = minSolidFor(rows);
+    /* PAST THE FLOOD'S RADIUS THERE IS NOTHING TO ASK. A block out there
+       was never walked (see VIS_FAR in js/level.js), so every region in
+       it would answer "visible" one at a time and six hundred of them
+       would say it six hundred times. The block's own nearest corner
+       answers for all of them at once, and what decides at that range is
+       the frustum. */
+    const vr2 = lv.visRadius2;
     for (const [k, g] of blockGroups) {
       const list = blockSectors.get(k);
       let on = false;
       if (!list || !list.length) on = true;
+      else if (ex !== null && vr2 !== undefined && vr2 !== Infinity && blockOutOfFlood(k, ex, ey, vr2)) on = true;
       else for (let i = 0; i < list.length; i++) if (lv.isVisible(list[i])) { on = true; break; }
       g.visible = on;
       if (!on || ex === null) continue;
@@ -340,8 +425,56 @@ export function buildLevelGeometry(level, bank) {
       const mid = blockMid.get(k);
       const dx = Math.max(0, Math.abs(ex - mid[0]) - BATCH_BLOCK / 2);
       const dy = Math.max(0, Math.abs(ey - mid[1]) - BATCH_BLOCK / 2);
-      g.children[1].visible = dx * dx + dy * dy <= d2;
+      const bd2 = dx * dx + dy * dy;
+      g.children[1].visible = bd2 <= d2;
+      /* PAST THE AIR, nothing in this block is drawn at all */
+      if (bd2 > far2) { g.visible = false; continue; }
+      /* and inside it, the batches that are too small to see. Measured
+         from the block's NEAR corner, so a batch is never dropped for
+         being in a block whose middle is far when its own end of it is
+         not. */
+      if (bd2 > LOD_FROM * LOD_FROM) {
+        /* ONLY WHEN THE ANSWER COULD HAVE CHANGED. Walking a block's
+           twenty batches every frame to decide something that depends
+           on a distance which moves by a few units costs more than the
+           draw calls it saves — at the default pixel size it saves six
+           of five hundred. So it is redone when the block has got a
+           quarter nearer or further, or when the pixel size changed,
+           and skipped otherwise. */
+        const u = g.userData;
+        if (u.lodSolid !== minSolid || !(Math.abs(bd2 - u.lodD2) < u.lodD2 * 0.25)) {
+          u.lodD2 = bd2; u.lodSolid = minSolid;
+          const shell = g.children[0].children;
+          for (let i = 0; i < shell.length; i++) {
+            const kids = shell[i].children;
+            for (let j = 0; j < kids.length; j++) {
+              const m = kids[j];
+              m.visible = m.userData.area >= bd2 * minSolid;
+            }
+          }
+        }
+      } else if (g.userData.lodOff) {
+        /* back inside the near ring, and it was not last frame:
+           everything on again, once, rather than every frame */
+        const shell = g.children[0].children;
+        for (let i = 0; i < shell.length; i++) {
+          const kids = shell[i].children;
+          for (let j = 0; j < kids.length; j++) kids[j].visible = true;
+        }
+      }
+      g.userData.lodOff = bd2 > LOD_FROM * LOD_FROM;
     }
+  }
+
+  /** Is every part of this block further from the eye than the flood
+   *  was run? Its nearest corner decides — the block pitch is the same
+   *  BATCH_BLOCK the mid points were laid out on. */
+  function blockOutOfFlood(k, ex, ey, vr2) {
+    const mid = blockMid.get(k);
+    if (!mid) return false;
+    const dx = Math.max(0, Math.abs(ex - mid[0]) - BATCH_BLOCK / 2);
+    const dy = Math.max(0, Math.abs(ey - mid[1]) - BATCH_BLOCK / 2);
+    return dx * dx + dy * dy > vr2;
   }
 
   rebuildStatic();
@@ -423,6 +556,32 @@ export function roofGeometry(set, s) {
            [[0, 0], [(y1 - y0) / t.w, 0], [(y1 - y0) / t.w, slope / t.h], [0, slope / t.h]], light * 0.92, sk, ch);
     gb.tri(x1, base, -y0, 0, 0, xm, top, -y0, halfW / gt.w, rise / gt.h, x0, base, -y0, 2 * halfW / gt.w, 0, light * 0.96, sk, ch);
     gb.tri(x0, base, -y1, 0, 0, xm, top, -y1, halfW / gt.w, rise / gt.h, x1, base, -y1, 2 * halfW / gt.w, 0, light * 0.96, sk, ch);
+  }
+
+  /* ------------------------------------------------------------------
+     AND THE UNDERSIDE, for a roof that has nothing under it.
+
+     A roof is ONE-SIDED, like every other surface this file makes: the
+     slopes face out and the gables face out, and from underneath a roof
+     is not there at all. That is right for every roof over a room —
+     what is under it is a ceiling, and you see the ceiling — and it is
+     wrong for exactly one thing in the game, which is the CHURCH SPIRE.
+     The spire stands on the tower's cornice over a storey that is SHUT,
+     so there is no ceiling under it; stand in the churchyard and look up
+     at the steeple and you see straight through it into the sky, which
+     is what the user reported.
+
+     So a roof may say what its underside is made of, and gets a flat
+     cap at its springing, facing DOWN — a boxed soffit, which is what a
+     real steeple has and is where a real one stops. Wound the other way
+     round from a floor, for the reason set out in addFlats: a surface
+     you can only see from the side it is not on is an hour of your
+     life. Lit well under, because it never sees the sun. */
+  if (r.soffit && r.soffit !== 'NONE') {
+    const st = bank_h(set, r.soffit), sb = set.get(r.soffit);
+    sb.quad([[x0, base, -y1], [x1, base, -y1], [x1, base, -y0], [x0, base, -y0]],
+            [[x0 / st.w, -y1 / st.h], [x1 / st.w, -y1 / st.h],
+             [x1 / st.w, -y0 / st.h], [x0 / st.w, -y0 / st.h]], light * 0.62, sk, ch);
   }
   return 1;
 }

@@ -104,6 +104,15 @@ WHERE IT DEPARTS FROM THE PLAN, and why:
     (THE STREET LAMP IS GEOMETRY, js/mapgeo.js), and lit after dark by a
     cold tint on its pool and a flare at its head (js/lamplight.js). No
     utility poles still.
+  AND IT IS DRAWN FOR A PHONE, which is a thing the town made hard and
+    nobody checked until somebody played it on one. The portal flood
+    that culls the shop so well was costing thirty-five milliseconds a
+    frame out here, because an open street grid hides nothing and it was
+    walking two hundred thousand lines to say so; it runs to four
+    thousand units now and the frustum takes the rest. The crowd was a
+    draw call each and is one per picture. A block past most of the air
+    is not drawn, because at that range it is already the sky. See THE
+    FRAME WAS MEASURED, AND THEN CUT in README.txt for the numbers.
   AND THE TOWN IS PLANTED, which is the difference between a street grid
     and a street. Six photographed broadleaves line every verge at a
     pitch of 512, off by a third between the two sides so the street
@@ -540,7 +549,7 @@ are taller than others.
 THE CHURCH
 ----------
 
-White clapboard, a gable end to the street, a tower with a spire. Block
+Coursed stone, a gable end to the street, a tower with a spire. Block
 B3, with a churchyard and a parish hall behind it.
 
   NARTHEX at the door, 320 x 160
@@ -714,7 +723,7 @@ appearing across the fascia sixty times.
                asphalt shingle, standing-seam metal, a shingled gable
   street     concrete sidewalk with a scored joint, granite kerb,
                asphalt in two ages, crosswalk bars, a manhole
-  civic      school brick with a limestone band, church clapboard,
+  civic      school brick with a limestone band, church coursed stone,
                stained glass, a chain-link fence, a backstop
   inside     plaster, wallpaper in three papers, tile, carpet, lino,
                floorboards, a stair tread, a skirting, a lockers run,
@@ -790,7 +799,7 @@ order by anybody.
 THE TEST
 --------
 
-1699 checks pass today in about three minutes, with no install and no
+1749 checks pass today in about three minutes, with no install and no
 browser, and every one of them is there because something reached a
 screenshot. The column breaks assumptions that nothing currently
 asserts, so these come first, in phase 1, before the code they check:

@@ -2414,7 +2414,7 @@ export const CHARRABLE = [
   'CLAPBRD', 'VINYLSID', 'SHINGLE', 'GABLEND', 'PLASTER', 'WALLPAPR',
   'FLOORBRD', 'CARPETDM', 'KITCHTIL', 'STAIRTRD', 'SKIRTING',
   'WINDOWDK', 'WINDOWLT', 'WINDOWWD', 'HOUSDOOR', 'SHOPFRNT',
-  'CHURCHWD', 'STAINGLS', 'LOCKERS', 'BLACKBRD', 'PEWEND', 'SCHOOLBR',
+  'CHURCHST', 'STAINGLS', 'LOCKERS', 'BLACKBRD', 'PEWEND', 'SCHOOLBR',
   /* the facades: a door, a pane and a sill burn; a foundation and a
      gravestone do not */
   'FRNTDOOR', 'FRNTDOR2', 'FRNTDOR3', 'WINPANEL', 'WINPANED', 'WINSHADE', 'SILLWOOD',
@@ -3173,13 +3173,73 @@ T.SCHOOLBR = () => {
   return p.snap(0.5);
 };
 
-T.CHURCHWD = () => {
-  /* White clapboard, kept brighter than the houses because a church is
-     the best-lit building in a town at night and is painted every year
-     whether it needs it or not. */
+/* ---------- THE CHURCH IS BUILT OF STONE ----------
+
+   It was white clapboard: lapSiding in bone, brighter than the houses,
+   on the argument that a church is painted every year whether it needs
+   it or not. That is a true thing about a certain kind of New England
+   meeting house and it was the wrong building — this one has buttresses,
+   a water table, a fieldstone foundation and a stone cornice under its
+   spire, and a clapboard wall between those is a wall that disagrees
+   with everything it is attached to. At the user's request the whole
+   exterior is now ONE STONE: this, over the fieldstone it stands on.
+
+   COURSED ASHLAR, which is the stone a town church is faced with: squared
+   blocks in regular courses, the vertical joints staggered against the
+   course below. Sixteen to a course, so four courses in a repeat and a
+   course is four feet, which is about right for the size the blocks read
+   at from the churchyard.
+
+   WHAT SURVIVES AT SIXTY-FOUR PIXELS is the coursing and nothing else.
+   The bed joints are the picture — a lit arris along the top of every
+   block and a shadow in the joint under it — and the per-block variation
+   in tone is what stops four courses of one grey reading as a painted
+   wall with lines on it. */
+T.CHURCHST = () => {
   const p = new Pix(64, 64, 283);
-  lapSiding(p, 283, 'bone', 0.54, 0.72, 6);
-  p.grime(0.10, 'grey', 0.04, 293);
+  const rng = makeRng(283);
+  const COURSE = 16;
+  p.fill('bone', 0.44);
+  for (let c = 0; c * COURSE < 64; c++) {
+    const y0 = c * COURSE;
+    /* the perpends, staggered half a block against the course below so
+       no joint runs two courses — which is the whole of what makes
+       coursed masonry read as masonry */
+    const edges = [0];
+    for (let x = (c % 2 ? 11 : 24); x < 62; x += 19 + Math.floor(rng() * 9)) edges.push(x);
+    edges.push(64);
+    for (let i = 0; i + 1 < edges.length; i++) {
+      const bx0 = edges[i], bx1 = edges[i + 1];
+      if (bx1 - bx0 < 3) continue;
+      const t = 0.40 + rng() * 0.13;                 // this block's own tone
+      for (let y = y0 + 1; y < y0 + COURSE - 1; y++)
+        for (let x = bx0 + 1; x < bx1; x++)
+          p.ink(x, y, 'bone', Math.max(0.05, Math.min(0.95, t - (y - y0) * 0.005 + (rng() - 0.5) * 0.03)));
+      /* the arris: the top edge of the block, in the sun */
+      for (let x = bx0 + 1; x < bx1; x++) p.ink(x, y0 + 1, 'bone', Math.min(0.95, t + 0.18));
+      if (bx0 > 0) p.vline(bx0, y0 + 1, y0 + COURSE - 1, 'grey', 0.17);   // the perpend
+    }
+    p.hline(0, 63, y0, 'grey', 0.15);                // the bed joint, in shadow
+  }
+  /* A FEW BLOCKS THE WEATHER HAS GOT AT — greener and a shade darker
+     than their neighbours, which is what a wet corner of a stone wall
+     looks like after a century.
+
+     IN THE SAME BRIGHTNESS AS THE STONE, which cost a render to learn:
+     `t` here is how BRIGHT a texel is in its palette key and not how
+     much of a wash is laid over it, so lichen at 0.06 is not a faint
+     tint of green, it is five black rectangles. */
+  for (let k = 0; k < 4; k++) {
+    const bx = Math.floor(rng() * 50), by = Math.floor(rng() * 4) * COURSE + 6;
+    for (let y = by; y < by + COURSE - 7; y++)
+      for (let x = bx; x < bx + 12; x++) {
+        /* ragged, and only where it takes: a solid rectangle of green is
+           a tile somebody painted, not a stone the damp has got into */
+        if (rng() > 0.55 - (y - by) * 0.06) continue;
+        p.ink(x, y, 'olive', 0.36 + rng() * 0.06);
+      }
+  }
+  p.grime(0.18, 'olive', 0.22, 293);
   return p.snap(0.5);
 };
 

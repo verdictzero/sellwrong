@@ -140,14 +140,13 @@ export const world = {
      cells under it, rather than whichever sector it was filed under.
 
      `burnOrigin` and `burnCell` are the grid's corner and pitch in world
-     units; `burnSide` is the square texture it is laid out in and
-     `burnCols`/`burnRows` how much of that square is grid, so anything
-     off the edge of the fire's world reads zero rather than the clamped
-     edge. See Game.ticBurnGrid. */
+     units, and `burnCols` by `burnRows` is its size in cells — which is
+     also, exactly, the size of the texture, so the fetch divides by it
+     and a position off the edge of the fire's world reads zero rather
+     than the clamped edge. See Game.ticBurnGrid. */
   burnGrid:   { value: null },
   burnOrigin: { value: new THREE.Vector2(0, 0) },
   burnCell:   { value: 32.0 },
-  burnSide:   { value: 1.0 },
   burnCols:   { value: 1.0 },
   burnRows:   { value: 1.0 },
   emberRamp: { value: EMBER_RAMP.map(c => new THREE.Vector3(c[0], c[1], c[2])) },
@@ -187,7 +186,6 @@ uniform vec3  emberRamp[8];
 uniform sampler2D burnGrid;
 uniform vec2  burnOrigin;
 uniform float burnCell;
-uniform float burnSide;
 uniform float burnCols;
 uniform float burnRows;
 `;
@@ -351,7 +349,7 @@ float burnAt(vec3 w) {
      js/mapgeo.js — so the grid is indexed with -z. */
   vec2 c = (vec2(w.x, -w.z) - burnOrigin) / burnCell;
   if (c.x < 0.0 || c.y < 0.0 || c.x > burnCols || c.y > burnRows) return 0.0;
-  return texture2D(burnGrid, (c + 0.5) / burnSide).r;
+  return texture2D(burnGrid, (c + 0.5) / vec2(burnCols, burnRows)).r;
 }
 
 /* ---------------------------------------------------------------------
@@ -586,6 +584,41 @@ varying float vLamp;
   uniform vec2  spriteOffset;    // x nudge, y lift off the floor
 #endif
 
+#ifdef INSTANCED_SPRITE
+  /* ------------------------------------------------------------------
+     A CROWD IN ONE DRAW CALL
+
+     Every standee used to be its own mesh with its own material, so the
+     eight hundred people you can see across a car park were eight
+     hundred draw calls and eight hundred uniform updates a frame. They
+     share twenty-eight pictures between them — a shopper is one drawing
+     that faces every way (see js/spriteload.js) — so they can be
+     twenty-eight draw calls instead, which is what js/standees.js does.
+
+     WHAT WAS A UNIFORM IS NOW AN ATTRIBUTE, and that is the whole of
+     the difference. The four values the fragment shader reads per
+     sprite — how fullbright it is, how frozen, how far through being
+     eaten, how alight — are declared below as VARYINGS under this same
+     define, with the names they already had. Not one line of the body
+     of either shader changes, which is the point: a crowd drawn this
+     way cannot look different from a crowd drawn the other way,
+     because the code that draws it is the same code.
+     ------------------------------------------------------------------ */
+  attribute vec3  iPos;        // where its foot is, in renderer axes
+  attribute vec2  iSize;       // width and height in world units
+  attribute float iLight;      // the light of the region it stands in
+  attribute float iSky;        // how much of that light is the sky's
+  attribute vec4  iFlags;      // fullbright, frost, ash, alight
+  /* the yaw every sprite in the scene is turned to, which is the one
+     thing here that IS the same for the whole batch. Declared again
+     because a standee material does not define BILLBOARD. */
+  uniform float billboardRot;
+  varying float fullbright;
+  varying float frost;
+  varying float ash;
+  varying float alight;
+#endif
+
 void main() {
   vUv = uv;
   vLight = light;
@@ -612,6 +645,18 @@ void main() {
     p = vec3(p.x * c, p.y, -p.x * s);
   #endif
 
+  #ifdef INSTANCED_SPRITE
+    /* the same quad, the same spin, and the instance's own everything —
+       see the block at the top of this file */
+    vLight = iLight;
+    vSky = iSky;
+    fullbright = iFlags.x; frost = iFlags.y; ash = iFlags.z; alight = iFlags.w;
+    p.x *= iSize.x;
+    p.y *= iSize.y;
+    float ic = cos(billboardRot), is = sin(billboardRot);
+    p = vec3(p.x * ic, p.y, -p.x * is) + iPos;
+  #endif
+
   vec4 wp = modelMatrix * vec4(p, 1.0);
   vWorld = wp.xyz;
   vec4 mv = viewMatrix * wp;
@@ -623,7 +668,14 @@ void main() {
 const COMMON_FRAG = /* glsl */`
 uniform sampler2D map;
 uniform float alphaTest;
-uniform float fullbright;      // 1.0 = ignore distance and sector light entirely
+#ifdef INSTANCED_SPRITE
+  /* per instance rather than per draw — see the INSTANCED_SPRITE block in
+     the vertex shader. The NAME is the same on purpose, so that not one
+     line of the body below knows which it is reading. */
+  varying float fullbright;
+#else
+  uniform float fullbright;    // 1.0 = ignore distance and sector light entirely
+#endif
 ${WORLD_UNIFORMS_GLSL}
 
 varying vec2  vUv;
@@ -644,18 +696,30 @@ const vec3 LAMP_LIGHT = vec3(${LAMP_LIGHT.map(v => v.toFixed(3)).join(', ')});
 #ifdef FROST
   /* HOW FROZEN THIS THING IS, 0 to 1, per sprite. Only the actors ask
      for it, so the walls and the floor never carry the branch. */
-  uniform float frost;
+  #ifdef INSTANCED_SPRITE
+    varying float frost;
+  #else
+    uniform float frost;
+  #endif
   /* AND HOW FAR THROUGH BEING EATEN BY THE FIRE, on the same terms and
      under the same define, because the two are the same kind of fact
      about the same kind of thing and a second define is a second shader
      permutation for one uniform. See the ASH block in main(). */
-  uniform float ash;
+  #ifdef INSTANCED_SPRITE
+    varying float ash;
+  #else
+    uniform float ash;
+  #endif
   /* AND HOW ALIGHT, 0 to 1. Not the same fact as the one above: ash is
      a body being consumed and ends in a heap, this is a person running
      with their coat on fire and ends in a bang. A thing is never both.
      (No backticks in here, ever: this is a template literal, and one
      of those inside it ends the shader in the middle of a sentence.) */
-  uniform float alight;
+  #ifdef INSTANCED_SPRITE
+    varying float alight;
+  #else
+    uniform float alight;
+  #endif
 #endif
 
 ${WORLD_SHADE_GLSL}
@@ -957,7 +1021,6 @@ export function worldUniforms() {
     burnGrid:     world.burnGrid,
     burnOrigin:   world.burnOrigin,
     burnCell:     world.burnCell,
-    burnSide:     world.burnSide,
     burnCols:     world.burnCols,
     burnRows:     world.burnRows,
   };
@@ -1030,6 +1093,39 @@ export function createSpriteMaterial(texture, opts = {}) {
     blending: blend === 'add' ? THREE.AdditiveBlending : THREE.NormalBlending,
     side: THREE.DoubleSide,
     depthWrite: blend === 'cutout' ? opts.depthWrite !== false : false,
+    toneMapped: false,
+    fog: false,
+  });
+}
+
+/**
+ * A CROWD OF THEM, in one draw call.
+ *
+ * The same shader as above with INSTANCED_SPRITE defined instead of
+ * BILLBOARD, so the four things that were per sprite — where it is, how
+ * big, how lit, and the four flags — arrive as instance attributes. One
+ * of these per PICTURE rather than per person; js/standees.js owns them
+ * and fills the buffers. Cut-out only, because that is what every thing
+ * in the game is drawn as and because a cut-out needs no sorting.
+ */
+export function createStandeeMaterial(texture) {
+  const u = baseUniforms(texture, { alphaTest: 0.5 });
+  u.billboardRot = { value: 0.0 };
+  /* `light`, `sky` and the flags are attributes now — but COMMON_VERT
+     assigns the varyings from the uniforms before the instanced block
+     overrides them, so they have to exist. */
+  u.light = { value: 1.0 };
+  u.sky = { value: 0.0 };
+  u.charred = { value: 0.0 };
+  return new THREE.ShaderMaterial({
+    uniforms: u,
+    defines: { INSTANCED_SPRITE: '', FROST: '' },
+    vertexShader: COMMON_VERT,
+    fragmentShader: COMMON_FRAG,
+    transparent: false,
+    blending: THREE.NormalBlending,
+    side: THREE.DoubleSide,
+    depthWrite: true,
     toneMapped: false,
     fog: false,
   });

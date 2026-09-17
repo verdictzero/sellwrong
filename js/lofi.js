@@ -534,6 +534,16 @@ export class LofiPipeline {
     r.setRenderTarget(this.target);
     r.clear(true, true, true);
     r.render(scene, camera);
+    /* WHAT THE WORLD COST, kept before anything else overwrites it.
+       renderer.info is reset at every render() call, and this method
+       makes four of them — the world, the overlays, the post pass and
+       the blit — so by the time the frame is over the counter reads 1,
+       which is the blit's own quad. That is the number the FPS readout
+       in js/main.js was showing, and "1 draws" is not a useful thing to
+       tell somebody whose frame rate is the reason they turned the
+       readout on. */
+    this.sceneCalls = r.info.render.calls;
+    this.sceneTris = r.info.render.triangles;
     for (const o of overlays) {
       if (!o || !o.scene || !o.camera || o.visible === false) continue;
       r.clearDepth();

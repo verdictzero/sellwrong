@@ -328,6 +328,35 @@ export class FireSystem {
        falls on. A gutted region joins it at runtime — see rainOn */
     this.open  = new Uint8Array(n);
 
+    /* ------------------------------------------------------------------
+       WHICH CELLS CHANGED, so that the picture of this grid the shader
+       reads does not have to be looked for.
+
+       Game.ticBurnGrid turns `fuel / fuel0` into a texture the world
+       shader samples by position (see THE PICTURE in js/game.js). It used
+       to find the changed cells by SCANNING THE WHOLE GRID every tic, and
+       that was written when the grid was the supermarket: 225 by 207,
+       forty-six thousand cells, a fraction of a millisecond. The town
+       made it 605 by 810 — four hundred and ninety thousand — and nobody
+       re-measured. Seventeen million cell reads a second, at thirty-five
+       tics, to find the twenty that moved, and it cost two thirds of
+       every tic in the game whether or not anything was alight.
+
+       So the fire says what it touched. Every write to `fuel` pushes its
+       cell here and ticBurnGrid drains the list; the work is then the
+       number of cells actually burning, which is tens.
+
+       LEVEL 0 ONLY, because that is the plane the picture is of — a
+       fire in a bedroom does not soot the street below it, and every
+       consumer that indexes by cy*cols+cx is reading the ground floor
+       (see the note on `levels` above).
+
+       `gridDirtyAll` is the escape hatch: true to start, so the first
+       drain lays down the whole grid once, and true again if the list
+       ever grows past anything a drain could sensibly walk. */
+    this.gridDirty = [];
+    this.gridDirtyAll = true;
+
     this.active = [];                    // cells currently alight
     this._activeSet = new Uint8Array(n);
     this.totalFuel = 0;
@@ -579,6 +608,7 @@ export class FireSystem {
           if (this.fuel[i] < target) {
             const add = target - this.fuel[i];
             this.fuel[i] += add; this.fuel0[i] += add; this.totalFuel += add;
+            this._touch(i);
           }
         }
         if (this.fuel[i] <= 0) continue;
@@ -641,6 +671,14 @@ export class FireSystem {
     return cooled;
   }
 
+  /** This cell's fuel moved, so the picture of the grid is out of date
+   *  here. See gridDirty in the constructor. */
+  _touch(i) {
+    if (i >= this.plane || this.gridDirtyAll) return;
+    if (this.gridDirty.length > 1 << 16) { this.gridDirtyAll = true; this.gridDirty.length = 0; return; }
+    this.gridDirty.push(i);
+  }
+
   _activate(i) {
     if (this._activeSet[i]) return;
     this._activeSet[i] = 1;
@@ -697,6 +735,7 @@ export class FireSystem {
         h = Math.min(peak, h + RISE);
         const eat = Math.min(f, fuel0[i] * burnFrac(fuel0[i]) * (h / 255));
         fuel[i] = f - eat < 0.02 ? 0 : f - eat;
+        this._touch(i);
         this.burntFuel += eat;
         const si = this.sectorOf[i];
         if (si >= 0) {

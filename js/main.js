@@ -664,6 +664,13 @@ async function boot() {
 
     if (started) game.update(dt);
     music.tick();
+    /* HOW BIG A PIXEL IS THIS FRAME, for the geometry LOD — see
+       minSolidFor in js/mapgeo.js. The GRID and not the buffer: the
+       world is drawn at `height` rows and then resolved onto a grid of
+       `gridHeight` chunky ones, and what you can make out is a grid
+       pixel. With the pixel dial off the grid IS the buffer, and the
+       LOD goes back to dropping almost nothing, which is right. */
+    game.viewRows = pipeline.gridHeight;
     game.render(now);
     /* the sky, again, when the hour or the cloud has moved enough */
     skyBaker.update(game.weather.frame, now / 1000);
@@ -686,10 +693,10 @@ async function boot() {
         let drawn = 0, live = 0;
         for (const a of game.actors) {
           if (a.removed || !a.state) continue;
-          live++; if (a.mesh && a.mesh.visible) drawn++;
+          live++; if (a.drawn) drawn++;
         }
         el.textContent = `${Math.round(fpsFrames / fpsAccum)} FPS  ${pipeline.width}x${pipeline.height}  ` +
-          `${renderer.info.render.calls} draws  ${drawn}/${live} things  ` +
+          `${pipeline.sceneCalls ?? 0} draws  ${drawn}/${live} things  ` +
           `${game.fire.burningCells} alight  ${game.forest.burningCells} wood  ` +
           `${game.flame.liveCount + game.fx.liveCount} particles  ` +
           `${game.weather.label} ${game.weather.shownKind} ${skyBaker.bakes} bakes`;
