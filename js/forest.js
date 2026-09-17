@@ -100,16 +100,20 @@ export const KINDS = [
   { name: 'street_upright', h: 310, aspect: 0.610, r: 14, w: 0 },
   { name: 'street_dense',   h: 268, aspect: 0.670, r: 13, w: 0 },
   { name: 'street_big',     h: 330, aspect: 0.667, r: 16, w: 0 },
-  /* A HEDGE IS SHORT AND STILL STOPS YOU, which is the one thing the
-     height test below could not say. It is clipped box, just over head
-     height, and a row of them at the cell pitch is a hedge you walk
-     along rather than through — so it is CANOPY by name rather than by
-     being tall. */
-  { name: 'hedge_box',      h: 72,  aspect: 0.938, r: 26, w: 0, canopy: true },
+  /* THE CLIPPED BOX USED TO BE HERE, one photographed block of it to a
+     cell, and a hedge was a row of them. It is geometry now, at the
+     user's request — a sector whose floor is the top of the hedge, laid
+     by carveHedges in js/maps/town.js — and the wood no longer grows
+     any. What that bought is a hedge with a CORNER, which no number of
+     billboards has: a row of pictures that all turn to face you has no
+     end you can walk round and no top you can see going away from you.
+     The `canopy` flag below stays because it is what let a short thing
+     be one to a cell, and the next short thing that needs it will. */
 ];
 
 /** Canopy: one to a cell, in the trees array, and it stops you. Tall
- *  enough, or told so — see hedge_box. */
+ *  enough, or told so — the flag is there for a plant that is short and
+ *  still blocks. */
 const isCanopy = k => !k.cover && (k.canopy ?? (k.h > 120));
 
 /* How far a flame steps out of the thing it is burning, toward the eye:

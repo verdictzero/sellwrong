@@ -66,9 +66,10 @@ weather.
                           the squad, fifty-one cells of SWAT; and the army,
                           fifty-one cells cut the same way
   assets/forest/        the wood: ten plants with their burn maps, two
-                          grounds — and the town's seven, six broadleaves
-                          and a block of clipped box, baked into the same
-                          format by tools/bake-plants.mjs
+                          grounds — and the town's six broadleaves, baked
+                          into the same format by tools/bake-plants.mjs.
+                          The block of clipped box is still there and is
+                          no longer loaded: the hedges are geometry now
   assets/sky/night.png  the night as a Polyhaven photograph, which the game
                           wore until the sky was generated (js/skyart.js);
                           kept, no longer loaded, no longer shipped
@@ -138,7 +139,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         1791 checks, no install and no browser
+  the smoke test         1831 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -3914,11 +3915,109 @@ costs the houses nothing: their attics say NONE and never ask.
 
 AND THERE ARE FENCES, at the user's request. Chain link round the ball
 field, wrought iron along the churchyard with the gate where the path
-is, and chain link along the school's frontage. A fence is not a sector:
-it is a masked texture hung in the hole between two patches of ground
-that are both open to the sky, which is the same thing the mall's
-service yard has had since there was a mall, and it is why a fence is
-something you see the ball field THROUGH.
+is, chain link along the school's frontage, and PICKET down every lot
+boundary in the town. A fence is not a sector: it is a masked texture
+hung in the hole between two patches of ground that are both open to
+the sky, which is the same thing the mall's service yard has had since
+there was a mall, and it is why a fence is something you see the ball
+field THROUGH.
+
+AN AMERICAN FRONT YARD IS OPEN AND A BACK YARD IS NOT, and that one
+fact is most of what a street of houses looks like from the pavement:
+lawn running unbroken from door to door along the front, and behind
+every house a square of ground with a line round it. The town had
+neither and the whole depth of a block read as one field with houses
+standing in it. So the picket runs from the FRONT CORNER of the house
+back, never across the front yard, and along the middle of the block
+where the two rows meet back to back.
+
+IT IS FOUND AND NOT PLUMBED. The ground either side of a lot boundary
+is half a dozen rects laid by two different houses that never heard of
+each other, so rather than thread a rect back out of house(), the
+boundary is asked for what has an edge on it, and a fence takes a LIST.
+The lines that do not exist between two rects that never touch cost
+nothing, and a house that changes the shape of its yard tomorrow needs
+no change at the block.
+
+AND THE WIRE ITSELF HAD TO BE REDRAWN, at the user's request. The chain
+link was crossed diagonals with a line top and bottom, which is a
+screen door: a crosshatch has no depth and the eye knows it. Real chain
+link is WOVEN — at every crossing one strand passes in front of the
+other, alternating, and that single-pixel break in the one going under
+is the whole of what makes it look woven rather than printed. Round
+galvanised wire lit from the top left, a top RAIL (the one solid part
+of a chain link fence, and what stops the whole thing reading as a net
+hung off nothing), knuckled selvage under it, a post and tension bar at
+the end of the bay, and a tension wire along the bottom. One repeat is
+one BAY, so the post lands where a post goes. The picket is the same
+bargain: pointed boards with air between them, two rails behind and
+therefore darker, a post with a cap, and the bottom four units gone
+green where the mower never reaches.
+
+A BOX THAT BELONGS TO NO SECTOR, at the user's request, who asked for
+massively more structure on every building in the town. A sector engine
+can do a great many things and there are three it cannot do at all: it
+cannot put anything ABOVE a roof, it cannot put anything in FRONT of a
+wall without carving the ground in front of that wall into pieces, and
+it cannot have two things at the same x,y unless one is over the other
+in the same column. Which rules out, in the order a town misses them:
+the chimney, the porch, the cornice, the dormer, the downpipe.
+
+A ROOF ALREADY HAD THIS PROBLEM and already had the answer — level.roofs
+is a list of footprints drawn as free triangles and owned by no region,
+which is how a sector engine gets a sloped roof at all. boxGeometry in
+js/mapgeo.js is the same bargain for a box: six faces at a place,
+batched into the block it stands in, rebuilt when that block is, lit by
+a number the map hands over. THE WINDING is the whole of the work, and
+it falls out of the rule the rest of that file already follows: the
+map's y is the renderer's minus z, so walk the four sides
+counter-clockwise on the PLAN and wind each one the way addQuad winds a
+line's front, and every face looks out; the lid is the ring itself, in
+plan order, which is what a floor is.
+
+WHAT IT COSTS is what a roof costs. A box is not a region, so it is not
+in the portal flood, it holds no fuel, nothing walks on it and nothing
+collides with it. So the rule that keeps it honest is that every box is
+either ABOVE HEAD HEIGHT or flat against a wall you could not have
+walked through anyway, and the suite holds that: nothing but a post, a
+pipe and a corner board comes down to head height, and all three of
+those are under ten units thick.
+
+WHAT WENT IN, and why each of them and not something else:
+
+  THE CHIMNEY, which is most of what a house is from three streets
+  away. Brick from under the eaves — so the roof closes round it and
+  there is never a gap between the brick and the shingle — up to
+  forty-four over the ridge, with a cap that OVERSAILS by six. That six
+  is the whole reason a chimney reads as masonry rather than as a
+  brick-coloured post: it puts a hard shadow all the way round.
+  THE PORCH: a roof on two posts over the front door. A door with two
+  steps up to it and nothing over it is a fire exit.
+  THE CORNICE, on every terrace. A wall that stops dead at the roof
+  reads as a cut-out; a wall that stops at a moulding standing fourteen
+  units out of it reads as a building, because the moulding puts a line
+  of shadow under itself the whole length of the street. With a string
+  course at the first floor, where the joists really do land.
+  THE AWNINGS over Main Street's shopfronts — striped canvas, over the
+  window and not over the door, and three in ten have taken theirs in.
+  THE DORMERS, on half the houses whose slope faces the street and
+  every third house of a terrace, because a roof is the one surface on
+  a building bigger than the gable.
+  THE GABLE VENT, which is the one piece of ornament on a house that is
+  not ornament at all: an attic has to breathe. A gable with nothing in
+  it is the largest blank surface on an American house.
+  THE WINDOW HEADS: a hole in a wall with nothing over it is a hole; a
+  hole with a board standing six units out over it is a WINDOW, and the
+  difference is one line of shadow.
+  THE CORNER BOARDS and THE DOWNPIPES, which are the two things that
+  give a flat wall a vertical.
+
+TWO THOUSAND SIX HUNDRED BOXES, and they cost sixty-five draw calls on
+a town street — 548 before, 613 after — because the cost of a box is
+not the box, it is the texture: a block pays one draw call per texture
+in it, and these brought eleven new ones. The block LOD drops them at
+distance with everything else, which is why the number is sixty-five
+and not six hundred.
 
 WHICH ALSO SETTLED WHERE MASKED BELONGS. Three of the new textures went
 in masked — a truss, a handrail, a communion rail — and what you saw
@@ -4050,15 +4149,35 @@ any that would stand in a lamp's pool. A street of the WOOD'S trees is a
 town in a national park; six hundred limes down the verges is the single
 change that made the grid read as a place somebody lives.
 
-THE TOWN IS ALSO HEDGED, in clipped box, and the pitch of every run of
-it is 64 for a reason that is not aesthetic. A block of box is CANOPY in
-js/forest.js — one to a cell, and it stops you — and a cell is 64 units,
-so a run planted tighter silently loses blocks to a rule the map cannot
-see, while a run planted looser has sky between one block and the next.
-The block is 67 wide at scale one; the runs step exactly 64; where two
-runs meet, the second one to ask for the corner is refused. It edges the
-green, returns at every gate, runs along the school's foundation and
-stands inside the churchyard's iron.
+THE TOWN IS ALSO HEDGED, in clipped box, and the hedge is a BOX — at
+the user's request, and it was a row of sprites. One photographed block
+of box per 64-unit cell of the wood's grid, each of them swivelling to
+face you. What is wrong with that is not the picture, it is that a row
+of pictures that all turn to face you has NO CORNER: no end you can
+walk round, no thickness, no top going away from you, and the whole run
+turns as you walk past it.
+
+SO IT IS A SECTOR WHOSE FLOOR IS THE TOP OF THE HEDGE. The band down
+its side is the hedge (HEDGESID, one repeat for the whole height, dark
+at the roots and clipped bright along the top), the floor you see over
+it is the clipped surface (HEDGETOP), and forty units of step is nine
+more than the engine will climb, so it stops you the way a hedge does.
+Forty and not the seventy-two the sprite stood at, because forty is
+BELOW THE EYE at forty-nine and the whole point of a green is that you
+can see across it.
+
+AND THE GROUND HAD TO BE LAID ROUND IT. Two rects may not overlap, and
+every hedge in this town runs through the middle of a lawn somebody
+already laid — so a run is recorded as it is asked for and cut in at
+the end, in carveHedges: the lawn it landed in is split into the four
+rects round the hole, the original rect object staying as the biggest
+of them so that anything already holding it still holds something real.
+Where two runs meet, the second is shortened off the end that is
+already box. The pieces are a FAMILY and the one thing that cares is
+the wire, which now hangs between every piece of one and every piece of
+the other. Forty-four runs of it edge the green, return at every gate,
+run along the school's foundation and stand inside the churchyard's
+iron; none of them landed on nothing, and the suite holds that at nought.
 
 THE CEMETERY IS THE ONE THAT NEEDED ALL OF IT AT ONCE. The block is laid
 as a ring of verge, four gates and the ground inside, because a fence in
@@ -4828,7 +4947,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-1791 checks. Every one of them earns its place by having caught something
+1831 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

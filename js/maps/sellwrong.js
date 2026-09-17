@@ -1134,14 +1134,24 @@ export function buildSellWrong(opts = {}) {
        hanging from the sky, and texLocked because finishTextures runs
        at mb.build() and would otherwise take a two-sided line's middle
        straight back off. See out.fences in js/maps/town.js. */
+    /* A RECT MAY HAVE BEEN CUT IN PIECES since the fence named it — a
+       hedge carved out of the lawn it was holding (carveHedges in
+       js/maps/town.js) leaves the original object as the biggest piece
+       and the rest as its FAMILY. The wire goes between every piece of
+       one and every piece of the other, and the pairs that never touch
+       simply have no line between them. */
+    const sectorsOf = r => (Array.isArray(r) ? r : [r])
+      .flatMap(q => q.family || [q]).map(q => q.sector).filter(i => i >= 0);
     for (const f of town.fences) {
-      for (const l of mb.linesBetween(f.a.sector, f.b.sector)) {
-        l.middle = f.tex;
-        l.midHeight = f.h;
-        l.pegMiddle = 'bottom';
-        l.blocking = true;
-        l.texLocked = true;
-        townFenceLines++;
+      for (const a of sectorsOf(f.a)) for (const b of sectorsOf(f.b)) {
+        for (const l of mb.linesBetween(a, b)) {
+          l.middle = f.tex;
+          l.midHeight = f.h;
+          l.pegMiddle = 'bottom';
+          l.blocking = true;
+          l.texLocked = true;
+          townFenceLines++;
+        }
       }
     }
   }
@@ -1655,11 +1665,21 @@ export function buildSellWrong(opts = {}) {
      ceiling, so a pitched roof is geometry over a footprint. See
      roofGeometry in js/mapgeo.js. */
   level.roofs = town ? town.roofPending : [];
+  /* and the free boxes — the chimneys, the porches, the cornices, the
+     awnings — which like the roofs belong to no region at all. See
+     boxGeometry in js/mapgeo.js. */
+  level.props = town ? town.props : [];
   /* the town's trees and shrubs, for js/forest.js to grow: sprites, not
      sectors, which is why a yard has no rectangle for any of them */
   level.plants = town ? town.plants : [];
   /* and where the town is, for whoever wants to drive into it */
-  level.town = town ? { grid: town.grid, stations: town.stations, school: town.school, church: town.church } : null;
+  level.town = town ? { grid: town.grid, stations: town.stations, school: town.school, church: town.church,
+                        /* what the town counted while it was building itself, so
+                           the readouts and the suite can ask without building it
+                           again — hedgeLost is a run that found no ground under
+                           it and should always be nought */
+                        hedges: town.hedges, hedgeLost: town.hedgeLost,
+                        lamps: town.lamps, windows: town.windows, doors: town.doors } : null;
   /* Position, heading and which one it is, for whatever draws the cars. */
   /* and the vans parked along the town's streets — see shoulderRun in
      js/maps/town.js, which puts a slot in a few of the bays it paints */

@@ -170,6 +170,11 @@ const STOOP_D = 32, TREAD_D = 16, STOOP_WING = 16;
               the sky, and not so far over that it glows at night. The
               tar the first cut's roofs read as was the texture, not
               this — see T.SHINGLE. */
+/* HOW TALL A PICKET FENCE IS: forty-eight, which is a foot and a half
+   over the eye of nobody — it is four feet, it is the height the SIZES
+   table hangs one repeat of T.FENCEPIK at, and the two numbers have to
+   be the same number or the pickets come out cut off at the top. */
+const PICKET_H = 48;
 const EAVE = STOOP_D, FASCIA_H = 8;
 const PITCH_SIDE = 0.55, PITCH_FRONT = 0.75, PITCH_ROW = 0.5;
 const ROOF_LIGHT = 0.50;
@@ -294,6 +299,11 @@ export function buildTown(rm, mb, opts = {}) {
                    can do here is name the two sectors and let
                    js/maps/sellwrong.js hang the wire once they do. */
                 fences: [] };
+  /* `a` and `b` are each a rect or a LIST of them: the wire goes
+     between every piece of one and every piece of the other, and a pair
+     with no line between them simply gets none. Which is what lets a
+     fence be named along a whole lot boundary without anyone having to
+     work out how many rects the ground either side of it came in. */
   const fence = (a, b, tex, h) => { out.fences.push({ a, b, tex, h }); return b; };
 
   /* ---- the props every outdoor thing in the town shares ------------ */
@@ -333,6 +343,26 @@ export function buildTown(rm, mb, opts = {}) {
      one word the pavement's shader needs to turn cold after dark. */
   function lamp(x, y, arm) { mb.thing('STREETLAMP', x, y, arm); out.lamps++; }
   function plant(kind, x, y, scale = 1) { out.plants.push({ kind, x, y, scale }); }
+
+  /* ===================================================================
+     THE THINGS THAT STAND PROUD OF A WALL OR ABOVE A ROOF
+
+     A chimney, a porch, a cornice, a downpipe, an awning. Every one of
+     them is a thing this engine could not have until now, and for the
+     same two reasons: a sector cannot be ABOVE a roof, and two sectors
+     cannot share an x,y. So they are FREE BOXES — six faces owned by no
+     region, batched into the block they stand in, drawn by boxGeometry
+     in js/mapgeo.js.
+
+     THE RULE THAT KEEPS THEM HONEST: a free box does not collide, does
+     not burn and is not in the portal flood, so every one of them is
+     either ABOVE HEAD HEIGHT or flat against a wall you could not have
+     walked through anyway. Nothing here is in the way of anything. */
+  out.props = [];
+  function prop(box, z0, z1, tex, extra = {}) {
+    if (!box || z1 - z0 <= 0 || box.x1 - box.x0 <= 0 || box.y1 - box.y0 <= 0) return;
+    out.props.push({ ...box, z0, z1, tex, light: 0.52, ...extra });
+  }
   /* WHAT THE TOWN PLANTS, which is not what the wood grows. The wood is
      firs; a street of firs is a town in a national park. These are the
      photographed broadleaves out of assets/forest/ — see KINDS in
@@ -341,35 +371,108 @@ export function buildTown(rm, mb, opts = {}) {
   const BROADLEAF = ['street_round', 'street_broad', 'street_oval',
                      'street_upright', 'street_dense', 'street_big'];
   const broadleaf = () => BROADLEAF[Math.floor(R() * BROADLEAF.length)];
-  /* THE PITCH OF A HEDGE IS THE WOOD'S OWN CELL, and it has to be,
-     because a block of box is CANOPY (see isCanopy in js/forest.js) and
-     the wood keeps one canopy plant to a cell: two blocks in the same
-     64 units and the second is thrown away, which is a run of hedge
-     with holes in it in a pattern nobody can trace back. Stepped
-     exactly 64 along an axis, consecutive blocks land in consecutive
-     cells whatever the run starts at, and none of them is lost. The
-     box itself is 67 wide at scale 1, so at that pitch they touch. */
-  const HEDGE_PITCH = 64;
-  const hedged = [];                     // every block of box already laid
-  /** A run of clipped box from a to b, one block every HEDGE_PITCH. */
-  function hedgeRun(x0, y0, x1, y1, step = HEDGE_PITCH) {
-    const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy);
-    if (len < 1) return;
-    const n = Math.floor(len / step), ux = (dx / len) * step, uy = (dy / len) * step;
-    /* AND NEVER SMALLER THAN THE PITCH. The block is 67 units across at
-       scale 1 and they stand 64 apart, so anything under 0.95 leaves a
-       slot of sky between one block and the next and the run reads as a
-       row of topiary rather than as a hedge. */
-    for (let i = 0; i <= n; i++) {
-      const hx = x0 + ux * i, hy = y0 + uy * i;
-      /* WHERE TWO RUNS MEET THEY BOTH WANT THE CORNER, and the second
-         one to ask is asking for a block the wood will throw away: one
-         canopy plant to a cell, and the cell is the pitch. Refused
-         here, where it can be seen, rather than in _plantTown, where it
-         cannot. */
-      if (hedged.some(([ax, ay]) => Math.hypot(ax - hx, ay - hy) < HEDGE_PITCH - 0.1)) continue;
-      hedged.push([hx, hy]);
-      plant('hedge_box', hx, hy, 1.00 + R() * 0.14);
+  /* ===================================================================
+     A HEDGE IS A BOX, AND THE GROUND IS LAID ROUND IT
+
+     It was a row of sprites: one photographed block of clipped box per
+     64-unit cell of the wood's grid, turning to face you. At the user's
+     request it is geometry now, and the difference is not subtle — a
+     hedge has a CORNER, it has thickness you walk round, it takes the
+     light on one face and not the other, and you see the clipped top of
+     it going away from you instead of a picture that swivels.
+
+     WHAT IT IS MADE OF: a sector whose floor is the top of the hedge.
+     The band down its side is then the hedge (HEDGESID, one repeat for
+     the whole height), the floor you see over the top is the clipped
+     surface (HEDGETOP), and the forty units of step is nine more than
+     the engine will climb, so it stops you the way a hedge does.
+
+     HOW TALL. Forty, which is below the eye at forty-nine — so you see
+     OVER a hedge and along the top of it. The sprite it replaces stood
+     at seventy-two, and seventy-two in a park is a wall: the whole
+     point of a green is that you can see across it.
+
+     AND THE GROUND HAS TO BE LAID ROUND IT, because two rects may not
+     overlap (see build() in js/maps/rectmap.js) and every hedge in this
+     town runs through the middle of a lawn somebody already laid. So a
+     run is RECORDED here and cut out at the end, in carveHedges: the
+     lawn it landed in is split into the four rects round the hole, the
+     original rect object staying as the biggest of them so that
+     anything already holding it — a fence, a window — still holds
+     something real. The pieces are a FAMILY, and the one thing that
+     cares is the wire: see sectorsOf in js/maps/sellwrong.js. */
+  const HEDGE_H = 40, HEDGE_W = 56;
+  const hedgeCuts = [];                  // every box of hedge to be cut in
+  out.hedges = 0; out.hedgeLost = 0;
+
+  /** A run of clipped box from a to b. Axis-aligned; the box is the run
+   *  swept HEDGE_W wide, so a run of zero length is one block of box. */
+  function hedgeRun(x0, y0, x1, y1) {
+    const H = HEDGE_W / 2;
+    const b = { x0: Math.min(x0, x1) - H, y0: Math.min(y0, y1) - H,
+                x1: Math.max(x0, x1) + H, y1: Math.max(y0, y1) + H };
+    /* WHERE TWO RUNS MEET THEY BOTH WANT THE CORNER. Two boxes may not
+       overlap any more than two lawns may, so the second one to ask is
+       shortened off the end that is already box — which is the corner
+       it wanted, and it is still there, laid by the first. */
+    for (const c of hedgeCuts) {
+      if (!(b.x0 < c.x1 - 0.5 && c.x0 < b.x1 - 0.5 && b.y0 < c.y1 - 0.5 && c.y0 < b.y1 - 0.5)) continue;
+      const alongX = (b.x1 - b.x0) >= (b.y1 - b.y0);
+      const lo = alongX ? 'x0' : 'y0', hi = alongX ? 'x1' : 'y1';
+      if (c[lo] <= b[lo] + 0.5 && c[hi] > b[lo]) b[lo] = c[hi];
+      else if (c[hi] >= b[hi] - 0.5 && c[lo] < b[hi]) b[hi] = c[lo];
+      else return;                       // it crosses the middle: not ours to lay
+      if (b.x1 - b.x0 < 16 || b.y1 - b.y0 < 16) return;
+    }
+    hedgeCuts.push(b);
+  }
+
+  /** What a hedge sector is. Lit a little over the lawn it stands in,
+   *  because a clipped top faces the sky the way a roof does. */
+  const hedgeProps = name => open(name, {
+    floor: HEDGE_H, floorTex: 'HEDGETOP',
+    lowerTex: 'HEDGESID', upperTex: 'HEDGESID', wallTex: 'HEDGESID',
+    light: 0.40, ambient: 0.40, fuel: TOWN_FUEL.park,
+  });
+
+  /** Ground a hedge may be cut out of: a patch of open ground at grade,
+   *  and not a column, an arc, a recess or a piece of hedge. */
+  const carvable = r => r.props.outdoor && !r.props.storeys && !r.props.arc &&
+    !(r.props.floor > 0) && r.props.floorTex !== 'HEDGETOP';
+
+  /** Cut every recorded box out of whatever ground it landed in. */
+  function carveHedges() {
+    const E = 0.5;
+    for (const box of hedgeCuts) {
+      const host = rm.rects.find(r => carvable(r) &&
+        r.x0 <= box.x0 + E && r.y0 <= box.y0 + E && r.x1 >= box.x1 - E && r.y1 >= box.y1 - E);
+      /* A HEDGE WITH NO GROUND UNDER IT is a hedge somebody moved and
+         did not look at. Counted rather than thrown, so the number is
+         in the map's own readout and the suite can hold it at zero. */
+      if (!host) { out.hedgeLost++; continue; }
+      const { x0, y0, x1, y1 } = host;
+      const fam = host.family || (host.family = [host]);
+      /* the four rects round the hole, and the host becomes the biggest
+         of them so that whoever is holding it keeps the most ground */
+      const cand = [[x0, y0, x1, box.y0], [x0, box.y1, x1, y1],
+                    [x0, box.y0, box.x0, box.y1], [box.x1, box.y0, x1, box.y1]];
+      const area = c => Math.max(0, c[2] - c[0]) * Math.max(0, c[3] - c[1]);
+      let bi = 0;
+      for (let i = 1; i < 4; i++) if (area(cand[i]) > area(cand[bi])) bi = i;
+      if (area(cand[bi]) < 1) {
+        /* the box fills its host outright: the host simply becomes hedge */
+        host.props = hedgeProps(`${host.props.name} hedge`);
+        out.hedges++;
+        continue;
+      }
+      for (let i = 0; i < 4; i++) {
+        if (i === bi || area(cand[i]) < 1) continue;
+        const q = rm.add(cand[i][0], cand[i][1], cand[i][2], cand[i][3], host.props);
+        q.family = fam; fam.push(q);
+      }
+      host.x0 = cand[bi][0]; host.y0 = cand[bi][1]; host.x1 = cand[bi][2]; host.y1 = cand[bi][3];
+      rm.add(box.x0, box.y0, box.x1, box.y1, hedgeProps(`${host.props.name} hedge`));
+      out.hedges++;
     }
   }
   /* THE EIGHT STONES, dealt so the plain slabs are common and the
@@ -704,6 +807,14 @@ export function buildTown(rm, mb, opts = {}) {
         const [ax, ay] = at(u0, v0), [bx, by] = at(u1, v1);
         return rm.add(Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by), props);
       },
+      /* THE WORLD BOX of a frame-relative rectangle. `add` makes a
+         sector out of one; this only says where it is, which is what a
+         free box needs — see prop() and boxGeometry in js/mapgeo.js. */
+      box: (u0, v0, u1, v1) => {
+        const [ax, ay] = at(u0, v0), [bx, by] = at(u1, v1);
+        return { x0: Math.min(ax, bx), y0: Math.min(ay, by),
+                 x1: Math.max(ax, bx), y1: Math.max(ay, by) };
+      },
       /* the axis a ridge running ALONG this face runs along */
       axis: (facing === 'N' || facing === 'S') ? 'x' : 'y',
     };
@@ -758,6 +869,117 @@ export function buildTown(rm, mb, opts = {}) {
         outdoor: true, sky: 1, fuel: 0, name: `${B.tag} eaves` },
     ],
   });
+
+  /* ---- the architecture that is not a sector ------------------------
+
+     THE FIVE THINGS EVERY HOUSE ON THIS STREET WAS MISSING, in the
+     order the eye misses them. All of them are free boxes; none of them
+     is in anybody's way. See prop() above.
+     ------------------------------------------------------------------ */
+
+  /* HOW BIG A CHIMNEY IS. Fifty-six across is two feet of flue and a
+     brick either side of it, which is what a stack serving one hearth
+     comes out at; forty-four over the ridge is what the code requires
+     of one within ten feet of it and is therefore what every one of
+     them is built to. The cap OVERSAILS by six, and that six is the
+     whole reason a chimney reads as masonry rather than as a
+     brick-coloured post: it puts a hard shadow all the way round. */
+  const CHIM_W = 28, CHIM_D = 24, CHIM_OVER = 44, CHIM_CAP = 16, CAP_OUT = 6;
+  /** A stack on the ridge at (cu, cv) in F's frame, with its cap. */
+  const chimney = (B, F, cu, cv) => {
+    const top = B.eaves + B.rise + CHIM_OVER;
+    /* it starts UNDER the eaves so the roof closes round it and there
+       is never a gap between the brick and the shingle */
+    prop(F.box(cu - CHIM_W, cv - CHIM_D, cu + CHIM_W, cv + CHIM_D), B.eaves - 24, top,
+         'CHIMNEY', { light: ROOF_LIGHT * 0.9 });
+    prop(F.box(cu - CHIM_W - CAP_OUT, cv - CHIM_D - CAP_OUT, cu + CHIM_W + CAP_OUT, cv + CHIM_D + CAP_OUT),
+         top, top + CHIM_CAP, 'CHIMCAP', { topTex: 'CONCRETE', light: ROOF_LIGHT });
+  };
+
+  /* A PORCH IS A ROOF ON TWO POSTS over the front door, and it is the
+     single thing that most says HOUSE rather than BUILDING from the
+     pavement — a door with two steps up to it and nothing over it is a
+     fire exit. Deep enough to stand under out of the rain, which is
+     what decides the number: sixty-four is two metres. */
+  const PORCH_D = 64, PORCH_Z = FOUND + DOOR_H + 24, PORCH_T = 10, POST = 8;
+  const porch = (B, F, s0, s1) => {
+    const a = s0 - 20, b = s1 + 20;
+    prop(F.box(a, -2, b, PORCH_D), PORCH_Z, PORCH_Z + PORCH_T, 'FASCIA',
+         { topTex: B.roof || 'SHINGLE', light: 0.46, topLight: ROOF_LIGHT });
+    /* the two posts, at the outer corners, standing on the stoop */
+    for (const u of [a + 6, b - 6 - POST])
+      prop(F.box(u, PORCH_D - 16 - POST, u + POST, PORCH_D - 16), FOUND, PORCH_Z, 'PORCHPST', { light: 0.50 });
+  };
+
+  /* THE CORNER BOARD closes the end of a run of siding, and a clapboard
+     house without one has its courses running off into the air. Six
+     units proud, because a board that does not project is paint. */
+  const CORNER = 10, CORNER_OUT = 6;
+  const cornerBoards = (B, F, w) => {
+    for (const u of [0, w - CORNER])
+      prop(F.box(u, -2, u + CORNER, CORNER_OUT), FOUND, B.eaves, 'CORNRBRD', { light: 0.54 });
+  };
+
+  /* AND THE WATER HAS TO GO SOMEWHERE. A downpipe at each front corner,
+     clear of the corner board, running from the gutter line into the
+     ground. Eight square, which at forty metres is one dark line down
+     the face of the house — and one dark line is exactly what it is. */
+  const PIPE = 8;
+  const downpipes = (B, F, w) => {
+    for (const u of [CORNER + 4, w - CORNER - 4 - PIPE])
+      prop(F.box(u, 2, u + PIPE, 2 + PIPE), 0, B.eaves + 6, 'DOWNPIPE', { light: 0.42 });
+  };
+
+  /* A GABLE WITH NOTHING IN IT is the largest blank surface on a house
+     and the eye goes to it before it goes to anything else. What goes
+     in one is a louvred vent, because an attic has to breathe, and it
+     is therefore the one piece of ornament on a house that is not
+     ornament at all. */
+  const GVENT_W = 48, GVENT_H = 32;
+  const gableVent = (B, F, w, d, across) => {
+    const z0 = B.eaves + Math.round(B.rise * 0.34);
+    if (across) {
+      prop(F.box(w / 2 - GVENT_W / 2, -2, w / 2 + GVENT_W / 2, 5), z0, z0 + GVENT_H,
+           'GABLEVNT', { light: 0.50 });
+    } else {
+      /* the gables are the ENDS: one each, on the ridge line */
+      for (const [u0, u1] of [[-6, 1], [w - 1, w + 6]])
+        prop(F.box(u0, -d / 2 - GVENT_W / 2, u1, -d / 2 + GVENT_W / 2), z0, z0 + GVENT_H,
+             'GABLEVNT', { light: 0.46 });
+    }
+  };
+
+  /* A DORMER breaks the one surface on a house that is bigger than the
+     gable, which is the roof. It is two boxes: the cheek and its own
+     little roof, sitting a quarter of the way up the slope where a real
+     one sits, and a window in the front of it. Not on every house —
+     half of them, because a street where every roof has a dormer is a
+     development and not a town. */
+  const DORM_W = 52, DORM_D = 44;
+  const dormer = (B, F, d, cu) => {
+    const vd = d / 4;                       // a quarter of the way up the slope
+    const hz = B.eaves + B.rise * 0.5;      // and what the roof is doing there
+    prop(F.box(cu - DORM_W, -vd - DORM_D, cu + DORM_W, -vd + DORM_D), B.eaves - 8, hz + 62,
+         B.gable, { topTex: B.roof || 'SHINGLE', light: 0.48, topLight: ROOF_LIGHT });
+    const lit = R() < 0.18;
+    prop(F.box(cu - 30, -vd + DORM_D, cu + 30, -vd + DORM_D + 5), hz + 10, hz + 54,
+         lit ? 'WINPANEL' : 'WINPANED', { light: lit ? 0.92 : 0.34 });
+  };
+
+  /* AND A HEAD OVER EVERY WINDOW. A hole in a wall with nothing over it
+     is a hole; a hole with a board standing six units out over it is a
+     WINDOW, and the difference is one line of shadow. */
+  const HEAD_H = 12, HEAD_OUT = 6;
+  const windowHeads = (B, F, ops, ks) => {
+    for (const op of ops) {
+      if (op.kind !== 'window') continue;
+      for (const k of ks) {
+        const sill = (B.winBase || 0) + k * STOREY + (B.sill ?? WIN_SILL);
+        prop(F.box(op.u0 - 8, -2, op.u1 + 8, HEAD_OUT), sill + WIN_H, sill + WIN_H + HEAD_H,
+             'WINTRIM', { light: 0.56 });
+      }
+    }
+  };
 
   /** A solid piece of wall. */
   const solid = (B, F, u0, v0, u1, v1) =>
@@ -1002,6 +1224,23 @@ export function buildTown(rm, mb, opts = {}) {
     if (R() < 0.7) plant(R() < 0.5 ? 'fir_medium' : 'fir_tall_1', ...K.at(lot[0] + 60 + R() * (bk.s0 - lot[0] - 120), 64 + R() * (by - 128)), 0.85 + R() * 0.3);
     if (R() < 0.5) plant('fir_medium', ...K.at(bk.s1 + 60 + R() * (lot[1] - bk.s1 - 120), 64 + R() * (by - 128)), 0.85 + R() * 0.3);
 
+    /* ---- AND WHAT A HOUSE HAS THAT A BOX DOES NOT ------------------
+       The chimney goes on the RIDGE, wherever the ridge happens to be:
+       across the plan on a house whose gable faces the street, along it
+       on one whose eave does. Set back from the front either way,
+       because a stack over the front door is a stack over the parlour
+       and nobody put one there. */
+    if (across) chimney(B, F, w / 2, -d + 200);
+    else chimney(B, F, R() < 0.5 ? 120 : w - 120, -d / 2);
+    if (fr) porch(B, F, fr.s0, fr.s1);
+    cornerBoards(B, F, w);
+    downpipes(B, F, w);
+    gableVent(B, F, w, d, across);
+    windowHeads(B, F, front, ks);
+    /* a dormer only where the slope faces the street, which is the half
+       of them whose ridge runs along it */
+    if (!across && R() < 0.5) dormer(B, F, d, R() < 0.5 ? 130 : w - 130);
+
     out.houses.push({ tag, n, w, d });
     return B;
   }
@@ -1026,6 +1265,52 @@ export function buildTown(rm, mb, opts = {}) {
               [lx - hx, lx + LOT_W - hx], FRONT_YARD, FACE - FRONT_YARD - HOUSE_D);
       }
     }
+    /* ---- AND THE PICKET FENCES, at the user's request ---------------
+
+       AN AMERICAN FRONT YARD IS OPEN AND A BACK YARD IS NOT. That one
+       fact is most of what a street of houses looks like from the
+       pavement: lawn running unbroken from door to door along the
+       front, and behind every house a square of ground with a line
+       round it. The town had neither, and the whole depth of a block
+       read as one field with houses standing in it.
+
+       So: a fence down every lot boundary from the FRONT CORNER of the
+       house back — never across the front yard, which is why the run
+       starts at the front wall and not at the sidewalk — and one along
+       the middle of the block, where the two rows meet back to back.
+
+       IT IS FOUND AND NOT PLUMBED. The ground either side of a lot
+       boundary is half a dozen rects laid by two different houses that
+       never heard of each other, so rather than thread a rect back out
+       of house(), the boundary is asked for what has an edge on it. A
+       fence takes a list (see `fence` above), the lines that do not
+       exist between two rects that never touch cost nothing, and a
+       house that changes the shape of its yard tomorrow needs no change
+       here. */
+    const mid = (y0 + y1) / 2;
+    /* only the yards: the sidewalk, the plinth and the stoop all have
+       edges on these lines too, and none of them is a garden */
+    const isYard = r => /yard/.test(r.props.name || '') && r.props.outdoor && !r.props.storeys && !(r.props.floor > 0);
+    /** Yards with an edge on the line `axis = c`, over [lo,hi], one list
+     *  for each side of it. Overlap has to be REAL and not a shared
+     *  corner, or the front yard joins in at the line it ends on. */
+    const eitherSide = (axis, c, lo, hi) => {
+      const out2 = [[], []];
+      for (const r of rm.rects) {
+        if (!isYard(r)) continue;
+        const [a0, a1, b0, b1] = axis === 'x' ? [r.x0, r.x1, r.y0, r.y1] : [r.y0, r.y1, r.x0, r.x1];
+        if (b1 <= lo + 1 || b0 >= hi - 1) continue;
+        if (Math.abs(a1 - c) < 0.5) out2[0].push(r);
+        else if (Math.abs(a0 - c) < 0.5) out2[1].push(r);
+      }
+      return out2;
+    };
+    for (let i = 1; i < lots; i++) {
+      const [w0, w1] = eitherSide('x', x0 + i * LOT_W, y0 + FRONT_YARD, y1 - FRONT_YARD);
+      if (w0.length && w1.length) fence(w0, w1, 'FENCEPIK', PICKET_H);
+    }
+    const [s0, s1] = eitherSide('y', mid, x0, x1);
+    if (s0.length && s1.length) fence(s0, s1, 'FENCEPIK', PICKET_H);
   }
 
   /* =================================================================
@@ -1098,6 +1383,53 @@ export function buildTown(rm, mb, opts = {}) {
     /* the gable ends, with the foundation along them */
     F.add(-PLINTH, -d, 0, 0, plinthProps(B));
     F.add(w, -d, w + PLINTH, 0, plinthProps(B));
+
+    /* ---- AND WHAT A TERRACE HAS THAT A LONG BOX DOES NOT ------------
+
+       A HUNDRED FEET OF UNBROKEN WALL is the problem, and the three
+       answers to it are all horizontal: something at the top where the
+       wall stops, something at the floor line to say there are two
+       floors and not one tall one, and something at the bottom over
+       every shop. Without them a terrace is a fence with windows.
+
+       THE CORNICE IS THE IMPORTANT ONE. A wall that stops dead at the
+       roof reads as a cut-out; a wall that stops at a moulding standing
+       fourteen units out of it reads as a building, because the
+       moulding puts a line of shadow under itself the whole length of
+       the street. */
+    const CORN_H = 24, CORN_OUT = 14;
+    prop(F.box(-CORN_OUT, -2, w + CORN_OUT, CORN_OUT), B.eaves - CORN_H, B.eaves,
+         'CORNICE', { topTex: 'WATERTBL', light: 0.56 });
+    /* THE STRING COURSE at the first floor, which is where the joists
+       land and therefore where a brick building really does change. */
+    const floorLine = B.base + STOREY;
+    prop(F.box(-6, -2, w + 6, 8), floorLine - 16, floorLine, 'WATERTBL', { light: 0.50 });
+
+    /* THE STACKS. A terrace has one over every party wall it can
+       afford, which historically was every second house; the ones
+       between are the same flues gathered into one. Four to a run of
+       sixteen, which from the street is a roofline with something on
+       it — and a roofline with nothing on it is a roofline nobody
+       believes. */
+    for (let i = 2; i < count; i += 4) chimney(B, F, i * ROW_W, -d / 2);
+
+    /* AND THE AWNINGS over the shopfronts, which is the one thing that
+       makes a street of shops read as OPEN. Canvas, over the window and
+       not over the door, hung off the transom bar. */
+    if (shops) for (let i = 0; i < count; i++) {
+      const u = i * ROW_W;
+      if (R() < 0.3) continue;                    // three in ten have taken theirs in
+      const top = B.base + STOREY - 20;
+      prop(F.box(u + 60, -2, u + 132, 44), top - 32, top, 'AWNING',
+           { topTex: 'AWNING', light: 0.58, topLight: 0.66 });
+    }
+    /* the downpipes at the ends of the run, where a terrace's water
+       actually comes down */
+    downpipes(B, F, w);
+    windowHeads(B, F, front, shops ? ks.slice(1) : ks);
+    /* AND THE DORMERS. A terrace's roof is the longest unbroken surface
+       in the town; every third house gets an attic window out of it. */
+    if (!shops) for (let i = 1; i < count; i += 3) dormer(B, F, d, i * ROW_W + ROW_W / 2);
     return B;
   }
 
@@ -2177,6 +2509,10 @@ export function buildTown(rm, mb, opts = {}) {
       }
     }
   }
+
+  /* AND THE HEDGES LAST, because every one of them is a hole cut in a
+     lawn somebody else laid and the lawn has to be there first. */
+  carveHedges();
 
   return out;
 }

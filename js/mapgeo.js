@@ -213,6 +213,14 @@ export function buildLevelGeometry(level, bank) {
       if (e) noteTextureSize(n, e.w, e.h);
     }
   }
+  /* and the free boxes read theirs from the same place, for the same
+     reason: nothing owns them, so nothing else would */
+  for (const r of level.props || []) {
+    for (const n of [r.tex, r.topTex].filter(Boolean)) {
+      const e = bank.get(n);
+      if (e) noteTextureSize(n, e.w, e.h);
+    }
+  }
 
   /* A line is dynamic if either sector it touches can move, because the
      wall above a door changes height every tic the door is opening. */
@@ -248,11 +256,15 @@ export function buildLevelGeometry(level, bank) {
   /* the roofs, which belong to no sector at all — see roofGeometry */
   const blockRoofs = new Map();
   for (const r of level.roofs || []) push(blockRoofs, blockOf((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2), r);
+  /* and the boxes, which belong to no sector either — see boxGeometry */
+  const blockProps = new Map();
+  for (const r of level.props || []) push(blockProps, blockOf((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2), r);
   /* and the street lamps, which are things the town laid and geometry
      this file stands up — see lampGeometry */
   const blockLamps = new Map();
   for (const t of level.things || []) if (t.type === 'STREETLAMP') push(blockLamps, blockOf(t.x, t.y), t);
-  const blockKeys = [...new Set([...blockSectors.keys(), ...blockLines.keys(), ...blockRoofs.keys(), ...blockLamps.keys()])];
+  const blockKeys = [...new Set([...blockSectors.keys(), ...blockLines.keys(), ...blockRoofs.keys(),
+                                 ...blockProps.keys(), ...blockLamps.keys()])];
 
   /* AND THE INTERIORS ARE LOD. The buffer is two to four hundred rows
      tall. You cannot see through a forty-eight-unit window at forty
@@ -322,6 +334,11 @@ export function buildLevelGeometry(level, bank) {
     for (const r of blockRoofs.get(k) || []) roofGeometry(set, { roof: r, light: r.light });
     /* AND THE STREET LAMPS, in the shell: a lamp is the thing you see
        from the far end of a street after the houses have gone to boxes */
+    /* AND THE BOXES: the chimney over the ridge, the porch over the
+       stoop, the cornice at the top of a wall. Shell, with the roofs,
+       because a chimney is most of what a house is from three streets
+       away. */
+    for (const r of blockProps.get(k) || []) boxGeometry(set, r);
     for (const t of blockLamps.get(k) || []) lampGeometry(set, level, t);
     shellG.add(set.toGroup(bank));
     if (inner.map.size) innerG.add(inner.toGroup(bank));
@@ -591,6 +608,80 @@ export function roofGeometry(set, s) {
 const ROOF_SIZES = new Map();
 export function noteTextureSize(name, w, h) { ROOF_SIZES.set(name, { w, h }); }
 function bank_h(set, name) { return ROOF_SIZES.get(name) || { w: 64, h: 64 }; }
+
+/* =====================================================================
+   A BOX THAT BELONGS TO NO SECTOR
+
+   A sector engine can do a great many things and there are three it
+   cannot do at all: it cannot put anything ABOVE a roof, it cannot put
+   anything in FRONT of a wall without carving the ground in front of
+   that wall into pieces, and it cannot have two things at the same x,y
+   unless one is above the other in the same column. Which rules out, in
+   order of how much a town misses them: the chimney, the porch, the
+   cornice, the dormer, the downpipe and the shed.
+
+   A ROOF ALREADY HAD THIS PROBLEM and already has the answer — see
+   roofGeometry, and `level.roofs`, which is a list of footprints drawn
+   as free triangles and owned by no region. This is the same bargain
+   for a box: six faces at a place, batched into the block it stands in,
+   rebuilt when that block is, lit by a number the map hands over.
+
+   WHAT IT COSTS is what a roof costs: it is not a region, so it is not
+   in the portal flood, it holds no fuel, nothing walks on it and
+   nothing collides with it. So a box goes ABOVE HEAD HEIGHT or it goes
+   flat against a wall you could not walk through anyway, and anything
+   that has to stop you is still a sector. Every one of them in this
+   town obeys that: see the props in js/maps/town.js.
+
+   THE WINDING, which is the whole of the work. The map's y is the
+   renderer's minus z, so a ring that is counter-clockwise on the floor
+   plan is clockwise on the screen and every face in this file is wound
+   against the plan to compensate (see the long note in addQuad). For a
+   box that comes out as: walk the four sides counter-clockwise on the
+   plan — south, east, north, west — and wind each one the way addQuad
+   winds a line's FRONT, and every face looks out. The lid is the ring
+   itself, in plan order, which is what addFlats does for a floor.
+   ===================================================================== */
+
+/**
+ * One free-standing box.
+ *
+ * `x0..y1` is its footprint and `z0..z1` its height. `tex` skins the
+ * four sides and `topTex` the lid — leave the lid off and the box has
+ * no top, which is right for one that goes up under something else.
+ */
+export function boxGeometry(set, p) {
+  const { x0, y0, x1, y1, z0, z1 } = p;
+  if (x1 - x0 <= 0 || y1 - y0 <= 0 || z1 - z0 <= 0) return 0;
+  const lit = Math.max(0.02, Math.min(1.4, p.light ?? 0.5));
+  const sk = p.sky ?? 1, ch = p.char ?? 0;
+  let quads = 0;
+  if (p.tex && p.tex !== 'NONE') {
+    const t = bank_h(set, p.tex), b = set.get(p.tex);
+    /* v runs DOWN from the top of the box, the way every wall in this
+       file does, so a course of brick starts at the cap and not at
+       whatever height the ground happened to be */
+    const vB = -(z1 - z0) / t.h;
+    /* the four sides, counter-clockwise on the plan */
+    for (const [ax, ay, bx, by] of [[x0, y0, x1, y0], [x1, y0, x1, y1],
+                                    [x1, y1, x0, y1], [x0, y1, x0, y0]]) {
+      const u = Math.hypot(bx - ax, by - ay) / t.w;
+      b.quad([[bx, z1, -by], [ax, z1, -ay], [ax, z0, -ay], [bx, z0, -by]],
+             [[u, 0], [0, 0], [0, vB], [u, vB]], lit, sk, ch);
+      quads++;
+    }
+  }
+  if (p.topTex && p.topTex !== 'NONE') {
+    const t = bank_h(set, p.topTex), b = set.get(p.topTex);
+    /* the lid, lit as a roof is: it is the face that looks at the sky */
+    const tl = Math.max(0.02, Math.min(1.4, p.topLight ?? lit * 1.12));
+    const uv = (x, y) => [x / t.w, -y / t.h];
+    b.tri(x0, z1, -y0, ...uv(x0, y0), x1, z1, -y0, ...uv(x1, y0), x1, z1, -y1, ...uv(x1, y1), tl, sk, ch);
+    b.tri(x0, z1, -y0, ...uv(x0, y0), x1, z1, -y1, ...uv(x1, y1), x0, z1, -y1, ...uv(x0, y1), tl, sk, ch);
+    quads++;
+  }
+  return quads;
+}
 
 /* --------------------------------------------------------------------
    THE STREET LAMP IS GEOMETRY

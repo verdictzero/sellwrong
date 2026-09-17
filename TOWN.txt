@@ -95,6 +95,14 @@ WHERE IT DEPARTS FROM THE PLAN, and why:
     a VERGE outside it. A fence with nothing behind it has nothing to
     hang in, so the block is laid as a ring of verge, four gates and the
     ground inside, and the iron goes in the eight lines between them.
+  AND A BOX THAT BELONGS TO NO SECTOR, at the user's request, who asked
+    for massively more structure on every building. A sector cannot be
+    above a roof or in front of a wall, which rules out the chimney, the
+    porch, the cornice, the dormer, the downpipe and the awning. They
+    are free boxes — see boxGeometry in js/mapgeo.js — six faces owned
+    by no region, batched into the block they stand in. Every one of
+    them is above head height or flat against a wall, because a free box
+    does not collide.
   THERE ARE LAMPS after all — one every 1536 along a sidewalk,
     staggered, one on every corner, each over a pool of light that is a
     brighter sector of pavement — and trees in the yards, shrubs along
@@ -125,12 +133,21 @@ WHERE IT DEPARTS FROM THE PLAN, and why:
     the line is what makes it a cemetery rather than a field with rubble
     in it — and the ranks step round three specimen trees a quarter.
     The art is photographs: see THE TWO ART PIPELINES in README.txt.
-  A BLOCK OF BOX IS CANOPY, which sets the pitch of every hedge in the
-    town at 64. The wood keeps one canopy plant to a cell and a cell is
-    64 units, so a run planted tighter loses blocks to a rule it cannot
-    see; a run planted looser has sky between one block and the next.
-    The blocks are 67 wide and stand 64 apart, and where two runs meet
-    the second one to ask for the corner is refused.
+  A HEDGE IS A BOX, not a row of sprites — at the user's request. It is
+    a sector whose FLOOR is the top of the hedge: the band down its side
+    is the hedge, the floor you see over it is the clipped top, and 40
+    units of step is 9 more than the engine will climb. Forty and not
+    the sprite's 72, because 40 is below the eye at 49 and a green you
+    cannot see across is a wall. The ground it stands in is cut open for
+    it at the end of the build (carveHedges): the lawn is split into the
+    four rects round the hole and the original object stays as the
+    biggest of them, so whatever was holding it still holds something.
+  AND THE PICKET FENCES, down every lot boundary from the front corner
+    of the house back, and along the middle of every block of houses.
+    An American front yard is OPEN and a back yard is not, and without
+    that the whole depth of a block is one field with houses in it.
+    Found and not plumbed: the boundary is asked for what has an edge on
+    it, because a fence takes a list of rects now.
   THE FUEL IS THREE HUNDRED AND OVER in the school and the church,
     because the spread chance saturates at three hundred and a corridor
     at a hundred and twenty was a firebreak down the middle of the

@@ -2609,9 +2609,31 @@ const SIZES = {
   BLEACHER: { w: 64, h: 24 },
   SCHDOOR:  { w: 64, h: 80 },
   DATESTON: { w: 64, h: 32 },
-  CHAINLNK: { w: 64, h: 64, masked: true },
+  /* THE FENCES are declared in WORLD UNITS and one repeat of each is
+     one BAY of it — post to post — so the post lands where a post goes.
+     Chain link is further down, beside the mall's; a picket bay is four
+     feet of fence and sixty-four units of run. */
   FENCEPIK: { w: 64, h: 48, masked: true },
   TOWNPOLE: { w: 64, h: 128, masked: true },
+  /* WHAT STANDS PROUD OF A WALL OR ABOVE A ROOF. These skin the free
+     boxes — see boxGeometry in js/mapgeo.js — and three of them are ONE
+     REPEAT FOR THE WHOLE THING: a cap is sixteen tall, a post is
+     ninety-six and eight square, a downpipe is eight square, so each
+     wears its own picture once and not a fraction of one. */
+  CHIMNEY:  { w: 64, h: 64 },
+  CHIMCAP:  { w: 64, h: 16 },
+  DOWNPIPE: { w: 8,  h: 64 },
+  PORCHPST: { w: 8,  h: 96 },
+  AWNING:   { w: 64, h: 32 },
+  GABLEVNT: { w: 48, h: 32 },
+  WINTRIM:  { w: 64, h: 12 },
+  /* A HEDGE IS A BOX AND NOT A SPRITE, so it needs two: the clipped top
+     you see over it, which tiles like any ground, and the side, which
+     is ONE REPEAT FOR THE WHOLE HEIGHT the way a foundation is — dark
+     at the roots, clipped bright along the top, and never a second
+     clipped edge halfway up. HEDGE_H in js/maps/town.js is this 72. */
+  HEDGETOP: { w: 64, h: 64 },
+  HEDGESID: { w: 64, h: 72 },
   /* THE FACADES. One repeat is the whole thing: the foundation's
      thirty-two, a riser's sixteen, a door's forty-eight by eighty. */
   FOUNDATN: { w: 64, h: 32 },
@@ -3302,28 +3324,264 @@ T.PEWEND = () => {
   return p.snap(0.5);
 };
 
+/* =====================================================================
+   THE FENCES, AND WHAT MAKES ONE READ AS ITSELF
+
+   A fence in this engine is a masked texture hung in the hole between
+   two patches of ground (see `fence` in js/maps/town.js), so the whole
+   of a fence IS its texture: there is no geometry to fall back on and
+   nothing behind it but the world. Which means the thing that decides
+   whether you believe it is not the material, it is the HARDWARE — the
+   post, the rail, the way the wire is fastened. A mesh with no post is
+   a pattern. A mesh on a post with a rail across the top is a fence.
+
+   BOTH OF THESE ARE ONE REPEAT OF A REAL BAY, at the width the SIZES
+   table hangs them: a chain link panel between two posts, and a run of
+   picket between two posts. So the post lands where a post goes and
+   not wherever the tiling happens to put it.
+   ===================================================================== */
+
+/** Coverage of a pixel by a line of half-width `hw` at distance `d`,
+ *  0..1. A wire is round and a picket is sawn, and the only difference
+ *  the eye gets at this size is whether the edge falls off. */
+const cover = (d, hw) => Math.max(0, Math.min(1, hw + 0.5 - Math.abs(d)));
+
 T.CHAINLNK = () => {
-  /* Masked, like the yard fence it is a cousin of, and used round the
-     ball field. */
+  /* CHAIN LINK, one bay: 128 units across and 96 tall — ten feet of
+     ball field fence. What it is made of, from the top down:
+
+       THE TOP RAIL, a pipe threaded through the top of the mesh. It is
+       the one part of a chain link fence that is SOLID, it catches the
+       sky along its upper edge and it is what stops the whole thing
+       reading as a net hung off nothing.
+       THE SELVAGE under it — the mesh is not cut off square at the top,
+       it is KNUCKLED: every strand turns over and goes back down, so
+       the top row is a row of little arches and not a row of spikes.
+       THE MESH, and it is WOVEN. Two families of diagonal strands, and
+       at every crossing one of them passes in front of the other,
+       alternating. Drawn as a crosshatch instead — which is what this
+       was — it reads as a screen door, because a crosshatch has no
+       depth and the eye knows it.
+       THE POST at the end of the bay, and the TENSION BAR wired to it,
+       which is the flat strap the end of the mesh is threaded onto.
+       THE BOTTOM TENSION WIRE, a single strand run through the last row
+       so the mesh cannot be lifted and crawled under.
+
+     Galvanised steel, so everything is grey and the light is from the
+     top left like everything else in this game. */
   const p = new Pix(64, 64, 349, false);
   p.clear();
-  for (let i = -64; i < 128; i += 8) {
-    p.line(i, 0, i + 64, 63, 'grey', 0.42, 190);
-    p.line(i, 63, i + 64, 0, 'grey', 0.42, 190);
+  const W = 64, H = 64;
+  const RAIL = 3;                    // the pipe, in rows
+  const MESH0 = RAIL + 2;            // where the mesh starts
+  const PITCH = 8;                   // one diamond, in pixels
+  const WIRE = 0.55;                 // half-width of a strand
+
+  /* --- the mesh ---------------------------------------------------- */
+  for (let y = MESH0; y < H; y++) for (let x = 0; x < W; x++) {
+    /* the two families, as the distance to the nearest strand of each */
+    const wrap = v => { const m = ((v % PITCH) + PITCH) % PITCH; return m > PITCH / 2 ? m - PITCH : m; };
+    const da = wrap(y - x), db = wrap(y + x);
+    const ca = cover(da, WIRE), cb = cover(db, WIRE);
+    if (ca <= 0 && cb <= 0) continue;
+    /* WHICH STRAND OWNS THIS PIXEL. Away from a crossing only one of
+       them is here at all and it is simply drawn — a strand is bright
+       along its whole length. It is AT A CROSSING that the question
+       arises, and there the parity of the two strand numbers decides,
+       which alternates along either strand: over, under, over, under.
+       That single-pixel break in the one going under is the whole of
+       what makes a weave look woven rather than printed. */
+    const ia = Math.round((y - x) / PITCH), ib = Math.round((y + x) / PITCH);
+    const crossing = ca > 0 && cb > 0;
+    const takeA = crossing ? ((ia + ib) & 1) === 0 : ca >= cb;
+    const c = takeA ? ca : cb, d = takeA ? da : db;
+    if (c < 0.50) continue;
+    /* ROUND WIRE, GALVANISED, which is the brightest thing in a yard on
+       a dull day and was drawn here for years as a dark scribble. The
+       top left of the strand takes the light and the far side of it
+       falls away. */
+    p.ink(x, y, 'grey', 0.52 + (0.5 - Math.abs(d) / (WIRE * 2)) * 0.26, 255);
   }
-  for (const y of [0, 63]) p.hline(0, 63, y, 'grey', 0.34, 230);
+
+  /* --- the knuckled selvage: the top row turns over ----------------- */
+  for (let k = -1; k * PITCH < W + PITCH; k++) {
+    const cx = k * PITCH + (MESH0 % PITCH);
+    for (let d = -2; d <= 2; d++) {
+      const x = cx + d;
+      if (x < 0 || x >= W) continue;
+      const y = MESH0 + Math.round(Math.abs(d) * 0.5);
+      p.ink(x, y, 'grey', 0.42 - Math.abs(d) * 0.03, 255);
+    }
+  }
+
+  /* --- the top rail: a pipe, lit along its upper edge --------------- */
+  for (let y = 0; y < RAIL; y++) for (let x = 0; x < W; x++)
+    p.ink(x, y, 'grey', y === 0 ? 0.56 : y === RAIL - 1 ? 0.20 : 0.40, 255);
+
+  /* --- the bottom tension wire ------------------------------------- */
+  for (let x = 0; x < W; x++) { p.ink(x, H - 2, 'grey', 0.34, 255); p.ink(x, H - 1, 'grey', 0.22, 255); }
+
+  /* --- the post, and the tension bar the mesh is threaded onto ------ */
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < 4; x++) p.ink(x, y, 'grey', x === 0 ? 0.50 : x === 3 ? 0.18 : 0.38, 255);
+    p.ink(5, y, 'grey', 0.30, 255);                       // the tension bar
+  }
+  /* the bands that clamp the bar to the post, every two feet */
+  for (let y = 6; y < H; y += 13) for (let x = 0; x < 7; x++) p.ink(x, y, 'grey', 0.46, 255);
+  /* and the cap on top of the post */
+  for (let x = 0; x < 5; x++) { p.ink(x, 0, 'grey', 0.60, 255); p.ink(x, 1, 'grey', 0.44, 255); }
+
   return p.snap(0.35);
 };
 
 T.FENCEPIK = () => {
+  /* A PICKET FENCE, one bay: 64 units across and 48 tall — four feet of
+     painted wood round a back yard. Pointed pickets with a gap between
+     them you can see the neighbour's yard through, two rails BEHIND
+     them and therefore darker, a post at the end of the bay with a cap
+     on it, and the bottom four units gone green where the mower never
+     reaches.
+
+     THE GAP IS THE POINT. A picket fence with its boards touching is a
+     stockade; what makes this one read is that it is mostly holes, and
+     that the rails show through them. */
   const p = new Pix(64, 48, 353, false);
   p.clear();
-  for (let x = 2; x < 64; x += 10) {
-    for (let y = 6; y < 48; y++) for (let k = 0; k < 6; k++) p.ink(x + k, y, 'bone', 0.52, 240);
-    for (let k = 0; k < 6; k++) { p.ink(x + k, 4, 'bone', 0.46, 200); p.ink(x + k, 5, 'bone', 0.50, 230); }
+  const H = 48, W = 64;
+  const PITCH = 6, BOARD = 4;        // 4 units of board, 2 of air
+  const POINT = 4;                   // how tall the point on a picket is
+  const rng = makeRng(357);
+
+  /* --- the two rails, behind everything, so they go down first ----- */
+  for (const ry of [13, 33]) for (let y = ry; y < ry + 4; y++) for (let x = 0; x < W; x++)
+    p.ink(x, y, 'bone', (y === ry ? 0.30 : 0.24) - (y - ry) * 0.02, 255);
+
+  /* --- the pickets -------------------------------------------------- */
+  for (let x0 = 5; x0 + BOARD <= W; x0 += PITCH) {
+    /* no two boards in a fence are the same white, and the one that has
+       been replaced is the one you notice */
+    const paint = 0.46 + rng() * 0.12;
+    const top = 2 + Math.floor(rng() * 2);             // they are not level either
+    for (let k = 0; k < BOARD; k++) {
+      const x = x0 + k;
+      /* the point: a sawn triangle, so the board narrows to the top */
+      const cut = top + Math.round(Math.abs(k - (BOARD - 1) / 2) * (POINT / ((BOARD - 1) / 2)));
+      for (let y = cut; y < H; y++) {
+        /* the left edge of a board takes the light and the right edge
+           is in the shadow of the next one */
+        const edge = k === 0 ? 0.08 : k === BOARD - 1 ? -0.10 : 0;
+        const grain = ((x * 7 + y * 3) % 11) < 2 ? -0.03 : 0;
+        p.ink(x, y, 'bone', paint + edge + grain, 255);
+      }
+      /* the sawn end of the point catches more light than the face */
+      p.ink(x, cut, 'bone', Math.min(0.72, paint + 0.16), 255);
+    }
   }
-  for (const y of [12, 36]) for (let x = 0; x < 64; x++) { p.ink(x, y, 'bone', 0.44, 240); p.ink(x, y + 1, 'bone', 0.40, 240); }
+
+  /* --- the post at the end of the bay, with its cap ----------------- */
+  for (let y = 5; y < H; y++) for (let x = 0; x < 5; x++)
+    p.ink(x, y, 'bone', x === 0 ? 0.56 : x === 4 ? 0.34 : 0.50, 255);
+  for (let y = 2; y < 5; y++) for (let x = 0; x < 6; x++)
+    p.ink(x, y, 'bone', y === 2 ? 0.64 : 0.54, 255);
+
+  /* --- and the grass line: green at the foot, dirt splash over it --- */
+  for (let y = H - 5; y < H; y++) for (let x = 0; x < W; x++)
+    if (p.alphaAt(x, y) > 8) p.wash(x, y, 'olive', 0.22, (y - (H - 6)) / 6 * 0.7);
+  for (let i = 0; i < 90; i++) {
+    const x = Math.floor(rng() * W), y = H - 12 + Math.floor(rng() * 12);
+    if (p.alphaAt(x, y) > 8) p.wash(x, y, 'brown', 0.20, 0.3 + rng() * 0.3);
+  }
   return p.snap(0.35);
+};
+
+/* =====================================================================
+   A CLIPPED BOX HEDGE, WHICH IS A BOX AND NOT A PICTURE OF ONE
+
+   It used to be a sprite: one photographed block of box per 64-unit
+   cell of the wood's grid, billboarded at the camera. At the user's
+   request it is geometry now — a sector whose floor is the top of the
+   hedge, so the band down its side IS the hedge and the floor you see
+   over the top of it is the clipped surface. Which means two textures
+   rather than one picture, and it means a hedge has a real corner, real
+   thickness, and casts its own shade on the grass beside it.
+
+   THE SIDE IS ONE REPEAT TALL, the way the foundation is: the whole
+   height of the hedge in one tile, dark at the roots, clipped flat and
+   bright along the top, so the tiling never puts a second clipped edge
+   halfway up a hedge.
+   ===================================================================== */
+
+/** One boxwood leaf: small, oval, and lit from the top left. `t` is how
+ *  lit the clump it belongs to is. */
+function boxLeaf(p, rng, x, y, t) {
+  const w = 1 + (rng() < 0.45 ? 1 : 0), h = 1 + (rng() < 0.7 ? 1 : 0);
+  for (let j = 0; j <= h; j++) for (let i = 0; i <= w; i++) {
+    const lit = (i === 0 && j === 0) ? 0.06 : (i === w && j === h) ? -0.05 : 0;
+    p.ink(x + i, y + j, rng() < 0.22 ? 'olive' : 'green', t + lit);
+  }
+}
+
+T.HEDGETOP = () => {
+  /* Looking down on a hedge that was cut this summer: dense small
+     leaves in clumps, the clumps picked out by the light rather than by
+     colour, and the odd bare patch where the shears went too deep. */
+  const p = new Pix(64, 64, 361);
+  const n = fbm(64, 64, 10, 3, 361);
+  const rng = makeRng(367);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'green', 0.16 + n[y * 64 + x] * 0.12);
+  /* A CLIPPED TOP FACES THE SKY, so it is the lit face of the hedge and
+     not the dark one. The first cut of this came out darker than the
+     lawn it stands in, which is the one thing a hedge never is. */
+  for (let i = 0; i < 1400; i++) {
+    const x = Math.floor(rng() * 64), y = Math.floor(rng() * 64);
+    boxLeaf(p, rng, x, y, 0.28 + n[y * 64 + x] * 0.28 + rng() * 0.09);
+  }
+  /* two bare patches, which is what a hedge looks like and a wallpaper
+     of leaves does not */
+  for (let i = 0; i < 70; i++) {
+    const x = Math.floor(rng() * 64), y = Math.floor(rng() * 64);
+    if (n[y * 64 + x] > 0.62) p.ink(x, y, 'brown', 0.14 + rng() * 0.06);
+  }
+  p.grime(0.22, 'olive', 0.06, 373);
+  return p.snap(0.5);
+};
+
+T.HEDGESID = () => {
+  /* The side of the same hedge, one repeat for its whole height: the
+     clipped top lit along its edge, the face of it in the middle, and
+     the bottom in its own shade with the woody stems showing through
+     where the leaves have given up. */
+  const p = new Pix(64, 64, 379);
+  const n = fbm(64, 64, 9, 3, 379);
+  const rng = makeRng(383);
+  /* HOW LIT THE HEDGE IS AT A HEIGHT: bright along the clipped top,
+     falling away down the face, and dark in the last quarter where
+     nothing but the trunk gets any light at all. */
+  const at = y => y < 5 ? 0.38 - y * 0.012 : 0.34 - Math.pow(y / 64, 1.7) * 0.24;
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'green', Math.max(0.05, at(y) * 0.5 + n[y * 64 + x] * 0.07));
+  for (let i = 0; i < 1600; i++) {
+    const x = Math.floor(rng() * 64), y = Math.floor(rng() * 64);
+    boxLeaf(p, rng, x, y, Math.max(0.06, at(y) + n[y * 64 + x] * 0.16 + rng() * 0.07 - 0.04));
+  }
+  /* the stems: four or five of them, only in the bottom third */
+  for (let k = 0; k < 5; k++) {
+    let x = 6 + Math.floor(rng() * 52);
+    for (let y = 63; y > 40; y--) {
+      p.ink(x, y, 'brown', 0.16 + rng() * 0.05);
+      if (rng() < 0.3) x += rng() < 0.5 ? -1 : 1;
+    }
+  }
+  /* AND THE CLIPPED EDGE ITSELF, which is the one line that says this
+     was cut and did not grow: the top two rows are the sawn face of a
+     thousand leaves and they are the brightest thing on it. */
+  for (let x = 0; x < 64; x++) {
+    p.ink(x, 0, 'green', 0.34 + (x % 3 === 0 ? 0.06 : 0));
+    p.ink(x, 1, 'green', 0.28 + (x % 5 === 0 ? 0.05 : 0));
+  }
+  p.grime(0.28, 'olive', 0.07, 389);
+  return p.snap(0.5);
 };
 
 T.SHOPFRNT = () => {
@@ -3343,6 +3601,176 @@ T.SHOPFRNT = () => {
   for (let y = 52; y < 64; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'green', 0.16);
   p.hline(0, 63, 52, 'bone', 0.40);
   p.grime(0.28, 'grey', 0.07, 367);
+  return p.snap(0.5);
+};
+
+/* =====================================================================
+   WHAT A BUILDING HAS THAT A BOX DOES NOT
+
+   A sector engine gives you a wall with holes in it, and a town built
+   out of nothing else is a town of shoeboxes with windows drawn on. The
+   things that are missing are all the same KIND of thing: they stand
+   PROUD of the wall, or they stand ABOVE the roof, and a sector can do
+   neither. They are drawn as free boxes instead — see boxGeometry in
+   js/mapgeo.js — and these are their surfaces.
+
+   ALL OF THEM ARE READ FROM BELOW, at a hundred and twenty units of
+   height from forty metres away, which decides everything about them:
+   the light goes at the top and the shadow under, one hard line where
+   the thing projects, and no detail finer than the line.
+   ===================================================================== */
+
+T.CHIMNEY = () => {
+  /* Brick, but not the wall's brick: a stack stands against the SKY,
+     so what you read off it is the silhouette and the courses, and the
+     courses want to be finer than a wall's or a chimney forty metres
+     off is a red smudge. Soot down the leeward face and lime bloom
+     where the rain runs. */
+  const p = new Pix(64, 64, 751);
+  brickwork(p, 751, 'rust', 0.22, 0.36, 0.44, 6, 16);
+  const rng = makeRng(757);
+  /* the weather side: forty years of rain has bleached it */
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 26; x++)
+    p.wash(x, y, 'bone', 0.40, (1 - x / 26) * 0.22);
+  /* and soot, which comes OUT of the top and runs down */
+  for (let k = 0; k < 40; k++) {
+    let x = 34 + Math.floor(rng() * 26);
+    for (let y = 0; y < 20 + rng() * 30; y++) {
+      p.wash(x, y, 'grey', 0.06, 0.30 - y * 0.006);
+      if (rng() < 0.25) x += rng() < 0.5 ? -1 : 1;
+    }
+  }
+  p.grime(0.34, 'grey', 0.06, 761);
+  return p.snap(0.5);
+};
+
+T.CHIMCAP = () => {
+  /* THE CAP OVERSAILS THE STACK, and that is the whole of why a chimney
+     reads as masonry and not as a brick-coloured post: a cast slab a
+     little wider than what holds it up, with a drip under it, so there
+     is a hard black line all the way round at the top of the brick. */
+  const p = new Pix(64, 16, 769);
+  aggregate(p, 769, { baseKey: 'grey', baseLo: 0.30, baseHi: 0.38,
+    grades: [{ count: 70, min: 0.3, max: 0.9, key: 'bone', lo: 0.26, hi: 0.36 }] });
+  p.hline(0, 63, 0, 'bone', 0.56); p.hline(0, 63, 1, 'bone', 0.48);   // the weathered top, in the sun
+  p.hline(0, 63, 9, 'grey', 0.16);                                     // the throat of the drip
+  for (let y = 10; y < 16; y++) p.hline(0, 63, y, 'grey', 0.12 + (y - 10) * 0.01);
+  p.grime(0.30, 'olive', 0.06, 773);
+  return p.snap(0.5);
+};
+
+T.DOWNPIPE = () => {
+  /* A round pipe on a flat face, which is done entirely with the
+     shading: bright a third of the way in from the left, falling away
+     to nothing at the right edge. The collars every sixty-four units
+     are what stop it being a painted stripe. */
+  const p = new Pix(64, 64, 787);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+    const t = Math.cos((x / 63 - 0.34) * 2.1);              // the round of it
+    p.ink(x, y, 'grey', Math.max(0.10, 0.20 + t * 0.26));
+  }
+  /* the collar: a band with a lip over it and a shadow under */
+  for (const y0 of [4]) {
+    for (let x = 0; x < 64; x++) {
+      const t = Math.cos((x / 63 - 0.34) * 2.1);
+      p.ink(x, y0, 'grey', Math.max(0.12, 0.28 + t * 0.28));
+      p.ink(x, y0 + 1, 'grey', Math.max(0.14, 0.32 + t * 0.28));
+      p.ink(x, y0 + 2, 'grey', Math.max(0.14, 0.30 + t * 0.26));
+      p.ink(x, y0 + 3, 'grey', Math.max(0.06, 0.12 + t * 0.14));
+    }
+  }
+  const rng = makeRng(797);
+  for (let k = 0; k < 60; k++) p.wash(Math.floor(rng() * 64), Math.floor(rng() * 64), 'rust', 0.22, 0.10 + rng() * 0.2);
+  return p.snap(0.5);
+};
+
+T.PORCHPST = () => {
+  /* One porch post, whole, in one repeat: a plinth block at the foot, a
+     chamfered shaft, a cap at the head. Eight units of post over
+     sixty-four pixels, so this is the post seen ROUND — the left third
+     in the light, the right edge in its own shadow. */
+  const p = new Pix(64, 64, 809);
+  const shaft = x => {
+    const t = Math.cos((x / 63 - 0.30) * 2.0);
+    return Math.max(0.14, 0.42 + t * 0.22);
+  };
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'bone', shaft(x));
+  /* the chamfers: a hard line a sixth in from each edge */
+  for (const x of [10, 53]) { p.vline(x, 0, 63, 'bone', 0.66); p.vline(x + 1, 0, 63, 'grey', 0.26); }
+  /* the cap at the top and the plinth at the foot, both standing proud
+     of the shaft, which is two light lines and two shadows */
+  for (let y = 0; y < 6; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'bone', shaft(x) + (y < 2 ? 0.14 : 0.06));
+  p.hline(0, 63, 6, 'grey', 0.20);
+  for (let y = 54; y < 64; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'bone', shaft(x) + (y < 56 ? 0.12 : 0.04));
+  p.hline(0, 63, 53, 'grey', 0.22);
+  const rng = makeRng(811);
+  for (let k = 0; k < 30; k++) p.wash(Math.floor(rng() * 64), 40 + Math.floor(rng() * 24), 'olive', 0.20, 0.1 + rng() * 0.25);
+  return p.snap(0.5);
+};
+
+T.AWNING = () => {
+  /* Striped canvas over a shopfront, read from underneath and from the
+     side of the street. The stripes run DOWN the slope, which means
+     across this tile, and the bottom four rows are the valance — the
+     scalloped hem that hangs off the front bar, which is the part that
+     says awning and not shelf. */
+  const p = new Pix(64, 32, 821);
+  for (let y = 0; y < 32; y++) for (let x = 0; x < 64; x++) {
+    const band = Math.floor(x / 8) & 1;
+    /* it has been out in the sun for nine summers: the top of the fall
+       is bleached and the bottom keeps its colour */
+    const fade = 0.10 * (1 - y / 32);
+    p.ink(x, y, band ? 'bone' : 'red', (band ? 0.52 : 0.30) + fade);
+  }
+  /* the seam between every stripe, and the front bar the valance hangs from */
+  for (let x = 0; x < 64; x += 8) p.vline(x, 0, 31, 'grey', 0.22, 255);
+  p.hline(0, 63, 25, 'grey', 0.18); p.hline(0, 63, 26, 'bone', 0.44);
+  /* the scallop: a shallow arc cut out of the hem of each stripe */
+  for (let x = 0; x < 64; x++) {
+    const t = Math.abs(((x % 16) - 8) / 8);
+    const cut = 31 - Math.round((1 - t * t) * 3);
+    for (let y = cut + 1; y < 32; y++) p.ink(x, y, 'grey', 0.10);
+  }
+  p.grime(0.26, 'grey', 0.06, 823);
+  return p.snap(0.5);
+};
+
+T.GABLEVNT = () => {
+  /* THE HOLE IN THE TOP OF A GABLE, which every house with an attic has
+     and none of these had: a louvred vent in a painted surround, forty
+     units across. A gable with nothing in it is the largest blank
+     surface on an American house and the eye goes straight to it.
+     Louvres dark between the slats, because the attic behind them is. */
+  const p = new Pix(48, 32, 827);
+  p.fill('bone', 0.54);
+  for (let y = 5; y < 27; y += 4) for (let x = 5; x < 43; x++) {
+    p.ink(x, y, 'grey', 0.07);                        // the dark between the slats
+    p.ink(x, y + 1, 'bone', 0.46);
+    p.ink(x, y + 2, 'bone', 0.34);
+    p.ink(x, y + 3, 'grey', 0.14);
+  }
+  /* the surround, standing proud: lit on the top and left, shadowed
+     under and right, which is what makes it a frame and not a decal */
+  p.hline(0, 47, 0, 'bone', 0.70); p.hline(0, 47, 1, 'bone', 0.64);
+  p.vline(0, 0, 31, 'bone', 0.68); p.vline(1, 0, 31, 'bone', 0.62);
+  p.hline(0, 47, 31, 'grey', 0.18); p.hline(0, 47, 30, 'grey', 0.24);
+  p.vline(47, 0, 31, 'grey', 0.20); p.vline(46, 0, 31, 'grey', 0.26);
+  p.frame(4, 4, 40, 24, 'grey', 0.16);
+  p.grime(0.20, 'grey', 0.05, 829);
+  return p.snap(0.5);
+};
+
+T.WINTRIM = () => {
+  /* THE HEAD CASING over a window: a painted board standing six units
+     out of the wall with a drip under it. Twelve tall, which is one
+     repeat, so the light line is at the top of the board and the
+     shadow under it every time and never halfway up. */
+  const p = new Pix(64, 12, 839);
+  for (let y = 0; y < 12; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'bone', 0.58 - y * 0.012 + ((x * 5 + y * 3) % 13 < 2 ? -0.02 : 0));
+  p.hline(0, 63, 0, 'bone', 0.72); p.hline(0, 63, 1, 'bone', 0.66);
+  p.hline(0, 63, 8, 'grey', 0.22);                     // the throat of the drip
+  for (let y = 9; y < 12; y++) p.hline(0, 63, y, 'grey', 0.16 + (y - 9) * 0.02);
   return p.snap(0.5);
 };
 

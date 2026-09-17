@@ -62,9 +62,11 @@ const JOBS = [
   { file: 'street_upright.png', name: 'street_upright', w: 128, h: 256 },
   { file: 'street_dense.png',   name: 'street_dense',   w: 128, h: 256 },
   { file: 'street_big.png',     name: 'street_big',     w: 128, h: 256 },
-  /* A HEDGE IS AS WIDE AS IT IS TALL and is planted in a row, so it
-     gets the square tile the bushes use. */
-  { file: 'hedge_box.png',      name: 'hedge_box',      w: 128, h: 128 },
+  /* THE CLIPPED BOX WAS BAKED HERE and is not any more: the town's
+     hedges are geometry now (see KINDS in js/forest.js). The two PNGs
+     it left in assets/forest/ are kept rather than deleted, because the
+     photograph they came from is not in this repository and a tool that
+     cannot make a file back should not be the reason it goes. */
 ];
 
 /* ---------- magenta out, alpha in ----------

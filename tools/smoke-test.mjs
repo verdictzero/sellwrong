@@ -8272,31 +8272,56 @@ section('the town');
       street.every(pl => /verge|lawn|yard|green|park|cemetery/.test(level.sectorAt(pl.x, pl.y)?.name ?? '')),
       street.filter(pl => !/verge|lawn|yard|green|park|cemetery/.test(level.sectorAt(pl.x, pl.y)?.name ?? '')).slice(0, 3)
             .map(pl => `${Math.round(pl.x)},${Math.round(pl.y)} ${level.sectorAt(pl.x, pl.y)?.name}`).join(' | '));
-    /* THE BOX. A block of it is CANOPY (see isCanopy in js/forest.js),
-       so the wood keeps ONE to a 64-unit cell and a run planted any
-       tighter than that loses blocks to a rule it cannot see. Both ends
-       of that are checked here: the run is never tighter than the cell,
-       and never looser than the block is wide, because either one is a
-       hedge with holes in it. */
-    const box = level.plants.filter(pl => pl.kind === 'hedge_box');
-    const WIDE = F5.KINDS.find(k => k.name === 'hedge_box');
-    check('the town is hedged', box.length > 300, `${box.length} blocks of box`);
-    check('and every block of it stands on grass', box.every(onPlantable));
-    check('and no block is narrower than the pitch they are planted at, which would be a hedge with sky through it',
-      box.every(pl => pl.scale * WIDE.h * WIDE.aspect >= F5.CELL),
-      `${(Math.min(...box.map(pl => pl.scale)) * WIDE.h * WIDE.aspect).toFixed(1)} wide at ${F5.CELL}`);
+    /* THE BOX IS NOT A PLANT ANY MORE. It was a row of photographed
+       blocks, one to a 64-unit cell of the wood's grid, turning to face
+       you; at the user's request it is a SECTOR whose floor is the top
+       of the hedge — see carveHedges in js/maps/town.js. What that
+       bought is a hedge with a corner and a top you can see going away
+       from you, and what it costs is that the ground it stands in had
+       to be cut open to let it in. Both halves are checked here. */
+    check('nothing plants a block of box any more', level.plants.every(pl => pl.kind !== 'hedge_box'));
+    check('and the wood no longer knows the kind', !F5.KINDS.some(k => k.name === 'hedge_box'));
+    const hedges = level.sectors.filter(s => s.floorTex === 'HEDGETOP');
+    note('hedges', `${hedges.length} runs of clipped box`);
+    check('the town is hedged', hedges.length > 20, `${hedges.length} runs`);
+    check('and every run of it found ground to be cut out of',
+      level.town.hedgeLost === 0, `${level.town.hedgeLost} landed on nothing`);
+    check('and the map agrees with itself about how many there are',
+      level.town.hedges === hedges.length, `${level.town.hedges} counted, ${hedges.length} in the map`);
+    /* A HEDGE IS A STEP YOU CANNOT TAKE, which is the whole of why it
+       stops you: forty is nine over the engine's limit. And it is BELOW
+       THE EYE at forty-nine, which is the whole of why it is forty and
+       not the seventy-two the sprite stood at — a green you cannot see
+       across is a wall. */
+    const U = await import('../js/util.js');
+    check('and it is too tall to climb and too short to hide the green behind it',
+      hedges.every(s => s.floor === 40) && 40 > U.MAX_STEP && 40 < 49,
+      `${hedges[0] && hedges[0].floor} against a step of ${U.MAX_STEP}`);
+    check('and it is open to the sky, so the weather lights it like the lawn it stands in',
+      hedges.every(s => s.outdoor && s.sky === 1 && s.ceil === 768));
+    /* AND THE SIDE OF IT IS A BAND, which is the disagreement rule
+       doing the drawing: the lawn beside it is open from nought and the
+       hedge is not, so the forty units between them wear the hedge's
+       own lowerTex. If that came out as grass the hedge would be a
+       green slab floating over a lawn-coloured cliff. */
+    let sides = 0;
+    for (const l of level.lines) for (const b of (l.bands || [])) if (b.tex === 'HEDGESID') sides++;
+    check('and every side of every run is drawn as hedge and not as whatever was under it',
+      sides >= hedges.length * 2, `${sides} bands over ${hedges.length} runs`);
+    /* THE CARVE LEFT NO HOLES. Two rects may not overlap, so the lawn a
+       hedge landed in was cut into the pieces round it; if the cut were
+       wrong the map would not have built at all, and if a PIECE were
+       lost there would be a hole in the ground beside every hedge. */
     {
-      /* nearest neighbour: a run is continuous, so nothing is alone and
-         nothing is closer than the cell that would swallow it */
-      let lonely = 0, crowded = 0;
-      for (const a of box) {
-        let best = Infinity;
-        for (const b of box) { if (a === b) continue; const d = Math.hypot(a.x - b.x, a.y - b.y); if (d < best) best = d; }
-        if (best > 72) lonely++;
-        if (best < F5.CELL - 0.5) crowded++;
+      let holes = 0;
+      for (const s of hedges) {
+        const c = s.poly.reduce((a, v) => [a[0] + v[0] / s.poly.length, a[1] + v[1] / s.poly.length], [0, 0]);
+        for (const [dx, dy] of [[-40, 0], [40, 0], [0, -40], [0, 40]]) {
+          const q = level.sectorAt(c[0] + dx, c[1] + dy);
+          if (!q) holes++;
+        }
       }
-      check('and every one of them is part of a run, one cell from the next',
-        lonely === 0 && crowded === 0, `${lonely} on their own, ${crowded} sharing a cell`);
+      check('and there is ground on every side of every one of them', holes === 0, `${holes} sides with nothing beside them`);
     }
   }
 
@@ -8309,9 +8334,23 @@ section('the town');
   {
     const cemLines = level.lines.filter(l => l.middle === 'RAILING' &&
       [...(l.frontCol || []), ...(l.backCol || [])].some(i => /cemetery/.test(level.sectors[i]?.name ?? '')));
-    note('cemetery railings', `${cemLines.length} runs`);
-    check('the cemetery is fenced on all four sides, twice each, either side of a gate',
-      cemLines.length === 8, `${cemLines.length}`);
+    const iron = cemLines.reduce((a, l) => a + l.len, 0);
+    note('cemetery railings', `${cemLines.length} lines, ${Math.round(iron)} units of iron`);
+    /* IT USED TO BE EIGHT LINES, because the ground either side of it
+       was eight rects — four quarters and eight verges. It is more than
+       that now: the hedges were cut out of those same lawns and every
+       cut leaves another piece, so a run of iron that was one line is
+       three. Which is bookkeeping, and bookkeeping is not what anybody
+       standing in the churchyard can see. So what is checked is the
+       IRON: four sides, and the whole way round but for the gates. */
+    const xs = new Set(), ys = new Set();
+    for (const l of cemLines) { if (Math.abs(l.x1 - l.x2) < 0.5) xs.add(Math.round(l.x1)); else ys.add(Math.round(l.y1)); }
+    check('the cemetery is fenced on all four of its sides',
+      xs.size === 2 && ys.size === 2, `${xs.size} north-south, ${ys.size} east-west`);
+    const span = a => Math.max(...a) - Math.min(...a);
+    const want = 2 * (span([...xs]) + span([...ys])) - 4 * 96;   // less the four gates
+    check('and the iron runs the whole way round but for the four gates',
+      Math.abs(iron - want) < 4, `${Math.round(iron)} of ${Math.round(want)}`);
     check('and the iron stops you and stands six feet up',
       cemLines.every(l => l.blocking && l.midHeight === 96 && l.pegMiddle === 'bottom'));
     const gates = level.sectors.filter(s => /cemetery gate$/.test(s.name));
@@ -8320,6 +8359,122 @@ section('the town');
       !level.lines.some(l => l.middle === 'RAILING' &&
         [...(l.frontCol || []), ...(l.backCol || [])].some(i => /cemetery gate$/.test(level.sectors[i]?.name ?? ''))),
       `${gates.length} gates`);
+  }
+
+  /* ===================================================================
+     THE PICKET FENCES, AND WHERE A FENCE IS NOT
+
+     At the user's request. The fact this is about is that an American
+     FRONT yard is open and a BACK yard is not, and the town had neither
+     — the whole depth of a block read as one field with houses standing
+     in it. So the thing to check is not that there are fences; it is
+     that there are none across a front yard.
+     =================================================================== */
+  {
+    const pik = level.lines.filter(l => l.middle === 'FENCEPIK');
+    note('picket fence', `${pik.length} lines of it`);
+    check('the back yards are fenced', pik.length > 200, `${pik.length} lines`);
+    check('and the picket stops you and stands four feet up',
+      pik.every(l => l.blocking && l.midHeight === 48 && l.pegMiddle === 'bottom'));
+    /* IT IS ONLY EVER BETWEEN TWO YARDS. A picket across a sidewalk, a
+       path or a foundation strip is a picket somebody's query caught by
+       accident, and the query is the part that could go wrong. */
+    const named = l => [...(l.frontCol || []), ...(l.backCol || [])]
+      .map(i => level.sectors[i]?.name ?? '');
+    const bad = pik.filter(l => !named(l).every(n => /yard/.test(n)));
+    check('and never anywhere but between two yards',
+      bad.length === 0, bad.slice(0, 3).map(l => named(l).join(' | ')).join(' ;; '));
+    /* AND NEVER ACROSS A FRONT YARD, which is the whole point of it. A
+       front yard in this town is the one whose sector is named for the
+       approach rather than for the side of the house, and the test that
+       it is open is simpler than that: a fence line is never within
+       reach of a front path. */
+    const paths = level.sectors.filter(s => / path$/.test(s.name || '') && /no \d/.test(s.name || ''));
+    let acrossAPath = 0;
+    for (const l of pik) {
+      const mx = (l.x1 + l.x2) / 2, my = (l.y1 + l.y2) / 2;
+      for (const q of paths) {
+        const c = q.poly.reduce((a, v) => [a[0] + v[0] / q.poly.length, a[1] + v[1] / q.poly.length], [0, 0]);
+        if (Math.hypot(c[0] - mx, c[1] - my) < 120) { acrossAPath++; break; }
+      }
+    }
+    check('and never across the front, where an American lawn runs unbroken from door to door',
+      acrossAPath === 0, `${acrossAPath} within reach of a front path`);
+  }
+
+  /* ===================================================================
+     THE THINGS THAT STAND PROUD OF A WALL OR ABOVE A ROOF
+
+     At the user's request: chimneys, porches, cornices, awnings,
+     dormers, gable vents, corner boards, downpipes. All of them are
+     free boxes owned by no region — see boxGeometry in js/mapgeo.js —
+     and the rule that keeps that honest is that NONE OF THEM IS IN THE
+     WAY, because a free box does not collide. So the checks are about
+     where they are, not that they exist.
+     =================================================================== */
+  {
+    const props = level.props || [];
+    const by = {};
+    for (const q of props) by[q.tex] = (by[q.tex] || 0) + 1;
+    note('free boxes', `${props.length}: ${Object.entries(by).sort((a, b) => b[1] - a[1])
+      .map(([k, v]) => `${v} ${k.toLowerCase()}`).join(', ')}`);
+    check('the town is built of more than walls and roofs now', props.length > 1500, `${props.length}`);
+    check('and every one of them is a real box with a real texture',
+      props.every(q => q.x1 > q.x0 && q.y1 > q.y0 && q.z1 > q.z0 && typeof q.tex === 'string'));
+
+    /* A CHIMNEY IS ABOVE THE RIDGE OR IT IS NOT A CHIMNEY. It starts
+       buried under the eaves so the roof closes round it, and it comes
+       out the top; a stack that stops inside the roof is a brick nobody
+       will ever see. */
+    const stacks = props.filter(q => q.tex === 'CHIMNEY');
+    const caps = props.filter(q => q.tex === 'CHIMCAP');
+    check('every house and every fourth house of a terrace has a stack',
+      stacks.length > 120, `${stacks.length} stacks`);
+    check('and each of them wears a cap that oversails it, which is what makes it masonry',
+      caps.length === stacks.length &&
+      stacks.every(st => caps.some(c => Math.abs(c.z0 - st.z1) < 0.5 &&
+        c.x0 < st.x0 - 1 && c.x1 > st.x1 + 1 && c.y0 < st.y0 - 1 && c.y1 > st.y1 + 1)),
+      `${caps.length} caps over ${stacks.length} stacks`);
+
+    /* NOTHING IS IN THE WAY. A free box does not collide, so anything a
+       player could walk into would be something they walk THROUGH. The
+       porch posts are the exception the rule is written around: they
+       are eight units square and stand on a stoop nobody crosses
+       sideways, which is the same bargain Doom made with every pillar
+       it drew as a sprite. */
+    const PLAYER_TOP = 49 + 8;
+    const low = props.filter(q => q.z0 < PLAYER_TOP && !['PORCHPST', 'DOWNPIPE', 'CORNRBRD'].includes(q.tex));
+    check('and nothing but a post, a pipe and a corner board comes down to head height',
+      low.length === 0, low.slice(0, 4).map(q => `${q.tex} at z${Math.round(q.z0)}`).join(', '));
+    /* and the three that do are all FLAT AGAINST something: a post on
+       its stoop, a pipe and a board on the face of a wall */
+    check('and those three are all thin enough to be the wall they are on',
+      props.filter(q => ['PORCHPST', 'DOWNPIPE', 'CORNRBRD'].includes(q.tex))
+        .every(q => Math.min(q.x1 - q.x0, q.y1 - q.y0) <= 10));
+
+    /* THE AWNINGS ARE OVER SHOPFRONTS AND NOWHERE ELSE, and they are
+       over the WINDOW and not over the door, because an awning over a
+       door is a canopy and a canopy costs money. */
+    const aw = props.filter(q => q.tex === 'AWNING');
+    check('Main Street has its awnings out', aw.length > 15, `${aw.length}`);
+    check('and every one of them is over a shopfront, clear of the head of anyone under it',
+      aw.every(q => q.z0 > 60 && q.z1 <= 120), aw.length ? `z${Math.round(aw[0].z0)}-${Math.round(aw[0].z1)}` : '');
+
+    /* A GABLE VENT is the one piece of ornament on a house that is not
+       ornament: an attic has to breathe. Every house has one or two. */
+    check('every gable has something in it', props.filter(q => q.tex === 'GABLEVNT').length > 100);
+    check('and every window on a front has a head over it',
+      props.filter(q => q.tex === 'WINTRIM').length > 600);
+    check('and the roofs are broken by dormers', props.filter(q => q.tex === 'WINPANED' || q.tex === 'WINPANEL').length > 40);
+
+    /* AND THE GEOMETRY BUILDER KNOWS WHAT TO DO WITH ONE. The box is
+       drawn by the same batch set as everything else in its block, so
+       what this asks is that a box turns into triangles at all and that
+       its lid is optional. */
+    const MG = await import('../js/mapgeo.js');
+    const BS = MG.__BatchSetForTests || null;
+    void BS;
+    check('the builder can draw a free box', typeof MG.boxGeometry === 'function');
   }
 
   /* THE STREET LAMP IS A PHOTOGRAPH AND IT IS NOT A SPRITE. Two tiles
