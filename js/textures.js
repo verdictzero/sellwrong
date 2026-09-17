@@ -1191,21 +1191,186 @@ T.DOCKDOOR = () => {
   return p.snap(0.5);
 };
 
+/* --- THE STAFF DOOR, AND WHAT IS ROUND IT ---------------------------
+   ONE LEAF OF THE PAIR at the back of the shop floor, and like the
+   sliders and the fire exit it is a LEAF and not a wall: js/slidedoor.js
+   maps it 0..1 in both directions, so the kick plate is at the bottom of
+   the door instead of wherever a sixty-four-unit repeat happens to land.
+
+   WHICH IS THE WHOLE STORY OF THIS TEXTURE. It used to be a wall. The
+   staff door was the last rising-ceiling door left in the building, and
+   a shut Doom door is a sector whose ceiling has come down onto its
+   floor — so the disagreement rule drew its face from the floor up to
+   whatever the ROOM's ceiling was: three hundred and forty units on the
+   shop side, four hundred and four on the stock side. At sixty-four to
+   the repeat that is a black slab five storeys high with ten STAFF ONLY
+   signs tiled up it, every one of them cut through the word by a seam.
+   Nothing was wrong with the picture. It was on the wrong kind of
+   surface, and the fix was to stop it being a surface.
+
+   u = 0 IS THE HINGE, which is why there is one texture here and not
+   two. The second leaf hangs off the other jamb turned through half a
+   circle, so its u runs the other way in the world: the outer stiles
+   land at the jambs, the two meeting stiles come together in the middle,
+   and the pair is mirrored for free. SLIDEL and SLIDER had to be drawn
+   twice only because a pair of sliders both travel the same way.
+
+   AND THERE IS NO WORD ON IT. The sign is a sign — DOORSIGN, a plate
+   over the head on the public side, which is where a real one is screwed
+   and the only place it reads the right way round. A leaf is
+   double-sided: lettering on one is backwards from the stockroom. */
 T.DOORSTAF = () => {
-  /* The swing door between the store and the truth. */
-  const p = new Pix(64, 64, 95);
-  const n = fbm(64, 64, 8, 2, 95);
+  const p = new Pix(64, 64, 95, false);            // no wrap: a sprite, not a tile
+  const n = fbm(64, 64, 10, 2, 95);
+  /* the leaf: a grey-white impact panel, grubbier towards the meeting
+     stile because that is the half everybody's shoulder goes through */
   for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
-    p.ink(x, y, 'grey', 0.32 + n[y * 64 + x] * 0.08);
-  p.frame(2, 2, 60, 60, 'grey', 0.5);
-  p.frame(3, 3, 58, 58, 'grey', 0.18);
-  for (let y = 44; y < 62; y++) for (let x = 4; x < 60; x++) p.ink(x, y, 'grey', 0.44);  // kick plate
-  p.hline(4, 59, 44, 'grey', 0.62);
-  for (let y = 10; y < 22; y++) for (let x = 14; x < 50; x++) p.ink(x, y, 'bone', 0.86); // the sign
-  drawTextCentred(p, 'STAFF', 32, 12, 'red', 0.3);
-  drawTextCentred(p, 'ONLY', 32, 19, 'red', 0.3);
-  p.grime(0.6, 'grey', 0.1, 25);
-  return p.snap(0.5);
+    p.ink(x, y, 'bone', 0.50 + (1 - x / 64) * 0.06 + n[y * 64 + x] * 0.06 - (y / 64) * 0.05);
+  /* the pressed rib round the panel, and the two stiles. The HINGE side
+     is the edge that does not move and the one the aisle light catches;
+     the MEETING stile is what the other leaf closes onto, so it is dark
+     and it is the first thing on the door to go. */
+  p.frame(3, 3, 58, 58, 'bone', 0.58);
+  p.frame(4, 4, 56, 56, 'bone', 0.32);
+  for (let y = 0; y < 64; y++) {
+    p.ink(0, y, 'grey', 0.30); p.ink(1, y, 'bone', 0.50); p.ink(2, y, 'bone', 0.42);
+    p.ink(63, y, 'grey', 0.12); p.ink(62, y, 'grey', 0.20); p.ink(61, y, 'bone', 0.30);
+  }
+  for (let x = 0; x < 64; x++) { p.ink(x, 0, 'bone', 0.64); p.ink(x, 63, 'grey', 0.16); }
+  /* three butt hinges down the stile it turns on */
+  for (const hy of [8, 32, 56]) {
+    p.box(0, hy - 5, 5, 11, 'grey', 0.38);
+    p.box(1, hy - 5, 3, 11, 'grey', 0.66);          // the knuckle
+    p.vline(1, hy - 5, hy + 5, 'bone', 0.80);
+    p.ink(4, hy - 5, 'grey', 0.16); p.ink(4, hy + 5, 'grey', 0.16);
+  }
+  /* THE VISION PANEL, which is what makes this a back-room door and not
+     a cupboard: nobody shoves a door with a cage behind it without
+     looking first. Wired glass, and a raked gloss on it — the same
+     artificial diagonal the shopfront's panes wear, for the same reason:
+     a flat dark rectangle reads as a hole and a raked one reads as
+     glass. */
+  const VX = 17, VY = 10, VW = 30, VH = 22;
+  for (let y = VY; y < VY + VH; y++) for (let x = VX; x < VX + VW; x++) {
+    const d = ((x - VX) / VW + (VY + VH - y) / VH) * 0.5;
+    const g = (d > 0.33 && d < 0.44) || (d > 0.52 && d < 0.56);
+    p.ink(x, y, g ? 'grey' : 'blue', g ? 0.54 : 0.13 + n[y * 64 + x] * 0.06);
+  }
+  for (let y = VY; y < VY + VH; y++) for (let x = VX; x < VX + VW; x++)
+    if ((x - VX) % 4 === 0 || (y - VY) % 4 === 0) p.wash(x, y, 'grey', 0.40, 0.30);  // the wire in it
+  p.frame(VX - 2, VY - 2, VW + 4, VH + 4, 'grey', 0.52);
+  p.frame(VX - 1, VY - 1, VW + 2, VH + 2, 'grey', 0.14);
+  /* the push plate: upright, on the shoulder side, because that is the
+     shape of the thing and because a horizontal one reads as a letterbox */
+  p.box(45, 26, 13, 17, 'grey', 0.52);
+  p.bevel(45, 26, 13, 17, 'bone', 0.72, 'grey', 0.18);
+  for (let i = 0; i < 26; i++) p.wash(46 + ((i * 7) % 11), 27 + ((i * 5) % 15), 'grey', 0.34, 0.40);
+  /* THE KICK PLATE, and it stands higher than a kick plate does anywhere
+     else in this building, because what hits this door is not a foot: it
+     is the corner of a roll cage, at that height, twenty times a night.
+     Stainless, brushed, and dented along its top edge where they land. */
+  for (let y = 46; y < 63; y++) for (let x = 3; x < 61; x++)
+    p.ink(x, y, 'grey', 0.56 + n[y * 64 + x] * 0.10 - (y - 46) * 0.006);
+  p.hline(3, 60, 46, 'bone', 0.72); p.hline(3, 60, 47, 'grey', 0.28);
+  for (const sx of [7, 21, 34, 48, 58]) { p.ink(sx, 46, 'grey', 0.20); p.ink(sx, 47, 'grey', 0.16); }
+  for (let i = 0; i < 90; i++)                                   // brushed, not polished
+    p.wash(3 + ((i * 29) % 58), 48 + ((i * 11) % 15), 'grey', 0.40, 0.30);
+  /* and what a cage does to the rail above it */
+  for (let i = 0; i < 70; i++) p.wash(4 + ((i * 37 + 11) % 56), 39 + ((i * 13) % 7), 'grey', 0.16, 0.55);
+  p.grime(0.42, 'grey', 0.08, 25);
+  return p.snap(0.35);
+};
+
+/* The frame it swings in, and the lining of the reveal it swings in the
+   middle of. Pressed steel, painted once and touched up never.
+
+   FEATURELESS ON PURPOSE, the same bargain SHOPFRAM makes: this lines a
+   sixteen-unit return, caps a head and runs down two jambs, so it is
+   asked to tile in every orientation at every partial repeat. Anything
+   with a direction in it — a fluted face, a highlight down one arris —
+   shows the seam the moment the same texture turns a corner. What it
+   gets instead of shape is WEAR, which has no direction: the paint off
+   it where the cages go through, primer under that, rust under the
+   primer. */
+T.DOORFRAM = () => {
+  const p = new Pix(64, 64, 97);
+  const n = fbm(64, 64, 6, 3, 97);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'grey', 0.38 + n[y * 64 + x] * 0.05);
+  speckle(64, 64, 170, 971, (x, y, r) => p.wash(x, y, 'grey', r < 0.5 ? 0.38 : 0.20, 0.30));
+  /* chipped through to primer, and here and there through the primer */
+  speckle(64, 64, 15, 977, (x, y, r, q) => {
+    const w = 1 + Math.floor(r * 2), h = 1 + Math.floor(q * 2);
+    p.box(x, y, w, h, 'bone', 0.26);
+    if (r > 0.72) p.ink(x, y, 'rust', 0.30);
+  });
+  p.grime(0.34, 'grey', 0.07, 97);
+  return p.snap(0.4);
+};
+
+/* What is over the head, and it belongs to the DOORSET rather than to
+   either room — which is the only answer a sector engine leaves open.
+   A band is drawn ONCE for both of its faces, so whatever goes here is
+   seen from the shop floor AND from the stockroom, and those two walls
+   are a panelled olive board and bare brick. Put the shop's own wall up
+   there and the stockroom gets an olive patch over its door; put the
+   stockroom's up there and the shop gets a patch of brick. Put the DOOR
+   up there — a transom panel in the same painted steel as the frame —
+   and it is right from both sides, because that is a real thing that
+   really goes over a door of this kind.
+
+   It also settles an alignment the band could not win. A band starts its
+   u at its own first vertex, so WALLPANL over the head landed a quarter
+   of a repeat out of phase with the WALLPANL either side of it, and a
+   hundred and twenty-eight units of slightly-wrong wall reads as a
+   mistake from ten feet away. A panel that is not trying to be the wall
+   has nothing to be out of phase with.
+
+   RIBS ON THE EDGES, which is what makes it tile: the upright lands on
+   u=0 and the rail on v=0, so at sixty-four to the repeat they fall on
+   the two jambs and the centre line of the opening, and on the head and
+   every sixty-four units above it. Nothing in the middle of the panel
+   has a direction, so a partial repeat at the ceiling is just a panel
+   that runs into the deck. */
+T.DOORHEAD = () => {
+  const p = new Pix(64, 64, 99);
+  const n = fbm(64, 64, 8, 3, 99);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'grey', 0.40 + n[y * 64 + x] * 0.05 + ((x * 7) % 3 === 0 ? 0.012 : 0));
+  /* the upright and the rail, each with the light on the top-left arris
+     and the shadow on the other, which is the whole of the relief */
+  for (let y = 0; y < 64; y++) {
+    p.ink(0, y, 'grey', 0.54); p.ink(1, y, 'grey', 0.47);
+    p.ink(2, y, 'grey', 0.26); p.ink(3, y, 'grey', 0.34);
+  }
+  for (let x = 0; x < 64; x++) {
+    p.ink(x, 0, 'grey', 0.56); p.ink(x, 1, 'grey', 0.48);
+    p.ink(x, 2, 'grey', 0.25); p.ink(x, 3, 'grey', 0.33);
+  }
+  speckle(64, 64, 120, 991, (x, y, r) => p.wash(x, y, 'grey', r < 0.5 ? 0.40 : 0.22, 0.26));
+  speckle(64, 64, 9, 997, (x, y, r) => { p.ink(x, y, 'bone', 0.26); if (r > 0.7) p.ink(x, y, 'rust', 0.28); });
+  streaks(p, 3, 993, 'grey', 0.12, 0.22);
+  return p.snap(0.4);
+};
+
+/* The plate over the door, and the only place in this building where the
+   words STAFF ONLY are written down.
+
+   A WORD IS A SHAPE YOU CAN COUNT — the note on the fire exit is about
+   exactly this — so it may only go somewhere that never repeats. A sign
+   is precisely that: one repeat, eighty by forty, on a free box screwed
+   to the wall over the head, on the public side, at the height a sign
+   goes. The two leaves under it say nothing at all. */
+T.DOORSIGN = () => {
+  const p = new Pix(64, 32, 98);
+  for (let y = 0; y < 32; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'bone', 0.82);
+  p.frame(0, 0, 64, 32, 'grey', 0.26);
+  p.frame(2, 2, 60, 28, 'red', 0.32);
+  drawTextCentred(p, 'STAFF', 32, 7, 'red', 0.30);
+  drawTextCentred(p, 'ONLY', 32, 18, 'red', 0.30);
+  for (const sx of [6, 57]) { p.disc(sx, 16, 1.2, 'grey', 0.30); p.ink(sx, 15, 'bone', 0.92); }
+  p.grime(0.30, 'grey', 0.07, 98);
+  return p.snap(0.35);
 };
 
 T.DOORTRAK = () => {
@@ -2420,7 +2585,14 @@ const slideLeaf = (seed, mirrored) => () => {
   };
   /* glass first, so the frame sits over it */
   for (let y = 3; y < 61; y++) for (let x = 3; x < 61; x++) {
-    const sheen = Math.max(0, 1 - Math.abs((x * (mirrored ? -1 : 1) + y * 0.6) % 34 - 7) / 12);
+    /* rakes "\" down from the top left, like every other pane in this
+       game: the leaf's v was upside down until today and this diagonal
+       was drawn to come out right through the flip. */
+    /* +102 is three whole pitches, so it shifts no phase and only keeps
+       the modulo's argument positive: the mirrored leaf's ran negative
+       over half its face and lost its sheen there, which is why one of
+       these two was always the duller one. */
+    const sheen = Math.max(0, 1 - Math.abs((x * (mirrored ? -1 : 1) - y * 0.6 + 102) % 34 - 7) / 12);
     const a = Math.round(40 + sheen * 90);
     p.ink(x, y, 'cyan', 0.16 + sheen * 0.26, a);
   }
@@ -3024,7 +3196,8 @@ export const CHARRABLE = [
   'PRODAPPL', 'PRODCITR', 'PRODGREN', 'PRODROOT', 'PRODFLOW', 'PRODRIM',
   'DELICASE', 'CHECKOUT', 'CARDBOX', 'PALLET', 'TROLLEY',
   'LINO', 'LINOWORN', 'CEILTILE', 'CEILFIT', 'CEILDECK', 'WALLPANL', 'TILEWALL',
-  'STOCKFLR', 'STOCKWAL', 'DOORSTAF', 'DOCKDOOR', 'HAZARD', 'CONCRETE', 'EXITDOOR',
+  'STOCKFLR', 'STOCKWAL', 'DOORSTAF', 'DOORFRAM', 'DOORHEAD', 'DOORSIGN', 'DOCKDOOR', 'HAZARD',
+  'CONCRETE', 'EXITDOOR',
   /* the strip: the neighbours burn too, once you have walked the fire
      out of the anchor and along the footway */
   'SHELFMIX', 'BAKECASE', 'UNITGLAS', 'UNITSHUT', 'UNITSHUT2', 'SHUTRAIL', 'SOFFIT',
@@ -3285,6 +3458,14 @@ const SIZES = {
   STORBASE: { w: 64, h: 32 },
   BRANDBAND:{ w: 64, h: 96 },   // one repeat is the fascia band
   DOORTRAK: { w: 64, h: 16 },
+  /* the staff door: a leaf, a frame and a sign. The leaf's size is
+     declared for the same reason EXITDOOR's is — js/slidedoor.js maps
+     a leaf 0..1 and never asks — so that the one number saying how big
+     the door is lives with the picture of it. */
+  DOORSTAF: { w: 64, h: 116 },
+  DOORFRAM: { w: 48, h: 48 },
+  DOORHEAD: { w: 64, h: 64 },
+  DOORSIGN: { w: 80, h: 40 },
   EXITSIGN: { w: 64, h: 32 },
   PALLET:   { w: 64, h: 16, masked: true },
   TROLLEY:  { w: 64, h: 48, masked: true },

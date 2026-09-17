@@ -4074,8 +4074,11 @@ section('the way out');
   const lv = MAP.buildSellWrong({ town: false });
   const g = new Game({ level: lv, scene: new THREE.Scene(), camera: {}, textures: tex.bakeTextures(), sprites: spr.bakeSprites(), hud: hudStub, audio: null, input: inputStub });
 
-  /* --- the doors are there, and they are doors --- */
-  const swing = g.slideDoors.filter(d => d.swing);
+  /* --- the doors are there, and they are doors ---
+     ASKED FOR BY WHAT THEY ARE and not merely by what they do, because
+     "swinging" stopped meaning "fire exit" the day the staff door became
+     a pair of leaves on hinges instead of a ceiling on a lift. */
+  const swing = g.slideDoors.filter(d => d.swing && /fire exit/.test(d.spec.sector.name));
   check('there are six fire exits', swing.length === 6, `${swing.length}`);
   check('three down each flank of the building',
     swing.filter(d => d.spec.sector.name.includes('west')).length === 3 &&
@@ -4132,6 +4135,137 @@ section('the way out');
     calm.panic = 0;
     calm.x = was[0]; calm.y = was[1];
     g.blockmap.moved(calm);
+  }
+
+  /* --- AND THE ONE DOOR IN HERE THAT IS NOT A WAY OUT ------------------
+     The staff door at the back of the shop floor, which until today was
+     the last rising-ceiling door in the building and the worst thing on
+     the shop floor with it. A shut Doom door is a sector whose ceiling
+     has come down onto its own floor, so the disagreement rule drew its
+     face all the way up to whatever the ROOM's ceiling was — and with no
+     SIZES entry on the texture that came out as a black slab five
+     storeys high with ten STAFF ONLY signs tiled up it, the word sliced
+     through by every seam. See THE WAY THROUGH TO THE BACK in
+     js/maps/sellwrong.js.
+
+     The first three checks are that bug, from three directions: nothing
+     in this map rises any more, the picture of a door is on no wall in
+     it, and the opening is exactly as tall as the thing that fills it. */
+  {
+    const staff = g.slideDoors.filter(d => d.pair);
+    const sec = lv.sectors.find(s => s.name === 'staff door');
+    check('there is one staff door and it is a pair of leaves',
+      staff.length === 1 && staff[0].leaves.length === 2,
+      `${staff.length} doors, ${staff[0] ? staff[0].leaves.length : 0} leaves`);
+    check('and nothing in this map is a ceiling that goes up any more',
+      !lv.sectors.some(s => s.special && s.special.kind === 'door'),
+      lv.sectors.filter(s => s.special && s.special.kind === 'door').map(s => s.name).join(' '));
+    check('and the picture of a door is on no wall in it',
+      !lv.sectors.some(s => s.wallTex === 'DOORSTAF' || s.upperTex === 'DOORSTAF' ||
+                            s.lowerTex === 'DOORSTAF') &&
+      !lv.lines.some(l => l.middle === 'DOORSTAF' || l.upper === 'DOORSTAF' || l.lower === 'DOORSTAF'));
+    const d = staff[0];
+    check('the opening is exactly as tall as the leaves',
+      d.zTop === sec.ceil && d.zBot === sec.floor, `${sec.floor}..${sec.ceil} against ${d.zBot}..${d.zTop}`);
+    /* A BAND IS DRAWN ONCE FOR BOTH ITS FACES, and this one has a
+       panelled olive shop floor on one side and a brick stockroom on the
+       other, so what goes over the head belongs to the DOORSET and to
+       neither room. */
+    check('and what is over the head belongs to the door and not to either room',
+      sec.upperTex === 'DOORHEAD' && sec.wallTex === 'DOORFRAM' &&
+      sec.upperTex !== lv.sectors.find(s => s.name === 'stockroom').wallTex,
+      `${sec.upperTex} over, ${sec.wallTex} down the reveal`);
+    /* ONE PICTURE, TURNED. The far leaf hangs off the other jamb through
+       half a circle, which runs its u the other way in the world: the
+       outer stiles land at the jambs, the meeting stiles come together
+       in the middle, and the pair is mirrored off a single texture. */
+    check('both leaves are hinged at the jambs and meet in the middle',
+      Math.abs(d.leaves[0].mesh.position.x - d.spec.x0) < 0.01 &&
+      Math.abs(d.leaves[1].mesh.position.x - d.spec.x1) < 0.01 &&
+      Math.abs(d.leafW * 2 - d.len) < 0.01, `${d.leafW} each of ${d.len}`);
+    check('and they are one picture, turned, rather than two',
+      d.spec.tex === 'DOORSTAF' && new Set(d.leaves.map(l => l.mat)).size === 2 &&
+      d.leaves.every(l => l.mat.uniforms.map.value === g.textures.get('DOORSTAF').texture));
+    /* AND THEY SWING TOGETHER, which is the whole reason `pair` is a flag
+       on one door instead of two doors side by side: the swing direction
+       falls out of the order the opening is declared in, so two doors
+       hinged at opposite jambs would always swing APART. */
+    {
+      const was = d.open;
+      d.open = 1; d._place();
+      const end = d.leaves.map(l => {
+        const th = l.mesh.rotation.y;
+        return [l.mesh.position.x + Math.cos(th) * d.leafW, -l.mesh.position.z + Math.sin(th) * d.leafW];
+      });
+      check('and wide open they have both swung into the back of house',
+        end.every(([, y]) => y > d.spec.y0 + d.leafW * 0.9),
+        end.map(([x, y]) => `${Math.round(x)},${Math.round(y)}`).join(' '));
+      check('and not into the cross-aisle, which has shoppers in it', d.ny > 0.99,
+        `outward normal ${d.nx.toFixed(2)},${d.ny.toFixed(2)}`);
+      d.open = was; d._place();
+    }
+    /* AND THE RIGHT WAY UP, which is not a thing to take on trust. A
+       canvas texture is uploaded flipped — that is what three's flipY
+       does — so v = 0 is the BOTTOM of the picture, and the mapping
+       anybody would write, zTop to v = 0, hangs the leaf upside down. It
+       did: six fire exits with the running man down by the threshold and
+       the crash bar above it, for as long as there was nothing on a leaf
+       with an unmistakable right way up. A kick plate is unmistakable.
+       Asked of EVERY leaf in the game, because one function builds them
+       all and the fire exits are the ones nobody would notice. */
+    {
+      const bad = new Set();
+      for (const dd of g.slideDoors) for (const l of dd.leaves) {
+        const pos = l.geom.getAttribute('position').array;
+        const uv = l.geom.getAttribute('uv').array;
+        for (let i = 0; i < 6; i++)
+          if (uv[i * 2 + 1] !== (pos[i * 3 + 1] === dd.zTop ? 1 : 0)) bad.add(dd.spec.sector.name);
+      }
+      check('and every leaf in this building hangs the right way up',
+        bad.size === 0, [...bad].join(', '));
+    }
+    check('it starts shut, and a shut one is wall on both faces of the wall',
+      d.state === 'shut' && d.open === 0 &&
+      d.spec.lines.length === 2 && d.spec.lines.every(l => l.blocking));
+    /* AND A SHUT ONE IS NOT A WINDOW. Without this the stockroom sees
+       through the doorway, down an aisle, across the rear cross-aisle and
+       out of a fire exit into nine thousand units of wood — which is a
+       forest drawn for somebody standing in a stockroom. */
+    check('and a steel leaf is not a window either', d.spec.lines.every(l => l.blockSight));
+    /* A staff door is the one door in this building the public does not
+       use, so it takes the crash bar's rule rather than the entrance's. */
+    {
+      const cx = (d.spec.x0 + d.spec.x1) / 2, cy = (d.spec.y0 + d.spec.y1) / 2;
+      const calm = g.actors.find(a => a.type === 'SHOPPER' && !a.dead && !a.removed);
+      const was = [calm.x, calm.y];
+      calm.x = cx - d.nx * 60; calm.y = cy - d.ny * 60; calm.panic = 0;
+      g.blockmap.moved(calm);
+      for (let k = 0; k < 20; k++) d.tic();
+      check('a shopper at the staff door does not wander into the back', d.open === 0);
+      calm.panic = 100;
+      for (let k = 0; k < 40; k++) d.tic();
+      check('and a shop on fire does not respect a STAFF ONLY sign', d.open > 0.9, d.open.toFixed(2));
+      check('and once it is moving you can walk through it and see through it',
+        d.spec.lines.every(l => !l.blocking && !l.blockSight));
+      calm.panic = 0; calm.x = was[0]; calm.y = was[1];
+      g.blockmap.moved(calm);
+      for (let k = 0; k < 400 && d.open > 0; k++) d.tic();
+      check('and it shuts itself again', d.open === 0 && d.spec.lines.every(l => l.blocking));
+    }
+    /* THE FRAME AND THE SIGN are free boxes, because a sector engine
+       cannot put anything proud of a wall — the same three pieces per
+       face the shopfront's glazing gets, and the sign is the ONLY place
+       in this building the words are written down. A word is a shape you
+       can count, so it may only live on something that never repeats. */
+    const fr = (lv.props || []).filter(q => q.tex === 'DOORFRAM');
+    check('the frame is two jambs and a head on each face, and all of it is thin',
+      fr.length === 6 && fr.every(q => Math.min(q.x1 - q.x0, q.y1 - q.y0) <= 10) &&
+      fr.filter(q => q.y1 <= sec.bbox[1]).length === 3 &&
+      fr.filter(q => q.y0 >= sec.bbox[3]).length === 3, `${fr.length} pieces`);
+    const sign = (lv.props || []).filter(q => q.tex === 'DOORSIGN');
+    check('and STAFF ONLY is a sign over the head on the public side, and nothing else',
+      sign.length === 1 && sign[0].y1 <= sec.bbox[1] && sign[0].z0 >= sec.ceil,
+      `${sign.length} signs`);
   }
 
   /* --- SOMEBODY ALIGHT ---
@@ -8470,7 +8604,7 @@ section('the town');
        LOWER THAN A STEP, which is the wheel stop and is a different
        bargain: see below. */
     const FLAT = ['PORCHPST', 'DOWNPIPE', 'CORNRBRD', 'PILASTER', 'METERBOX', 'ROOFLADR', 'SHUTRAIL',
-                  'SHOPFRAM'];
+                  'SHOPFRAM', 'DOORFRAM'];
     const STEPPABLE = ['WHEELSTP'];
     const low = props.filter(q => q.z0 < PLAYER_TOP && ![...FLAT, ...STEPPABLE].includes(q.tex));
     check('and nothing but a post, a pipe, a corner board and a wheel stop comes down to head height',

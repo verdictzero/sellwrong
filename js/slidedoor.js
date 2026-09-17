@@ -50,6 +50,35 @@
               and it opens when a person in a hurry leans on the bar. The
               player counts as such a person at any time, because the
               player is allowed to walk out of a building.
+     pair     two swinging leaves instead of one, hinged at the two
+              jambs, both turning the same way. See below.
+     opaque   a shut one stops sight as well as movement. Per door and
+              not per class, because the thing that varies is what the
+              leaf is made of: the entrance is glass and the whole point
+              of it is that you stand in the car park and see the shop
+              you are about to walk into, while a steel leaf with one
+              vision panel in it is a wall until somebody opens it. It is
+              the same flag to the portal flood as a solid line, so an
+              opaque door SHUT costs nothing to look at.
+
+   AND WHY `pair` IS A FLAG AND NOT TWO DOORS. A pair of impact leaves at
+   the back of a shop floor is two quads, so the obvious build is two
+   SlideDoors side by side — and it does not work, twice over. They would
+   share the opening's lines, so each would write `blocking` over the
+   other's answer. And the swing direction is not a choice: it falls out
+   of the order the opening is declared in, one jamb to the other, and
+   two leaves hinged at OPPOSITE jambs have to be declared in opposite
+   orders. Two doors would therefore always swing apart from each other,
+   like a saloon being shoved from inside itself, which is the one thing
+   a pair of impact doors never does.
+
+   So a pair is one door with two leaves on it, and the second leaf is
+   turned through half a circle to hang off the far jamb. Which has a
+   consequence worth having: the second leaf's u runs the other way in
+   the world, so ONE texture gives a mirrored pair — the outer stiles
+   land at the jambs and the two meeting stiles come together in the
+   middle. SLIDEL and SLIDER had to be drawn twice only because a pair of
+   sliders both travel the same way.
    ===================================================================== */
 
 import * as THREE from 'three';
@@ -78,7 +107,10 @@ export class SlideDoor {
    *   hold         tics to stay open once nothing is near
    *   swing        one leaf on a hinge at (x0,y0), turned outward,
    *                instead of a pair that slide
+   *   pair         with `swing`: two leaves, hinged at (x0,y0) and at
+   *                (x1,y1), both turning outward
    *   panicOnly    only somebody running trips it (the player always does)
+   *   opaque       a shut one blocks sight as well as movement
    *   tex          the leaf's texture, for a swinging one
    * }
    */
@@ -103,9 +135,10 @@ export class SlideDoor {
     this.half = len / 2;
 
     this.swing = !!spec.swing;
-    /* A swinging leaf fills the opening on its own, so it is as wide as
-       the opening; a pair of sliders each take half. */
-    this.leafW = this.swing ? this.len : this.half;
+    this.pair = !!spec.pair;
+    /* A single swinging leaf fills the opening on its own, so it is as
+       wide as the opening; a pair of anything each take half. */
+    this.leafW = this.swing && !this.pair ? this.len : this.half;
 
     /* `travel` is what `speed` is measured against, and for a swing it
        is not a distance any more — it is how much of the arc a tic
@@ -126,8 +159,14 @@ export class SlideDoor {
 
     this.group = new THREE.Group();
     this.group.name = this.swing ? 'exit-door' : 'slide-door';
+    /* Both leaves of a swinging pair are built with dir +1 — running from
+       their own origin along +X — because for a swing the origin IS the
+       hinge and the hinge is the one point on a leaf that does not move.
+       Which end of the wall each one hangs from is settled in _place. */
     this.leaves = this.swing
-      ? [this._leaf(spec.tex || 'EXITDOOR', +1)]
+      ? (this.pair
+          ? [this._leaf(spec.tex || 'EXITDOOR', +1), this._leaf(spec.tex || 'EXITDOOR', +1)]
+          : [this._leaf(spec.tex || 'EXITDOOR', +1)])
       : [this._leaf('SLIDEL', -1), this._leaf('SLIDER', +1)];
     for (const l of this.leaves) this.group.add(l.mesh);
     this._setBlocked(true);
@@ -170,9 +209,20 @@ export class SlideDoor {
        repeat happens to fall. Neither leaf flips its u — SLIDEL and
        SLIDER are already drawn as each other's mirror, because a pair of
        sliders that are not looks wrong immediately and nobody can say
-       why. */
+       why.
+
+       AND v RUNS THE OTHER WAY FROM THE ONE YOU WOULD WRITE DOWN. A
+       canvas texture is uploaded flipped — that is what three's flipY
+       does, and it is why every other quad in this game is built against
+       it — so v = 0 is the BOTTOM of the picture, not the top. The
+       obvious mapping, zTop to v = 0, therefore hangs the leaf upside
+       down, and it did: six fire exits with the crash bar at shoulder
+       height and the running man down by the threshold, which nobody
+       spotted for as long as there was nothing on a leaf that had a
+       right way up. The staff door has a kick plate on it, and a kick
+       plate on the lintel is not something you can miss. */
     g.setAttribute('uv', new THREE.Float32BufferAttribute([
-      0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 0, 0,
+      0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1,
     ], 2));
     g.setAttribute('light', new THREE.Float32BufferAttribute(new Float32Array(6).fill(1), 1));
     /* The entrance is indoors, so the leaves diminish like a wall. */
@@ -202,6 +252,17 @@ export class SlideDoor {
       const l = this.leaves[0];
       l.mesh.position.set(x0 + this.nx * off, 0, -(y0 + this.ny * off));
       l.mesh.rotation.set(0, yaw - this.open * Math.PI / 2, 0);
+      if (this.pair) {
+        /* The far leaf hangs at (x1,y1) facing back down the opening, so
+           its shut yaw is half a circle round — and from there it is a
+           right angle the OTHER way that takes it onto the same outward
+           normal as its partner. That plus and that minus are the whole
+           of why the two leaves swing together rather than apart. */
+        const { x1, y1 } = this.spec;
+        const r = this.leaves[1];
+        r.mesh.position.set(x1 + this.nx * off, 0, -(y1 + this.ny * off));
+        r.mesh.rotation.set(0, yaw + Math.PI + this.open * Math.PI / 2, 0);
+      }
       return;
     }
     const cx = x0 + this.dx * this.half + this.nx * off;
@@ -220,7 +281,8 @@ export class SlideDoor {
   _setBlocked(on) {
     if (this._blocked === on) return;
     this._blocked = on;
-    for (const l of this.spec.lines) l.blocking = on;
+    const dark = on && !!this.spec.opaque;
+    for (const l of this.spec.lines) { l.blocking = on; l.blockSight = dark; }
   }
 
   /** Anything solid close enough to trip the mat. */

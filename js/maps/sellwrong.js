@@ -1488,14 +1488,72 @@ export function buildSellWrong(opts = {}) {
     }
   }
 
-  /* the swing door out of the shop floor */
-  const staffDoor = rm.add(700, Y_BACKXEND, 820, BOH_Y0, {
-    floor: FLOOR_WALK, ceil: FLOOR_WALK, light: 0.46,      // shut: ceiling on the floor
-    floorTex: 'STOCKFLR', ceilTex: 'CEILDECK', wallTex: 'DOORSTAF',
-    upperTex: 'DOORSTAF', lowerTex: 'DOORSTAF',
-    fuel: FUEL.corridor, dynamic: true, name: 'staff door',
-    special: { kind: 'door', openTo: 152, speed: 4, wait: 140 },
+  /* --- THE WAY THROUGH TO THE BACK -------------------------------------
+     THIS WAS THE LAST RISING DOOR IN THE BUILDING and it was the worst
+     thing on the shop floor. js/slidedoor.js opens by saying why: a Doom
+     door is a ceiling that comes down onto its own floor, and the
+     DISAGREEMENT RULE then draws the face of it up to whatever the ROOM's
+     ceiling is — 352 on the shop side and 416 on the stock side. The door
+     texture had no SIZES entry either, so it repeated every sixty-four
+     units. What you actually stood in front of was a black slab five
+     storeys high with ten STAFF ONLY signs tiled up it, the word sliced
+     through by every seam.
+
+     So it is built the way the other two doors in this building are
+     built, and there is now nothing left in the map that rises: THE
+     CEILING OF THE OPENING IS THE HEAD, what is over the head is a band
+     of the wall it sits in, and the leaf is a quad on a hinge.
+
+     AND IT IS A PAIR, because that is what is at the back of a
+     supermarket: two impact leaves that swing into the stockroom, a
+     stainless kick plate up where the roll cages hit them, a push plate
+     at shoulder height and a vision panel each, so that nobody shoves it
+     open into somebody carrying a stack of trays. See `pair` in
+     js/slidedoor.js for why two leaves cannot be two doors.
+
+     WHICH WAY IT SWINGS. Into the back of house, which is the far side
+     from the shop floor — the same rule the fire exits keep and for the
+     same reason. The other side of this door is a cross-aisle with people
+     in it.
+
+     WHO OPENS IT. Not shoppers. This is the one door in the building the
+     public does not use, so it is panicOnly exactly like a fire exit: the
+     player trips it at any hour because the player goes everywhere, and
+     the crowd only trips it once it is running — which is the moment a
+     STAFF ONLY sign stops meaning anything at all. */
+  const SD_W = 128, SD_X0 = 700, SD_X1 = SD_X0 + SD_W;
+  const SD_Y = (Y_BACKXEND + BOH_Y0) / 2;            // the middle of the wall
+  const staffDoor = rm.add(SD_X0, Y_BACKXEND, SD_X1, BOH_Y0, {
+    floor: FLOOR_WALK, ceil: DOOR_TOP, light: 0.50,
+    floorTex: 'STOCKFLR', ceilTex: 'DOORFRAM',
+    /* The jambs are the two short sides and they are one-sided, so
+       wallTex is the REVEAL: the frame lining a sixteen-unit return.
+       upperTex is the band over the head, and a band is drawn ONCE for
+       both of its faces — one texture seen from a panelled olive shop
+       floor and from a brick stockroom — so it is neither of them. It is
+       the doorset's own transom panel. See DOORHEAD in js/textures.js. */
+    wallTex: 'DOORFRAM', upperTex: 'DOORHEAD', lowerTex: 'DOORFRAM',
+    fuel: FUEL.corridor, name: 'staff door',
   });
+  /* The frame, proud of the wall on both faces, and the sign over it.
+     Free boxes, because a sector engine cannot put anything proud of a
+     wall — the same three pieces, in the same order, that the shopfront's
+     glazing gets. */
+  {
+    const F = 7, D = 6;                    // how wide the frame is, how proud
+    for (const [a, b] of [[Y_BACKXEND - D, Y_BACKXEND], [BOH_Y0, BOH_Y0 + D]]) {
+      prop(SD_X0 - F, a, SD_X0, b, FLOOR_WALK, DOOR_TOP + F, 'DOORFRAM', { light: 0.46 });
+      prop(SD_X1, a, SD_X1 + F, b, FLOOR_WALK, DOOR_TOP + F, 'DOORFRAM', { light: 0.46 });
+      prop(SD_X0 - F, a, SD_X1 + F, b, DOOR_TOP, DOOR_TOP + F, 'DOORFRAM',
+           { botTex: 'DOORFRAM', light: 0.52, botLight: 0.24 });
+    }
+    /* and the sign, on the public side only. The word came OFF the leaves
+       when they stopped being a wall texture: a leaf is double-sided, so
+       anything lettered on one reads backwards from the stockroom. This
+       is where a real one is screwed anyway. */
+    prop(SD_X0 + 24, Y_BACKXEND - 4, SD_X1 - 24, Y_BACKXEND, DOOR_TOP + 14, DOOR_TOP + 54,
+         'DOORSIGN', { light: 0.78 });
+  }
   /* and the roller shutter the night crew left open */
   rm.add(2400, Y_BACKXEND, 2560, BOH_Y0, boh('shutter opening', 0.18, FUEL.corridor, {
     ceil: 136, wallTex: 'DOCKDOOR', upperTex: 'DOCKDOOR', lowerTex: 'DOCKDOOR',
@@ -1968,6 +2026,41 @@ export function buildSellWrong(opts = {}) {
       speed: 8, triggerR: EXIT_W + 40, hold: 210,
       lines, sector: S[x.rect.sector],
     });
+  }
+
+  /* --- and the staff door, which is the same class a third time --------
+     A PAIR this time. The opening is declared left to right AS SEEN FROM
+     OUTSIDE like the other two, and "outside" for this door is the back
+     of house: the leaves swing into the stockroom because the other side
+     of them is a cross-aisle with shoppers in it. Facing south down the
+     building, left to right is east to west, so the opening runs from
+     SD_X1 to SD_X0 — and that is the whole of what picks the swing.
+
+     triggerR is the width of the opening and a little, so it is the leaf
+     being shoved and not a mat out in the aisle; hold is short, because
+     what comes through a staff door is one person with a cage rather than
+     a cross-aisle emptying itself. */
+  {
+    const lines = mb._own(staffDoor.sector).filter(l => l.front !== null && l.back !== null);
+    slide.push({
+      x0: SD_X1, y0: SD_Y, x1: SD_X0, y1: SD_Y,
+      zBot: FLOOR_WALK, zTop: DOOR_TOP,
+      standoff: 0, swing: true, pair: true, panicOnly: true, opaque: true, tex: 'DOORSTAF',
+      speed: 7, triggerR: SD_W / 2 + 56, hold: 80,
+      lines, sector: S[staffDoor.sector],
+    });
+    /* A STEEL DOOR IS NOT A WINDOW, and the portal flood has to know it
+       at BUILD time rather than at the door's first tic. `blocking` can
+       wait, because it only matters once something is walking into the
+       leaf and the door owns it from then on; blockSight cannot, because
+       the flood runs on levels that never get a Game attached — the
+       tools, the suite, the batch prebake — and a level nobody has
+       played is a level whose doors have never been opened. Without it
+       the stockroom sees through this doorway, down an aisle, across the
+       rear cross-aisle and out of a fire exit into nine thousand units of
+       wood. `opaque` in js/slidedoor.js owns it from here and clears it
+       the moment a leaf moves. */
+    for (const l of lines) l.blockSight = true;
   }
 
   /* =================================================================

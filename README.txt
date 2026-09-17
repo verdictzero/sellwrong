@@ -139,7 +139,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         1937 checks, no install and no browser
+  the smoke test         1960 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -1171,6 +1171,96 @@ A hundred sections of frame. Seven new textures. The cost, measured
 against the same four viewpoints before and after, is nineteen draw calls
 at the mouth of the car park, twelve in the middle of it, five on the
 footway and none at all from the town.
+
+
+THE LAST DOOR THAT WENT UP
+--------------------------
+
+Doom had exactly one door: a ceiling that goes up. The shopfront's
+sliders and the six fire exits have never been that — they are quads on
+a transform, because a rising portcullis at the front of a SellWrong
+would be the first thing anyone noticed — but the STAFF ONLY door at the
+back of the shop floor still was, and it was the worst thing in the
+building.
+
+A shut Doom door is a sector whose ceiling has come down onto its own
+floor. The disagreement rule then has nothing to stop it: it draws the
+face of that door from the floor all the way up to whatever the ROOM's
+ceiling is, which back there is 352 on the shop side and 416 on the
+stock side. The door texture had no declared size either, so it repeated
+every 64 units. What you actually walked up to was a black slab five
+storeys high with TEN "STAFF ONLY" signs tiled up it, every one of them
+sliced through the word by a seam.
+
+Nothing was wrong with the picture. It was on the wrong kind of surface.
+
+So the staff door is built the way the other two doors in the building
+are built, and there is now nothing left in this map that rises:
+
+  the OPENING             a sector 128 by 116 in the thickness of the
+                          wall, and its ceiling IS the head
+  the TRANSOM PANEL       the band from the head to the ceiling. A band
+                          is drawn once for BOTH of its faces, and this
+                          one has a panelled olive shop floor on one side
+                          and a brick stockroom on the other — so it is
+                          neither of them. It is the doorset's own panel,
+                          in the same painted steel as the frame, which
+                          is right from both rooms because that is a real
+                          thing that really goes over a door of this kind
+  the FRAME               pressed steel, six free boxes, proud of the
+                          wall on both faces, and the same featureless
+                          extrusion trick the shopfront's frame uses so
+                          that it tiles round a corner
+  the LEAVES              a PAIR of impact doors on hinges at the jambs,
+                          swinging into the stockroom, with a stainless
+                          kick plate where the roll cages hit them, a
+                          push plate at shoulder height and a wired-glass
+                          vision panel each
+  the SIGN                a plate over the head, on the public side, and
+                          the only place in this building where the words
+                          STAFF ONLY are written down
+
+A word is a shape you can count, and the moment it is on anything that
+repeats you are reading it twenty-eight times. That is the rule the fire
+exit's running man was drawn to keep, and it is exactly the rule the old
+staff door broke. A sign never repeats, so the words moved onto one.
+
+THE PAIR IS A FLAG AND NOT TWO DOORS. Two SlideDoors side by side share
+the opening's lines, so each would overwrite the other's answer about
+whether the door is wall this tic. Worse, the swing direction is not a
+choice — it falls out of the order the opening is declared in, one jamb
+to the other — so two leaves hinged at OPPOSITE jambs must be declared in
+opposite orders and would always swing apart from each other, like a
+saloon door being shoved from inside itself. A pair is therefore one door
+with two leaves, the second turned through half a circle to hang off the
+far jamb. Which pays for itself: the far leaf's u runs the other way in
+the world, so ONE texture gives a mirrored pair, with the outer stiles at
+the jambs and the two meeting stiles coming together in the middle.
+
+WHO OPENS IT is the other half of what makes it a staff door rather than
+a doorway. It takes the fire exit's rule and not the entrance's: the
+player trips it at any hour, because the player goes everywhere, and the
+crowd only trips it once it is running — which is the moment a STAFF ONLY
+sign stops meaning anything at all.
+
+AND A SHUT ONE IS NOT A WINDOW. A steel leaf blocks sight as well as
+movement, which is a per-door flag and not a class one, because the
+entrance is glass and the whole point of it is that you stand in the car
+park and see the shop you are about to walk into. Without it the portal
+flood went from the stockroom, through this doorway, down an aisle,
+across the rear cross-aisle and out of a fire exit into nine thousand
+units of wood — a forest drawn for somebody standing in a stockroom.
+
+AND EVERY LEAF IN THE BUILDING WAS UPSIDE DOWN. Found by building this
+one: a canvas texture is uploaded flipped, so v = 0 is the BOTTOM of the
+picture, and the mapping anybody would write — the top of the leaf to
+v = 0 — hangs it over. Six fire exits had been standing there with the
+running man down by the threshold and the crash bar above it, and nobody
+had noticed, because until this door there was nothing on a leaf with an
+unmistakable right way up. A kick plate on the lintel is unmistakable.
+One line of UVs fixes all nine doors, and the suite now reads the two
+vertex attributes together and asks of every leaf in the game that the
+vertex at the top of it carries v = 1.
 
 
 THE ONE IDEA
@@ -5289,7 +5379,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-1937 checks. Every one of them earns its place by having caught something
+1960 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
