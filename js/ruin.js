@@ -76,6 +76,25 @@ export const ROOF = {
   /* and how many are simply not there any more */
   goneChance: 0.16,
 
+  /* AND HOW MUCH WORSE IT GETS WHILE IT IS STILL IN THE FIRE. The three
+     above are a roof that has finished burning; these are how far each
+     of them has moved by the time the frame is about to let go, which is
+     what turns the ruin from a still picture into the last stage of one.
+     Steel at six hundred degrees has about half its strength, and what
+     you see first is not a member failing — it is every member drooping
+     at once — so `sagMore` is the big one and `goneMore` is the small
+     one right up until the moment the lot comes down. See AND WHAT IS
+     STILL HOLDING IT UP in js/fire.js for what drives it. */
+  sagMore: 46,
+  sagChanceMore: 0.34,
+  /* AND HALF OF THEM ARE GONE BY THE END. 0.13 was the first guess and
+     it was too polite: a nine-joist bay lost none of them, because the
+     hash that decides simply never crossed a bar that low over nine
+     draws. A frame about to let go has lost most of its infill — the
+     joists are the thin members and they go before the beams do — and
+     what you want to see from underneath is daylight where steel was. */
+  goneMore: 0.34,
+
   /* A joist that sags is drawn as a polyline, because a box has two ends
      and a curve does not. This is how long a piece of one is. */
   sagStep: 96,
@@ -93,15 +112,15 @@ const hash = (i, salt) => (Math.imul((i | 0) + 1 ^ salt, 2654435761) >>> 8) / 0x
 /** How far the joist at lattice row `j` has drooped by the time it gets
  *  to `x`. Zero over a beam and most at the middle of a bay, so a run of
  *  them reads as steel between supports rather than as a wave. */
-function droop(j, x) {
-  if (hash(j, 0x5f37) >= ROOF.sagChance) return 0;
+function droop(j, x, wear = 0) {
+  if (hash(j, 0x5f37) >= ROOF.sagChance + wear * ROOF.sagChanceMore) return 0;
   const t = ((x / ROOF.beamPitch) % 1 + 1) % 1;
   /* How MUCH this one sagged is its own: a roof where every failure is
      the same size is a roof somebody typed. */
-  return ROOF.sag * (0.45 + hash(j, 0x1d7b) * 0.9) * Math.sin(t * Math.PI);
+  return (ROOF.sag + wear * ROOF.sagMore) * (0.45 + hash(j, 0x1d7b) * 0.9) * Math.sin(t * Math.PI);
 }
 
-const isGone = j => hash(j, 0xa53f) < ROOF.goneChance;
+const isGone = (j, wear = 0) => hash(j, 0xa53f) < ROOF.goneChance + wear * ROOF.goneMore;
 
 /* ---------------------------------------------------------------------
    DRAWING ONE PIECE OF STEEL
@@ -153,13 +172,27 @@ function box(b, x0, y0, x1, y1, zBot, zTop, light, char) {
    ------------------------------------------------------------------- */
 export function roofFraming(set, s) {
   if (!s.ruinRoof) return 0;
+  /* AND WHEN IT HAS COME DOWN there is nothing over the region at all,
+     because all of this is lying on the floor of it — see AND WHEN IT
+     HAS COME DOWN at the foot of this file. */
+  if (s.ruinRoof === 'down') return rubbleHeap(set, s);
   const [x0, y0, x1, y1] = s.bbox;
   const b = set.get('RUINSTEL');
   /* A GUTTED REGION IS LIT BY WHAT IS LEFT OF IT, and the steel is the
      part of it nearest the sky, so it takes the region's own light and
      the full char — the shader keeps live coals on anything charred, and
      a roof frame with coals in its seams is the picture. */
-  const light = Math.min(1, Math.max(0.2, (s.light ?? 0.4) * 1.06));
+  /* HOW FAR GONE THIS ONE IS. Integrity is one when the frame is whole
+     and zero when it is on the floor — js/fire.js takes it off for as
+     long as there is fire at the region — so `wear` is how much of the
+     collapse has already happened. Every number below reads it, which is
+     what makes the last minute of a burning shell a thing you can watch
+     rather than a state it switches into. */
+  const wear = 1 - Math.max(0, Math.min(1, s.integrity ?? 1));
+  /* and it is BRIGHTER the further gone it is, because what is doing
+     this to it is the fire: a frame about to let go is a frame at a
+     temperature, and the shader's coals are already living in its seams */
+  const light = Math.min(1.25, Math.max(0.2, (s.light ?? 0.4) * (1.06 + wear * 0.5)));
   const CHAR = 1;
   const top = s.ceil;
   let drawn = 0;
@@ -169,8 +202,13 @@ export function roofFraming(set, s) {
   for (let i = bi0; i <= bi1; i++) {
     const bx = i * ROOF.beamPitch;
     if (bx - ROOF.beamHalf < x0 || bx + ROOF.beamHalf > x1) continue;
+    /* A BEAM IS THE LAST THING TO GO, which is what makes it a beam: it
+       does not disappear and it does not sag by much, it takes the whole
+       roof with it when it finally does. So a quarter of the joists'
+       droop, and only once there is almost nothing left. */
+    const bd = wear > 0.72 ? (wear - 0.72) * ROOF.sagMore * 0.5 : 0;
     box(b, bx - ROOF.beamHalf, y0, bx + ROOF.beamHalf, y1,
-        top - ROOF.beamDepth, top, light * 0.94, CHAR);
+        top - ROOF.beamDepth - bd, top - bd, light * 0.94, CHAR);
     drawn++;
   }
 
@@ -179,8 +217,8 @@ export function roofFraming(set, s) {
   for (let j = ji0; j <= ji1; j++) {
     const jy = j * ROOF.joistPitch;
     if (jy - ROOF.joistHalf < y0 || jy + ROOF.joistHalf > y1) continue;
-    if (isGone(j)) continue;                        // this one came down
-    const sags = droop(j, 0) !== 0 || droop(j, ROOF.beamPitch / 2) !== 0;
+    if (isGone(j, wear)) continue;                  // this one came down
+    const sags = droop(j, 0, wear) !== 0 || droop(j, ROOF.beamPitch / 2, wear) !== 0;
     /* A STRAIGHT ONE IS ONE BOX. A sagging one is a polyline, because a
        box has flat ends and a curve does not — and the step is coarse on
        purpose: four or five pieces across a bay is a sag, and forty is a
@@ -188,7 +226,7 @@ export function roofFraming(set, s) {
     const n = sags ? Math.max(1, Math.round((x1 - x0) / ROOF.sagStep)) : 1;
     for (let k = 0; k < n; k++) {
       const ax = x0 + (x1 - x0) * (k / n), cx = x0 + (x1 - x0) * ((k + 1) / n);
-      const d = droop(j, (ax + cx) / 2);
+      const d = droop(j, (ax + cx) / 2, wear);
       box(b, ax, jy - ROOF.joistHalf, cx, jy + ROOF.joistHalf,
           top - ROOF.joistDepth - d, top - d, light, CHAR);
       drawn++;
@@ -206,7 +244,10 @@ export function roofFraming(set, s) {
     const d = set.get(deck);
     for (let j = ji0; j <= ji1; j++) {
       for (let i = bi0; i <= bi1; i++) {
-        if (hash(j * 733 + i, 0x2f19) > ROOF.scrapChance) continue;
+        /* and the scraps of deck go FIRST, before the steel under them
+           does: a panel that was hanging on at all is the thinnest thing
+           up there */
+        if (hash(j * 733 + i, 0x2f19) > ROOF.scrapChance * (1 - wear * 0.85)) continue;
         const ay = j * ROOF.joistPitch, cy = ay + ROOF.joistPitch;
         const ax = i * ROOF.beamPitch, cx = ax + ROOF.beamPitch;
         if (ax < x0 || cx > x1 || ay < y0 || cy > y1) continue;
@@ -223,6 +264,117 @@ export function roofFraming(set, s) {
         drawn++;
       }
     }
+  }
+  return drawn;
+}
+
+/* =====================================================================
+   AND WHEN IT HAS COME DOWN
+
+   The frame above is what is standing the morning after. This is what is
+   there when it is not — when the steel has been in the fire long enough
+   to let go, or when something took the wall out from under it. See AND
+   WHAT IS STILL HOLDING IT UP in js/fire.js for which of those happened
+   and when.
+
+   A HEAP IS THE SAME LATTICE, LYING DOWN. Everything the roof was is
+   still in the region, it is just on the floor: the joists that ran east
+   to west are lying east to west, broken where they folded, and the deck
+   that was on them is in sheets between them. Which is why this is not a
+   pile of random boxes — it is the frame above, drawn at ankle height,
+   off the same hash of the same lattice index. A joist that had already
+   sagged fell first and lies flattest; one that was still straight came
+   down in two pieces. Two collapsed bays next to each other share their
+   heap for the same reason they shared their roof.
+
+   AND IT IS LOW IN THE MIDDLE AND BANKED AT THE EDGES, which is both
+   what a collapse does — the floor pushes the debris out, the walls stop
+   it — and the only way to draw a heap you can walk over without drawing
+   one you walk THROUGH. The middle of a region is the part you cross, so
+   nothing there stands higher than the step the floor already rose by.
+   The drifts are against the walls, where the only thing you could do is
+   stand on them.
+
+   IT IS STILL ALIGHT. Every piece is drawn fully charred, which is what
+   puts live coals in the seams — see the note on the shader in
+   js/material.js — so a collapsed bay is not a grey heap, it is a black
+   one with orange in it, and it stays that way for the rest of the
+   night.
+   ===================================================================== */
+export const HEAP = {
+  pitch: 64,          // the lattice the lumps sit on: two texture repeats
+  fill: 0.62,         // how many cells of it have anything in them
+  lo: 5, hi: 22,      // how tall a lump out in the middle of the floor is
+  edge: 96,           // how near a wall counts as being banked against it
+  edgeHi: 58,         // and how high the drift gets there
+  /* A fallen joist is in pieces. How long a piece is, and how far off
+     the line it ended up, are both hashed off the lattice row, so the
+     steel on the floor is the steel that was over it. */
+  piece: 240,
+  spread: 40,
+};
+
+/** The heap over one collapsed region. Same contract as roofFraming:
+ *  draw the part of the world's lattice that falls inside this region's
+ *  outline, and nothing else, so the piece next door lines up. */
+export function rubbleHeap(set, s) {
+  const [x0, y0, x1, y1] = s.bbox;
+  const floor = s.floor;
+  const light = Math.min(1, Math.max(0.24, (s.light ?? 0.4) * 1.02));
+  const CHAR = 1;
+  let drawn = 0;
+
+  /* --- the frame, on the floor --------------------------------------
+     The same joist rows the roof had, broken into pieces and scattered
+     along their own line. A row that sagged in the ruin above lies
+     flatter here, because it was already most of the way down. */
+  const b = set.get('RUINSTEL');
+  const j0 = Math.ceil(y0 / ROOF.joistPitch), j1 = Math.floor(y1 / ROOF.joistPitch);
+  for (let j = j0; j <= j1; j++) {
+    const sagged = hash(j, 0x5f37) < ROOF.sagChance;
+    const jy = j * ROOF.joistPitch + (hash(j, 0x77a1) - 0.5) * HEAP.spread;
+    if (jy - ROOF.joistHalf < y0 || jy + ROOF.joistHalf > y1) continue;
+    const zb = floor + (sagged ? 1 : 3 + hash(j, 0x2b19) * 8);
+    /* on its side, so it is as wide as it was deep and as low as it was
+       wide: a joist on the floor has fallen over, it has not sunk */
+    const zt = zb + ROOF.joistHalf * 2;
+    const half = ROOF.joistDepth / 2;
+    let px = x0 + hash(j, 0x3d41) * HEAP.piece;
+    while (px < x1) {
+      const len = HEAP.piece * (0.45 + hash(j ^ (px | 0), 0x9c07) * 0.8);
+      const a = Math.max(x0, px), c = Math.min(x1, px + len);
+      if (c - a > 24) {
+        const dy = (hash(j ^ (px | 0), 0x51e5) - 0.5) * HEAP.spread;
+        const ya = jy + dy - half, yc = jy + dy + half;
+        if (ya > y0 && yc < y1) { box(b, a, ya, c, yc, zb, zt, light * 0.92, CHAR); drawn++; }
+      }
+      /* the gap where it folded */
+      px += len + 20 + hash(j ^ (px | 0), 0x6f2d) * 90;
+    }
+  }
+
+  /* --- and the deck, the block and everything that was on the racking */
+  const r = set.get('RUBBLE');
+  const ix0 = Math.floor(x0 / HEAP.pitch), ix1 = Math.floor(x1 / HEAP.pitch);
+  const iy0 = Math.floor(y0 / HEAP.pitch), iy1 = Math.floor(y1 / HEAP.pitch);
+  for (let iy = iy0; iy <= iy1; iy++) for (let ix = ix0; ix <= ix1; ix++) {
+    const key = Math.imul(ix, 73856093) ^ Math.imul(iy, 19349663);
+    if (hash(key, 0x1f83) > HEAP.fill) continue;
+    const cx = ix * HEAP.pitch, cy = iy * HEAP.pitch;
+    /* inset by its own amount, so no two lumps are the same size and the
+       lattice never shows as a grid */
+    const mx = 4 + hash(key, 0x4c11) * 22, my = 4 + hash(key, 0x88d3) * 22;
+    const a = Math.max(x0, cx + mx), c = Math.min(x1, cx + HEAP.pitch - mx);
+    const p = Math.max(y0, cy + my), q = Math.min(y1, cy + HEAP.pitch - my);
+    if (c - a < 10 || q - p < 10) continue;
+    /* HOW NEAR A WALL IT IS decides how high it stands. Nothing out in
+       the middle of the floor is taller than the step you already took
+       to get onto the heap. */
+    const near = Math.min(a - x0, x1 - c, p - y0, y1 - q);
+    const bank = Math.max(0, 1 - near / HEAP.edge);
+    const h = HEAP.lo + hash(key, 0xb5e1) * (HEAP.hi - HEAP.lo) + bank * bank * HEAP.edgeHi;
+    box(r, a, p, c, q, floor - 2, floor + h, light * (0.86 + hash(key, 0x2d4f) * 0.26), CHAR);
+    drawn++;
   }
   return drawn;
 }

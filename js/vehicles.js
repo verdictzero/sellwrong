@@ -626,8 +626,15 @@ class Vehicle {
   boom(radius, damage, blasts, scale = 1, opts = {}) {
     const g = this.fleet.game;
     const at = { x: this.x, y: this.y, z: this.ground };
+    /* A CAR AGAINST A SHOPFRONT TAKES THE SHOPFRONT, and not much more.
+       A third of a region's integrity a bang, so one car is a scorch and
+       a hole in the glazing, a car park going up in sequence is a wall
+       coming down, and the fire does the rest — which is the right order
+       for a place where the cars are the fuse and the building is what
+       burns. Scaled with the bang, because FINAL is four of these. */
     g.explode(at, { radius, damage, heat: Math.min(255, 260 * scale), heatRadius: 96 * Math.sqrt(scale),
-                    ignite: 340, sound: opts.sound });
+                    ignite: 340, sound: opts.sound,
+                    structure: 0.34 * scale, structureRadius: radius * 1.25 });
     const L = this.def.length, W = carWidth(this.def);
     /* the fireballs, spread over the car's own footprint — and a big one
        spreads them past it, because a bang four times the size is not

@@ -200,6 +200,80 @@ const CHAR_AT = 0.5;
    that burns to 99% and never falls down. */
 const GUT_AT = 0.92;
 
+/* =====================================================================
+   AND WHAT IS STILL HOLDING IT UP
+
+   CHARRED IS A SURFACE, GUTTED IS A STRUCTURE, AND COLLAPSED IS NEITHER
+   — it is the absence of one. The three stages are the same building
+   three times: a shop with everything in it blackened, a shell with the
+   deck gone and the steel showing, and then a heap.
+
+   THE THIRD STAGE NEEDED A CLOCK THAT THE FIRST TWO DID NOT. Those two
+   run off `sectorBurnt / sectorFuel` — how much of what was in a region
+   has gone — and that number saturates at one and stops. A gutted region
+   has nothing left to burn, so as far as the old arithmetic is concerned
+   nothing further can happen to it, and a burnt-out shed stands for ever.
+
+   Steel does not care how much has burnt. It cares how LONG it has been
+   hot — a fire brigade's whole judgement about whether to go into a
+   building is that question — so INTEGRITY is a clock and not a
+   quantity: one when the frame is whole, zero when it is on the floor,
+   and falling for as long as there is fire AT the region.
+
+   AT, AND NOT IN, WHICH IS THE WHOLE TRICK. A gutted region has very
+   little left to burn by definition, so a clock that watched only its
+   own cells would run for the few seconds of its last eight per cent and
+   then stop. What cooks the steel over aisle six is the fire in aisle
+   five. So a hot cell credits its own region AND every region it is
+   LINKED to — which through a wall is nothing and across an open aisle
+   is everything — and a bay only comes down while the building around it
+   is still going.
+
+   THE FIRST CUT OF THIS RE-FUELLED A GUTTED REGION instead, on the
+   reasoning that a burnt-out building is full of burning deck. It is,
+   and it was still the wrong mechanism: fuel put back above the
+   threshold a cell needs to light its neighbour means a ruin relights
+   the room next door, which relights it back, and the fire stops being
+   something you set and becomes something that cannot be stopped. The
+   sign it was wrong was not in this file — it was the police, who could
+   no longer keep a van in the car park long enough to get out of it. A
+   clock adds nothing to the world. That is the point of it.
+
+   The two consequences are the ones worth having. A shop that burns from
+   end to end comes down, a bay at a time, in the order it burnt. And a
+   region at the EDGE of a fire — one that gutted and then had the fire
+   move away from it, or had the rain put it out — stands as a ruin,
+   because nothing kept cooking it. Which side of that line a bay falls
+   is not a coin flip anywhere in this file; it is where the fire went.
+   ===================================================================== */
+
+/* Integrity lost per fire step by a ruin that is properly alight. The
+   sim steps every FIRE_INTERVAL tics, so this is about fifty seconds of
+   a burning shell before the frame lets go — long enough to stand in the
+   car park and watch it happen, short enough that it happens. */
+const COOK = 0.006;
+
+/* AND HOW MANY CELLS ALIGHT COUNT AS A FULL FIRE, as an absolute rather
+   than a fraction of the region: what is cooking a joist is the fire
+   under it and beside it, and there is no more of that over a big bay
+   than over a small one. Six cells is about six thousand square units of
+   flame, which is the end of a gondola going up. */
+const COOK_FULL = 6;
+
+/* AND HOW MANY TIMES ON THE WAY DOWN THE ROOF IS REDRAWN.
+
+   Integrity falls smoothly and the frame over a region is STATIC
+   geometry, rebuilt only when something tells the renderer that a block
+   has changed — so a continuous number would have no picture attached to
+   it until the moment the region fell, and the whole of what the user
+   asked to be able to watch would happen in one frame. Quantising it
+   means a bay droops three times, visibly, and then goes.
+
+   Four and not forty, because every step is a rebuild of the drawing
+   blocks that region is in, and there are dozens of bays doing this at
+   once in the back half of a fire. */
+const WEAR_STEPS = 4;
+
 /* How hot a cell can get, from how much there is to burn. Thin fuel
    smoulders below a hundred and thirty; a full gondola goes to white. */
 const peakHeat = f0 => Math.max(112, Math.min(PEAK, 112 + f0 * 0.5));
@@ -372,8 +446,41 @@ export class FireSystem {
     this.sectorCells = new Int32Array(this.game.level.sectors.length);
     this.newlyCharred = [];
     this.newlyGutted = [];
+    this.newlyCollapsed = [];
+    /* and the ones that have merely sagged another notch: a redraw and
+       nothing else, see WEAR_STEPS */
+    this.newlySagged = [];
+    /* EVERY REGION STARTS WHOLE. On the sector rather than in here,
+       beside `charred` and `gutted`, because what reads it is the thing
+       that draws the steel — see js/ruin.js — and that runs over a level
+       whether or not anybody ever lit it. */
+    for (const s of this.game.level.sectors) if (s.integrity === undefined) s.integrity = 1;
+    /* the ruins that are still up, and how many cells of each are alight
+       this step: the collapse clock, and the only two allocations it
+       needs */
+    this._standing = [];
+    this._cookHot = new Int32Array(this.game.level.sectors.length);
+    /* AND WHICH REGIONS ARE A BUILDING AT ALL.
+
+       Two of the three stages already ask this question, in the one line
+       that guards them: `if (this.sectorFuel[si] > 0)`. A region with
+       nothing in it to burn cannot char and cannot gut, which is how a
+       car park stays a car park while the shop behind it goes.
+
+       Collapse needs the same guard and one more, because fuel is not
+       the whole of it — a back yard and a town park both have something
+       to burn and neither of them has a roof to lose. What comes down in
+       a collapse is the thing that was over your head, so a region that
+       was ALREADY open to the sky is not a candidate, however well it
+       burns. That is exactly `ceilTex === 'SKY'`, which is how this
+       engine says "no ceiling here", and it is read ONCE at build time
+       because gutting sets it on every region whose deck has gone. Ask
+       it later and nothing could ever fall twice. */
+    this.structural = new Uint8Array(this.game.level.sectors.length);
 
     this._seed();
+    for (const s of this.game.level.sectors)
+      this.structural[s.index] = (this.sectorFuel[s.index] > 0 && s.ceilTex !== 'SKY') ? 1 : 0;
     this._linkCells();
   }
 
@@ -724,6 +831,7 @@ export class FireSystem {
       const i = this.active[k];
       let h = heat[i];
       const f = fuel[i];
+      const si = this.sectorOf[i];
       const wet = rain > 0 && this.rainOn(i, sectors) ? rain : 0;
 
       if (f > 0) {
@@ -737,7 +845,6 @@ export class FireSystem {
         fuel[i] = f - eat < 0.02 ? 0 : f - eat;
         this._touch(i);
         this.burntFuel += eat;
-        const si = this.sectorOf[i];
         if (si >= 0) {
           this.sectorBurnt[si] += eat;
           const sec = this.game.level.sectors[si];
@@ -750,6 +857,7 @@ export class FireSystem {
             if (!sec.gutted && gone >= GUT_AT) {
               sec.gutted = true;
               this.newlyGutted.push(si);
+              if (this.structural[si]) this._standing.push(si);
             }
           }
         }
@@ -781,6 +889,11 @@ export class FireSystem {
       }
       heat[i] = h;
       if (h >= SPREAD_AT) hot++;
+      /* AND WHAT THE HEAT IS DOING TO THE STEEL. A standing ruin counts
+         the cells alight inside it, and that count is the whole of the
+         collapse clock — see AND WHAT IS STILL HOLDING IT UP. Embers
+         count: a floor of glowing deck is still cooking the frame. */
+      if (h > EMBER_HEAT) this._creditHeat(i, si, sectors, link[i]);
 
       /* Spread. Only a well-established cell can light another, so a
          fire has to take hold before it travels — which is what gives
@@ -824,8 +937,108 @@ export class FireSystem {
       this._activate(j);
     }
 
+    this._cookRuins(sectors);
     this._burnThings();
     this._updateAtmosphere();
+  }
+
+  /* ------------------------------------------------------------------
+     THE COLLAPSE CLOCK
+
+     One pass over the ruins that are still up, which is a list of tens
+     rather than the hundred thousand cells above it.
+     ------------------------------------------------------------------ */
+  _cookRuins(sectors) {
+    if (!this._standing.length) return;
+    const cook = this._cookHot;
+    let fell = false;
+    for (let k = 0; k < this._standing.length; k++) {
+      const si = this._standing[k];
+      const sec = sectors[si];
+      const hot = cook[si];
+      cook[si] = 0;
+      if (sec.collapsed) { fell = true; continue; }
+      if (hot > 0) sec.integrity -= COOK * Math.min(1, hot / COOK_FULL);
+      if (sec.integrity <= 0) { this.bringDown(si); fell = true; continue; }
+      const step = Math.min(WEAR_STEPS - 1, Math.floor((1 - sec.integrity) * WEAR_STEPS));
+      if (step !== (sec.wearStep | 0)) { sec.wearStep = step; this.newlySagged.push(si); }
+    }
+    if (fell) this._standing = this._standing.filter(si => !sectors[si].collapsed);
+  }
+
+  /** One hot cell, against every standing ruin it is cooking.
+   *
+   *  ITS OWN REGION AND THE ONES IT IS LINKED TO, which is the same set
+   *  of four the fire itself can spread through — so heat reaches a
+   *  neighbour exactly where flame could, and a wall that stops the fire
+   *  also protects the steel behind it. Unrolled rather than looped over
+   *  an array of four, because this runs once per burning cell per step
+   *  and there are thousands of them. */
+  _creditHeat(i, si, sectors, lk) {
+    const cook = this._cookHot, so = this.sectorOf, cols = this.cols;
+    if (si >= 0) { const s = sectors[si]; if (s.gutted && !s.collapsed) cook[si]++; }
+    if (lk & 1) { const j = so[i + 1]; if (j >= 0 && j !== si) { const s = sectors[j]; if (s.gutted && !s.collapsed) cook[j]++; } }
+    if (lk & 2) { const j = so[i + cols]; if (j >= 0 && j !== si) { const s = sectors[j]; if (s.gutted && !s.collapsed) cook[j]++; } }
+    if (lk & 4) { const j = so[i - 1]; if (j >= 0 && j !== si) { const s = sectors[j]; if (s.gutted && !s.collapsed) cook[j]++; } }
+    if (lk & 8) { const j = so[i - cols]; if (j >= 0 && j !== si) { const s = sectors[j]; if (s.gutted && !s.collapsed) cook[j]++; } }
+  }
+
+  /** Take a region down, from whatever state it was in.
+   *
+   *  A BOMB DOES NOT WAIT FOR THE STAGES, but everything downstream of
+   *  them is written against the flags — the surfaces, the steel, the
+   *  lamps that have to be taken out of a roof that is not there — so a
+   *  region that is blown flat still passes through charred and gutted
+   *  on its way, in one tic, in order. */
+  bringDown(si) {
+    const sec = this.game.level.sectors[si];
+    if (sec.collapsed || !this.structural[si]) return false;
+    if (!sec.charred) { sec.charred = true; this.newlyCharred.push(si); }
+    if (!sec.gutted) { sec.gutted = true; this.newlyGutted.push(si); this._standing.push(si); }
+    sec.integrity = 0;
+    sec.collapsed = true;
+    this.newlyCollapsed.push(si);
+    return true;
+  }
+
+  /* ------------------------------------------------------------------
+     AND THE OTHER WAY TO BRING A BUILDING DOWN
+
+     Fire is patient and a blast is not. This takes integrity off every
+     region a blast reaches, falling off with distance, and anything it
+     takes past zero comes down in the same tic — so a big enough bang
+     is a hole in a building rather than a scorch mark on one.
+
+     WALKED ON THE FIRE'S OWN GRID, because that grid already knows which
+     region every point of the world is in and a blast is a circle over
+     it. Which also means a blast reaches exactly as far as fire does and
+     stops at the same walls.
+     ------------------------------------------------------------------ */
+  damageStructure(x, y, radius, amount, lv = 0) {
+    if (!(amount > 0) || !(radius > 0)) return 0;
+    const sectors = this.game.level.sectors;
+    const seen = this._blastSeen || (this._blastSeen = new Map());
+    seen.clear();
+    const cx0 = this.cellX(x - radius), cx1 = this.cellX(x + radius);
+    const cy0 = this.cellY(y - radius), cy1 = this.cellY(y + radius);
+    for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
+      const dx = this.worldX(cx) - x, dy = this.worldY(cy) - y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > radius * radius) continue;
+      const si = this.sectorOf[this.idx(cx, cy, lv)];
+      if (si < 0 || !this.structural[si] || sectors[si].collapsed) continue;
+      /* the nearest cell of a region is the one that decides how hard it
+         was hit, not the average of the ones inside the circle */
+      const bite = amount * (1 - Math.sqrt(d2) / radius);
+      if (!(seen.get(si) >= bite)) seen.set(si, bite);
+    }
+    let down = 0;
+    for (const [si, bite] of seen) {
+      const sec = sectors[si];
+      sec.integrity = (sec.integrity ?? 1) - bite;
+      if (sec.integrity <= 0 && this.bringDown(si)) down++;
+    }
+    return down;
   }
 
   /** Will the fire travel here, and how eagerly?

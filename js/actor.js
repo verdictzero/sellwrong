@@ -619,7 +619,10 @@ export class Actor {
     this.target = null;
     this.height = 8;                 // you can walk over a body
 
-    if (this.info.explodes) { this.game.explode(this); }
+    /* A CAN OF ACCELERANT GOING UP IN AN AISLE. Small against a
+       building — a sixth of what a bay can take — so shooting the cans
+       out is a way to start something rather than a way to finish it. */
+    if (this.info.explodes) { this.game.explode(this, { structure: 0.17, structureRadius: 190 }); }
 
     const gibbed = this.info.xdeath && this.health < (this.info.gibHealth ?? -1000);
     const st = gibbed ? this.info.xdeath : this.info.death;

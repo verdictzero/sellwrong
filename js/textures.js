@@ -3145,6 +3145,139 @@ for (let v = 0; v < RUIN_VARIANTS; v++) {
    with the same texture as its sides. The light comes from the top left
    like everything else in here.
    ------------------------------------------------------------------- */
+/* What a building is once it is a heap of itself.
+
+   THE SAME RULE RUINSTEL IS WRITTEN AROUND: a burnt thing is nearly
+   black, and nearly black against a night sky is nothing at all. So this
+   sits a third of the way up the grey, and what makes it read as debris
+   rather than as a grey box is that it is COARSE — every lump of it is a
+   different size and a different tone, at a scale you can count from ten
+   feet, because the one thing rubble is not is uniform.
+
+   THREE THINGS ARE IN IT and they are the three things this building is
+   made of. Broken block, which is the pale angular stuff. Deck, which is
+   the flat dark sheets lying at whatever angle they landed. And ash,
+   which is the fine bed the rest of it is sitting in and the only part
+   that tiles smoothly — so the lumps read as objects on a floor rather
+   than as a pattern.
+
+   AND CHARRED, so the shader keeps live coals moving in the gaps: see
+   the note at the foot of RUINSTEL. A heap that is still warm is the
+   difference between a building that has burnt down and a building that
+   burnt down last year. */
+const hash8 = (i, salt) => (Math.imul((i | 0) + 1 ^ salt, 2654435761) >>> 8) / 0x1000000;
+
+T.RUBBLE = () => {
+  const p = new Pix(64, 64, 560);
+  const n = fbm(64, 64, 10, 3, 561);
+  const grain = fbm(64, 64, 26, 2, 562);
+  const height = new Float32Array(64 * 64);
+  /* the ash bed */
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+    const v = n[y * 64 + x], g = grain[y * 64 + x];
+    p.ink(x, y, 'grey', 0.19 + v * 0.09 + g * 0.05);
+    height[y * 64 + x] = 0.3 + v * 0.2;
+  }
+  /* SHEETS OF DECK, flat and dark and lying at an angle. Drawn as runs
+     rather than as rectangles: a torn sheet has one straight edge and
+     three that are not. */
+  speckle(64, 64, 9, 563, (x, y, a, b) => {
+    const w = 10 + Math.floor(a * 20), h = 4 + Math.floor(b * 7);
+    const lean = a > 0.5 ? 1 : -1;
+    for (let dy = 0; dy < h; dy++) {
+      const sx = x + Math.round(dy * lean * 0.6), run = w - Math.floor(dy * 0.8);
+      for (let dx = 0; dx < run; dx++) {
+        p.ink(sx + dx, y + dy, 'grey', 0.13 + b * 0.05);
+        height[((y + dy) & 63) * 64 + ((sx + dx) & 63)] = 0.62 + b * 0.1;
+      }
+    }
+  });
+  /* BROKEN BLOCK, which is the pale angular half of a heap */
+  /* BROKEN BLOCK, which is the pale angular half of a heap. The size
+     range has to be WIDE — from a fist to a hearth slab — because the
+     one thing that gives a heap away as a texture is every lump in it
+     being the same size, and a floor is seen at every distance from
+     underfoot to the far end of a bay. */
+  speckle(64, 64, 42, 564, (x, y, a, b) => {
+    const big = a > 0.82;
+    const w = big ? 8 + Math.floor(a * 12) : 2 + Math.floor(a * 6);
+    const h = big ? 6 + Math.floor(b * 9) : 2 + Math.floor(b * 5);
+    /* and half of them are DARK: block that has been in a fire comes out
+       every shade from bone to soot, and a heap of nothing but pale
+       lumps reads as gravel */
+    const key = b > 0.5 ? 'bone' : 'grey';
+    const t = b > 0.5 ? 0.19 + a * 0.15 : 0.13 + a * 0.08;
+    for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) {
+      /* knock the corners off: a lump of block is not a rectangle */
+      if ((dx === 0 || dx === w - 1) && (dy === 0 || dy === h - 1)) continue;
+      p.ink(x + dx, y + dy, key, t);
+      height[((y + dy) & 63) * 64 + ((x + dx) & 63)] = 0.8 + a * 0.18;
+    }
+  });
+  /* twisted reinforcement, and the odd length of stud */
+  for (let k = 0; k < 7; k++) crack(p, (k * 23) % 64, (k * 41) % 64, 20 + k * 3, 'grey', 0.34, 566 + k, 1.4);
+  p.emboss(height, 0.5, 0.86);
+  /* AND A FEW COALS DOWN IN IT, where the air still gets. Few, because
+     the shader puts live ones on anything charred and they move: baked
+     coals are for the moment the fire has moved on and the heap is still
+     warm, and two sets of them at once is a floor made of lava. */
+  speckle(64, 64, 22, 567, (x, y, a, b) => {
+    if (a < 0.8) return;
+    p.ink(x, y, a > 0.96 ? 'yellow' : 'rust', 0.22 + b * 0.24);
+  });
+  p.grime(0.3, 'grey', 0.08, 568);
+  return p.snap(0.45);
+};
+
+/* The cut face of the heap, which is what a region that is still up
+   looks at across the step where its neighbour fell in. Same material,
+   but a SECTION through it rather than a plan of it — the courses of
+   what fell are visible in the face the way they are in a spoil heap,
+   and the bottom of it is the slab the whole lot is sitting on. */
+T.RUBFACE = () => {
+  const p = new Pix(64, 64, 570);
+  const n = fbm(64, 64, 14, 3, 571);
+  const height = new Float32Array(64 * 64);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+    const v = n[y * 64 + x];
+    /* darker at the bottom, where it has been under the rest of it */
+    p.ink(x, y, 'grey', 0.14 + v * 0.10 + (1 - y / 63) * 0.07);
+    height[y * 64 + x] = 0.35 + v * 0.25;
+  }
+  /* THE LAYERS IT WENT DOWN IN, and they are not courses. The first cut
+     of this drew them straight and evenly spaced and what it made was
+     brickwork — which is the wrong answer twice over, because a wall is
+     the one thing this is not and because a straight line is the one
+     thing a heap has none of. So each layer wanders by a couple of
+     texels as it crosses, drops out where something big is in the way,
+     and is a different distance from the last. */
+  for (let y = 5, k = 0; y < 64; k++, y += 7 + Math.floor(hash8(k, 0x31) * 11)) {
+    let ly = y;
+    for (let x = 0; x < 64; x++) {
+      ly += n[((ly + 17) & 63) * 64 + x] > 0.55 ? 1 : (n[(ly & 63) * 64 + x] < 0.4 ? -1 : 0);
+      if (ly < 1) ly = 1; if (ly > 62) ly = 62;
+      if (n[(ly & 63) * 64 + x] > 0.72) continue;          // where a lump interrupts it
+      const w = 1 + Math.floor(n[(ly & 63) * 64 + x] * 2.5);
+      for (let d = 0; d < w; d++) { p.ink(x, ly + d, 'grey', 0.10); height[((ly + d) & 63) * 64 + x] = 0.2; }
+      p.ink(x, ly - 1, 'bone', 0.17 + n[(ly & 63) * 64 + x] * 0.08);
+    }
+  }
+  speckle(64, 64, 26, 572, (x, y, a, b) => {
+    const w = 3 + Math.floor(a * 7), h = 2 + Math.floor(b * 5);
+    for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) {
+      p.ink(x + dx, y + dy, 'bone', 0.18 + a * 0.15);
+      height[((y + dy) & 63) * 64 + ((x + dx) & 63)] = 0.85;
+    }
+  });
+  p.emboss(height, 0.46, 0.88);
+  speckle(64, 64, 20, 573, (x, y, a, b) => {
+    if (a < 0.82) return;
+    p.ink(x, y, a > 0.96 ? 'yellow' : 'rust', 0.22 + b * 0.22);
+  });
+  p.grime(0.34, 'grey', 0.09, 574);
+  return p.snap(0.45);
+};
+
 T.RUINSTEL = () => {
   const p = new Pix(64, 64, 540);
   const n = fbm(64, 64, 12, 3, 541);
@@ -3295,7 +3428,7 @@ const FIXTURES = new Set([
 export const RUIN = [
   ...['WALL', 'FLR', 'DECK', 'RACK', 'HOLE']
     .flatMap(k => Array.from({ length: RUIN_VARIANTS }, (_, v) => `RUIN${k}${v}`)),
-  'RUINSTEL',
+  'RUINSTEL', 'RUBBLE', 'RUBFACE',
 ];
 
 /* A region's own number, stable across a reload and different from its
@@ -3380,6 +3513,68 @@ export function guttedSurfaces(s, opts = {}) {
   }
   /* and what a neighbour sees of the roof's edge where the heights step */
   if (s.upperTex && s.upperTex !== 'NONE') out.upperTex = 'RUINDECK' + v;
+  return out;
+}
+
+/* --------------------------------------------------------------------
+   AND THE THIRD STAGE, WHICH IS NOT A ROOM AT ALL
+
+   A gutted region is a shell: walls with holes in them, a slab, and the
+   steel that was under the deck still up. A COLLAPSED one is what is
+   there after the steel lets go, and the whole of the difference is that
+   there is no longer anything overhead and no longer anything at the
+   sides — a heap on a slab, with the frame in it.
+
+   THE FLOOR COMES UP RATHER THAN THE CEILING COMING DOWN, which is the
+   only way a sector engine can say "heap". A ceiling on the floor is a
+   region you cannot be in; a floor that has risen is one you clamber
+   over, and it changes the two things a heap should change — you are
+   higher when you are standing on it, and a neighbour that has not
+   fallen sees a step up into it with rubble down the face of the step.
+
+   AND IT RISES BY LESS THAN A STEP. Twenty against a MAX_STEP of
+   twenty-four, which is the same bargain the wheel stops in the car park
+   make: anything you can walk into, you can walk onto. A heap you cannot
+   climb is a wall, it would trap whatever was standing in the region
+   when it came down, and it would take the middle out of a burning
+   building at exactly the moment the building is worth walking into.
+   What makes it read as more than twenty units is the pile js/ruin.js
+   drops on it, which is the frame that used to be over your head.
+
+   AND THE WALLS COME DOWN TO A STUB, which is the other half of it and
+   the half you see from outside. A region's ceiling is what its walls
+   are drawn UP TO — so dropping the ceiling of a collapsed bay to a
+   little over head height turns four storeys of shopfront into a
+   knee-high perimeter of broken block with the sky over it, and turns
+   the wall of the bay NEXT DOOR, which is still up, into an upper band
+   above that stub: the scar down the inside of a building where the part
+   that fell used to be attached. Both of those are free. They are the
+   disagreement rule doing what it does, on numbers that moved.
+   ------------------------------------------------------------------ */
+export const RUBBLE_RISE = 20;
+export const RUBBLE_STUB = 96;
+
+export function collapsedSurfaces(s) {
+  const v = Math.floor(ruinHash(s.index | 0, 0x5bd1) * RUIN_VARIANTS) % RUIN_VARIANTS;
+  const out = {
+    sky: 1, ruinVariant: v, ruinRoof: 'down',
+    floorRise: RUBBLE_RISE, stub: RUBBLE_STUB,
+  };
+  if (s.floorTex && s.floorTex !== 'NONE') out.floorTex = 'RUBBLE';
+  /* what is left of its own walls, which is the top of the heap seen
+     from the side */
+  if (s.wallTex && s.wallTex !== 'NONE') out.wallTex = 'RUBFACE';
+  /* THE FACE OF THE STEP is what a region next door looks at now, and it
+     is the cut edge of the heap rather than a wall: the disagreement rule
+     draws a lower band from the LOWER side's lowerTex, so this is the one
+     that has to be a section through rubble. */
+  if (s.lowerTex && s.lowerTex !== 'NONE') out.lowerTex = 'RUBFACE';
+  /* and what a bay that is STILL UP shows above the stub: the inside of
+     its own wall, burnt, with nothing attached to it any more */
+  out.upperTex = 'RUINWALL' + v;
+  /* and there is nothing over it. Not a holed deck, not a charred one:
+     the deck came down with the steel and it is in the heap. */
+  out.ceilTex = 'SKY';
   return out;
 }
 

@@ -28,7 +28,7 @@ import { ACTORS } from './states.js';
 import { Player } from './player.js';
 import { FireSystem } from './fire.js';
 import { world } from './material.js';
-import { charredName, guttedSurfaces } from './textures.js';
+import { charredName, guttedSurfaces, collapsedSurfaces } from './textures.js';
 import { assignLineTextures } from './level.js';
 import { createSpriteMaterial } from './material.js';
 import { buildSlideDoors } from './slidedoor.js';
@@ -547,6 +547,72 @@ export class Game {
       this._geoDirty = true;
       this._geoAt = this.tics + 20;
     }
+
+    /* AND THEN IT COMES DOWN. The last stage, and the only one that
+       moves the floor: see AND THE THIRD STAGE in js/textures.js for why
+       a heap is a floor that has risen rather than a ceiling that has
+       fallen, and AND WHAT IS STILL HOLDING IT UP in js/fire.js for what
+       decides when. */
+    if (f.newlyCollapsed.length) {
+      for (const si of f.newlyCollapsed) {
+        const s = this.level.sectors[si];
+        const to = collapsedSurfaces(s);
+        for (const k of Object.keys(to)) {
+          if (k === 'floorRise' || k === 'stub') continue;   // done together, below
+          if (k === 'sky' || k === 'ruinRoof' || k === 'ruinVariant') { s[k] = to[k]; continue; }
+          if (to[k] === 'SKY' || this.textures.map.has(to[k])) s[k] = to[k];
+        }
+        /* A COLLAPSE LEVELS A REGION TO WHAT IS ROUND IT, and that is
+           not the same as raising its floor. Most of this building is
+           not floor: a gondola run stands at eighty and a chiller at
+           forty, and a fixture that "collapses" upward is a shelf run
+           that has become a wall — sixty-eight units of step between two
+           bays that both just fell down, which is not something you can
+           climb and not something that happened. What a collapse does to
+           a shelf run is knock it over. So the region comes down to the
+           lowest thing still standing beside it and the heap goes on top
+           of THAT, which makes a run of collapsed bays one continuous
+           heap at one height rather than a staircase of them. */
+        let low = s.floor;
+        for (const l of s.lines) {
+          const oi = l.front === s.index ? l.back : l.front;
+          if (oi === null || oi === undefined || oi < 0) continue;
+          const o = this.level.sectors[oi];
+          if (o && o !== s && !o.collapsed) low = Math.min(low, o.floor);
+        }
+        /* THE CEILING DOWN with the headroom checked once at the end: a
+           heap that rises into its own stub is a region nothing can
+           stand in, and what was standing in it when it came down is
+           still standing in it. */
+        s.floor = low + to.floorRise;
+        s.ceil = Math.max(s.floor + 72, Math.min(s.ceil, s.floor + to.stub));
+        /* and whatever was in the region comes up with the floor rather
+           than being left buried in it */
+        if (this.player && this.player.sector === s && this.player.z < s.floor) this.player.z = s.floor;
+        for (const a of this.actors)
+          if (!a.removed && a.sector === s && a.z < s.floor) a.z = s.floor;
+        /* A HEAP IS LIT BY WHAT IS IN IT. Brighter than a gutted shell,
+           because a shell is a dark room with a hole in the roof and this
+           is a pile of burning deck under the open sky. */
+        s.ambient = Math.max(s.ambient, 0.78);
+      }
+      this._markDirty(f.newlyCollapsed);
+      f.newlyCollapsed.length = 0;
+      this._geoDirty = true;
+      this._geoAt = this.tics + 20;
+    }
+    /* AND THE ONES THAT HAVE ONLY DROOPED. No surfaces change and no
+       floor moves — the steel over the region is just further down than
+       it was, which is geometry and nothing else. See WEAR_STEPS in
+       js/fire.js for why this arrives in notches rather than every tic. */
+    if (f.newlySagged.length) {
+      this._markDirty(f.newlySagged);
+      f.newlySagged.length = 0;
+      this._geoDirty = true;
+      /* and it can wait: a roof on its way down is not urgent the way a
+         region that has just changed what it is made of is */
+      this._geoAt = Math.max(this._geoAt, this.tics + 35);
+    }
     if (this._geoDirty && this.tics >= this._geoAt) {
       this._geoDirty = false;
       this.relight();
@@ -905,9 +971,17 @@ export class Game {
    *  is not a feature anybody wrote, it is what happens when cars are
    *  flammable and explosions light things. */
   explode(a, opts = {}) {
-    const { radius = 150, damage = 60, heat = 230, heatRadius = 86, ignite = 320, sound = 'explode' } = opts;
+    const { radius = 150, damage = 60, heat = 230, heatRadius = 86, ignite = 320, sound = 'explode',
+            /* AND WHAT IT DOES TO THE BUILDING. Off by default and not
+               zero by default: most of what explodes in this game is a
+               can or a car in a car park, where there is no structure to
+               take down, and a blast that quietly guts the aisle behind
+               every burning trolley would be a surprise. What sets it is
+               the thing that is meant to bring a wall down. */
+            structure = 0, structureRadius = radius * 1.4 } = opts;
     this.sound?.play(sound, a);
     this.fire.ignite(a.x, a.y, heat, heatRadius);
+    if (structure > 0) this.fire.damageStructure(a.x, a.y, structureRadius, structure, a.storey || 0);
     for (const o of this.actorsInConeAround(a, radius)) {
       if (o === a) continue;
       const d = dist(a.x, a.y, o.x, o.y);

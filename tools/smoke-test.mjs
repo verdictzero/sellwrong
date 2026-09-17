@@ -4056,6 +4056,181 @@ section('the wiring');
     missing.length === 0, missing.slice(0, 6).join('; '));
 }
 
+/* ---------- bringing it down ---------- */
+/* THE THIRD STAGE. Charred is a surface, gutted is a structure, and
+   collapsed is the absence of one — see AND WHAT IS STILL HOLDING IT UP
+   in js/fire.js, AND THE THIRD STAGE in js/textures.js, and AND WHEN IT
+   HAS COME DOWN in js/ruin.js. Six things have to be true and every one
+   of them has been false at some point today. */
+section('bringing it down');
+{
+  const { Game } = await import('../js/game.js');
+  const ruin = await import('../js/ruin.js');
+  const THREE = await import('three');
+  const hudStub = { message() {}, ticMessages() {}, resize() {}, update() {} };
+  const inputStub = { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 }, attack: false, use: false, run: false, sample() {}, sensitivity: 0 };
+  const lv = MAP.buildSellWrong({ town: false });
+  const g = new Game({ level: lv, scene: new THREE.Scene(), camera: {}, textures: tex.bakeTextures(), sprites: spr.bakeSprites(), hud: hudStub, audio: null, input: inputStub });
+
+  /* --- A CLOCK ADDS NOTHING TO THE WORLD ---
+     The first cut of the collapse re-fuelled a region when it gutted, on
+     the reasoning that a burnt-out building is full of burning deck. It
+     is, and it made the fire unstoppable: a ruin above the spread
+     threshold relights the room next door, which relights it back. The
+     sign was not in the fire at all — it was the police, who stopped
+     being able to keep a van in the car park. So the first claim is
+     about a number that must NOT move. */
+
+  /* --- WHAT IS EVEN A BUILDING ---
+     Two of the three stages already ask this in one line: a region with
+     no fuel cannot char and cannot gut. Collapse needs that AND a roof,
+     because a back yard burns and has nothing over it to lose. */
+  const structural = i => !!g.fire.structural[i];
+  const lot = lv.sectors.find(s => /car park|lot/.test(s.name || '') && s.outdoor);
+  const aisle = lv.sectors.find(s => s.name === 'aisle');
+  check('a region with a roof and something in it to burn is structure',
+    structural(aisle.index), `${aisle.name}`);
+  check('and the car park is not, however much you pour on it',
+    !structural(lot.index), `${lot.name}`);
+  check('and nothing open to the sky is, even where it burns',
+    lv.sectors.every(s => !structural(s.index) || s.ceilTex !== 'SKY'));
+
+  /* --- A BLAST BRINGS IT DOWN WHERE A FIRE WOULD TAKE MINUTES --- */
+  /* A CLOCK ADDS NOTHING TO THE WORLD, which is the other half of the
+     first cut's mistake: gutting a region used to RE-FUEL it, on the
+     reasoning that a burnt-out building is full of burning deck. It is,
+     and it made the fire unstoppable — a ruin above the threshold a cell
+     needs to light its neighbour relights the room next door, which
+     relights it back. The sign was not in the fire at all: it was the
+     police, who stopped being able to keep a van in the car park. Asked
+     across a BLAST rather than across a burn, because igniting anything
+     at over forty lays accelerant and that is fuel added on purpose. */
+  const fuelBefore = g.fire.totalFuel;
+  const down = g.fire.damageStructure(2000, 1500, 500, 1.6);
+  for (let t = 0; t < 40; t++) g.tic();
+  const fell = lv.sectors.filter(s => s.collapsed);
+  check('a blast big enough brings the building down where it lands',
+    down >= 3 && fell.length === down, `${down} regions, ${fell.length} flagged`);
+  check('and it takes nothing down in the car park',
+    g.fire.damageStructure(1240, -1200, 700, 3) === 0);
+  /* A BOMB DOES NOT GET TO SKIP THE STAGES, because everything
+     downstream of them — the surfaces, the steel, the lamps out of a
+     roof that is not there — is written against the flags. */
+  check('and nothing skips a stage on the way',
+    fell.every(s => s.charred && s.gutted && s.integrity === 0));
+  check('and putting a building through all three stages adds no fuel to the world',
+    g.fire.totalFuel === fuelBefore,
+    `${fuelBefore.toFixed(0)} -> ${g.fire.totalFuel.toFixed(0)}`);
+
+  /* --- AND IT IS LEVEL WITH WHAT IS AROUND IT ---
+     A gondola run stands at eighty and an aisle at twelve. Raise each by
+     the same step and a run of collapsed bays is a staircase of shelf
+     tops, which is not something you can climb and not something that
+     happened: what a collapse does to a shelf run is knock it over. */
+  const heights = [...new Set(fell.map(s => s.floor))];
+  check('a run of collapsed bays is one heap at one height',
+    heights.length === 1, `floors ${heights.join(', ')}`);
+  check('and it is a step up from the floor and not a wall',
+    fell.every(s => s.floor - MAP.FLOOR_WALK <= 24 && s.floor > MAP.FLOOR_WALK),
+    `${heights[0]} against a floor at ${MAP.FLOOR_WALK}`);
+  /* AND YOU CAN WALK ONTO IT, asked of the engine rather than of the
+     arithmetic: a real move from the aisle next door into the wreckage. */
+  {
+    const t = fell.find(s => s.bbox[2] - s.bbox[0] > 100);
+    const y = (t.bbox[1] + t.bbox[3]) / 2;
+    const out = lv.slideMove(t.bbox[2] + 40, y, -90, 0, 16, MAP.FLOOR_WALK, 56);
+    check('and a player in the aisle next door can climb onto it',
+      out[0] < t.bbox[2], `stopped at ${out[0].toFixed(0)}, heap starts at ${t.bbox[2]}`);
+  }
+
+  /* --- THERE IS NOTHING OVER IT AND THERE IS A HEAP ON IT --- */
+  check('a collapsed region has no roof left at all',
+    fell.every(s => s.ceilTex === 'SKY' && s.ruinRoof === 'down' && s.sky === 1));
+  check('and its walls have come down to a stub you can see over',
+    fell.every(s => s.ceil - s.floor <= 96 && s.ceil - s.floor >= 72),
+    fell.map(s => s.ceil - s.floor).join(' '));
+  {
+    const fakeSet = () => {
+      const bins = new Map();
+      return { bins, get(n) { let b = bins.get(n); if (!b) bins.set(n, b = { q: [] });
+        return { quad: (p, u, l, sk, ch) => b.q.push({ p, l, ch, tex: n }) }; } };
+    };
+    const t = fell.find(s => s.bbox[2] - s.bbox[0] > 100);
+    const heap = fakeSet();
+    const n = ruin.roofFraming(heap, t);
+    const q = [...heap.bins.values()].flatMap(b => b.q);
+    note('the heap over one collapsed region', `${n} pieces, ${q.length} quads`);
+    check('a collapsed region gets a heap instead of a frame', n > 8 && q.length > 40, `${n} pieces`);
+    check('and the frame that was over it is in the heap',
+      heap.bins.has('RUINSTEL') && heap.bins.has('RUBBLE'),
+      [...heap.bins.keys()].join(' '));
+    /* NOTHING IN IT IS OVER YOUR HEAD IN THE MIDDLE OF THE FLOOR, which
+       is the one rule a heap you walk through has to keep: see AND WHEN
+       IT HAS COME DOWN. The drifts are banked against the walls. */
+    const pts = q.flatMap(x => x.p);
+    check('every piece of it is inside the region it fell in',
+      pts.every(([x, , z]) => x >= t.bbox[0] - 1 && x <= t.bbox[2] + 1 &&
+        -z >= t.bbox[1] - 1 && -z <= t.bbox[3] + 1));
+    const mid = q.filter(x => x.p.every(([px, , pz]) =>
+      px > t.bbox[0] + ruin.HEAP.edge && px < t.bbox[2] - ruin.HEAP.edge &&
+      -pz > t.bbox[1] + ruin.HEAP.edge && -pz < t.bbox[3] - ruin.HEAP.edge));
+    const tall = mid.flatMap(x => x.p).filter(([, y]) => y > t.floor + 24);
+    check('and nothing out in the middle of it stands higher than the step onto it',
+      tall.length === 0, `${tall.length} of ${mid.length * 4} points`);
+    check('and all of it is charred, so the coals are in it', q.every(x => x.ch === 1));
+
+    /* --- AND THE FRAME DROOPS BEFORE IT GOES ---
+       The thing the user actually asked to be able to watch. A gutted
+       region that is still up draws fewer members and hangs them lower
+       the further through the collapse it is — see WEAR_STEPS. */
+    const shell = lv.sectors.find(s => s.gutted && !s.collapsed && s.bbox[2] - s.bbox[0] > 600)
+      || { ...t, gutted: true, collapsed: false, ruinRoof: 'open', ruinVariant: 0, ceil: 352, floor: 12 };
+    /* COUNTED AS JOISTS AND NOT AS PIECES, which is the trap: a joist
+       that sags is drawn as a polyline of four or five boxes, so a frame
+       that has lost two of its nine members and sagged the rest can come
+       out with MORE pieces than it started with. What a joist is, is a
+       line of the lattice — one distinct y in the world. */
+    const at = wear => {
+      const set = fakeSet();
+      ruin.roofFraming(set, { ...shell, ruinRoof: 'open', ruinVariant: 0, integrity: 1 - wear });
+      const q = [...set.bins.values()].flatMap(b => b.q);
+      /* THE MEAN AND NOT THE MINIMUM. The lowest point of a frame is
+         whichever single joist sagged hardest, and that one can be one
+         of the ones that has since gone — so a frame that is further
+         through the collapse can read as hanging HIGHER by that measure
+         while every member left in it has dropped. */
+      const ys = q.flatMap(x => x.p).map(x => x[1]);
+      const rows = new Set(q.flatMap(x => x.p.map(p => Math.round(-p[2]))));
+      return { n: rows.size, low: ys.reduce((t, y) => t + y, 0) / ys.length };
+    };
+    const whole = at(0), nearly = at(0.95);
+    note('one frame, whole and nearly gone',
+      `${whole.n} lines of steel, hanging at ${whole.low.toFixed(0)} -> ${nearly.n} at ${nearly.low.toFixed(0)}`);
+    check('a frame that has been in the fire longer has lost more of itself',
+      nearly.n < whole.n, `${whole.n} -> ${nearly.n}`);
+    check('and what is left of it hangs lower',
+      nearly.low < whole.low - 8, `${whole.low.toFixed(0)} -> ${nearly.low.toFixed(0)}`);
+  }
+
+  /* --- AND THE FIRE ALONE DOES IT, WHICH IS THE POINT --- */
+  {
+    for (let y = 200; y < 3300; y += 200) for (let x = 300; x < 4000; x += 160) g.fire.ignite(x, y, 250, 60);
+    for (let t = 0; t < 4200; t++) g.tic();
+    const gut = lv.sectors.filter(s => s.gutted).length;
+    const col = lv.sectors.filter(s => s.collapsed).length;
+    const stand = lv.sectors.filter(s => s.gutted && !s.collapsed);
+    note('a shop burnt end to end', `${gut} gutted, ${col} of them down, ${stand.length} still standing`);
+    check('a shop that burns end to end comes down', col > gut * 0.5, `${col} of ${gut}`);
+    /* AND NOT ALL OF IT, which is the half that makes it a simulation
+       rather than a timer: a bay the fire moved away from stands. */
+    check('and the bays the fire moved off are still standing',
+      stand.length > 4 && stand.every(s => s.integrity > 0), `${stand.length} ruins`);
+    check('and the ones still up are held there by where the fire went, not by a dice roll',
+      stand.some(s => s.integrity > 0.6) && stand.some(s => s.integrity < 0.4),
+      stand.map(s => s.integrity.toFixed(2)).slice(0, 6).join(' '));
+  }
+}
+
 /* ---------- the way out ---------- */
 /* Six crash-bar doors down the flanks of the building, and a crowd that
    uses them. The claim being tested is one sentence — set fire to the

@@ -139,7 +139,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         1968 checks, no install and no browser
+  the smoke test         1994 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -1324,6 +1324,127 @@ still culled by its own corner. It costs two to five draw calls outdoors
 and saves thirty-four standing in an aisle, nineteen in the stockroom and
 fourteen on the footway, because a cross-aisle no longer draws a forest
 through a shut steel door.
+
+
+ALL THE WAY DOWN
+----------------
+
+At the user's request, and it is the other end of the thing this game
+already had. There was a fire that ate a building and left it standing.
+Now there is one that brings it down.
+
+A region used to have two states past "shop". CHARRED, at half its fuel,
+which is a surface: the same aisle with everything in it blackened.
+GUTTED, at ninety-two per cent, which is a structure: holes through the
+walls with the studs behind them, a slab with ash on it, and no deck —
+js/ruin.js hangs the steel the deck was sitting on, and what you look up
+at in a burnt-out bay is a frame rather than a rectangular hole in the
+world.
+
+There is a third now. COLLAPSED, which is the absence of a structure:
+
+  the ROOF          is not over the region, it is in it
+  the WALLS         come down to a stub you can see over
+  the FLOOR         comes UP, by less than a step, and is a heap
+  and all of it     is still alight
+
+THE THIRD STAGE NEEDED A CLOCK THE FIRST TWO DID NOT. Those two run off
+how much of a region has burnt, and that number saturates at one and
+stops — so as far as the old arithmetic was concerned, nothing further
+could ever happen to a gutted region and a burnt-out shed stood for ever.
+Steel does not care how much has burnt. It cares how LONG it has been
+hot, which is the whole of a fire brigade's judgement about whether to go
+into a building. So INTEGRITY is a clock: one when the frame is whole,
+zero when it is on the floor, and falling for as long as there is fire AT
+the region.
+
+AT, AND NOT IN, WHICH IS THE TRICK. A gutted region has almost nothing
+left to burn by definition, so a clock watching only its own cells would
+run for the few seconds of its last eight per cent and stop. What cooks
+the steel over aisle six is the fire in aisle five. So a burning cell
+credits its own region AND every region it is LINKED to — through a wall
+that is nothing, across an open aisle that is everything — and a bay only
+comes down while the building around it is still going.
+
+Two consequences, and they are the two worth having. A shop that burns
+from end to end comes down, a bay at a time, in the order it burnt. And a
+bay at the EDGE of a fire — one that gutted and then had the fire move
+off it, or had the rain put it out — stands as a ruin, because nothing
+kept cooking it. Which side of that line a bay falls on is not a coin
+flip anywhere in the code; it is where the fire went. Burn the whole shop
+and about seventy per cent of what gutted comes down and thirty per cent
+of it is still standing in the morning.
+
+THE FIRST CUT RE-FUELLED A GUTTED REGION instead, on the reasoning that a
+burnt-out building is full of burning deck. It is, and it was still the
+wrong mechanism: fuel put back above the threshold a cell needs to light
+its neighbour means a ruin relights the room next door, which relights it
+back, and the fire stops being something you set and becomes something
+that cannot be stopped. The sign it was wrong was not in the fire at all.
+It was the police, who could no longer keep a van in the car park long
+enough to get out of it. A clock adds nothing to the world. That is the
+point of a clock, and there is a check that says so.
+
+WHAT YOU WATCH WHILE IT HAPPENS is the frame. Every number js/ruin.js
+draws the steel from reads integrity now: how many joists have gone, how
+far the rest have drooped, how much of the odd panel of deck is still
+lying across a bay, and how brightly the whole thing is glowing. A bay
+that is nearly down has lost half its joists and the rest are hanging
+forty units lower than they were. It is quantised into four steps rather
+than run continuously, because the frame is STATIC geometry and a
+continuous number would have no picture attached to it until the moment
+the bay fell — which is the exact moment the user asked to be able to
+watch the run-up to.
+
+AND THE HEAP IS THE SAME LATTICE, LYING DOWN. Everything the roof was is
+still in the region, it is just on the floor: the joists that ran east to
+west are lying east to west, broken where they folded, and the deck is in
+sheets between them. Which is why it is not a pile of random boxes — it
+is the frame above, drawn at ankle height, off the same hash of the same
+lattice index, so two collapsed bays next to each other share a heap for
+the same reason they shared a roof.
+
+A HEAP IS A FLOOR THAT HAS RISEN and not a ceiling that has fallen, which
+is the only way a sector engine can say the word. A ceiling on the floor
+is a region you cannot be in; a floor that has come up is one you clamber
+over. It rises by twenty against a MAX_STEP of twenty-four — the same
+bargain the wheel stops in the car park make, because a heap you cannot
+climb is a wall that would trap whatever was standing in the bay when it
+came down — and what makes it read as more than twenty units is the pile
+on top, which is low in the middle where you walk and banked against the
+walls where you do not.
+
+AND A COLLAPSE LEVELS A REGION TO WHAT IS AROUND IT. Most of this
+building is not floor: a gondola run stands at eighty and a chiller at
+forty, so raising every region by the same step made a run of collapsed
+bays into a staircase of shelf tops. What a collapse does to a shelf run
+is knock it over. A region comes down to the lowest thing still standing
+beside it and the heap goes on that, which turns four fallen bays into
+one continuous field of wreckage at one height.
+
+AND YOU CAN BLOW IT UP. Fire is the patient way down and a blast is the
+other one: `structure` on an explosion takes integrity off every region
+it reaches, falling off with distance, and anything it takes past zero
+goes through all three stages in the same tic. It is walked on the fire's
+own grid, which already knows which region every point of the world is
+in — so a blast reaches exactly as far as a fire does and stops at the
+same walls. Three things in this game carry it:
+
+  a can of accelerant    a sixth of a bay: a way to start something
+  a car going up         a third, times the size of the bang, so the
+                         chain reaction in the car park takes the
+                         shopfront and the fire does the rest
+  a VTOL coming down     one and a third, over five hundred and sixty
+                         units, which flattens what it lands on
+
+AND NOT EVERYTHING IS A BUILDING. Two of the three stages already ask
+that question in one line — a region with no fuel cannot char and cannot
+gut, which is how a car park stays a car park while the shop behind it
+burns. Collapse asks it and one more, because a back yard and a town park
+both have something to burn and neither has a roof to lose: a region that
+was already open to the sky is not a candidate, however well it burns.
+That is read once at build time, because gutting sets a region's ceiling
+to sky and asking later would mean nothing could ever fall twice.
 
 
 THE ONE IDEA
@@ -5444,7 +5565,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-1968 checks. Every one of them earns its place by having caught something
+1994 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

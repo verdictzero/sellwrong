@@ -1391,7 +1391,15 @@ export class Gunship {
     const g = this.game, L = this.def.length;
     this.state = 'wreck';
     this.lampOn = false;
-    g.explode({ x: this.x, y: this.y, z: this.ground }, { radius: 460, damage: 170, heat: 255, heatRadius: 190, ignite: 420, sound: 'bigboom' });
+    /* AND IT TAKES THE BUILDING WITH IT. This is the biggest bang in
+       the game by a factor of three and the only one that arrives from
+       the sky, so it is the one that is allowed to flatten what it lands
+       on outright: `structure` past one puts every region under it
+       straight through charred, gutted and down in the same tic. See
+       damageStructure in js/fire.js. */
+    g.explode({ x: this.x, y: this.y, z: this.ground },
+      { radius: 460, damage: 170, heat: 255, heatRadius: 190, ignite: 420, sound: 'bigboom',
+        structure: 1.35, structureRadius: 560 });
     g.sound?.play('shipdie', this);
     for (let k = 0; k < 8; k++) {
       const c = Math.cos(this.yaw), s = Math.sin(this.yaw);
