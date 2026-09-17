@@ -139,7 +139,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         1831 checks, no install and no browser
+  the smoke test         1890 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -885,6 +885,140 @@ the middle of it is the cheapest frame in the game for how much of this
 place is already over.
 
 
+WHAT A STRIP MALL HAS THAT A SHED DOES NOT
+------------------------------------------
+
+The town got this pass first and the diagnosis out here turned out to be
+the same one. A building drawn out of sectors is a building drawn out of
+CEILING HEIGHTS, and a sector engine cannot put anything proud of a wall
+or above a roof — so what the parade was, for a long time, was four
+horizontal bands stacked up and running thirteen thousand units off both
+edges of the screen. Not badly textured. Just FLAT, in the way a
+cardboard model is flat: no coping, no gutter, no downpipes, no
+pilasters, and nothing at all on the roof.
+
+The fix is the one the town uses: FREE BOXES. Six faces owned by no
+region, batched into the block they stand in, drawn by `boxGeometry` in
+js/mapgeo.js. There are about two hundred and forty of them on the parade
+now and every one is a piece of the same argument.
+
+THE COPING, first, because it is the silhouette. A parapet drawn as a
+step in a ceiling just STOPS: a cut edge with sky over it, which is the
+loudest thing wrong with a shed built this way and the thing you notice
+from the far end of the car park without being able to say what it is.
+There is a pressed aluminium capping on it now, twelve units out over the
+lot and eighteen tall, one length per tenancy so the batcher gets a box
+per block rather than one box thirteen thousand long.
+
+WHICH MADE A TEXTURE WRONG. T.PARAPET had a coping PAINTED INTO IT —
+lighter rows at the top with an open joint — and that texture is thirty-two
+tall on a band of a hundred and fifty-two, so the painted coping repeated
+nearly five times and the roofline read as five cornices stacked up. A
+coping happens ONCE. It is a box now and the wall under it is one
+material all the way up: render on blockwork, a control joint at the
+repeat, thirty years of rain. The test of a texture that tiles five times
+vertically is whether you can count the repeats, and you should not be
+able to.
+
+THE PIERS, second, because they are the only vertical rhythm a
+thirteen-thousand-unit elevation has. A pier was a sixteen-wide change of
+texture in a flat wall, which from a car park is a STRIPE. What a pier is
+is a pilaster: a column of brick standing eight units proud of the face,
+running from the tarmac to above the parapet, with a cast cap on it that
+breaks the line of the coping. Both of those are shadows, and the shadows
+are the whole of it. Twenty-two of them, one per joint plus one at each
+end, each carrying the downpipe that takes the water off the canopy
+gutter — which is another thing that was not there, and water has to go
+somewhere.
+
+THAT MADE A SECOND TEXTURE WRONG, in the other direction. T.PILASTER's
+brick was courses of eight and bricks of thirty-two over a sixty-four
+unit repeat, which at thirty-two units to the metre is a brick a metre
+long and a foot tall. Fine as a distant stripe. Absurd once the thing
+stands proud enough to walk up to, which is what a pilaster does. It is
+the town's brick now — sixteen by six, the same `brickwork` call the
+chimneys use — so a pier and a chimney are made of the same material,
+which is the only reason a generated texture set holds together at all.
+T.STORBASE had the identical fault and got the identical fix.
+
+THE FASCIA IS A TRAY. The sign band was paint on the face of a wall, and
+a painted band is a painted band however good the texture is. Two rims,
+eight units proud, one along the top edge and one along the bottom — and
+the same paint is now a box screwed to a building, which is what every
+fascia on every parade in the world actually is.
+
+AND THE ROOF, which is the silhouette of the building TYPE. A supermarket
+is a windowless box and the only reason anybody can stand up in one is
+the plant on top of it; every strip mall in America has three or four
+packaged air conditioners showing over a parapet that was built to hide
+them and doesn't. There are twenty up there now — one on most of the
+in-line units, five bigger ones in a line across the anchor with ducting
+between them, because they serve one tenancy and went in on one day. Set
+back ninety-six units so the coping crops the bottom of each, which is
+what makes them read as standing on a roof rather than as boxes glued to
+a wall.
+
+AND A WAY UP TO THEM. There is a caged ladder on the back wall in the
+service yard, running the full height. It is there because the roof plant
+asks the question and nothing in the level had an answer to it.
+
+THE SHOPFRONTS get the housing every roller winds into and a light over
+every door — and THE LIGHT IS THE TENANCY. The parade already told you
+who was left by whether the glass was lit, whitewashed or shuttered; the
+fittings tell you now too, because a wall pack at full brightness says
+somebody pays that bill and a dead one says nobody has for years. Same
+rule, one more surface saying it.
+
+AND THE CAR PARK, which had no object in it taller than a van and
+therefore no scale at all. Lot lighting on the strip where two rows of
+bays meet nose to nose — the one strip of a lot nobody parks on, and
+where every lot light in America stands — every four bays, using the same
+STREETLAMP cutout the town's streets use. Precast wheel stops, one per
+bay, on the three rows nearest the doors. And two trolley bays, each
+taking one bay out of a back-to-back pair, which is where a real one goes
+and how big it is.
+
+THE TROLLEY BAY IS A FENCE AND NOT A BOX, and that distinction is the one
+decision in this pass worth arguing about. A free box does not collide. A
+rail you can walk through is not a rail, it is a picture of one — so the
+corral is a REGION with its own hatched floor and the galvanised tube
+hangs in the lines round it as a middle texture, exactly the way the
+yard's chain link and the town's picket fences do. T.TROLLRAI had been
+painted and sitting unused in js/textures.js since the car park was
+built. This is what it was for.
+
+THE SAME ARGUMENT SENT THE SKIPS BACK. They were free boxes for about an
+hour, and a steel skip the size of a car standing in a yard you walk into
+through a roller shutter is not a thing you get to walk through: that is
+not a detail, it is a bug you can find in ten seconds. The skips and the
+eight condensing sets behind the store are RAISED FLOORS now, exactly the
+way the town's boxwood hedges are — a region whose floor is the top of
+the thing and whose lowerTex is the thing's own skin, which the
+disagreement rule then draws down all four sides. A hundred and twenty-eight
+is five times MAX_STEP, so a skip is solid.
+
+WHICH LEAVES ONE EXCEPTION AND IT IS DELIBERATE. The wheel stops are free
+boxes standing on the ground, and they are the first thing in this game
+that is neither above your head nor flat against a wall. They get away
+with it because they are TWELVE tall against a MAX_STEP of twenty-four,
+so walking through one and stepping over one are the same move. The smoke
+test holds them to that number.
+
+Fifteen new textures for all of it, every one at sixty-four pixels or
+under like everything else here, and every one declared at the size of
+the thing it is a picture of — so one repeat is one length of coping, one
+luminaire, one wheel stop, one cabinet. Get that wrong and a wall pack
+becomes wallpaper of wall packs, which is the mistake the agent's board
+on the vacant unit was and the mistake the painted coping was, twice over.
+
+ONE THING IN THE GEOMETRY BUILDER CHANGED to make any of it work: a free
+box can have an UNDERSIDE now. A box with no floor is invisible from
+below — every side is wound outward and there is nothing at the bottom —
+which is fine for a chimney and wrong for the three things in this game
+you stand directly beneath: a porch roof, a shop awning and the canopy
+over a fire exit. All three had that hole in them and all three are shut.
+
+
 THE ONE IDEA
 ------------
 
@@ -1597,6 +1731,32 @@ keeps a margin outside `clearing`, which is the store's own fuel-grid
 rectangle — and the yard, being tarmac rather than wood, is inside that
 grid for the same reason the car park is. Extending the grid past the
 fence is what holds the gate open.
+
+AND THERE IS SOMETHING IN IT NOW. The back of a supermarket is the honest
+end of it and this one was four hundred and eighty feet of blank render
+with a shutter in the middle. Everything a shed like this actually
+carries lives round the back, because none of it is allowed round the
+front: eight condensing sets in two banks — the chill wall down the east
+side and the freezers behind the butchery both come out here — three
+intake cabinets on the wall where the meter reader can get at them, two
+skips out where a lorry can get a chain on them, and the caged ladder up
+to the roof.
+
+The skips and the condensers are REGIONS, not free boxes, and the yard is
+laid as five horizontal BANDS with each of them cut out of whichever band
+it stands in. RectMap forbids overlap, so leaving the hole while the yard
+is being laid is cheaper than carving it afterwards — the same trick the
+trolley bays use, and the opposite of what the town's hedges had to do,
+because a hedge crosses lawns that are already down.
+
+Which means the yard is fifteen rectangles now rather than one, and the
+chain link had to learn that: the wire goes between every PIECE of yard
+and each of its four neighbours, and a piece that does not reach a given
+neighbour simply has no line between them. The smoke test learned it the
+same way — a check that asked `l.front === yard.index` found two lines of
+the eight and failed a claim about fence height with a fact about
+bookkeeping, which is the identical fault the cemetery railing check had
+when the hedges split the lawns under it.
 
 
 THE WOOD
@@ -3980,8 +4140,25 @@ in the portal flood, it holds no fuel, nothing walks on it and nothing
 collides with it. So the rule that keeps it honest is that every box is
 either ABOVE HEAD HEIGHT or flat against a wall you could not have
 walked through anyway, and the suite holds that: nothing but a post, a
-pipe and a corner board comes down to head height, and all three of
-those are under ten units thick.
+pipe, a corner board, a pilaster, a cabinet and a ladder comes down to
+head height, and every one of those is under ten units thick.
+
+THERE IS NOW ONE EXCEPTION AND IT IS DELIBERATE: the car park's precast
+wheel stops are boxes standing on the ground, twelve tall against a
+MAX_STEP of twenty-four. Walking through one and stepping over one are
+the same move, so there is nothing to notice, and the suite holds them
+to that number rather than to the rule. Two hundred and sixteen of them.
+Everything the size of a skip went back to being a REGION.
+
+AND A BOX CAN HAVE AN UNDERSIDE, which it could not at first. Six faces
+was really five: a box has no bottom, so from below every side is wound
+away from you and there is nothing there at all — the thing goes
+transparent the moment you walk under it. Fine for a chimney. Wrong for
+the three things in this game you stand directly beneath, which are a
+porch roof, a shop awning and the canopy over a fire exit. `botTex`
+draws the lid's two triangles wound the other way and darker, because
+the underside of a slab in daylight is the one surface on it that never
+sees the sky.
 
 WHAT WENT IN, and why each of them and not something else:
 
@@ -4012,12 +4189,21 @@ WHAT WENT IN, and why each of them and not something else:
   THE CORNER BOARDS and THE DOWNPIPES, which are the two things that
   give a flat wall a vertical.
 
-TWO THOUSAND SIX HUNDRED BOXES, and they cost sixty-five draw calls on
-a town street — 548 before, 613 after — because the cost of a box is
-not the box, it is the texture: a block pays one draw call per texture
-in it, and these brought eleven new ones. The block LOD drops them at
-distance with everything else, which is why the number is sixty-five
-and not six hundred.
+TWO THOUSAND SIX HUNDRED BOXES IN THE TOWN, and they cost sixty-five
+draw calls on a town street — 548 before, 613 after — because the cost
+of a box is not the box, it is the texture: a block pays one draw call
+per texture in it, and these brought eleven new ones. The block LOD
+drops them at distance with everything else, which is why the number is
+sixty-five and not six hundred.
+
+AND ABOUT FOUR HUNDRED AND SIXTY MORE OUT ON THE PARADE afterwards —
+the coping, the pilasters, the pier caps, the downpipes, the gutter, the
+fascia trays, the roller housings, the wall packs, the rooftop plant and
+the wheel stops, for which see WHAT A STRIP MALL HAS THAT A SHED DOES
+NOT. Fifteen new textures, and the same shape of bill: forty-three draw
+calls in the middle of the car park (208 to 251), twenty-four on the
+footway (270 to 294). Neither costs a frame; both are measured rather
+than assumed.
 
 WHICH ALSO SETTLED WHERE MASKED BELONGS. Three of the new textures went
 in masked — a truss, a handrail, a communion rail — and what you saw
@@ -4947,7 +5133,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-1831 checks. Every one of them earns its place by having caught something
+1890 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

@@ -1973,9 +1973,18 @@ section('the wood');
        loading bay's, because they are. What every fence on the map has
        to do is stop at its top rail rather than fill the opening it
        hangs in, and that is the check. */
-    const yardWire = wire.filter(l => l.front === yard.index || l.back === yard.index);
+    /* THE YARD IS SEVERAL REGIONS NOW, not one: it is laid as bands with
+       the skips and the condensing sets cut out of them, so the wire
+       along its west side belongs to whichever band reaches that side.
+       Asking `l.front === yard.index` found two lines of the eight and
+       failed a check about fence height with a fact about bookkeeping,
+       which is exactly the fault the cemetery railing check had. Ask
+       every piece. */
+    const yardIdx = new Set(level.sectors.filter(s => s.name === 'the service yard').map(s => s.index));
+    const yardWire = wire.filter(l => yardIdx.has(l.front) || yardIdx.has(l.back));
     check('the yard\'s wire is the height the yard says it is',
-      yardWire.length >= 4 && yardWire.every(l => l.midHeight === Y.fenceH), `${yardWire.length} lines`);
+      yardWire.length >= 4 && yardWire.every(l => l.midHeight === Y.fenceH),
+      `${yardWire.length} lines over ${yardIdx.size} pieces of yard`);
     check('and it stops at the top rail instead of filling the opening',
       wire.every(l => l.midHeight > 0 &&
         l.midHeight < Math.min(level.sectors[l.front].ceil, level.sectors[l.back].ceil)),
@@ -8221,8 +8230,15 @@ section('the town');
     check('there are lamps down every street', lamps.length > 300, `${lamps.length}`);
     check('each with a pool of light on the pavement brighter than the rest of it',
       pools.length > 200 && pools.every(s => s.light > 0.6) && level.sectors.filter(s => /^sidewalk,/.test(s.name)).every(s => s.light < 0.5));
-    check('and every lamp stands on the pavement',
-      lamps.every(t => { const s = level.sectorAt(t.x, t.y); return s && /sidewalk|corner|path/.test(s.name); }));
+    /* AND THEY STAND ON MADE GROUND — which is now two different kinds
+       of it. In the town that is the pavement. In the car park it is
+       the line where two rows of bays meet nose to nose, which is the
+       one strip of a lot nobody ever parks on and is where every lot
+       light in America stands. What the check is really asking is that
+       no lamp is in somebody's lawn or out in the carriageway, and that
+       is still what it asks. */
+    check('and every lamp stands on the pavement, or on the strip of tarmac nobody parks on',
+      lamps.every(t => { const s = level.sectorAt(t.x, t.y); return s && /sidewalk|corner|path|bays|trolley bay/.test(s.name); }));
     /* THE ARM REACHES OVER THE ROAD. A lamp is a photograph stood flat
        across the street (THE STREET LAMP IS GEOMETRY in js/mapgeo.js)
        and the picture is a pole with its arm on one side, so the
@@ -8233,10 +8249,15 @@ section('the town');
        wider than an arm is long. */
     const over = (t, d) => level.sectorAt(t.x + Math.cos(t.angle) * d, t.y + Math.sin(t.angle) * d)?.name ?? 'nowhere';
     check('every lamp knows which way its arm reaches', lamps.every(t => Number.isFinite(t.angle)));
-    const missed = lamps.filter(t => !/junction|parking|street|crossing|path/.test(over(t, 40)));
-    check('and the arm reaches over the road, the junction or the path, all but the outside of the two bends',
+    const missed = lamps.filter(t => !/junction|parking|street|crossing|path|bays|trolley bay|driving lane/.test(over(t, 40)));
+    check('and the arm reaches over the road, the bays, the junction or the path, all but the outside of the two bends',
       missed.length <= 2 && missed.every(t => /^corner/.test(over(t, 40))),
       `${missed.length} over ${[...new Set(missed.map(t => over(t, 40)))].join(', ')}`);
+    /* AND THE CAR PARK HAS SOME NOW, which it did not: a floodlit lot
+       is the brightest sector in the level and there was nothing in it
+       anywhere throwing that light. */
+    const lotLamps = lamps.filter(t => /bays|trolley bay/.test(level.sectorAt(t.x, t.y)?.name ?? ''));
+    check('and the car park is lit by something you can point at', lotLamps.length >= 40, `${lotLamps.length} in the lot`);
     check('and the pool under a lamp says it is lit by one, and nothing else does',
       pools.every(s => s.lampLit) && level.sectors.filter(s => s.lampLit).length === pools.length);
     /* PLANTABLE GROUND, which now includes the VERGE: the strip between
@@ -8414,6 +8435,7 @@ section('the town');
      =================================================================== */
   {
     const props = level.props || [];
+    const { MAX_STEP } = await import('../js/util.js');
     const by = {};
     for (const q of props) by[q.tex] = (by[q.tex] || 0) + 1;
     note('free boxes', `${props.length}: ${Object.entries(by).sort((a, b) => b[1] - a[1])
@@ -8443,14 +8465,40 @@ section('the town');
        sideways, which is the same bargain Doom made with every pillar
        it drew as a sprite. */
     const PLAYER_TOP = 49 + 8;
-    const low = props.filter(q => q.z0 < PLAYER_TOP && !['PORCHPST', 'DOWNPIPE', 'CORNRBRD'].includes(q.tex));
-    check('and nothing but a post, a pipe and a corner board comes down to head height',
+    /* the three that are FLAT AGAINST something — a post on its stoop,
+       a pipe and a board on the face of a wall — and the one that is
+       LOWER THAN A STEP, which is the wheel stop and is a different
+       bargain: see below. */
+    const FLAT = ['PORCHPST', 'DOWNPIPE', 'CORNRBRD', 'PILASTER', 'METERBOX', 'ROOFLADR'];
+    const STEPPABLE = ['WHEELSTP'];
+    const low = props.filter(q => q.z0 < PLAYER_TOP && ![...FLAT, ...STEPPABLE].includes(q.tex));
+    check('and nothing but a post, a pipe, a corner board and a wheel stop comes down to head height',
       low.length === 0, low.slice(0, 4).map(q => `${q.tex} at z${Math.round(q.z0)}`).join(', '));
-    /* and the three that do are all FLAT AGAINST something: a post on
-       its stoop, a pipe and a board on the face of a wall */
-    check('and those three are all thin enough to be the wall they are on',
-      props.filter(q => ['PORCHPST', 'DOWNPIPE', 'CORNRBRD'].includes(q.tex))
-        .every(q => Math.min(q.x1 - q.x0, q.y1 - q.y0) <= 10));
+    check('and every one of those is thin enough to be the wall it is on',
+      props.filter(q => FLAT.includes(q.tex))
+        .every(q => Math.min(q.x1 - q.x0, q.y1 - q.y0) <= 10),
+      props.filter(q => FLAT.includes(q.tex) && Math.min(q.x1 - q.x0, q.y1 - q.y0) > 10)
+        .slice(0, 3).map(q => `${q.tex} ${Math.min(q.x1 - q.x0, q.y1 - q.y0)} deep`).join(', '));
+    /* AND NOTHING BIG IS STANDING ON THE GROUND AS A BOX. The skips and
+       the condensing sets in the service yard were free boxes for about
+       an hour and it was the wrong call: a steel skip the size of a car
+       in a yard you walk into is not a thing you get to walk through.
+       They are raised floors now, so the engine stops you at them the
+       way it stops you at a boxwood hedge. If this ever fails, somebody
+       has put a solid object back in as a picture of one. */
+    check('and nothing the size of a skip is a free box at all',
+      !props.some(q => q.z0 < PLAYER_TOP && Math.min(q.x1 - q.x0, q.y1 - q.y0) > 24));
+    /* AND THE FOURTH IS LOWER THAN A STEP. A wheel stop is the first
+       free box in this game that is neither above your head nor flat
+       against a wall, and it gets away with it for one reason only: it
+       is twelve tall against a MAX_STEP of twenty-four, so walking
+       through one and stepping over one are the same move and there is
+       nothing to notice. Fail this and the lot is full of kerbs the
+       player walks through. */
+    const stops = props.filter(q => q.tex === 'WHEELSTP');
+    check('and a wheel stop is lower than a step, which is why it is allowed to be down there',
+      stops.length > 150 && stops.every(q => q.z0 === 0 && q.z1 - q.z0 <= MAX_STEP),
+      `${stops.length} stops, tallest ${Math.max(0, ...stops.map(q => q.z1 - q.z0))} against ${MAX_STEP}`);
 
     /* THE AWNINGS ARE OVER SHOPFRONTS AND NOWHERE ELSE, and they are
        over the WINDOW and not over the door, because an awning over a
@@ -8475,6 +8523,143 @@ section('the town');
     const BS = MG.__BatchSetForTests || null;
     void BS;
     check('the builder can draw a free box', typeof MG.boxGeometry === 'function');
+
+    /* AND IT CAN DRAW THE UNDERSIDE OF ONE, which it could not until the
+       parade needed canopies over its fire doors. A box with no floor
+       is invisible from below — every side is wound outward and there
+       is nothing at the bottom — so anything you STAND UNDER had to
+       have one. Three things in the game do: a porch roof, an awning,
+       and a fire exit canopy. */
+    const shelves = props.filter(q => q.botTex);
+    check('anything you can stand under has an underside to it',
+      shelves.length > 100 &&
+      props.filter(q => ['FASCIA', 'AWNING'].includes(q.tex) && q.z1 - q.z0 <= 40).every(q => q.botTex),
+      `${shelves.length} boxes with a soffit`);
+  }
+
+  /* =====================================================================
+     THE PLANT ON THE PARADE
+
+     The same argument as the town's, made about the strip mall: a shed
+     drawn out of ceiling heights has no coping, no gutter, no
+     downpipes, no pilasters and nothing on its roof, and from the car
+     park that reads as four horizontal bands thirteen thousand units
+     long. Everything below is a free box in js/maps/sellwrong.js — see
+     THE PLANT and DRESSING THE PARADE — and every check is about
+     whether the thing is where the building says it should be rather
+     than about how many of them there are.
+     ===================================================================== */
+  {
+    section('the plant on the parade');
+    const props = level.props || [];
+    const of = t => props.filter(q => q.tex === t);
+    const MAP = await import('../js/maps/sellwrong.js');
+    const { MAX_STEP } = await import('../js/util.js');
+    const SKY = 480;                  // CEIL_SKY: the top of the wall
+    const EDGE = 328;                 // the outer edge of the canopy
+    const SOFF = 232;                 // the soffit over the footway
+
+    /* THE COPING. A parapet that just stops is a cut edge with sky above
+       it, and that was the single loudest thing wrong with this
+       building. One length per tenancy, all of them at the top of the
+       wall, all of them standing out over the lot. */
+    const cope = of('COPING');
+    note('the roofline', `${cope.length} lengths of coping, ${of('PIERCAP').length} pier caps, ${of('RTU').length} packaged units`);
+    check('the top of the wall is capped from one end of the parade to the other',
+      cope.length >= 20, `${cope.length} lengths`);
+    check('and every length of it sits at the top of the wall and oversails it',
+      cope.every(q => q.z0 >= SKY - 12 && q.z1 > SKY) &&
+      cope.filter(q => q.z1 < SKY + 60).every(q => q.y0 < -136),
+      cope.filter(q => !(q.z0 >= SKY - 12 && q.z1 > SKY)).length + ' at the wrong height');
+    check('and it has a lid, because the one thing above it is the sky',
+      cope.every(q => q.topTex));
+
+    /* THE PIERS. A sixteen-wide change of texture in a flat wall is a
+       stripe; a pilaster eight units proud with a cap that breaks the
+       coping is the only vertical rhythm this elevation has. */
+    const pil = of('PILASTER'), caps = of('PIERCAP');
+    check('every pier is a pilaster standing proud of the wall',
+      pil.length >= 20 && pil.every(q => q.z0 === 0 && q.z1 > SKY), `${pil.length}`);
+    check('and each one is capped above the coping, so the pier breaks the line',
+      caps.length === pil.length && caps.every(q => q.z0 >= SKY));
+    check('and each one carries the water off the canopy',
+      of('DOWNPIPE').filter(q => q.z1 > EDGE && q.z1 < EDGE + 40).length >= pil.length,
+      `${of('DOWNPIPE').filter(q => q.z1 > EDGE && q.z1 < EDGE + 40).length} pipes on ${pil.length} piers`);
+    check('and there is a gutter for the pipes to come off',
+      of('GUTTER').length >= 20 && of('GUTTER').every(q => q.z1 === EDGE));
+
+    /* THE FASCIA IS A TRAY. Two rims, one at the top edge of the sign
+       band and one at the bottom, which is the difference between paint
+       on a wall and a box screwed to one. */
+    const rims = of('SIGNEDGE');
+    check('every fascia has a rim top and bottom', rims.length >= 40, `${rims.length}`);
+    check('and the rims bracket the sign band rather than sitting anywhere on it',
+      rims.every(q => q.z0 === SOFF || q.z1 === EDGE));
+
+    /* THE ROOF PLANT, which is the silhouette of the building type: a
+       parapet built to hide the packaged units that never quite does. */
+    const rtu = of('RTU');
+    check('there is plant on the roof', rtu.length >= 12, `${rtu.length} units`);
+    check('and every unit stands on the roof and shows over the coping',
+      rtu.every(q => Math.abs(q.z0 - (SKY - 6)) < 1 && q.z1 > SKY + 40),
+      rtu.length ? `bottom ${rtu[0].z0}, top ${rtu[0].z1}` : '');
+    check('and every one of them is set back behind the parapet, not glued to it',
+      rtu.every(q => q.y0 > -136 + 40));
+    check('and the anchor\'s are ducted together', of('DUCTWORK').length >= 4);
+
+    /* AND THE WAY UP TO THEM, which is the question the roof plant asks
+       and which this building had no answer to at all. */
+    const ladder = of('ROOFLADR');
+    check('somebody can get up there', ladder.length >= 1 &&
+      ladder.every(q => q.z0 === 0 && q.z1 >= SKY), `${ladder.length} ladder`);
+    check('and it is in the service yard, where a ladder goes',
+      ladder.every(q => q.y0 >= MAP.ANCHOR_Y1));
+
+    /* THE SHOPFRONTS. A roller housing on every in-line unit and a light
+       over every door, and THE LIGHT IS THE TENANCY: the parade already
+       says who is left by whether the glass is lit, whitewashed or
+       shuttered, and the fittings now say it too. */
+    const packs = of('WALLPACK');
+    check('there is a light over every door', packs.length >= 20, `${packs.length}`);
+    check('and some of them are out, because most of this parade is',
+      packs.some(q => q.light > 1) && packs.some(q => q.light < 0.3),
+      `${packs.filter(q => q.light > 1).length} lit, ${packs.filter(q => q.light < 0.3).length} dead`);
+    check('and every unit has the housing its roller winds into',
+      of('SHUTBOX').length >= 18 && of('SHUTBOX').every(q => q.z1 <= SOFF));
+
+    /* THE SERVICE YARD. The skips and the condensing sets are REGIONS
+       and not boxes — see WHAT IS IN THE SERVICE YARD — because a free
+       box does not collide and a skip you walk through is a bug you can
+       find in ten seconds. */
+    const skipS = level.sectors.filter(s => s.name === 'a skip');
+    const cond = level.sectors.filter(s => s.name === 'a condensing set');
+    note('the service yard', `${skipS.length} skips, ${cond.length} condensing sets, ${level.sectors.filter(s => s.name === 'the service yard').length} pieces of yard`);
+    check('there are skips out the back and they are solid', skipS.length === 2 &&
+      skipS.every(s => s.floor > MAX_STEP * 4 && s.outdoor));
+    check('and the plant that keeps the chill cases cold is out there too',
+      cond.length === 8 && cond.every(s => s.floor > MAX_STEP && s.lowerTex === 'CONDENSR'));
+    check('and you cannot walk through any of it',
+      [...skipS, ...cond].every(s => s.floor > MAX_STEP));
+
+    /* THE CAR PARK. Wheel stops on the rows by the doors, lighting on
+       the strip nobody parks on, and a trolley bay with a rail you
+       cannot walk through — which is why the rail is a fence and not a
+       box. */
+    const rail = level.lines.filter(l => l.middle === 'TROLLRAI');
+    note('the car park', `${of('WHEELSTP').length} wheel stops, ${rail.length} lines of trolley rail`);
+    check('the bays nearest the doors have wheel stops', of('WHEELSTP').length >= 150);
+    check('there are trolley bays out in the lot', rail.length >= 8, `${rail.length} lines`);
+    check('and the rail stops you, the way a fence does',
+      rail.every(l => l.blocking && l.midHeight > 0 && l.pegMiddle === 'bottom' && l.texLocked));
+    /* AND ONE END IS OPEN. A corral fenced on all four sides is a pen
+       with nine trolleys locked in it, which is what the first go at
+       this built: the test for the way in read l.y1, and a line has no
+       y1 on it until mb.build() has run. */
+    const railY = new Set(rail.flatMap(l => [l.y1, l.y2]));
+    check('and one end of every trolley bay is open, or nobody can get a trolley out',
+      rail.filter(l => l.y1 === l.y2).length === 2 &&
+      rail.filter(l => l.y1 === l.y2).every(l => l.y1 === Math.min(...railY)),
+      `${rail.filter(l => l.y1 === l.y2).length} closed ends over 2 bays`);
   }
 
   /* THE STREET LAMP IS A PHOTOGRAPH AND IT IS NOT A SPRITE. Two tiles

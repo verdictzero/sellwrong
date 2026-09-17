@@ -280,15 +280,38 @@ T.STORWALL = () => {
 };
 
 T.STORBASE = () => {
-  /* The plinth: 64x32 of blockwork the trolleys have been hitting since
-     it opened. */
+  /* The plinth, and the skin of every one-sided wall the car park has:
+     painted blockwork the trolleys have been hitting since it opened.
+
+     IT WAS THE WRONG SIZE, in the same way the pier's brick was. One
+     course was sixteen units and one block thirty-two, which at
+     thirty-two units to the metre is a block a metre long and half a
+     metre tall — masonry for a giant. A dense block is 440 by 215, so
+     this is now four courses of eight and four blocks of sixteen to the
+     repeat, which is as close to right as a texture one pixel to the
+     unit can get.
+
+     And the speckle went with it. There was an aggregate pass on this
+     throwing a hundred and twenty bright points over a dark field, and
+     what that draws is not concrete, it is snow: a block wall is a FLAT
+     painted surface whose whole character is the joint pattern and the
+     places the paint has failed. */
   const p = new Pix(64, 32, 22);
-  aggregate(p, 22, { baseKey: 'grey', baseLo: 0.40, baseHi: 0.50,
-    grades: [{ count: 120, min: 0.4, max: 1.0, key: 'grey', lo: 0.34, hi: 0.56 }] });
-  for (const jy of [0, 16]) p.hline(0, 63, jy, 'grey', 0.24);
-  for (let y = 0; y < 32; y += 16)
-    for (let x = (y % 32 ? 0 : 32); x < 64 + 32; x += 64) p.vline(x % 64, y, y + 15, 'grey', 0.24);
-  p.grime(0.6, 'grey', 0.16, 9);
+  brickwork(p, 22, 'grey', 0.34, 0.44, 0.26, 8, 16);
+  /* the paint, which went on over the block and is coming off it: thin
+     on the arrises, gone in patches at the bottom where the water sits */
+  const n = fbm(64, 32, 8, 3, 25);
+  for (let y = 0; y < 32; y++) for (let x = 0; x < 64; x++)
+    p.wash(x, y, 'bone', 0.44, Math.max(0, 0.42 - (1 - y / 32) * 0.10) * (0.5 + n[y * 32 % (64 * 32) + x] * 0.5));
+  /* trolley scars: a horizontal scuff at the height a trolley hits,
+     which on a 32-unit band is two thirds of the way up */
+  const rng = makeRng(27);
+  for (let k = 0; k < 40; k++) {
+    const x = Math.floor(rng() * 64), y = 8 + Math.floor(rng() * 8);
+    for (let d = 0; d < 2 + rng() * 5; d++) p.wash((x + d) % 64, y, 'grey', 0.22, 0.35);
+  }
+  streaks(p, 4, 29, 'grey', 0.16, 0.3);
+  p.grime(0.42, 'grey', 0.12, 9);
   return p.snap(0.5);
 };
 
@@ -1483,41 +1506,77 @@ T.BAYROW = () => {
 };
 
 T.PILASTER = () => {
-  /* The pier between two shops. Brick, because the developer spent the
-     brick budget on the bits between the windows and nowhere else. */
+  /* The pier between two shops, and since the parade grew pilasters it
+     is the whole of one: a free box eight units proud of the wall
+     running the full height (see DRESSING THE PARADE in
+     js/maps/sellwrong.js), which means this texture is now read from
+     four feet away on the footway instead of from a car park.
+
+     WHICH MADE THE BRICK WRONG. It was courses of eight and bricks of
+     thirty-two over a sixty-four-unit repeat, so a brick was a metre
+     long and a foot tall — fine as a distant stripe, and absurd once
+     you can stand next to it. The town's brick is 16 by 6 (brickwork in
+     CHIMNEY) and this is the same brick now, so a pier and a chimney
+     are made of the same material, which is the only reason a generated
+     texture set holds together at all. */
   const p = new Pix(64, 64, 130);
-  aggregate(p, 130, { baseKey: 'rust', baseLo: 0.40, baseHi: 0.50,
-    grades: [{ count: 90, min: 0.5, max: 1.2, key: 'rust', lo: 0.34, hi: 0.56 }] });
-  /* stretcher bond: courses of 8, half-lapped */
-  const height = new Float32Array(64 * 64).fill(0.55);
-  for (let cy = 0; cy < 64; cy += 8) {
-    for (let x = 0; x < 64; x++) height[cy * 64 + x] = 0.18;
-    const off = (cy / 8) & 1 ? 0 : 16;
-    for (let bx = 0; bx < 64; bx += 32) {
-      const jx = (bx + off) % 64;
-      for (let y = cy + 1; y < cy + 8; y++) height[y * 64 + jx] = 0.1;
-    }
-  }
-  p.emboss(height, 0.55, 1.0);
-  streaks(p, 5, 131, 'grey', 0.22, 0.24);
-  p.grime(0.4, 'grey', 0.18, 132);
+  brickwork(p, 130, 'rust', 0.26, 0.42, 0.40, 6, 16);
+  /* the perpend every four courses where a header ties the pier back
+     into the wall behind it, which is what makes a pier a pier and not
+     a strip of wall with a shadow on it */
+  for (let cy = 0; cy < 64; cy += 24)
+    for (let x = 24; x < 40; x++) p.wash(x, cy + 2, 'rust', 0.48, 0.30);
+  streaks(p, 5, 131, 'grey', 0.20, 0.22);
+  p.grime(0.4, 'grey', 0.16, 132);
   return p.snap(0.55);
 };
 
 T.PARAPET = () => {
-  /* The band above every fascia: coping, and the top of a wall that was
-     only ever meant to be seen from a car park. */
-  const p = new Pix(64, 32, 133);
-  const n = fbm(64, 32, 16, 3, 133);
-  for (let y = 0; y < 32; y++) for (let x = 0; x < 64; x++)
-    p.ink(x, y, 'grey', 0.50 + n[y * 64 + x] * 0.12);
-  /* the coping is the top four rows, lighter and with an open joint */
-  for (let y = 0; y < 5; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'grey', 0.64 + n[y * 64 + x] * 0.08);
-  p.hline(0, 63, 5, 'grey', 0.20);
-  p.hline(0, 63, 6, 'grey', 0.70);
-  for (const jx of [12, 44]) p.vline(jx, 0, 4, 'grey', 0.30);
-  streaks(p, 9, 134, 'grey', 0.28, 0.5);         // it has been raining for thirty years
-  p.grime(0.5, 'grey', 0.20, 135);
+  /* The band above every fascia: the top of a wall that was only ever
+     meant to be seen from a car park, and the biggest single surface on
+     the building.
+
+     IT TILED FIVE TIMES AND EVERYTHING IN IT GOT COUNTED. Two goes at
+     this failed the same way. The first had a COPING painted into it —
+     lighter rows with an open joint — and a coping happens once, so the
+     roofline read as five cornices stacked up. The second took the
+     coping out (it is a real box now, see COPING) and left a control
+     joint at the repeat, and what that drew was five courses instead of
+     five cornices. The fault was never the ornament. It was the RATIO:
+     32 declared on a band of 152.
+
+     So one repeat is the whole band now, 152 tall and 128 across, which
+     is a panel joint every four metres across and exactly ONE horizontal
+     joint up. Nothing in it repeats vertically because nothing in it
+     CAN. The texels come out about two units square, which is soft, and
+     soft is right for eighty feet of painted render seen from a car
+     park at night. */
+  const p = new Pix(64, 64, 133);
+  const n = fbm(64, 64, 10, 4, 133);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'grey', 0.44 + n[y * 64 + x] * 0.14);
+  /* THE ONE HORIZONTAL JOINT, a third of the way down, where the panel
+     above the roof line meets the panel below it. A hairline with the
+     shadow under and the light on top, and only the one. */
+  p.hline(0, 63, 21, 'grey', 0.56);
+  p.hline(0, 63, 22, 'grey', 0.24);
+  /* and the vertical joints at the repeat: a panel every four metres */
+  p.vline(0, 0, 63, 'grey', 0.26); p.vline(1, 0, 63, 'grey', 0.56);
+  /* the blockwork showing through where the paint has gone thin. No
+     line you can count — a block here is two texels, which is under
+     the size of anything the eye will make a pattern out of. */
+  const rng = makeRng(139);
+  for (let k = 0; k < 90; k++) {
+    const bx = Math.floor(rng() * 16) * 4, by = Math.floor(rng() * 32) * 2;
+    for (let y = by; y < by + 2 && y < 64; y++) for (let x = bx; x < bx + 4 && x < 64; x++)
+      p.wash(x, y, 'bone', 0.40, 0.08 + rng() * 0.12);
+  }
+  /* AND THIRTY YEARS OF RAIN, which on a wall this size is the only
+     thing giving it any vertical at all — it runs from the coping down
+     and it is what a parapet actually looks like from a car park. */
+  streaks(p, 14, 134, 'grey', 0.24, 0.6);
+  streaks(p, 5, 136, 'olive', 0.22, 0.4);
+  p.grime(0.5, 'grey', 0.16, 135);
   return p.snap(0.5);
 };
 
@@ -2688,7 +2747,34 @@ const SIZES = {
 
   /* the strip */
   BAYROW:   { w: 186, h: 180 },    // one repeat is one parking bay
-  PARAPET:  { w: 64, h: 32 },
+  /* ONE REPEAT IS THE WHOLE BAND. The parapet band is CEIL_SKY minus
+     CEIL_EDGE, which is 152, and this was declared 32 tall — so it
+     tiled four and three quarter times up a wall whose whole job is to
+     be one unbroken surface, and whatever was in it got counted. See
+     T.PARAPET. 128 across puts a panel joint every four metres. */
+  PARAPET:  { w: 128, h: 152 },
+  /* THE PLANT ON A STRIP MALL — see WHAT A STRIP MALL HAS THAT A SHED
+     DOES NOT, further down this file. All of these are free boxes (see
+     boxGeometry in js/mapgeo.js) and every one of them is declared at
+     the size of the thing it is a picture of, so ONE REPEAT IS ONE
+     OBJECT: one length of coping, one luminaire, one wheel stop, one
+     cabinet. Get that wrong and a wall pack becomes wallpaper of wall
+     packs, which is the mistake the agent's board on UNITVOID was. */
+  COPING:   { w: 64, h: 14 },      // one length of pressed capping
+  PIERCAP:  { w: 64, h: 12 },
+  RTU:      { w: 64, h: 48 },      // the packaged unit's casing
+  RTUTOP:   { w: 64, h: 64 },      // and the fan cowls, seen from above
+  DUCTWORK: { w: 48, h: 32 },
+  ROOFLADR: { w: 32, h: 64 },      // one storey of caged ladder
+  GUTTER:   { w: 64, h: 12 },
+  SIGNEDGE: { w: 64, h: 8 },       // the rim of a fascia tray
+  SHUTBOX:  { w: 64, h: 24 },
+  WALLPACK: { w: 32, h: 24 },      // ONE FITTING, and the box is 32 by 24
+  CONDENSR: { w: 48, h: 40 },      // one condensing unit
+  METERBOX: { w: 32, h: 40 },      // one cabinet
+  SKIPSIDE: { w: 64, h: 48 },
+  WHEELSTP: { w: 120, h: 12 },     // one precast stop, and a stop is 120
+  CORRAIL:  { w: 64, h: 16 },
   FASCHEM:  { w: 64, h: 96 },      // one repeat is one sign
   FASPHON:  { w: 64, h: 96 },
   FASFOOD:  { w: 64, h: 96 },
@@ -3771,6 +3857,463 @@ T.WINTRIM = () => {
   p.hline(0, 63, 0, 'bone', 0.72); p.hline(0, 63, 1, 'bone', 0.66);
   p.hline(0, 63, 8, 'grey', 0.22);                     // the throat of the drip
   for (let y = 9; y < 12; y++) p.hline(0, 63, y, 'grey', 0.16 + (y - 9) * 0.02);
+  return p.snap(0.5);
+};
+/* =====================================================================
+   WHAT A STRIP MALL HAS THAT A SHED DOES NOT
+
+   The same argument as the section above, made about a different kind of
+   building. A parade is a long shed with a fascia screwed to the front of
+   it, and drawn as sectors alone that is exactly what it looks like: four
+   horizontal bands stacked up, thirteen thousand units wide, nothing
+   standing out of any of them. What is missing is not ornament. It is the
+   PLANT — the coping that keeps the rain out of the top of the wall, the
+   packaged air conditioners that are the only reason a windowless shed is
+   habitable, the gutter, the downpipes, the ladder somebody has to get up
+   there on, the meters, the condensers, the skip. A supermarket is a
+   machine with a shopfront on it, and every one of these is a piece of
+   the machine that is on the OUTSIDE.
+
+   THEY ARE READ FROM TWO PLACES and nowhere else: from the car park,
+   which is between a hundred and four thousand units away and looking
+   slightly up, and from the footway, which is under the canopy looking
+   along it. So the roof plant is drawn to be read as a SILHOUETTE above
+   the coping line, and everything at head height is drawn to be read at
+   arm's length. Nothing here has a middle distance to worry about.
+   ===================================================================== */
+
+T.COPING = () => {
+  /* THE TOP OF THE WALL. A parapet that just stops is a cut edge, and a
+     cut edge is the single loudest thing wrong with a shed drawn out of
+     ceiling heights: real ones are capped, because the top of a wall is
+     where the water gets in. Pressed aluminium here rather than cast
+     stone — this is 1974 commercial, not a bank — which means it is
+     paler than the render under it, it has a fold at the front, and it
+     comes in lengths with a joint every repeat. */
+  const p = new Pix(64, 14, 901);
+  aggregate(p, 901, { baseKey: 'grey', baseLo: 0.40, baseHi: 0.48,
+    grades: [{ count: 60, min: 0.3, max: 0.9, key: 'bone', lo: 0.34, hi: 0.44 }] });
+  /* the top face, in the sky, and the fold down the front of it */
+  for (let y = 0; y < 4; y++) p.hline(0, 63, y, 'bone', 0.62 - y * 0.03);
+  p.hline(0, 63, 4, 'grey', 0.26);                       // the arris
+  for (let y = 5; y < 10; y++) p.hline(0, 63, y, 'grey', 0.40 - (y - 5) * 0.012);
+  p.hline(0, 63, 10, 'grey', 0.14);                      // the drip, and under it
+  for (let y = 11; y < 14; y++) p.hline(0, 63, y, 'grey', 0.10);
+  /* the joint between two lengths, with the cover strip over it */
+  for (let y = 0; y < 11; y++) { p.ink(1, y, 'grey', 0.22); p.ink(2, y, 'bone', 0.54); }
+  const rng = makeRng(907);
+  for (let k = 0; k < 40; k++) {                         // pooled dirt on the top face
+    const x = Math.floor(rng() * 64);
+    p.wash(x, Math.floor(rng() * 3), 'olive', 0.22, 0.12 + rng() * 0.22);
+  }
+  return p.snap(0.5);
+};
+
+T.PIERCAP = () => {
+  /* A cast cap on the head of a brick pier, which is where the pier
+     stops and the parapet carries on over it. Twelve tall and one
+     repeat, so the weathered top and the shadow under land in the same
+     place on every pier down the parade. */
+  const p = new Pix(64, 12, 911);
+  aggregate(p, 911, { baseKey: 'bone', baseLo: 0.30, baseHi: 0.40,
+    grades: [{ count: 50, min: 0.3, max: 0.8, key: 'grey', lo: 0.26, hi: 0.36 }] });
+  p.hline(0, 63, 0, 'bone', 0.60); p.hline(0, 63, 1, 'bone', 0.52);
+  p.hline(0, 63, 7, 'grey', 0.18);
+  for (let y = 8; y < 12; y++) p.hline(0, 63, y, 'grey', 0.12);
+  for (const jx of [8, 40]) p.vline(jx, 0, 7, 'grey', 0.22);
+  p.grime(0.30, 'olive', 0.07, 919);
+  return p.snap(0.5);
+};
+
+/* --- the roof plant ------------------------------------------------ */
+
+T.RTU = () => {
+  /* THE PACKAGED UNIT. Every flat roof in America has three or four of
+     these on it and they are the only thing on the skyline of a strip
+     mall — the parapet is drawn tall enough to hide them and it never
+     quite does, which is the joke the building is telling and the reason
+     these stand proud of the coping here.
+
+     Galvanised steel, folded into panels: a rib every sixteen so the
+     sheet does not oil-can, an access panel with two latches, and the
+     coil louvre down the bottom third where the air comes in. Read from
+     a car park at forty metres, so the ribs carry it and everything else
+     is a hint at closer range. */
+  const p = new Pix(64, 48, 929);
+  const n = fbm(64, 48, 8, 2, 929);
+  /* THE PANEL IS CURVED BETWEEN ITS RIBS. A flat field with lines ruled
+     on it reads as a drawing of a sheet; what makes it sheet metal is
+     that the light falls off across each bay, so every sixteen the tone
+     rolls from bright at the fold to dark in the middle of the pan. */
+  for (let y = 0; y < 48; y++) for (let x = 0; x < 64; x++) {
+    const bay = Math.cos(((x % 16) / 16 - 0.22) * 4.6);
+    p.ink(x, y, 'grey', 0.44 + bay * 0.14 + n[y * 64 + x] * 0.08);
+  }
+  /* the ribs themselves — a bright fold with its own shadow beside it */
+  for (let x = 0; x < 64; x += 16) for (let y = 0; y < 48; y++) {
+    p.ink(x, y, 'grey', 0.18);
+    p.ink(x + 1, y, 'grey', 0.72);
+    p.ink(x + 2, y, 'grey', 0.60);
+    p.ink(x + 3, y, 'grey', 0.46);
+  }
+  /* the seam at the top where the casing meets the hood, and the curb
+     flashing at the foot, which is the bit that sits in the roof */
+  p.hline(0, 63, 0, 'grey', 0.62); p.hline(0, 63, 1, 'grey', 0.28);
+  for (let y = 42; y < 48; y++) p.hline(0, 63, y, 'grey', 0.24 - (y - 42) * 0.02);
+  p.hline(0, 63, 41, 'grey', 0.16);
+  /* the coil louvre: horizontal blades with the dark of the coil behind */
+  for (let y = 24; y < 40; y += 3) for (let x = 20; x < 60; x++) {
+    p.ink(x, y, 'grey', 0.10);
+    p.ink(x, y + 1, 'grey', 0.50);
+  }
+  p.frame(19, 23, 42, 18, 'grey', 0.20);
+  /* the access panel on the left, with its two quarter-turn latches */
+  p.frame(4, 6, 13, 30, 'grey', 0.22);
+  for (const cy of [13, 29]) { p.disc(10, cy, 2, 'grey', 0.66); p.ink(10, cy, 'grey', 0.14); }
+  /* the maker's plate, which at this size is a bright rectangle and is
+     meant to be: it is the one warm thing on the whole unit */
+  p.box(6, 39, 9, 4, 'yellow', 0.52);
+  streaks(p, 6, 937, 'rust', 0.22, 0.34);        // it has been up there a while
+  p.grime(0.40, 'grey', 0.10, 941);
+  return p.snap(0.5);
+};
+
+T.RTUTOP = () => {
+  /* Looking down on one: two fan cowls with bird mesh over them, and the
+     flat of the casing between. Only ever seen from the air, which in
+     this game is a real thing you can do — so it is drawn properly and
+     costs one texture. */
+  const p = new Pix(64, 64, 947);
+  const n = fbm(64, 64, 8, 2, 947);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'grey', 0.50 + n[y * 64 + x] * 0.10);
+  p.frame(0, 0, 64, 64, 'grey', 0.30);
+  for (const [cx, cy] of [[18, 18], [46, 44]]) {
+    p.disc(cx, cy, 14, 'grey', 0.36);
+    p.disc(cx, cy, 13, 'grey', 0.20);
+    /* the mesh: a grid coarse enough to survive one pixel per cell */
+    for (let d = -13; d <= 13; d += 3)
+      for (let e = -13; e <= 13; e++) {
+        if (d * d + e * e > 13 * 13) continue;
+        p.ink(cx + d, cy + e, 'grey', 0.46);
+        p.ink(cx + e, cy + d, 'grey', 0.42);
+      }
+    /* the hub, and the blade shadows under the mesh */
+    p.disc(cx, cy, 4, 'grey', 0.14);
+    p.disc(cx - 1, cy - 1, 3, 'grey', 0.30);
+  }
+  streaks(p, 4, 953, 'rust', 0.20, 0.30);
+  p.grime(0.46, 'olive', 0.08, 967);
+  return p.snap(0.5);
+};
+
+T.DUCTWORK = () => {
+  /* Spiral duct on sleepers, running from one unit to the next. Round,
+     so the shading does the work the way the downpipe's does — bright a
+     third in from the left, dark at the right edge — and the spiral seam
+     is what makes it duct rather than pipe. */
+  const p = new Pix(48, 32, 971);
+  const round = y => Math.cos((y / 31 - 0.30) * 2.4);
+  for (let y = 0; y < 32; y++) for (let x = 0; x < 48; x++)
+    p.ink(x, y, 'grey', Math.max(0.08, 0.26 + round(y) * 0.34));
+  /* THE LOCK SEAM, which is the only thing that tells spiral duct from
+     pipe, and it has to be a RIDGE and not a scratch: the fold catches
+     the light and throws a shadow on the row under it. It wraps — 48
+     across at two rows a column is three whole turns of 32 — so the
+     helix runs on into the next repeat instead of stopping. */
+  for (let x = 0; x < 48; x++) {
+    const y = (x * 2) % 32;
+    p.ink(x, y, 'grey', Math.min(0.90, Math.max(0.20, 0.44 + round(y) * 0.38)));
+    p.ink(x, (y + 1) % 32, 'grey', Math.max(0.05, 0.12 + round(y) * 0.18));
+  }
+  /* and the band where two lengths are joined, which is a collar over
+     the top of the seam and therefore brighter than any of it */
+  for (const bx of [2, 3]) for (let y = 0; y < 32; y++)
+    p.ink(bx, y, 'grey', Math.max(0.16, (bx === 2 ? 0.52 : 0.18) + round(y) * 0.32));
+  const rng = makeRng(977);
+  for (let k = 0; k < 50; k++) p.wash(Math.floor(rng() * 48), Math.floor(rng() * 32), 'rust', 0.24, 0.08 + rng() * 0.22);
+  return p.snap(0.5);
+};
+
+T.ROOFLADR = () => {
+  /* THE WAY UP. A caged ladder on the back wall, which is the answer to
+     the question the roof plant asks and which nothing in this level had
+     an answer to. Drawn as a flat face rather than as a masked cutout,
+     because it is bolted to a blank wall and there is nothing behind it
+     worth seeing: the stiles, the rungs, and the hoops of the cage
+     standing proud of both. */
+  const p = new Pix(32, 64, 983);
+  const n = fbm(32, 64, 8, 2, 983);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 32; x++)   // the wall behind
+    p.ink(x, y, 'grey', 0.22 + n[y * 32 + x] * 0.08);
+  /* the two stiles */
+  for (const sx of [8, 21]) for (let y = 0; y < 64; y++) {
+    p.ink(sx, y, 'grey', 0.54); p.ink(sx + 1, y, 'grey', 0.38); p.ink(sx + 2, y, 'grey', 0.14);
+  }
+  /* the rungs, every eight, which is a foot apart at this scale */
+  for (let y = 3; y < 64; y += 8) for (let x = 9; x < 22; x++) {
+    p.ink(x, y, 'grey', 0.58); p.ink(x, y + 1, 'grey', 0.30);
+  }
+  /* and the cage: a hoop every twenty-four with three verticals on it,
+     standing out past the stiles both sides */
+  for (const sx of [2, 28]) for (let y = 0; y < 64; y++) p.ink(sx, y, 'grey', 0.44);
+  for (let y = 6; y < 64; y += 24) for (let x = 0; x < 32; x++) {
+    p.ink(x, y, 'grey', 0.62); p.ink(x, y + 1, 'grey', 0.20);
+  }
+  const rng = makeRng(991);
+  for (let k = 0; k < 60; k++) p.wash(Math.floor(rng() * 32), Math.floor(rng() * 64), 'rust', 0.26, 0.08 + rng() * 0.26);
+  return p.snap(0.5);
+};
+
+/* --- the canopy, the fascia and the shopfront ---------------------- */
+
+T.GUTTER = () => {
+  /* The eaves gutter along the front of the canopy, on brackets. It is
+     the only horizontal line in the whole elevation that is allowed to
+     be dark, and it is what stops the canopy edge reading as a painted
+     stripe: a half-round with a shadow under it and a bracket every
+     repeat. */
+  const p = new Pix(64, 12, 997);
+  for (let y = 0; y < 12; y++) for (let x = 0; x < 64; x++) {
+    /* the belly of it turns away fast, because a gutter is a half round
+       and not a fascia board: bright on the bead, gone by the soffit */
+    const t = Math.cos((y / 11 - 0.16) * 2.8);
+    p.ink(x, y, 'grey', Math.max(0.05, 0.24 + t * 0.38));
+  }
+  p.hline(0, 63, 0, 'bone', 0.66);                       // the bead at the top
+  p.hline(0, 63, 1, 'bone', 0.52);
+  p.hline(0, 63, 2, 'grey', 0.44);
+  p.hline(0, 63, 11, 'grey', 0.05);                      // and the shadow under it
+  /* the bracket, which hangs OVER the bead and is the only thing
+     interrupting a line sixty-five metres long */
+  for (const bx of [6, 7, 8]) for (let y = 0; y < 12; y++)
+    p.ink(bx, y, 'grey', bx === 6 ? 0.46 : 0.10 + y * 0.004);
+  const rng = makeRng(1009);
+  for (let k = 0; k < 30; k++) p.wash(Math.floor(rng() * 64), 8 + Math.floor(rng() * 4), 'olive', 0.22, 0.14 + rng() * 0.2);
+  return p.snap(0.5);
+};
+
+T.SIGNEDGE = () => {
+  /* The extruded edge of a fascia tray. Eight tall, so the tray gets a
+     rim at the top and the bottom and the sign band between them stops
+     being paint on a wall and becomes a box screwed to one. Anodised
+     aluminium: nearly white on the top face, nearly black underneath,
+     and a screw every sixteen. */
+  const p = new Pix(64, 8, 1013);
+  for (let y = 0; y < 8; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'grey', 0.54 - y * 0.05);
+  p.hline(0, 63, 0, 'bone', 0.74); p.hline(0, 63, 1, 'bone', 0.62);
+  p.hline(0, 63, 7, 'grey', 0.10);
+  for (let x = 6; x < 64; x += 16) { p.ink(x, 4, 'grey', 0.22); p.ink(x, 3, 'bone', 0.60); }
+  return p.snap(0.5);
+};
+
+T.SHUTBOX = () => {
+  /* The roller housing over a shopfront: the box the shutter winds into,
+     which sits in the head of the opening and which every unit on a
+     parade has whether the roller is down or not. A pressed lid, the
+     end plate's bolt circle, and the slot the curtain comes out of along
+     the bottom — that slot is the whole point, because it is a black
+     line under a lit box and it says there is a shutter up there. */
+  const p = new Pix(64, 24, 1019);
+  const n = fbm(64, 24, 8, 2, 1019);
+  for (let y = 0; y < 24; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'grey', 0.40 + n[y * 64 + x] * 0.10);
+  for (let y = 0; y < 3; y++) p.hline(0, 63, y, 'grey', 0.68 - y * 0.06);
+  p.hline(0, 63, 3, 'grey', 0.24);
+  /* THE SLOT IS THE WHOLE POINT. A lit box over a shopfront with a
+     black line under it has a shutter in it; the same box without the
+     line is a bulkhead. So it is three rows of nearly nothing, with the
+     lip of the box catching the light right above it. */
+  p.hline(0, 63, 18, 'grey', 0.48);
+  for (let y = 19; y < 22; y++) p.hline(0, 63, y, 'grey', 0.03);
+  for (let y = 22; y < 24; y++) p.hline(0, 63, y, 'grey', 0.20);
+  /* the end plate, one per repeat, with the bolts round the barrel */
+  p.box(2, 4, 13, 14, 'grey', 0.30);
+  p.frame(2, 4, 13, 14, 'grey', 0.56);
+  for (let a = 0; a < 6; a++) {
+    const th = a * Math.PI / 3;
+    p.disc(8 + Math.round(Math.cos(th) * 4), 11 + Math.round(Math.sin(th) * 4), 1, 'grey', 0.70);
+  }
+  p.disc(8, 11, 2, 'grey', 0.12);
+  streaks(p, 4, 1021, 'rust', 0.20, 0.28);
+  p.grime(0.34, 'grey', 0.10, 1031);
+  return p.snap(0.5);
+};
+
+T.WALLPACK = () => {
+  /* The light over a shop door. One repeat is one fitting, which is what
+     makes it usable: the box is exactly thirty-two by twenty-four, so
+     the texture is a PICTURE of a luminaire rather than a pattern of
+     them. A cast body, a glass lens under a hood, and the lens is the
+     brightest thing in the texture because at night it is the brightest
+     thing on the parade. */
+  const p = new Pix(32, 24, 1033);
+  p.fill('grey', 0.26);
+  /* the hood, which is what you see of it from underneath and in front */
+  for (let y = 0; y < 8; y++) for (let x = 2; x < 30; x++)
+    p.ink(x, y, 'grey', 0.46 - y * 0.03 - (x > 24 ? 0.08 : 0));
+  p.hline(2, 29, 0, 'grey', 0.58);
+  p.hline(2, 29, 8, 'grey', 0.10);
+  /* the lens: a prismatic wedge, brightest at the top where the lamp is */
+  for (let y = 9; y < 20; y++) for (let x = 4; x < 28; x++) {
+    const k = 1 - (y - 9) / 11;
+    const rib = (x % 4) < 2 ? 0.08 : 0;
+    p.ink(x, y, 'yellow', 0.42 + k * 0.46 + rib);
+  }
+  p.frame(3, 8, 26, 12, 'grey', 0.20);
+  /* the body under it, and the two fixings into the wall */
+  for (let y = 20; y < 24; y++) for (let x = 2; x < 30; x++) p.ink(x, y, 'grey', 0.20);
+  for (const x of [6, 25]) { p.ink(x, 3, 'grey', 0.60); p.ink(x, 4, 'grey', 0.14); }
+  return p.snap(0.45);
+};
+
+/* --- the service side ---------------------------------------------- */
+
+T.CONDENSR = () => {
+  /* A condensing unit on the ground behind the building: a box of coil
+     with a fan in the side of it. One repeat is one unit. The coil is
+     the texture — a fin pack reads as a very fine vertical grid, which
+     is the one thing in this whole set that wants to be drawn at the
+     texel and not at the foot. */
+  const p = new Pix(48, 40, 1039);
+  p.fill('grey', 0.44);
+  /* THE FINS ARE PALE, not dark. First go at this had the pack at 0.22
+     to 0.34 because a coil IS dark when you look into it — and what it
+     drew was a black rectangle on a wall, because from three feet away
+     what you see is not the gap between the fins, it is the ALUMINIUM,
+     and aluminium is the brightest thing in the yard. */
+  for (let y = 4; y < 36; y++) for (let x = 2; x < 46; x++)
+    p.ink(x, y, 'grey', (x & 1) ? 0.56 : 0.40);           // the fins
+  /* the guard over the fan, which is a spiral of wire and reads as rings */
+  p.disc(30, 20, 14, 'grey', 0.26);                      // the dark behind the guard
+  for (let r = 4; r <= 13; r += 3)
+    for (let a = 0; a < 44; a++) {
+      const th = a * Math.PI / 22;
+      p.ink(30 + Math.round(Math.cos(th) * r), 20 + Math.round(Math.sin(th) * r), 'grey', 0.72);
+    }
+  p.disc(30, 20, 3, 'grey', 0.50);
+  /* the casing: top rail in the light, foot rail in shadow, corner posts */
+  for (let y = 0; y < 4; y++) p.hline(0, 47, y, 'grey', 0.70 - y * 0.06);
+  for (let y = 36; y < 40; y++) p.hline(0, 47, y, 'grey', 0.18);
+  for (const x of [0, 1, 46, 47]) p.vline(x, 0, 39, 'grey', x < 2 ? 0.64 : 0.20);
+  streaks(p, 5, 1049, 'rust', 0.22, 0.30);
+  p.grime(0.30, 'olive', 0.08, 1051);
+  return p.snap(0.5);
+};
+
+T.METERBOX = () => {
+  /* The intake cabinet — gas, or electricity, or the fire alarm panel,
+     and from ten feet away it does not matter which. A pressed steel
+     door with a piano hinge down one side, a hasp on the other, and a
+     label nobody has read since it was screwed on. */
+  const p = new Pix(32, 40, 1061);
+  const n = fbm(32, 40, 8, 2, 1061);
+  for (let y = 0; y < 40; y++) for (let x = 0; x < 32; x++)
+    p.ink(x, y, 'bone', 0.30 + n[y * 32 + x] * 0.10);
+  p.frame(2, 2, 28, 36, 'grey', 0.18);
+  p.hline(0, 31, 0, 'bone', 0.50); p.vline(0, 0, 39, 'bone', 0.46);
+  p.hline(0, 31, 39, 'grey', 0.10); p.vline(31, 0, 39, 'grey', 0.12);
+  for (let y = 5; y < 36; y += 6) { p.ink(3, y, 'grey', 0.46); p.ink(4, y, 'grey', 0.16); }  // the hinge
+  p.box(26, 18, 3, 5, 'grey', 0.54);                    // the hasp
+  p.box(8, 8, 14, 6, 'yellow', 0.46);                   // the label
+  for (let x = 9; x < 21; x += 3) p.vline(x, 9, 12, 'grey', 0.20);
+  p.grime(0.40, 'grey', 0.10, 1063);
+  return p.snap(0.5);
+};
+
+T.SKIPSIDE = () => {
+  /* The skip in the service yard. Steel, painted once, dented since:
+     the raked end, the top rail, the lifting pocket, and the diagonal
+     brace that every one of them has and that is the thing that makes a
+     rectangle read as a skip. */
+  const p = new Pix(64, 48, 1069);
+  const n = fbm(64, 48, 6, 2, 1069);
+  for (let y = 0; y < 48; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'yellow', 0.20 + n[y * 64 + x] * 0.10);
+  /* the rolled top rail, in the light, and the foot in shadow */
+  for (let y = 0; y < 4; y++) p.hline(0, 63, y, 'yellow', 0.40 - y * 0.04);
+  p.hline(0, 63, 4, 'grey', 0.14);
+  for (let y = 43; y < 48; y++) p.hline(0, 63, y, 'grey', 0.12);
+  /* the lifting pocket and the brace */
+  p.box(6, 12, 8, 22, 'grey', 0.22);
+  p.frame(6, 12, 8, 22, 'yellow', 0.34);
+  for (const [x0, x1] of [[20, 58], [21, 59]])
+    p.line(x0, 42, x1, 8, x0 === 20 ? 'yellow' : 'grey', x0 === 20 ? 0.48 : 0.12);
+  /* RUST WHERE IT HAS BEEN HIT, and nowhere else. The first go at this
+     scattered two dozen patches over the whole side and what came out
+     was a rusty skip with some yellow on it, which is the wrong way
+     round: what you read at forty metres is a YELLOW box, and the rust
+     is what tells you how old it is once you are close. So it is eight
+     small ones, low down where a skip gets kicked, and each has a
+     bright lip on top because a chip in paint is a step. */
+  const rng = makeRng(1087);
+  for (let k = 0; k < 8; k++) {
+    const cx = Math.floor(rng() * 64), cy = 22 + Math.floor(rng() * 18), r = 2 + Math.floor(rng() * 3);
+    p.disc(cx, cy, r, 'rust', 0.22 + rng() * 0.12);
+    p.disc(cx, cy - 1, Math.max(1, r - 2), 'rust', 0.30);
+    p.hline(cx - r, cx + r, cy - r, 'yellow', 0.44);
+  }
+  streaks(p, 5, 1091, 'rust', 0.22, 0.26);
+  p.grime(0.26, 'grey', 0.08, 1093);
+  return p.snap(0.5);
+};
+
+/* --- the car park --------------------------------------------------- */
+
+T.WHEELSTP = () => {
+  /* A precast wheel stop. Twelve tall and one repeat wide, so the two
+     dowel holes land in the same place on every one of them, which is
+     right: they come out of the same mould. Yellow once; most of that
+     is on the tyres of the county by now. */
+  const p = new Pix(64, 12, 1097);
+  aggregate(p, 1097, { baseKey: 'bone', baseLo: 0.28, baseHi: 0.40,
+    grades: [{ count: 80, min: 0.3, max: 1.0, key: 'grey', lo: 0.24, hi: 0.38 }] });
+  p.hline(0, 63, 0, 'bone', 0.58); p.hline(0, 63, 1, 'bone', 0.48);
+  p.hline(0, 63, 11, 'grey', 0.10);
+  /* what is left of the paint: the flanks keep it, the top is polished
+     off by the tyres that stop on it */
+  const n = fbm(64, 12, 8, 2, 1103);
+  for (let y = 2; y < 12; y++) for (let x = 0; x < 64; x++)
+    if (n[y * 64 + x] > 0.30) p.wash(x, y, 'yellow', 0.56, 0.42 + n[y * 64 + x] * 0.50);
+  /* and polished off along the top, where the tyres stop on it */
+  for (let x = 0; x < 64; x++) if (n[x] > 0.36) p.wash(x, 2, 'bone', 0.44, 0.5);
+  for (const dx of [12, 50]) { p.disc(dx, 6, 3, 'grey', 0.12); p.disc(dx, 5, 2, 'grey', 0.24); }
+  const rng = makeRng(1109);
+  for (let k = 0; k < 6; k++) {                          // corners knocked off
+    const x = Math.floor(rng() * 64);
+    for (let d = 0; d < 3; d++) { p.ink(x + d, 0, 'bone', 0.26); p.ink(x + d, 1, 'bone', 0.32); }
+  }
+  /* GRIME ON A WHEEL STOP IS TYRE BLACK, not moss. It was 'grey' at
+     nearly half strength here and what it did was take the yellow
+     straight back off — the thing came out olive, which is the colour
+     of a kerb that has been in a hedge for ten years and not of one
+     forty cars a day park against. */
+  p.grime(0.22, 'grey', 0.07, 1117);
+  return p.snap(0.5);
+};
+
+T.CORRAIL = () => {
+  /* Galvanised tube: the rail of a trolley bay, and the handrail of
+     anything else out here that needs one. Sixteen to the repeat, round
+     in section, with the swaged joint where two lengths meet. */
+  const p = new Pix(64, 16, 1123);
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 64; x++) {
+    const t = Math.cos((y / 15 - 0.30) * 2.3);
+    p.ink(x, y, 'grey', Math.max(0.12, 0.34 + t * 0.30));
+  }
+  p.hline(0, 63, 15, 'grey', 0.08);
+  for (const jx of [3, 4]) for (let y = 0; y < 16; y++) {
+    const t = Math.cos((y / 15 - 0.30) * 2.3);
+    p.ink(jx, y, 'grey', Math.max(0.14, (jx === 3 ? 0.44 : 0.18) + t * 0.26));
+  }
+  /* the spangle of a hot-dip coat, which is the one thing that tells
+     galvanised steel from painted steel at any distance */
+  const rng = makeRng(1129);
+  for (let k = 0; k < 90; k++) {
+    const x = Math.floor(rng() * 64), y = 1 + Math.floor(rng() * 13);
+    p.wash(x, y, 'bone', 0.58, 0.10 + rng() * 0.22);
+  }
   return p.snap(0.5);
 };
 

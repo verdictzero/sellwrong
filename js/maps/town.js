@@ -905,7 +905,13 @@ export function buildTown(rm, mb, opts = {}) {
   const porch = (B, F, s0, s1) => {
     const a = s0 - 20, b = s1 + 20;
     prop(F.box(a, -2, b, PORCH_D), PORCH_Z, PORCH_Z + PORCH_T, 'FASCIA',
-         { topTex: B.roof || 'SHINGLE', light: 0.46, topLight: ROOF_LIGHT });
+         /* AND AN UNDERSIDE, which it did not have and needed more than
+            anything else in the town does: a porch is the one free box
+            in this game you stand directly beneath, and a box with no
+            floor to it is invisible from below. See botTex in
+            boxGeometry, js/mapgeo.js. Boarded, like the eaves. */
+         { topTex: B.roof || 'SHINGLE', botTex: 'EAVESOFT',
+           light: 0.46, topLight: ROOF_LIGHT, botLight: 0.30 });
     /* the two posts, at the outer corners, standing on the stoop */
     for (const u of [a + 6, b - 6 - POST])
       prop(F.box(u, PORCH_D - 16 - POST, u + POST, PORCH_D - 16), FOUND, PORCH_Z, 'PORCHPST', { light: 0.50 });
@@ -1421,7 +1427,10 @@ export function buildTown(rm, mb, opts = {}) {
       if (R() < 0.3) continue;                    // three in ten have taken theirs in
       const top = B.base + STOREY - 20;
       prop(F.box(u + 60, -2, u + 132, 44), top - 32, top, 'AWNING',
-           { topTex: 'AWNING', light: 0.58, topLight: 0.66 });
+           /* and the underside, because the whole of an awning from the
+              pavement is the underside: see botTex in boxGeometry */
+           { topTex: 'AWNING', botTex: 'AWNING',
+             light: 0.58, topLight: 0.66, botLight: 0.34 });
     }
     /* the downpipes at the ends of the run, where a terrace's water
        actually comes down */

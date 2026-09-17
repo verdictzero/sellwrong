@@ -149,6 +149,55 @@ const CEIL_SOFF = 232;            // the soffit over the footway
 const PORCH_D = 80;
 
 /* =====================================================================
+   THE PLANT
+
+   A strip mall is a shed with a shopfront screwed to it, and drawn out
+   of sectors alone that is exactly what this one looked like: four
+   horizontal bands stacked up, thirteen thousand units long, nothing
+   standing out of any of them anywhere. The town got the same treatment
+   a while back and the diagnosis is the same — a sector engine cannot
+   put anything PROUD of a wall or ABOVE a roof, so a building made only
+   of sectors has no coping, no gutter, no downpipes, no pilasters and
+   nothing at all on its roof.
+
+   What fixes it is what fixed the town: FREE BOXES. Six faces owned by
+   no region, batched into the block they stand in and drawn by
+   boxGeometry in js/mapgeo.js — see THE THINGS THAT STAND PROUD OF A
+   WALL OR ABOVE A ROOF in js/maps/town.js, which is the same machinery
+   and the same rule.
+
+   THE RULE: a free box does not collide, does not burn and is not in
+   the portal flood, so every one of them is either above head height,
+   flat against a wall you could not walk through, or LOW ENOUGH TO STEP
+   OVER — the last of which is new here and is what a wheel stop is. A
+   wheel stop is twelve tall against a MAX_STEP of twenty-four, so
+   walking through one and stepping over one are the same move.
+
+   The numbers below are all in the same two dimensions: how far the
+   thing stands out of the face it is fixed to, and how tall it is.
+   ===================================================================== */
+/* THE COPING is the top of the wall, and the reason it matters more
+   than it sounds like it should is that a parapet drawn as a ceiling
+   step just STOPS — a cut edge with sky above it, which is the single
+   loudest thing wrong with a shed made of ceiling heights. Twelve out
+   over the lot, forty back over the roof, and eighteen tall. */
+const COPE_H = 18, COPE_OUT = 12, COPE_BACK = 40;
+/* THE PIER stops being a sixteen-wide change of texture and becomes a
+   brick pilaster standing eight proud of the wall, full height, with a
+   cast cap breaking the coping line — which is what a pier is FOR. */
+const PIER_OUT = 8, PIER_SIDE = 4, PIER_CAP_H = 14, PIER_CAP_OUT = 8;
+/* THE ROOFTOP UNITS. The parapet is built to hide the plant and never
+   quite does, and the gap between the two is the silhouette of every
+   strip mall ever built. A hundred and four tall against a coping that
+   tops out at 492 leaves eighty-six of each unit showing. */
+const RTU_W = 176, RTU_D = 132, RTU_SET = 96;
+const RTU_Z = CEIL_SKY - 6;             // standing on the roof, under the coping's lap
+/* what hangs off the canopy, and what is screwed to the shopfront */
+const GUTTER_H = 12, GUTTER_OUT = 10, PIPE_W = 8;
+const TRAY_H = 8, TRAY_OUT = 8;
+const PACK_W = 32, PACK_H = 24, SHUT_H = 24;
+
+/* =====================================================================
    THE SIGN BOX
 
    The logo is a picture, and a picture cannot be a texture here because
@@ -192,6 +241,12 @@ export const H_FIXTURE = 40;      // below eye level: the front stays open
    TRANSOM — instead of the open air it was. */
 const DOOR_TOP = 128;             // how tall a leaf is
 const ENTRY_W = 160;              // clear opening, so a leaf runs 80
+/* WHERE THE DOORS ARE, up here rather than beside the sectors they
+   belong to because two things now need them and one of them runs
+   first: the wall packs over the entrances are laid with the rest of
+   the parade's ironmongery, several hundred lines before the shop floor
+   exists. Same reasoning as NTILL. */
+const ENT_A0 = 1908, ENT_B0 = 2212;               // centred where they always were
 
 /* =====================================================================
    THE TENANCIES
@@ -394,6 +449,17 @@ export function buildSellWrong(opts = {}) {
   const rm = new RectMap(mb);
   const carSlots = [];
 
+  /* Every free box on the parade goes in here and comes out as
+     level.props, alongside the town's. See THE PLANT above. */
+  const props = [];
+  /** z0..z1 is the height band; everything else is a plan rectangle.
+   *  `light` defaults to the canopy's own, because most of these are on
+   *  or near the front of the building where the canopy light is. */
+  const prop = (x0, y0, x1, y1, z0, z1, tex, extra = {}) => {
+    if (x1 - x0 <= 0 || y1 - y0 <= 0 || z1 - z0 <= 0) return;
+    props.push({ x0, y0, x1, y1, z0, z1, tex, light: 0.62, ...extra });
+  };
+
   /* =================================================================
      THE CAR PARK
      ================================================================= */
@@ -541,9 +607,37 @@ export function buildSellWrong(opts = {}) {
   roadRun(LOT_X0, ROAD_Y0, LOT_X1, ROAD_Y1, 'x', 'the frontage lane');
   roadBox(LOT_X1, ROAD_Y0, RING_X1, ROAD_Y1, 'WS', 'the north-east corner');
 
+  /* THE TROLLEY BAYS.
+
+     Two of them, each taking ONE BAY out of a back-to-back pair and
+     running the full depth of both rows — which is exactly where a real
+     one goes and exactly how big it is, because it has to be reachable
+     from the two rows either side of it and nobody in the world will
+     walk further than the next aisle to put a trolley away.
+
+     THE RAIL IS A FENCE, not a free box, and that distinction is the
+     whole of why this took a sector and not four boxes. A free box does
+     not collide: a rail you can walk through is not a rail, it is a
+     picture of one. So the corral is a REGION with its own floor, and
+     the galvanised tube hangs in the lines round it as a middle
+     texture, exactly the way the yard's chain link and the town's
+     picket fences do. T.TROLLRAI has been painted and sitting unused in
+     js/textures.js since the car park was built; this is what it was
+     for.
+
+     Splitting the row here rather than carving it afterwards is the
+     cheap way round RectMap's one rule — two rectangles may not overlap
+     — and it costs four rectangles. The town had to do it the hard way
+     for its hedges because a hedge crosses lawns that are already laid;
+     a corral is in a row this loop has not built yet. */
+  const CORRAL_BAYS = [15, 49];        // which bay along the row, of about 72
+  const CORRAL_ROWS = [3, 4];          // and which two rows: the middle pair
+  const corralPieces = [];
+
   /* and then the rows, walking south */
   let y = ROAD_Y0;
   const bayRows = [];
+  let ri = 0;
   for (const step of LOT_PLAN) {
     if (step.kind === 'lane') {
       rm.add(LOT_X0, y - LANE_D, LOT_X1, y, lot('driving lane'));
@@ -564,9 +658,69 @@ export function buildSellWrong(opts = {}) {
          between two of them. With the row's own corner as the origin,
          bay i is LOT_X0 + i * BAY_W across and the row deep, which is
          exactly what the parking below already assumed. */
-      rm.add(LOT_X0, y0, LOT_X1, y,
+      const bayRow = (a, b) => a < b && rm.add(a, y0, b, y,
         lot('bays', { floorTex: 'BAYROW', floorAnchor: [LOT_X0, y] }));
+      if (!CORRAL_ROWS.includes(ri)) {
+        bayRow(LOT_X0, LOT_X1);
+      } else {
+        let cut = LOT_X0;
+        for (const k of CORRAL_BAYS) {
+          const a0 = LOT_X0 + k * BAY_W, a1 = a0 + BAY_W;
+          bayRow(cut, a0);
+          /* the pad itself: hatched, because that is what is painted
+             inside one, and lit brighter than the tarmac round it */
+          corralPieces.push({ k, north: y, rect: rm.add(a0, y0, a1, y,
+            lot('trolley bay', { floorTex: 'HATCHKEEP', light: 0.80 })) });
+          cut = a1;
+        }
+        bayRow(cut, LOT_X1);
+      }
+      ri++;
       y -= BAY_D;
+    }
+  }
+
+  /* --- AND WHAT ELSE IS OUT ON THE TARMAC ---------------------------
+     A car park with nothing standing up in it is a floor, and a floor
+     thirteen thousand units long has no scale at all: the parade goes
+     off both edges of the screen and there is not one object between
+     you and it to measure the distance by. Two things fix that, and
+     both are things a real lot has and this one did not.
+
+     THE LIGHTING. A supermarket car park at night is FLOODLIT — the
+     lot is the brightest sector in the level and always has been — and
+     until now there was nothing anywhere in it throwing that light.
+     Columns on the line where two rows of bays meet nose to nose,
+     which is the one strip of a lot nobody parks on, every four bays.
+     They are the same STREETLAMP the town's streets use: a flat cutout
+     in the vertical plane ACROSS the row, so from the end of a row you
+     see a line of them in profile with their heads out over the cars,
+     and standing between two you see them edge on.
+
+     THE WHEEL STOPS. Precast, one to a bay, on the three rows nearest
+     the doors. They are free boxes, and they are the first free boxes
+     in this game that are neither above your head nor flat against a
+     wall: a wheel stop is TWELVE tall against a MAX_STEP of
+     twenty-four, so walking through one and stepping over one are the
+     same move and the rule survives. */
+  {
+    let lk = 0;
+    for (let i = 0; i + 1 < bayRows.length; i++) {
+      if (bayRows[i].y0 !== bayRows[i + 1].y1) continue;      // not a pair
+      const ly = bayRows[i].y0;
+      for (let x = LOT_X0 + BAY_W * 2; x < LOT_X1 - BAY_W; x += BAY_W * 4, lk++)
+        mb.thing('STREETLAMP', x, ly, (lk & 1) ? Math.PI / 2 : -Math.PI / 2);
+    }
+    const STOP_W = 120, STOP_D = 12, STOP_H = 12;
+    for (const row of bayRows.slice(0, 3)) {
+      /* at the NOSE end, which is what the row's facing says */
+      const ny = row.facing < 0 ? row.y0 + 10 : row.y1 - 10 - STOP_D;
+      for (let k = 0; ; k++) {
+        const sx = LOT_X0 + k * BAY_W + (BAY_W - STOP_W) / 2;
+        if (sx + STOP_W > LOT_X1) break;
+        prop(sx, ny, sx + STOP_W, ny + STOP_D, 0, STOP_H, 'WHEELSTP',
+             { topTex: 'WHEELSTP', light: 0.80, topLight: 0.92 });
+      }
     }
   }
   /* THE TWO LEGS OF THE RING, down the outside of the bays. They are
@@ -681,6 +835,151 @@ export function buildSellWrong(opts = {}) {
   rm.add(PARADE_X1, -96, PARADE_X1 + WALL, -WALL, walkProps('pier', 'PILASTER', 'PARAPET', 0.42));
 
   /* =================================================================
+     DRESSING THE PARADE
+
+     Everything from here to the end of the block is a free box. None of
+     it is a sector, none of it collides, and none of it changes a line
+     — which is exactly why it can exist at all, because every one of
+     these is in a place a sector cannot be: out in front of the wall,
+     or on top of the roof.
+
+     THE ORDER IS THE ORDER YOU READ THEM IN from the middle of the car
+     park: the roofline first, because it is the silhouette and it is
+     what tells you how big the building is; then the piers, which are
+     the only vertical rhythm in a thirteen-thousand-unit elevation;
+     then the canopy, then the shopfront. Nothing below head height
+     except the wheel stops, and those are lower than a step.
+     ================================================================= */
+  {
+    let seed = 19740419;                      // when the parade went up
+    const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+
+    /* --- the coping ------------------------------------------------
+       One length per tenancy, taking in the pier beside it, so the cap
+       runs unbroken from one end of the parade to the other and the
+       block batcher still gets a box per tenancy rather than one box
+       thirteen thousand long in a single block. */
+    const COPE_Z = CEIL_SKY - 6;
+    const coping = (x0, x1, face) =>
+      prop(x0, face - COPE_OUT, x1, face + COPE_BACK, COPE_Z, COPE_Z + COPE_H,
+           'COPING', { topTex: 'COPING', light: 0.78, topLight: 0.92 });
+    /* and the gutter under the canopy edge, on the same three runs */
+    const gutter = (x0, x1, face) =>
+      prop(x0, face - GUTTER_OUT, x1, face + 2, CEIL_EDGE - GUTTER_H, CEIL_EDGE,
+           'GUTTER', { light: 0.50 });
+
+    for (let i = 0; i < bays.length; i++) {
+      const b = bays[i];
+      const x0 = i === 0 ? PARADE_X0 - WALL : b.x0;
+      const x1 = i === bays.length - 1 ? PARADE_X1 + WALL : b.x1 + WALL;
+      if (!b.anchor) { coping(x0, x1, CANOPY_Y); gutter(x0, x1, CANOPY_Y); continue; }
+      /* THE ANCHOR IS THREE RUNS, because the porch comes eighty units
+         forward of the rest of the parade and the sign tower comes
+         forward of the porch. Run the coping straight across and it
+         cuts through the tower at the wrong height, which is worse than
+         not having one. */
+      for (const [a, z] of [[x0, PORCH_X0], [PORCH_X1, x1]]) { coping(a, z, CANOPY_Y); gutter(a, z, CANOPY_Y); }
+      for (const [a, z] of [[PORCH_X0, TALL_X0], [TALL_X1, PORCH_X1]]) { coping(a, z, PORCH_Y); gutter(a, z, PORCH_Y); }
+    }
+    /* THE TOWER'S OWN CAP, at the top of the sign box rather than at the
+       parapet: the box tops out at CEIL_EDGE + SIGN_H, and a sign tower
+       with a cut edge on it is the same fault as a parapet with one. */
+    const TOWER_Z = CEIL_EDGE + SIGN_H;
+    prop(TALL_X0 - COPE_OUT, S2_Y - COPE_OUT, TALL_X1 + COPE_OUT, PORCH_Y + 8,
+         TOWER_Z - 6, TOWER_Z - 6 + COPE_H, 'COPING',
+         { topTex: 'COPING', light: 0.80, topLight: 0.94 });
+
+    /* --- the piers -------------------------------------------------
+       A pier was a sixteen-wide change of texture in a flat wall, which
+       from the car park is a stripe. What a pier IS is a pilaster: a
+       column of brick standing eight units proud of the face, running
+       the full height, with a cast cap on it that breaks the line of the
+       coping. Both of those are shadows, and the shadows are the whole
+       of why a parade this long does not read as a fence. */
+    const piers = [PARADE_X0 - WALL, ...bays.slice(0, -1).map(b => b.x1), PARADE_X1];
+    for (const j of piers) {
+      prop(j - PIER_SIDE, CANOPY_Y - PIER_OUT, j + WALL + PIER_SIDE, CANOPY_Y,
+           0, CEIL_SKY + 6, 'PILASTER', { light: 0.58 });
+      prop(j - PIER_SIDE - PIER_CAP_OUT, CANOPY_Y - PIER_OUT - PIER_CAP_OUT,
+           j + WALL + PIER_SIDE + PIER_CAP_OUT, CANOPY_Y + 8,
+           CEIL_SKY + 6, CEIL_SKY + 6 + PIER_CAP_H, 'PIERCAP',
+           { topTex: 'PIERCAP', light: 0.76, topLight: 0.90 });
+      /* and the water off the gutter, which has to go somewhere and
+         until now went nowhere: one pipe per pier, gutter to ground */
+      const px = j + WALL / 2 - PIPE_W / 2;
+      prop(px, CANOPY_Y - PIER_OUT - PIPE_W, px + PIPE_W, CANOPY_Y - PIER_OUT,
+           0, CEIL_EDGE + 8, 'DOWNPIPE', { light: 0.44 });
+    }
+
+    /* --- the fascia becomes a tray ---------------------------------
+       The sign band is painted on the face of the wall, and a painted
+       band is a painted band however good the texture is. Two rims —
+       one along the top edge, one along the bottom, eight units proud —
+       and the same paint is a TRAY bolted to the building, which is
+       what every fascia on every parade in the world actually is. */
+    for (const b of bays) for (const z of [CEIL_SOFF, CEIL_EDGE - TRAY_H])
+      prop(b.x0, -96 - TRAY_OUT, b.x1, -96, z, z + TRAY_H, 'SIGNEDGE',
+           { light: z === CEIL_SOFF ? 0.54 : 0.64 });
+
+    /* --- the shopfronts --------------------------------------------
+       A roller housing over every in-line unit, because every unit on a
+       parade has one whether the roller is down or not, and a light over
+       every door. THE LIGHT IS THE TENANCY: a fitting at full brightness
+       says somebody pays the bill here and a dark one says nobody has
+       for years, which is the same rule the glass already follows and
+       the cheapest way this building has of telling you who is left. */
+    for (const b of bays) {
+      if (!b.anchor) {
+        prop(b.x0 + 12, -WALL - 12, b.x1 - 12, -WALL, CEIL_SOFF - 32, CEIL_SOFF - 32 + SHUT_H,
+             'SHUTBOX', { light: 0.50 });
+        const cx = (b.x0 + b.x1) / 2;
+        prop(cx - PACK_W / 2, -WALL - 10, cx + PACK_W / 2, -WALL, 168, 168 + PACK_H,
+             'WALLPACK', { light: b.in ? 1.10 : 0.16 });
+      } else {
+        /* the anchor has no roller: it has two sets of sliders, and a
+           pack either side of each so the doors are the lit thing on
+           the whole elevation */
+        for (const dx of [ENT_A0 - 90, ENT_A0 + ENTRY_W + 58, ENT_B0 - 90, ENT_B0 + ENTRY_W + 58])
+          prop(dx, -WALL - 10, dx + PACK_W, -WALL, 172, 172 + PACK_H, 'WALLPACK', { light: 1.15 });
+      }
+    }
+
+    /* --- and what is on the roof -----------------------------------
+       THE ONE THING A BIG SHED CANNOT DO WITHOUT. A supermarket is a
+       windowless box and the only reason anybody can stand up in one is
+       the plant on top of it, which is why every strip mall in America
+       has three or four packaged units showing over a parapet that was
+       built to hide them. It is the silhouette of the building type.
+
+       Set back ninety-six from the parapet so the coping crops the
+       bottom of each one, which is what makes them read as standing on
+       a roof rather than as boxes glued to a wall. */
+    const rtu = (cx, w = RTU_W, h = 104) => {
+      const y0 = CANOPY_Y + RTU_SET, d = w === RTU_W ? RTU_D : RTU_D * 1.2;
+      prop(cx - w / 2, y0, cx + w / 2, y0 + d, RTU_Z, RTU_Z + h,
+           'RTU', { topTex: 'RTUTOP', light: 0.66, topLight: 0.84 });
+    };
+    for (const b of bays) {
+      if (b.anchor) continue;
+      if (rnd() > 0.78) continue;                  // not every unit has one
+      rtu(b.x0 + UNIT_W * (0.3 + rnd() * 0.4), RTU_W * (0.8 + rnd() * 0.3), 88 + Math.round(rnd() * 28));
+    }
+    /* the anchor's own, which are bigger and in a line because they
+       serve one tenancy and were installed on one day */
+    {
+      const n = 5, span = (ANCHOR_X1 - ANCHOR_X0) * 0.78, a0 = (ANCHOR_X0 + ANCHOR_X1 - span) / 2;
+      const xs = Array.from({ length: n }, (_, k) => a0 + span * k / (n - 1));
+      for (const x of xs) rtu(x, RTU_W * 1.35, 116);
+      /* and the duct between them, on its sleepers, which is the thing
+         that says these are one system and not five objects */
+      const dy = CANOPY_Y + RTU_SET + RTU_D * 0.62;
+      for (let k = 0; k + 1 < n; k++)
+        prop(xs[k], dy, xs[k + 1], dy + 44, RTU_Z + 38, RTU_Z + 70,
+             'DUCTWORK', { topTex: 'DUCTWORK', light: 0.58, topLight: 0.72 });
+    }
+  }
+
+  /* =================================================================
      THE ANCHOR — the shop floor
      ================================================================= */
   const shop = (name, light, fuel, extra = {}) => ({
@@ -690,7 +989,6 @@ export function buildSellWrong(opts = {}) {
   });
 
   /* --- the way in: two sets of sliders, and the mullion between them - */
-  const ENT_A0 = 1908, ENT_B0 = 2212;               // centred where they always were
   const entryProps = n => ({
     /* the ceiling is the door head: what is above it is the transom,
        drawn as this sector's upper on both faces of the wall */
@@ -921,6 +1219,36 @@ export function buildSellWrong(opts = {}) {
     exits.push({ rect: e, x: ANCHOR_X1 + WALL / 2, y0: a, y1: b, out: [ANCHOR_X1 + 140, cy] });
   });
 
+  /* --- AND WHAT IS OVER ONE ------------------------------------------
+     A steel door in a blank flank wall with nothing over it is a hole in
+     a wall, and six of them are six holes. What makes one an EXIT is
+     the three things a fire door has on the outside and nothing else
+     does: a canopy over it so the head is in shadow, a light over that
+     which is on all night, and the intake cabinet beside it. Free boxes
+     — see THE PLANT at the top of this file. */
+  {
+    const CANOPY_D = 76, CANOPY_T = 14, CANOPY_Z = DOOR_TOP + 10;
+    for (const cy of EXIT_Y) for (const side of [-1, 1]) {
+      const face = side < 0 ? ANCHOR_X0 - WALL : ANCHOR_X1 + WALL;
+      const a0 = Math.min(face, face + side * -CANOPY_D), a1 = Math.max(face, face + side * -CANOPY_D);
+      /* the canopy. It has an UNDERSIDE, which is the whole reason
+         botTex exists: you come out of this door and stand under it. */
+      prop(a0 - (side < 0 ? 0 : 4), cy - EXIT_W / 2 - 26, a1 + (side < 0 ? 4 : 0), cy + EXIT_W / 2 + 26,
+           CANOPY_Z, CANOPY_Z + CANOPY_T, 'FASCIA',
+           { topTex: 'CONCRETE', botTex: 'SOFFIT', light: 0.42, topLight: 0.54, botLight: 0.26 });
+      /* the light over it, hard against the wall, lit: an exit that is
+         dark from the outside is an exit nobody in the wood can find */
+      const px = side < 0 ? face - 10 : face;
+      prop(px, cy - PACK_W / 2, px + 10, cy + PACK_W / 2, CANOPY_Z + CANOPY_T + 8,
+           CANOPY_Z + CANOPY_T + 8 + PACK_H, 'WALLPACK', { light: 1.05 });
+      /* and the cabinet beside the door, which is a fire alarm panel or
+         a gas intake and at ten feet is neither */
+      const mx = side < 0 ? face - 9 : face;
+      prop(mx, cy + EXIT_W / 2 + 40, mx + 9, cy + EXIT_W / 2 + 72, 44, 84,
+           'METERBOX', { topTex: 'METERBOX', light: 0.36 });
+    }
+  }
+
   /* the swing door out of the shop floor */
   const staffDoor = rm.add(700, Y_BACKXEND, 820, BOH_Y0, {
     floor: FLOOR_WALK, ceil: FLOOR_WALK, light: 0.46,      // shut: ceiling on the floor
@@ -1094,11 +1422,90 @@ export function buildSellWrong(opts = {}) {
   const { y1: YARD_Y1, fenceH: FENCE_H } = YARD;
   const [GATE_X0, GATE_X1] = YARD.gate;
   if (YARD.y0 !== BACK_Y) throw new Error('the yard has come away from the back wall');
-  const yard = rm.add(ANCHOR_X0, BACK_Y, ANCHOR_X1, YARD_Y1, {
+  const yardProps = (name, extra) => ({
     floor: FLOOR_OUT, ceil: CEIL_SKY, light: 0.42, outdoor: true, sky: 1,
     floorTex: 'ASPHALT', ceilTex: 'SKY', wallTex: 'STORWALL',
-    upperTex: 'STORWALL', lowerTex: 'KERB', fuel: FUEL.none, name: 'the service yard',
+    upperTex: 'STORWALL', lowerTex: 'KERB', fuel: FUEL.none, name, ...extra,
   });
+
+  /* --- WHAT IS IN THE SERVICE YARD ------------------------------------
+     The back of a supermarket is the honest end of it, and until now it
+     was four hundred and eighty feet of blank render with a shutter in
+     the middle. Everything a shed like this carries lives back here,
+     because none of it is allowed round the front: the plant that keeps
+     the chill cases cold, the intakes, the skips, and the ladder
+     somebody has to get on the roof by — which is the one that matters,
+     because the roof now has five packaged units on it and until this
+     there was no way up to any of them.
+
+     THE SKIPS AND THE CONDENSERS ARE SECTORS, NOT FREE BOXES, and that
+     is the one decision in this whole pass worth arguing about. Every
+     other piece of plant is a free box, which is cheap and draws
+     beautifully and DOES NOT COLLIDE — fine for a coping four hundred
+     units up and fine for a downpipe eight units deep, and not fine at
+     all for a steel skip the size of a car standing in a yard you walk
+     into through the roller shutter. A skip you walk through is not a
+     detail, it is a bug you can find in ten seconds.
+
+     So they are raised floors, exactly the way the town's boxwood
+     hedges are (A HEDGE IS A BOX in js/maps/town.js): a region with its
+     floor at the top of the thing and the thing's own skin as its
+     lowerTex, which the disagreement rule then draws down all four
+     sides. A hundred and twenty-eight is five times MAX_STEP, so a skip
+     is solid, and forty is nearly twice it, so a condenser is too.
+
+     Which means the yard cannot be one rectangle any more: RectMap
+     forbids overlap, so the yard is laid as BANDS and each band is cut
+     round whatever stands in it. Same trick as the trolley bays, and
+     for the same reason — it is cheaper to leave the hole than to carve
+     it afterwards. */
+  const yardParts = [];
+  /** One band of yard, with the things standing in it cut out of it. */
+  const yardBand = (y0, y1, holes = []) => {
+    let cut = ANCHOR_X0;
+    for (const [a, b, props] of holes) {
+      if (a > cut) yardParts.push(rm.add(cut, y0, a, y1, yardProps('the service yard')));
+      rm.add(a, y0, b, y1, props);
+      cut = b;
+    }
+    if (cut < ANCHOR_X1) yardParts.push(rm.add(cut, y0, ANCHOR_X1, y1, yardProps('the service yard')));
+  };
+  /* THE CONDENSING SETS. Eight, in two banks: the chill wall down the
+     east side and the freezers behind the butchery both come out here.
+     One repeat of CONDENSR is one unit, so a bank is 48 wide a piece. */
+  const COND_W = 48, COND_H = 40, COND_PITCH = 116;
+  const condensers = [];
+  for (const bank of [620, 2700]) for (let k = 0; k < 4; k++) {
+    const a = bank + k * COND_PITCH;
+    condensers.push([a, a + COND_W, yardProps('a condensing set', {
+      floor: COND_H, floorTex: 'RTUTOP', lowerTex: 'CONDENSR',
+      upperTex: 'CONDENSR', wallTex: 'CONDENSR', light: 0.56,
+    })]);
+  }
+  /* THE SKIPS, out from the wall where a lorry can get a chain on them
+     and well clear of the gate. Lidded by their own floor. */
+  const SKIP_H = 128;
+  const skips = [2880, 3300].map(a => [a, a + 340, yardProps('a skip', {
+    floor: SKIP_H, floorTex: 'SKIPSIDE', lowerTex: 'SKIPSIDE',
+    upperTex: 'SKIPSIDE', wallTex: 'SKIPSIDE', light: 0.50,
+  })]);
+  yardBand(BACK_Y, BACK_Y + 14);
+  yardBand(BACK_Y + 14, BACK_Y + 14 + COND_W, condensers);
+  yardBand(BACK_Y + 14 + COND_W, BACK_Y + 190);
+  yardBand(BACK_Y + 190, BACK_Y + 366, skips);
+  yardBand(BACK_Y + 366, YARD_Y1);
+
+  /* and the flat things on the wall, which ARE free boxes because a
+     ladder eight units deep and a meter cabinet nine units deep are as
+     thin as the wall they are bolted to — the same bargain the town's
+     downpipes and corner boards make. */
+  {
+    const F = BACK_Y;                              // the face of the back wall
+    prop(GATE_X0 - 260, F, GATE_X0 - 228, F + 7, 0, CEIL_SKY, 'ROOFLADR', { light: 0.52 });
+    for (const x of [ANCHOR_X0 + 250, ANCHOR_X0 + 292, ANCHOR_X1 - 320])
+      prop(x, F, x + 32, F + 9, 40, 80, 'METERBOX', { topTex: 'METERBOX', light: 0.38 });
+  }
+
   /* the wood either side of it, and the three strips behind it */
   const woodW = woodRect(RING_X0, BACK_Y, ANCHOR_X0, OY1, 'wood, west of the yard');
   const woodE = woodRect(ANCHOR_X1, BACK_Y, RING_X1, OY1, 'wood, east of the yard');
@@ -1170,8 +1577,11 @@ export function buildSellWrong(opts = {}) {
      the middle texture straight back off — a two-sided line is a hole,
      and a hole with something in it has to say so. */
   let fenceLines = 0;
+  /* EVERY PIECE OF THE YARD, because the yard is five bands now rather
+     than one rectangle — see WHAT IS IN THE SERVICE YARD. A band that
+     does not reach a given neighbour simply has no line between them. */
   for (const nb of [woodW, woodE, backW, backE]) {
-    for (const l of mb.linesBetween(yard.sector, nb.sector)) {
+    for (const part of yardParts) for (const l of mb.linesBetween(part.sector, nb.sector)) {
       l.middle = 'CHAINLNK';
       l.midHeight = FENCE_H;      // see js/mapgeo.js: it stops at the top rail
       l.pegMiddle = 'bottom';     // and stands on the ground rather than hanging
@@ -1184,11 +1594,56 @@ export function buildSellWrong(opts = {}) {
      gate exists because a line was left alone, and a line left alone by
      accident somewhere else in this file would be a second gate nobody
      meant. */
-  const gateLines = mb.linesBetween(yard.sector, gateW.sector);
+  const gateLines = yardParts.flatMap(part => mb.linesBetween(part.sector, gateW.sector));
   if (!gateLines.length) throw new Error('the yard has no gate');
   if (gateLines.some(l => l.blocking || l.middle))
     throw new Error('the gate got fenced');
   if (fenceLines < 4) throw new Error(`only ${fenceLines} sides of the yard are fenced`);
+
+  /* --- AND THE RAIL ROUND A TROLLEY BAY ------------------------------
+     Same three lines as the yard's chain link and the town's pickets —
+     midHeight because a rail stops at its top rail, pegMiddle bottom
+     because it stands on the tarmac, texLocked because finishTextures
+     runs at mb.build() and takes a two-sided line's middle straight
+     back off otherwise.
+
+     THE OPEN END IS THE POINT. A corral fenced on all four sides is a
+     pen: the trolleys are in it and nobody can get one out, which is
+     funny for about a second and then is just a bug you can see from
+     the mouth of the car park. So the north end — the lane end, where
+     you push one in — is left alone, and so is the join between the two
+     halves, which is inside the thing. */
+  const RAIL_H = 48;
+  let railLines = 0;
+  for (const k of CORRAL_BAYS) {
+    const mine = corralPieces.filter(c => c.k === k);
+    if (!mine.length) continue;
+    const inside = new Set(mine.map(c => c.rect.sector));
+    const wayIn = Math.max(...mine.map(c => c.north));
+    for (const c of mine) for (const l of mb._own(c.rect.sector)) {
+      if (!l.frontCol.length || !l.backCol.length) continue;
+      const other = l.frontCol.includes(c.rect.sector) ? l.backCol : l.frontCol;
+      if (other.some(i => inside.has(i))) continue;           // the join, inside it
+      /* THE VERTICES, NOT l.y1. A line carries v1 and v2 — indices into
+         mb.verts — and only gets x1,y1,x2,y2 written onto it inside
+         mb.build(), which has run by the time the level exists and has
+         NOT run here. Reading l.y1 at this point compares undefined to a
+         number, which is quietly false every time: the first go at this
+         fenced the way in along with everything else and made a pen with
+         nine trolleys locked in it. */
+      if (mb.verts[l.v1][1] === wayIn && mb.verts[l.v2][1] === wayIn) continue;
+      l.middle = 'TROLLRAI';
+      l.midHeight = RAIL_H;
+      l.pegMiddle = 'bottom';
+      l.blocking = true;
+      l.texLocked = true;
+      railLines++;
+    }
+    /* and the trolleys somebody did put away */
+    const cx = LOT_X0 + k * BAY_W + BAY_W / 2, cy = wayIn - BAY_D * 0.6;
+    for (let i = 0; i < 9; i++) mb.thing('TROLLEY', cx + (i % 2) * 20 - 10, cy - i * 24, 0.02 * i);
+  }
+  if (!railLines) throw new Error('the trolley bays got no rail');
 
   /* Glazing carries on above both entrances, which is what a big-box
      front actually looks like and beats thirteen repeats of a door track
@@ -1665,10 +2120,17 @@ export function buildSellWrong(opts = {}) {
      ceiling, so a pitched roof is geometry over a footprint. See
      roofGeometry in js/mapgeo.js. */
   level.roofs = town ? town.roofPending : [];
-  /* and the free boxes — the chimneys, the porches, the cornices, the
-     awnings — which like the roofs belong to no region at all. See
-     boxGeometry in js/mapgeo.js. */
-  level.props = town ? town.props : [];
+  /* and the free boxes — the coping, the pilasters, the downpipes and
+     the rooftop plant out here; the chimneys, the porches, the cornices
+     and the awnings in the town — which like the roofs belong to no
+     region at all. See boxGeometry in js/mapgeo.js, and THE PLANT at the
+     top of this file for why they have to be boxes and not sectors.
+
+     THE PARADE'S COME FIRST because the parade is what you are looking
+     at when the game starts, and a block batch that is built in the
+     order things are declared is one less thing to think about when a
+     draw call goes missing. */
+  level.props = town ? props.concat(town.props) : props;
   /* the town's trees and shrubs, for js/forest.js to grow: sprites, not
      sectors, which is why a yard has no rectangle for any of them */
   level.plants = town ? town.plants : [];

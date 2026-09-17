@@ -216,7 +216,7 @@ export function buildLevelGeometry(level, bank) {
   /* and the free boxes read theirs from the same place, for the same
      reason: nothing owns them, so nothing else would */
   for (const r of level.props || []) {
-    for (const n of [r.tex, r.topTex].filter(Boolean)) {
+    for (const n of [r.tex, r.topTex, r.botTex].filter(Boolean)) {
       const e = bank.get(n);
       if (e) noteTextureSize(n, e.w, e.h);
     }
@@ -678,6 +678,27 @@ export function boxGeometry(set, p) {
     const uv = (x, y) => [x / t.w, -y / t.h];
     b.tri(x0, z1, -y0, ...uv(x0, y0), x1, z1, -y0, ...uv(x1, y0), x1, z1, -y1, ...uv(x1, y1), tl, sk, ch);
     b.tri(x0, z1, -y0, ...uv(x0, y0), x1, z1, -y1, ...uv(x1, y1), x0, z1, -y1, ...uv(x0, y1), tl, sk, ch);
+    quads++;
+  }
+  /* AND THE UNDERSIDE, which everything that is a SHELF needs and
+     nothing that stands on the ground does.
+
+     A box with no floor to it is a box you can see the inside of from
+     underneath, and every side face is wound outward so what you
+     actually see is nothing at all — the thing goes transparent the
+     moment you walk under it. That is fine for a chimney and wrong for
+     a porch roof, a canopy over a fire door or a duct up on sleepers,
+     which are the three places in this game you STAND UNDER a free box.
+
+     Wound the other way round from the lid, triangle by triangle, and
+     darker by default, because the underside of a slab in daylight is
+     the one surface on it that never sees the sky. */
+  if (p.botTex && p.botTex !== 'NONE') {
+    const t = bank_h(set, p.botTex), b = set.get(p.botTex);
+    const bl = Math.max(0.02, Math.min(1.4, p.botLight ?? lit * 0.62));
+    const uv = (x, y) => [x / t.w, -y / t.h];
+    b.tri(x1, z0, -y1, ...uv(x1, y1), x1, z0, -y0, ...uv(x1, y0), x0, z0, -y0, ...uv(x0, y0), bl, sk, ch);
+    b.tri(x0, z0, -y1, ...uv(x0, y1), x1, z0, -y1, ...uv(x1, y1), x0, z0, -y0, ...uv(x0, y0), bl, sk, ch);
     quads++;
   }
   return quads;

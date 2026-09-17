@@ -102,7 +102,9 @@ WHERE IT DEPARTS FROM THE PLAN, and why:
     are free boxes — see boxGeometry in js/mapgeo.js — six faces owned
     by no region, batched into the block they stand in. Every one of
     them is above head height or flat against a wall, because a free box
-    does not collide.
+    does not collide. The porches and the awnings have an UNDERSIDE now,
+    which they wanted from the start: a box has no bottom face, so a
+    porch roof was invisible from the stoop you were standing on.
   THERE ARE LAMPS after all — one every 1536 along a sidewalk,
     staggered, one on every corner, each over a pool of light that is a
     brighter sector of pavement — and trees in the yards, shrubs along
