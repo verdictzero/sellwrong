@@ -139,7 +139,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         1960 checks, no install and no browser
+  the smoke test         1968 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -1262,6 +1262,69 @@ One line of UVs fixes all nine doors, and the suite now reads the two
 vertex attributes together and asks of every leaf in the game that the
 vertex at the top of it carries v = 1.
 
+AND THEN THE SAME DOORSET ON THE FIRE EXITS, at the user's request, and
+augmented for what a fire exit is rather than copied onto it. Same reveal
+lining, same soffit over your head as you come out, same transom panel,
+same pressed frame proud of both faces, and the leaf repainted in the
+same construction — pressed rib, stiles, three butt hinges down the side
+it turns on, and a stainless kick plate. What it gets that the staff door
+does not:
+
+  a CRASH BAR and a running man, which it already had and which are the
+    two things on a fire door that are not decoration
+  the WEATHER, because this leaf faces nine thousand units of wood: rust
+    runs from under the hinges and from under the bar
+  a CANOPY, a light over it and the intake cabinet beside it, which it
+    also already had — this is the face of a building and the staff
+    door's is the face of a partition
+  a LIT SIGN inside, over the head, on the side people are running from.
+    The staff door's plate says who may go through it; this one says that
+    you may
+
+THE TRANSOM PANEL EARNS ITS PLACE HERE TWICE OVER. A band is drawn once
+for both of its faces, and this one has a cross-aisle on the inside and
+the wood on the outside — so whatever goes over the head was always going
+to be wrong for one of them. It used to be the stockroom's blockwork,
+which is a third thing that is neither: a strip of bare block up the
+outside of a panelled flank and a strip of bare block over a papered
+aisle. A panel that belongs to the DOORSET is right from both, and from
+out in the wood it does something the old one did not, which is mark
+where the exits are.
+
+THE OLD EXIT SIGN HAD NEVER BEEN HUNG ANYWHERE. It was in the texture
+bank and used by nothing, and hanging it explained why: dark green
+lettering on a dark green field, which at the 0.26 of a cross-aisle at
+night is a black rectangle over a black door. An illuminated exit sign is
+the brightest small thing in a shop — it has a battery in it for the
+night the power goes — so it is a bright face, white letters, a white
+running man, and a box lit past one. Two of them are legible from the
+middle of the shop floor.
+
+AND A SHUT STEEL LEAF STOPS SIGHT, which turned up the oldest bug either
+of these doors has found. Giving the fire exits the staff door's `opaque`
+took the whole west side of the building away.
+
+The portal flood decides what is drawn a BLOCK at a time, and it asks a
+block whether any REGION in it is visible. A region is in the block its
+middle lands in; a line is in the block its MIDPOINT lands in. Those are
+usually the same block. The case where they are not is a big outdoor
+region owning the wall of the building it wraps round — and the wood
+behind the west wing is nine thousand units of forest whose middle is a
+block and a half from the supermarket, while the supermarket's west flank
+is the wood's own one-sided wall. Its triangles land, correctly, in the
+anchor's block, whose visibility was answered entirely by the anchor's
+aisles. So the outside of the building was drawn only because six shut
+fire doors were leaking the flood into the shop. Shut them to sight and
+the building lost its outside.
+
+The fix is one line and moves nothing: a block is answered for by the
+regions centred in it AND by the owners of the lines drawn in it. The
+triangles stay where they are, so a block is still rebuilt on its own and
+still culled by its own corner. It costs two to five draw calls outdoors
+and saves thirty-four standing in an aisle, nineteen in the stockroom and
+fourteen on the footway, because a cross-aisle no longer draws a forest
+through a shut steel door.
+
 
 THE ONE IDEA
 ------------
@@ -1619,9 +1682,11 @@ wood already burns.
 WHAT MAKES THEM READ AS AN EXIT AND NOT A HOLE: they are LIT. The
 cross-aisles are at 0.26 and these are at 0.62, so the end of the aisle
 glows and you can see from the middle of the shop where the crowd is
-going. That is the whole signage budget and it is more legible than a
-sign would be — see the note further down on why a word in a texture is
-always the bug.
+going. That used to be the whole signage budget, on the grounds that a
+word in a texture is always the bug — which still holds, and which is
+about TEXTURES. A sign is not a texture: it is one repeat on one free box
+that will never be tiled, and there is now a lit one over the inside of
+every fire door. See THE LAST DOOR THAT WENT UP.
 
 THE LEAF SWINGS, which is the one thing in this engine that has no Doom
 precedent at all. Doom had exactly one door and it was a ceiling that
@@ -5379,7 +5444,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-1960 checks. Every one of them earns its place by having caught something
+1968 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

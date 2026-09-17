@@ -4094,6 +4094,46 @@ section('the way out');
   check('the opening is exactly as tall as the leaf',
     swing.every(d => d.zTop === d.spec.sector.ceil && d.zBot === d.spec.sector.floor));
 
+  /* --- AND THEY WEAR THE STAFF DOOR'S DOORSET ---
+     At the user's request, augmented for what a fire exit is: the same
+     reveal lining, the same soffit, the same transom panel over the
+     head, the same pressed frame proud of both faces — and then the
+     three things a fire door has that a staff door does not, which are
+     the canopy, the light over it and, INSIDE, a lit sign that says you
+     may go through this one. */
+  {
+    const props = lv.props || [];
+    const near = (q, cy) => Math.abs((q.y0 + q.y1) / 2 - cy) < 140;
+    const cys = swing.map(d => (d.spec.y0 + d.spec.y1) / 2);
+    check('every fire exit has the same reveal, soffit and transom panel as the staff door',
+      swing.every(d => d.spec.sector.wallTex === 'DOORFRAM' &&
+                       d.spec.sector.ceilTex === 'DOORFRAM' &&
+                       d.spec.sector.upperTex === 'DOORHEAD'),
+      swing.map(d => d.spec.sector.upperTex).join(' '));
+    const onFlank = q => q.x1 <= MAP.ANCHOR_X0 + 16 || q.x0 >= MAP.ANCHOR_X1 - 16;
+    const fr = props.filter(q => q.tex === 'DOORFRAM' && onFlank(q) && cys.some(cy => near(q, cy)));
+    check('and a pressed frame on both faces of the wall, six pieces each',
+      fr.length === 36 && fr.every(q => Math.min(q.x1 - q.x0, q.y1 - q.y0) <= 10),
+      `${fr.length} pieces`);
+    /* UNDER the canopy and not through it: the frame head stops at
+       DOOR_TOP + 7 and the canopy starts at DOOR_TOP + 10. */
+    const can = props.filter(q => q.tex === 'FASCIA' && cys.some(cy => near(q, cy)));
+    check('and it stops short of the canopy rather than growing through it',
+      can.length === 6 && fr.every(q => q.z1 <= Math.min(...can.map(c => c.z0))),
+      `${can.length} canopies`);
+    const sign = props.filter(q => q.tex === 'EXITSIGN');
+    check('and a lit sign over the head on the side people are running from',
+      sign.length === 6 && sign.every(q => q.light > 1 && q.z0 >= MAP.FLOOR_WALK + 100) &&
+      sign.every(q => q.x0 >= MAP.ANCHOR_X0 && q.x1 <= MAP.ANCHOR_X1),
+      `${sign.length} signs`);
+    /* AND A SHUT ONE IS NOT A HOLE IN THE SIDE OF THE BUILDING. Six
+       steel leaves were six windows as far as the portal flood was
+       concerned, each opening a cross-aisle onto nine thousand units of
+       wood. */
+    check('and a shut steel leaf stops sight as well as movement',
+      swing.every(d => d.spec.lines.every(l => l.blockSight)));
+  }
+
   /* --- and they are on walkable floor at both ends --- */
   {
     const bad = swing.filter(d => {
@@ -4257,7 +4297,8 @@ section('the way out');
        face the shopfront's glazing gets, and the sign is the ONLY place
        in this building the words are written down. A word is a shape you
        can count, so it may only live on something that never repeats. */
-    const fr = (lv.props || []).filter(q => q.tex === 'DOORFRAM');
+    const fr = (lv.props || []).filter(q => q.tex === 'DOORFRAM' &&
+      q.x0 >= sec.bbox[0] - 16 && q.x1 <= sec.bbox[2] + 16);
     check('the frame is two jambs and a head on each face, and all of it is thin',
       fr.length === 6 && fr.every(q => Math.min(q.x1 - q.x0, q.y1 - q.y0) <= 10) &&
       fr.filter(q => q.y1 <= sec.bbox[1]).length === 3 &&
@@ -9693,9 +9734,46 @@ section('what it costs to draw');
       meshes > 500 && withArea === meshes, `${withArea} of ${meshes}`);
     note('the level, as area', `${meshes} batches over ${(area / 1e6).toFixed(1)} million square units`);
 
+    const blockAt = k => geoG.blockGroups.get(k);
+
+    /* --- AND WHO ANSWERS FOR A BLOCK ------------------------------
+       A region is drawn in the block its middle lands in; a LINE is
+       drawn in the block its midpoint lands in. Those are usually the
+       same block, and the case where they are not is the one that
+       matters: a big outdoor region owning the wall of the building it
+       wraps round. The wood behind the west wing is nine thousand units
+       of forest whose middle is a block and a half from the supermarket,
+       and the supermarket's west flank is the WOOD's own one-sided wall
+       — filed, correctly, in the anchor's block.
+
+       Until the fire doors were given the staff door's `opaque`, that
+       block was answered for by the anchor's aisles alone, and the whole
+       west side of the building was drawn only because the portal flood
+       was leaking through six shut fire doors. Shut them to sight and
+       the building lost its outside. Two checks, and the second is the
+       one that makes the first mean anything. */
+    {
+      const wall = lvG.lines.find(l => Math.abs(l.x1 - (MAP.ANCHOR_X0 - 16)) < 0.1 &&
+        Math.abs(l.x2 - (MAP.ANCHOR_X0 - 16)) < 0.1 && !l.backCol.length && l.frontCol.length &&
+        /^wood/.test(lvG.sectors[l.frontCol[0]].name) && Math.abs(l.y1 - l.y2) > 300);
+      const ex = MAP.ANCHOR_X0 - 240, ey = (wall.y1 + wall.y2) / 2;
+      lvG.visibleSectors(ex, ey, 0, 1.2, mgP.INTERIOR_DIST);
+      geoG.applyVisibility(lvG, ex, ey, mgP.INTERIOR_DIST, Infinity, 960);
+      const centred = lvG.sectors.filter(s => s.drawBlock === wall.drawBlock);
+      check('standing in the wood, the side of the building you are looking at is drawn',
+        !!blockAt(wall.drawBlock) && blockAt(wall.drawBlock).visible,
+        `block ${wall.drawBlock}`);
+      check('and none of the regions centred in that block is what says so',
+        centred.length > 0 && !centred.some(s => lvG.isVisible(s)),
+        `${centred.filter(s => lvG.isVisible(s)).length} of ${centred.length} visible`);
+      check('and the wall in question belongs to the wood and not to the shop',
+        /wood/.test(lvG.sectors[wall.frontCol[0]].name) &&
+        lvG.sectors[wall.frontCol[0]].drawBlock !== wall.drawBlock,
+        `${lvG.sectors[wall.frontCol[0]].name} is centred in ${lvG.sectors[wall.frontCol[0]].drawBlock}`);
+    }
+
     /* THE AIR DECIDES THE DRAW DISTANCE. A block past FAR_AIR of it is
        not submitted, and with no air given nothing is dropped. */
-    const blockAt = k => geoG.blockGroups.get(k);
     const someBlock = [...geoG.blockGroups.keys()].map(k => {
       const [bx, by] = k.split(',').map(Number);
       return { k, x: (bx + 0.5) * mgP.BATCH_BLOCK, y: (by + 0.5) * mgP.BATCH_BLOCK };

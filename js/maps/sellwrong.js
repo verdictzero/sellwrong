@@ -1420,9 +1420,13 @@ export function buildSellWrong(opts = {}) {
      WHAT MAKES THEM READ AS AN EXIT AND NOT A HOLE: they are LIT. The
      cross-aisles are at 0.26 and these are at 0.62, so the end of the
      aisle glows and you can see from the middle of the shop where the
-     crowd is going. That is the whole signage budget, and it is more
-     legible than a sign would be — see js/textures.js on why the green
-     man is on the leaf and there is no word anywhere.
+     crowd is going. That used to be the whole signage budget, on the
+     grounds that a word in a texture is always the bug — see the note on
+     the running man in js/textures.js, which still holds, and which is
+     about TEXTURES. A sign is not a texture: it is one repeat on one
+     free box that will never be tiled, and there is now a lit one over
+     the inside of every fire door, which is where a real building puts
+     the only word it trusts you to read while it is on fire.
 
      The leaf itself swings, is shut all night, and opens for anybody
      running — js/slidedoor.js. */
@@ -1430,10 +1434,22 @@ export function buildSellWrong(opts = {}) {
   const exits = [];
   const exitProps = n => ({
     /* the ceiling is the door head, exactly like the entrance: a shut
-       leaf has to be the whole of the opening or you can see over it */
+       leaf has to be the whole of the opening or you can see over it.
+
+       AND THE REST OF IT IS THE STAFF DOOR'S DOORSET, at the user's
+       request and augmented for what this door is. Same reveal lining,
+       same soffit over your head as you come out, same transom panel —
+       and the panel earns its place here twice over, because a band is
+       drawn once for both faces and this one has a cross-aisle on the
+       inside and nine thousand units of wood on the outside. It used to
+       be the stockroom's blockwork, which is a third thing that is
+       neither of them. What the fire exit gets that the staff door does
+       not is the canopy, the light and the cabinet below — see AND WHAT
+       IS OVER ONE — because this is the face of a building and that is
+       the face of a partition. */
     floor: FLOOR_WALK, ceil: DOOR_TOP, light: 0.62,
-    floorTex: 'CONCRETE', ceilTex: 'CEILTILE',
-    wallTex: 'STOCKWAL', upperTex: 'STOCKWAL', lowerTex: 'KERB',
+    floorTex: 'CONCRETE', ceilTex: 'DOORFRAM',
+    wallTex: 'DOORFRAM', upperTex: 'DOORHEAD', lowerTex: 'KERB',
     fuel: FUEL.walk, name: n,
   });
   /* Every cross-aisle's middle, which is also every exit's middle. */
@@ -1485,6 +1501,33 @@ export function buildSellWrong(opts = {}) {
       const mx = side < 0 ? face - 9 : face;
       prop(mx, cy + EXIT_W / 2 + 40, mx + 9, cy + EXIT_W / 2 + 72, 44, 84,
            'METERBOX', { topTex: 'METERBOX', light: 0.36 });
+
+      /* THE FRAME, on both faces, which is the staff door's — two jambs
+         and a head, pressed steel, proud of the wall, free boxes because
+         a sector engine cannot put anything proud of a wall. It sits
+         UNDER the canopy: the head stops at DOOR_TOP + F and the canopy
+         starts at DOOR_TOP + 10, so the two never fight. */
+      const F = 7, D = 6;
+      const inner = side < 0 ? ANCHOR_X0 : ANCHOR_X1;
+      for (const [f0, f1] of [[face, face + side * D], [inner, inner - side * D]]) {
+        const b0 = Math.min(f0, f1), b1 = Math.max(f0, f1);
+        prop(b0, cy - EXIT_W / 2 - F, b1, cy - EXIT_W / 2, FLOOR_WALK, DOOR_TOP + F,
+             'DOORFRAM', { light: 0.52 });
+        prop(b0, cy + EXIT_W / 2, b1, cy + EXIT_W / 2 + F, FLOOR_WALK, DOOR_TOP + F,
+             'DOORFRAM', { light: 0.52 });
+        prop(b0, cy - EXIT_W / 2 - F, b1, cy + EXIT_W / 2 + F, DOOR_TOP, DOOR_TOP + F,
+             'DOORFRAM', { botTex: 'DOORFRAM', light: 0.58, botLight: 0.30 });
+      }
+      /* AND THE SIGN, on the INSIDE, which is the augmentation: the staff
+         door's plate says who may go through it and this one says that
+         you may. It is where a real one is — over the head, on the side
+         people are running from — and it is LIT, which is the only way
+         signage in this building has ever worked. A word is a shape you
+         can count and may live only on something that never repeats; a
+         sign is exactly that. */
+      const sx = side < 0 ? ANCHOR_X0 : ANCHOR_X1 - 10;
+      prop(sx, cy - 48, sx + 10, cy + 48, DOOR_TOP + 16, DOOR_TOP + 64,
+           'EXITSIGN', { botTex: 'EXITSIGN', light: 1.15, botLight: 0.95 });
     }
   }
 
@@ -2022,10 +2065,16 @@ export function buildSellWrong(opts = {}) {
     slide.push({
       x0: x.x, y0: x.y0, x1: x.x, y1: x.y1,
       zBot: FLOOR_WALK, zTop: DOOR_TOP,
-      standoff: 0, swing: true, panicOnly: true, tex: 'EXITDOOR',
+      standoff: 0, swing: true, panicOnly: true, opaque: true, tex: 'EXITDOOR',
       speed: 8, triggerR: EXIT_W + 40, hold: 210,
       lines, sector: S[x.rect.sector],
     });
+    /* A STEEL LEAF IS NOT A WINDOW, and the flood has to know it at build
+       time — see the same line under the staff door for why `blocking`
+       can wait and this cannot. Six shut fire doors were six holes in the
+       side of the building as far as the portal flood was concerned, each
+       one opening a cross-aisle onto nine thousand units of wood. */
+    for (const l of lines) l.blockSight = true;
   }
 
   /* --- and the staff door, which is the same class a third time --------

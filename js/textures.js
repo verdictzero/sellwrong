@@ -1436,13 +1436,36 @@ T.LIGHTPAN = () => {
   return p.snap(0.3);
 };
 
+/* The box over a fire exit, on the inside, and the one place in this
+   building besides the staff door's plate where a word is written down.
+
+   IT IS A LIGHT AND NOT A NOTICE, which is what the old one got wrong:
+   it was a dark green field with darker green lettering on it, so at the
+   0.26 of a cross-aisle at night it was a black rectangle over a black
+   door, and it had never been hung anywhere to find that out. An
+   illuminated exit sign is the brightest small thing in a shop — that is
+   the entire point of one, it has a battery in it for the night the
+   power goes — so the face is bright and the letters are white, and the
+   prop that carries it is lit past one. */
 T.EXITSIGN = () => {
   const p = new Pix(64, 32, 102);
-  p.fill('grey', 0.12);
-  for (let y = 4; y < 28; y++) for (let x = 4; x < 60; x++) p.ink(x, y, 'green', 0.30);
-  p.frame(4, 4, 56, 24, 'green', 0.55);
-  drawTextCentred(p, 'EXIT', 32, 12, 'green', 0.95);
-  return p.snap(0.3);
+  p.fill('grey', 0.16);                       // the housing
+  p.frame(1, 1, 62, 30, 'grey', 0.34);
+  for (let y = 3; y < 29; y++) for (let x = 3; x < 61; x++) p.ink(x, y, 'green', 0.74);
+  /* the diffuser is brighter in the middle, where the tube is */
+  for (let y = 8; y < 24; y++) for (let x = 5; x < 59; x++) p.ink(x, y, 'green', 0.86);
+  p.frame(3, 3, 58, 26, 'green', 0.52);
+  /* the running man, on the left, the same figure that is on the leaf */
+  const gx = 14, gy = 16;
+  p.disc(gx - 1, gy - 7, 1.8, 'bone', 0.98);
+  p.line(gx - 2, gy - 5, gx + 1, gy, 'bone', 0.98);
+  p.line(gx + 1, gy, gx + 5, gy + 6, 'bone', 0.98);
+  p.line(gx + 1, gy, gx - 4, gy + 6, 'bone', 0.98);
+  p.line(gx - 2, gy - 4, gx + 4, gy - 6, 'bone', 0.96);
+  /* and the word, doubled a pixel over so that it holds at a distance */
+  drawTextCentred(p, 'EXIT', 40, 13, 'bone', 0.98, 3);
+  drawTextCentred(p, 'EXIT', 40, 14, 'bone', 0.98, 3);
+  return p.snap(0.2);
 };
 
 /* --------------------------------------------------------------------
@@ -2638,18 +2661,30 @@ T.EXITDOOR = () => {
      because the corridor light rakes across it */
   for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
     p.ink(x, y, 'green', 0.16 + (1 - x / 64) * 0.06 + n[y * 64 + x] * 0.05);
-  /* the frame, and the pressed rib round the panel */
+  /* THE STILES AND THE RAILS, built the way the staff door's are: the
+     hinge side is the edge that does not move and the one the light
+     catches, and the lock stile is the one that has been shouldered
+     through forty thousand times. */
   for (let y = 0; y < 64; y++) {
-    p.ink(0, y, 'green', 0.30); p.ink(1, y, 'green', 0.24);
+    p.ink(0, y, 'green', 0.34); p.ink(1, y, 'green', 0.28);
     p.ink(62, y, 'green', 0.09); p.ink(63, y, 'green', 0.13);
   }
   for (let x = 0; x < 64; x++) {
-    p.ink(x, 0, 'green', 0.34); p.ink(x, 1, 'green', 0.26);
+    p.ink(x, 0, 'green', 0.36); p.ink(x, 1, 'green', 0.28);
     p.ink(x, 62, 'green', 0.10); p.ink(x, 63, 'green', 0.20);
   }
   /* box and frame take a WIDTH and a HEIGHT, not a second corner */
   p.frame(4, 4, 56, 56, 'green', 0.26);
   p.frame(5, 5, 54, 54, 'green', 0.11);
+  /* three butt hinges down the stile it turns on — the same three the
+     staff door has, and on the same side, because u = 0 IS the hinge on
+     every leaf in this game */
+  for (const hy of [8, 32, 56]) {
+    p.box(0, hy - 5, 5, 11, 'green', 0.24);
+    p.box(1, hy - 5, 3, 11, 'grey', 0.40);          // the knuckle
+    p.vline(1, hy - 5, hy + 5, 'bone', 0.52);
+    p.ink(4, hy - 5, 'green', 0.08); p.ink(4, hy + 5, 'green', 0.08);
+  }
   /* THE CRASH BAR, two thirds of the way up because that is hand height
      on a door twice a person tall, with its brackets at either end and a
      shadow under it. Bone rather than grey: a push bar is anodised and it
@@ -2674,11 +2709,27 @@ T.EXITDOOR = () => {
   p.line(gx + 1, gy + 1, gx + 4, gy + 5, 'bone', 0.92);   // trailing leg
   p.line(gx + 1, gy + 1, gx - 3, gy + 5, 'bone', 0.92);   // leading leg
   p.line(gx - 2, gy - 2, gx + 3, gy - 4, 'bone', 0.86);   // arm, thrown forward
+  /* THE KICK PLATE, which this door wanted for as long as the staff door
+     did and for a better reason: the crowd that comes through here is
+     not carrying a cage, it is RUNNING, and what hits the bottom of a
+     fire door in an evacuation is everybody's feet. Stainless, brushed,
+     and a good deal more beaten up than the one at the back of the shop,
+     because this one is on the weather side of the building. */
+  for (let y = 48; y < 63; y++) for (let x = 3; x < 61; x++)
+    p.ink(x, y, 'grey', 0.50 + n[y * 64 + x] * 0.10 - (y - 48) * 0.006);
+  p.hline(3, 60, 48, 'bone', 0.66); p.hline(3, 60, 49, 'grey', 0.26);
+  for (const sx of [9, 19, 30, 41, 52, 58]) { p.ink(sx, 48, 'grey', 0.18); p.ink(sx, 49, 'grey', 0.15); }
+  for (let i = 0; i < 80; i++)                                   // brushed, not polished
+    p.wash(3 + ((i * 29) % 58), 50 + ((i * 11) % 13), 'grey', 0.36, 0.30);
+  /* AND THE WEATHER, which the staff door never sees: this leaf faces
+     nine thousand units of wood, and what runs down it runs from the
+     hinges and from under the bar. */
+  streaks(p, 4, 1681, 'rust', 0.24, 0.20);
+  for (const hy of [8, 32, 56]) for (let y = hy + 5; y < Math.min(64, hy + 22); y++)
+    p.wash(2 + ((y * 3) % 3), y, 'rust', 0.24, 0.30 * (1 - (y - hy - 5) / 18));
   /* and the bottom eighteen inches, which every trolley in the shop has
      hit at least once */
   p.grime(0.34, 'grey', 0.08, 169);
-  for (let y = 50; y < 62; y++) for (let x = 3; x < 61; x++)
-    if (n[y * 64 + x] > 0.62) p.ink(x, y, 'grey', 0.10 + n[y * 64 + x] * 0.10);
   return p.snap(0.3);
 };
 
@@ -3466,7 +3517,7 @@ const SIZES = {
   DOORFRAM: { w: 48, h: 48 },
   DOORHEAD: { w: 64, h: 64 },
   DOORSIGN: { w: 80, h: 40 },
-  EXITSIGN: { w: 64, h: 32 },
+  EXITSIGN: { w: 96, h: 48 },
   PALLET:   { w: 64, h: 16, masked: true },
   TROLLEY:  { w: 64, h: 48, masked: true },
 

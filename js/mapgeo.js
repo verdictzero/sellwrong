@@ -252,7 +252,43 @@ export function buildLevelGeometry(level, bank) {
   const blockSectors = new Map(), blockLines = new Map();
   const push = (m, k, v) => { let a = m.get(k); if (!a) m.set(k, a = []); a.push(v); };
   for (const s of staticSectors) { s.drawBlock = sectorBlock(s); push(blockSectors, s.drawBlock, s); }
-  for (const l of staticLines) { const k = lineBlock(l); l.drawBlock = k; push(blockLines, k, l); }
+  /* AND WHO ANSWERS FOR A BLOCK, which is not the same question as what
+     is drawn in it, and the difference was a real hole.
+
+     applyVisibility asks a block whether any REGION in it is visible. A
+     region is in the block its middle lands in; a line is in the block
+     its MIDPOINT lands in. Those two are usually the same block and
+     occasionally are not — and the case where they are not is the one
+     that matters, because it is a big outdoor region owning the wall of
+     the building it wraps round. The wood behind the west wing is nine
+     thousand units of forest whose middle is a block and a half away
+     from the supermarket's flank, and that flank is the wood's own
+     one-sided wall: its geometry lands in the anchor's block, whose
+     visibility is answered entirely by the anchor's aisles.
+
+     So the whole west side of the building was drawn only because the
+     portal flood leaked through the fire doors into the shop. Shut the
+     doors to sight — which is what a steel leaf does — and the building
+     loses its outside. Found by giving the fire exits the staff door's
+     `opaque`, and it had been true since the day blocks were introduced.
+
+     The fix is to let a line's OWNERS answer for the block its geometry
+     went into, as well as the regions centred there. Nothing moves: the
+     triangles stay where they are, so a block is still rebuilt on its
+     own and still culled by its own corner. */
+  const blockVis = new Map();
+  const seen = new Map();
+  const answersFor = (k, s) => {
+    let set = seen.get(k); if (!set) seen.set(k, set = new Set());
+    if (set.has(s)) return;
+    set.add(s); push(blockVis, k, s);
+  };
+  for (const [k, list] of blockSectors) for (const s of list) answersFor(k, s);
+  for (const l of staticLines) {
+    const k = lineBlock(l); l.drawBlock = k; push(blockLines, k, l);
+    for (let i = 0; i < l.frontCol.length; i++) answersFor(k, level.sectors[l.frontCol[i]]);
+    for (let i = 0; i < l.backCol.length; i++) answersFor(k, level.sectors[l.backCol[i]]);
+  }
   /* the roofs, which belong to no sector at all — see roofGeometry */
   const blockRoofs = new Map();
   for (const r of level.roofs || []) push(blockRoofs, blockOf((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2), r);
@@ -429,7 +465,7 @@ export function buildLevelGeometry(level, bank) {
        the frustum. */
     const vr2 = lv.visRadius2;
     for (const [k, g] of blockGroups) {
-      const list = blockSectors.get(k);
+      const list = blockVis.get(k);
       let on = false;
       if (!list || !list.length) on = true;
       else if (ex !== null && vr2 !== undefined && vr2 !== Infinity && blockOutOfFlood(k, ex, ey, vr2)) on = true;
