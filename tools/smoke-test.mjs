@@ -129,24 +129,25 @@ check('ramps are monotonic in luma', ['grey', 'red', 'blue', 'fire'].every(k => 
     }));
 }
 
-/* ---------- THE RAMPS ARE THE MATERIALS, THE PALETTE IS THE BOX -------
+/* ---------- THE ART PALETTE AND THE DISPLAY PALETTE -------------------
 
-   These were one thing for most of this project: the 256 WERE the ramps
-   laid end to end, and ramp(key, t) handed back a palette entry BY
-   INDEX — which is the reason there could only ever be one palette,
-   because swapping the box makes every index mean a different colour
-   and every texture in the game comes out scrambled rather than
-   recoloured. They are two things now, and the first duty of these
-   checks is that nothing moved: under the default the two lists are the
-   same list, so a colour asked for is a colour the box has and the snap
-   is the identity.
+   Two palettes answering different questions, at the user's request.
+   The ART palette is what a picture is PAINTED in — the fifteen ramps,
+   and it never changes. The DISPLAY palette is what the SCREEN can
+   hold: the post pass dithers the finished frame and snaps it through a
+   lookup cube built from that one, and so does the sky as it bakes.
+
+   THAT WAY ROUND IS THE WHOLE POINT. The art keeps all the colour it
+   was drawn with and the ordered dither carries it down to the hardware
+   box at the last moment. Painting the textures in the small box as
+   well was the first attempt and it was worse — dithering at 64 texels
+   and then again at grid resolution is not twice the texture, it is
+   noise — so the first duty of these checks is that the ART DOES NOT
+   MOVE when the screen's box does.
    ------------------------------------------------------------------ */
 {
-  check('the default box is still the ramps, entry for entry',
-    pal.paletteName === 'ramps' && pal.PALETTE.length === pal.RAMP_PALETTE.length &&
-    pal.PALETTE.every((c, i) => c.every((v, k) => v === pal.RAMP_PALETTE[i][k])));
-  /* and ramp() still answers with exactly the entry it used to, which is
-     what makes this change invisible until somebody swaps the box */
+  check('the art palette is the ramps, entry for entry',
+    pal.PALETTE.length === 256 && pal.PALETTE === pal.RAMP_PALETTE);
   let drift = 0;
   for (const key of Object.keys(pal.RAMP))
     for (let i = 0; i <= 64; i++) {
@@ -158,9 +159,9 @@ check('ramps are monotonic in luma', ['grey', 'red', 'blue', 'fire'].every(k => 
   check('and every ramp still lands on the palette entry it always did', drift === 0, `${drift} drifted`);
 
   /* THE UZEBOX BOX is a piece of hardware: three bits of red, three of
-     green and two of blue through a resistor ladder. Generated here
-     rather than pasted, because 256 lines of hex is a table nobody can
-     check — so the check is against the file it came from. */
+     green and two of blue through a resistor ladder. Generated rather
+     than pasted, because 256 lines of hex is a table nobody can check —
+     so the check is against the file it came from. */
   const fsP = await import('node:fs');
   const hex = fsP.readFileSync(new URL('../art/uzebox.hex', import.meta.url), 'utf8')
     .trim().split('\n').filter(Boolean)
@@ -173,33 +174,66 @@ check('ramps are monotonic in luma', ['grey', 'red', 'blue', 'fire'].every(k => 
   check('and it is eight by eight by four, which is where two bits of blue shows',
     levels(0) === 8 && levels(1) === 8 && levels(2) === 4);
 
-  /* SWAPPING IT. setPalette changes the active box and NOTHING else —
-     what was already painted has to be painted again, which is
-     applyPalette in js/main.js and is checked further down. */
-  check('swapping to it is refused for a name that is not a box', pal.setPalette('nonsense') === false);
-  check('and refused for the box already in use', pal.setPalette('ramps') === false);
-  check('and taken for one that is', pal.setPalette('uzebox') === true && pal.paletteName === 'uzebox');
-  check('after which the active box IS the uzebox one',
-    pal.PALETTE.every((c, i) => c.every((v, k) => v === pal.UZEBOX_PALETTE[i][k])));
-  /* the materials do not move: a ramp is arithmetic and stays what it is */
-  check('but a material is still the same material, because a ramp is not a palette entry',
-    pal.ramp('olive', 0.5).every((v, k) => v === pal.RAMP_PALETTE[pal.RAMP.olive.start + 7][k]) ||
-    pal.ramp('olive', 0.5).length === 3);
-  const olive = pal.ramp('olive', 0.5);
-  check('and asking the box for it lands on a colour the box actually has',
-    pal.UZEBOX_PALETTE.some(c => c.every((v, k) => v === pal.PALETTE[pal.nearestIndex(...olive)][k])));
-  /* THE PHOTOGRAPHS ARE INDICES into the ramp palette — that is what
-     tools/bake-art.mjs wrote — so decoding one has to go through the
-     ramp palette and then snap, or every headstone changes colour when
-     the box does. */
-  const viaRamp = pal.fromRampPalette(40);
-  check('a baked photograph reads through the ramp palette and into the box',
-    pal.UZEBOX_PALETTE.some(c => c.every((v, k) => v === viaRamp[k])));
-  pal.setPalette('ramps');
-  check('and back in the default box it is the ramp colour untouched',
-    pal.fromRampPalette(40).every((v, k) => v === pal.RAMP_PALETTE[40][k]));
+  /* CHOOSING WHAT THE SCREEN HOLDS */
+  check('the screen starts in the same box the art is in', pal.displayName === 'ramps' &&
+    pal.displayPalette() === pal.RAMP_PALETTE);
+  check('a box that is not a box is refused', pal.setDisplayPalette('nonsense') === false);
+  check('and the one already in use is refused', pal.setDisplayPalette('ramps') === false);
+  check('and the uzebox one is taken', pal.setDisplayPalette('uzebox') === true &&
+    pal.displayName === 'uzebox' && pal.displayPalette() === pal.UZEBOX_PALETTE);
+
+  /* THE ART DOES NOT MOVE. This is the check the whole design exists
+     for: bake a texture with the screen in each box and hold the two
+     against each other, texel for texel. */
+  {
+    const texP = await import('../js/textures.js');
+    const before = texP.TEXTURE_GENERATORS.CLAPBRD();
+    pal.setDisplayPalette('ramps');
+    const after = texP.TEXTURE_GENERATORS.CLAPBRD();
+    pal.setDisplayPalette('uzebox');
+    let same = true;
+    for (let i = 0; i < before.data.length; i++) if (before.data[i] !== after.data[i]) { same = false; break; }
+    check('a texture baked with the screen in either box is the same texture', same);
+    check('and every texel of it is a colour the ART palette has',
+      [...Array(64)].every((_, i) => {
+        const o = i * 4;
+        return pal.PALETTE.some(c => c[0] === before.data[o] && c[1] === before.data[o + 1] && c[2] === before.data[o + 2]);
+      }));
+  }
+
+  /* AND THE LOOKUP CUBE FOLLOWS THE SCREEN, which is the only thing
+     that does. Built with no argument it is the display box; given one
+     it still honours it, because the sky's own test wants to ask about
+     a palette that is not the current one. */
+  {
+    const uze = pal.buildLutAtlas();
+    const N = pal.LUT_SIZE, W = uze.width;
+    const look = (atlas, r, g, b) => {
+      const R = Math.round(r / 255 * (N - 1)), G = Math.round(g / 255 * (N - 1)), B = Math.round(b / 255 * (N - 1));
+      const o = ((G * W) + (B * N + R)) * 4;
+      return [atlas.data[o], atlas.data[o + 1], atlas.data[o + 2]];
+    };
+    const probes = [[255, 255, 255], [0, 0, 0], [255, 140, 20], [90, 90, 100], [40, 60, 132]];
+    check('with the screen in the uzebox box the cube snaps to uzebox colours',
+      probes.every(c => {
+        const s2 = look(uze, ...c);
+        return pal.UZEBOX_PALETTE.some(q => q[0] === s2[0] && q[1] === s2[1] && q[2] === s2[2]);
+      }));
+    /* and it is a DIFFERENT cube, or the setting would do nothing */
+    const ramps = pal.buildLutAtlas(pal.RAMP_PALETTE);
+    let differs = 0;
+    for (let i = 0; i < uze.data.length; i += 4) if (uze.data[i] !== ramps.data[i]) differs++;
+    check('and it is not the same cube the ramps make, or the setting would do nothing',
+      differs > uze.data.length / 8, `${differs} cells of ${uze.data.length / 4} differ`);
+    check('and an explicit palette is still honoured, which the sky test needs',
+      probes.every(c => {
+        const s2 = look(ramps, ...c);
+        return pal.RAMP_PALETTE.some(q => q[0] === s2[0] && q[1] === s2[1] && q[2] === s2[2]);
+      }));
+  }
+  pal.setDisplayPalette('ramps');
   check('and the default is restored for everything after this',
-    pal.paletteName === 'ramps' && pal.PALETTE[0].every((v, k) => v === pal.RAMP_PALETTE[0][k]));
+    pal.displayName === 'ramps' && pal.displayPalette() === pal.RAMP_PALETTE);
 }
 
 /* ---------- the pixel toolkit ---------- */
@@ -3720,10 +3754,12 @@ await (async () => {
   }
 
   /* --- THE DITHER IS ONE STEP OF A 16 16 16 GRID -----------------
-     It was one step of the lookup cube's 32. The step is a constant
-     the pipeline exports — three numbers for three channels — and the
-     post pass and the sky bake both add it off the one GLSL function,
-     so there is one grain and it is the grain asked for.
+     It was one step of the lookup cube's 32. The step is three numbers
+     for three channels, it belongs to the box the frame is snapped to,
+     and the post pass and the sky bake both add it off the one GLSL
+     function, so there is one grain and it is the grain asked for. In
+     the box the game starts in, it is the sixteenths the user asked
+     for.
      --------------------------------------------------------------- */
   {
     const L = await import('../js/lofi.js');
@@ -3733,6 +3769,16 @@ await (async () => {
     check('the dither is one step of a 16 by 16 by 16 RGB grid, at the user\'s request',
       Array.isArray(L.DITHER_LEVELS) && L.DITHER_LEVELS.length === 3 && L.DITHER_LEVELS.every(v => v === 16),
       String(L.DITHER_LEVELS));
+    /* AND IT NAMES THE STARTING BOX rather than reading the live one. A
+       module is evaluated once, at whatever moment something first
+       imports it, so a constant that asks which box is CURRENT freezes
+       whatever the setting happened to be then — which this suite found
+       by importing a texture in the middle of a palette test. */
+    check('and it names the box the game starts in, not whichever one is current',
+      /DITHER_LEVELS = DISPLAY_PALETTES\[DEFAULT_DISPLAY\]\.dither;/.test(lofiSrc));
+    check('and the materials ask for the current one, which is what a material is built with',
+      /uDitherLevels: \{ value: new THREE\.Vector3\(\.\.\.displayDither\(\)\) \}/.test(lofiSrc) &&
+      /uDitherLevels: \{ value: new V3\(\.\.\.displayDither\(\)\) \}/.test(skySrc));
     check('and the shader divides by it per channel, in the one function both passes use',
       /uniform vec3\s+uDitherLevels/.test(L.PALETTE_GLSL) && /vec3 ditherAt\(vec2 cell, float amount\)/.test(L.PALETTE_GLSL) &&
       /\/ uDitherLevels;/.test(L.PALETTE_GLSL) &&
@@ -3741,8 +3787,8 @@ await (async () => {
     check('and neither pass is still adding a thirty-second on its own',
       !/1\.0 \/ 32\.0/.test(lofiSrc) && !/1\.0 \/ 32\.0/.test(skySrc));
     check('and both materials carry the levels as a uniform',
-      /uDitherLevels: \{ value: new THREE\.Vector3\(DITHER_LEVELS\[0\], DITHER_LEVELS\[1\], DITHER_LEVELS\[2\]\) \}/.test(lofiSrc) &&
-      /uDitherLevels: \{ value: new V3\(DITHER_LEVELS\[0\], DITHER_LEVELS\[1\], DITHER_LEVELS\[2\]\) \}/.test(skySrc));
+      /uDitherLevels: \{ value: new THREE\.Vector3\(/.test(lofiSrc) &&
+      /uDitherLevels: \{ value: new V3\(/.test(skySrc));
   }
 
   /* --- THE SKY IS 2048 BY 512 ------------------------------------
@@ -8743,74 +8789,123 @@ section('the town on fire');
 
    and a tic, everywhere, 3.8ms -> 1.1ms.
    ------------------------------------------------------------------ */
-/* ---------- and the box it is all drawn out of ----------
+/* ---------- and the box the screen can hold ----------
 
-   A palette setting, at the user's request, so the two can be flipped
-   between and judged in motion. Everything below is about the one thing
-   that can go wrong with it: something painted out of the old box that
-   nobody remembered to paint again.
+   A palette setting, at the user's request: the art is always the
+   fifteen ramps, and what changes is the box the finished frame is
+   DITHERED DOWN TO. Everything here is about the one thing that can go
+   wrong with it — a picture of the old box that nobody remembered to
+   make again — and about the one thing that must NOT happen, which is
+   the art moving.
    ------------------------------------------------------------------ */
-section('swapping the box of crayons');
+section('the box the screen can hold');
 {
   const fsQ = await import('node:fs');
   const mainSrc = fsQ.readFileSync(new URL('../js/main.js', import.meta.url), 'utf8');
   const lofiQ = await import('../js/lofi.js');
   const lofiSrc = fsQ.readFileSync(new URL('../js/lofi.js', import.meta.url), 'utf8');
+  const palQ = await import('../js/palette.js');
 
-  /* THE FRAMES THAT CAME FROM A PHOTOGRAPH must survive a re-bake. The
-     people, the troops and the splats land on top of stand-ins of the
-     SAME NAME that js/sprites.js already baked, so a key does not say
-     where a frame came from — and re-baking blindly puts the stand-ins
-     back and the crowd loses its faces. */
-  const sprQ = await import('../js/sprites.js');
-  const bankQ = sprQ.bakeSprites();
-  check('a frame this game drew itself says so', [...bankQ.frames.values()].every(f => !f.fromArt));
-  const peopleSrc = fsQ.readFileSync(new URL('../js/people.js', import.meta.url), 'utf8');
-  const loadSrc = fsQ.readFileSync(new URL('../js/spriteload.js', import.meta.url), 'utf8');
-  const marks = (peopleSrc.match(/fromArt: true/g) || []).length + (loadSrc.match(/fromArt: true/g) || []).length;
-  check('and every loader that lands a picture on top of one marks it', marks >= 5, `${marks} loaders`);
-  check('and the re-bake skips exactly those', /if \(entry\.fromArt\) continue;/.test(mainSrc));
-
-  /* THE LOOKUP CUBE IS THE PALETTE, as far as the GPU is concerned, and
-     the sky baker was handed this exact texture object at start-up — so
-     it is rewritten in place rather than replaced, or the two drift
-     apart silently. */
+  /* THE LOOKUP CUBE IS THE DISPLAY PALETTE, as far as the GPU is
+     concerned, and the sky baker was handed this exact texture object at
+     start-up — so it is rewritten in place rather than replaced, or the
+     two drift apart silently and only the sky is in the old box. */
   check('the pipeline can rebuild its lookup cube', typeof lofiQ.LofiPipeline.prototype.rebuildLut === 'function');
   check('and rewrites it in place rather than making a new one',
     /this\.lutData\.set\(atlas\.data\);/.test(lofiSrc) && /this\.lut\.needsUpdate = true;/.test(lofiSrc) &&
     !/rebuildLut\(\)[\s\S]{0,300}new THREE\.DataTexture/.test(lofiSrc));
+  check('and it builds from the display box rather than the art one',
+    /buildLutAtlas\(palette = displayPalette\(\)\)/.test(
+      fsQ.readFileSync(new URL('../js/palette.js', import.meta.url), 'utf8')));
 
-  /* AND THE WHOLE LIST. Everything painted out of the palette has to be
-     painted again, and this is the only place that knows what that is. */
+  /* AND THE WHOLE LIST OF WHAT HAS TO BE MADE AGAIN, which is two
+     pictures of the cube and nothing else — not the textures, not the
+     sprites, because those are painted in the art palette and the art
+     palette did not move. */
   const fn = mainSrc.slice(mainSrc.indexOf('function applyPalette('), mainSrc.indexOf('/* and the choice the player last made'));
-  check('the swap gives up early when the box did not change', /if \(!setPalette\(name\)\) return false;/.test(fn));
-  for (const [what, re] of [
-    ['the lookup cube the post pass snaps with', /pipeline\.rebuildLut\(\)/],
-    ['the textures', /bakeTextures\(\)/],
-    ['the sprites', /bakeSprites\(\)/],
-    ['the sky, which was baked through the old cube', /skyBaker\.bake\(/],
-  ]) check(`and paints ${what} again`, re.test(fn), fn.length + ' chars of it');
-  check('and swaps the canvas behind a texture rather than the texture, which every material is holding',
-    /entry\.texture\.image = f\.pix\.toCanvas\(\);/.test(fn) && /entry\.texture\.needsUpdate = true;/.test(fn) &&
-    !/new THREE\.CanvasTexture/.test(fn));
-  check('and the choice is a setting that is remembered',
+  check('the swap gives up early when the box did not change', /if \(!setDisplayPalette\(name\)\) return false;/.test(fn));
+  check('and rebuilds the lookup cube the post pass snaps through', /pipeline\.rebuildLut\(\)/.test(fn));
+  check('and re-bakes the sky, which was baked THROUGH that cube', /skyBaker\.bake\(/.test(fn));
+  check('and does not re-bake the art, which is painted in a palette that did not change',
+    !/bakeTextures\(/.test(fn) && !/bakeSprites\(/.test(fn), `${fn.trim().split('\n').length} lines`);
+  check('and nothing is left marking frames for a re-bake that no longer happens',
+    !/fromArt/.test(fsQ.readFileSync(new URL('../js/sprites.js', import.meta.url), 'utf8')) &&
+    !/fromArt/.test(fsQ.readFileSync(new URL('../js/people.js', import.meta.url), 'utf8')) &&
+    !/fromArt/.test(mainSrc));
+
+  check('the choice is a setting that is remembered',
     /palette: 0,/.test(mainSrc) && /PALETTE_SET/.test(mainSrc) &&
     /ladder\('opt-palette', 'palette', PALETTE_SET/.test(mainSrc));
   check('and is applied at boot as well as on the flip',
     /const wanted = PALETTE_SET\[prefs\.palette\]\?\.v;/.test(mainSrc) &&
-    /if \(wanted && wanted !== paletteName\) applyPalette\(wanted\);/.test(mainSrc));
+    /if \(wanted && wanted !== displayName\) applyPalette\(wanted\);/.test(mainSrc));
   check('and the saved settings were versioned up, so an old one does not come back without it',
     /const PREF_VERSION = 7;/.test(mainSrc));
   const htmlQ = fsQ.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   check('and there is a button for it', /id="opt-palette"/.test(htmlQ));
 
-  /* THE DEFAULT IS UNTOUCHED BY ALL OF IT, which is the check that
-     matters most: this whole section is allowed to exist only because
-     the game as it was drawn is exactly the game as it was drawn. */
-  const palQ = await import('../js/palette.js');
-  check('and after everything above, the game is still in its own box',
-    palQ.paletteName === 'ramps' &&
-    palQ.PALETTE.every((c, i) => c.every((v, k) => v === palQ.RAMP_PALETTE[i][k])));
+  /* AND THE DITHER AIMS AT THE BOX IT SNAPS TO. A Bayer threshold that
+     moves a pixel a sixteenth of a channel cannot carry it across a gap
+     of eighty-five, which is what four levels of blue are: the picture
+     comes out flat, then a narrow band of checker where the two nearest
+     entries happen to be within a sixteenth of each other, then flat
+     again — banding with a seam in it. So the grid is a property of the
+     box and travels with it. */
+  {
+    const sky = fsQ.readFileSync(new URL('../js/skyart.js', import.meta.url), 'utf8');
+    check('each box carries the grid its dither steps on',
+      palQ.DISPLAY_PALETTES.ramps.dither.join() === '16,16,16' &&
+      palQ.DISPLAY_PALETTES.uzebox.dither.join() === '7,7,3');
+    const levels = a => new Set(palQ.UZEBOX_PALETTE.map(c => c[a])).size;
+    check('and the uzebox one is that box\'s own gaps, not a number somebody liked',
+      palQ.DISPLAY_PALETTES.uzebox.dither.every((v, k) => v === levels(k) - 1),
+      `${levels(0)}/${levels(1)}/${levels(2)} levels are ${levels(0)-1}/${levels(1)-1}/${levels(2)-1} gaps`);
+    check('and rebuilding the cube pushes the new grid at the post pass',
+      /const d = displayDither\(\);[\s\S]{0,120}uDitherLevels\.value\.set/.test(lofiSrc));
+    check('and the sky picks it up on the bake, which is its only chance to',
+      /displayDither/.test(sky) && /u\.uDitherLevels\.value\.set\(d\[0\], d\[1\], d\[2\]\);/.test(sky));
+    /* AND IT FOLLOWS THE SETTING, which is the whole of the wiring */
+    palQ.setDisplayPalette('uzebox');
+    const under = palQ.displayDither().join();
+    palQ.setDisplayPalette('ramps');
+    check('and the live grid follows whichever box is in use',
+      under === '7,7,3' && palQ.displayDither().join() === '16,16,16');
+  }
+
+  /* HOW FAR THE PICTURE HAS TO TRAVEL to get into the small box, which
+     is the measurement the whole design rests on. If the art's 256 all
+     landed on their own uzebox entry there would be nothing to dither
+     and the setting could be a re-bake; they do not, they pile up on a
+     third of that, and the distance between a colour and the nearest
+     thing the hardware has is what the ordered dither spends its time
+     covering. */
+  {
+    const near = c => {
+      let best = 1e9, hit = null;
+      for (const q of palQ.UZEBOX_PALETTE) {
+        const d = (c[0] - q[0]) ** 2 + (c[1] - q[1]) ** 2 + (c[2] - q[2]) ** 2;
+        if (d < best) { best = d; hit = q; }
+      }
+      return [Math.sqrt(best), hit];
+    };
+    const landed = new Set();
+    let sum = 0, worst = 0;
+    for (const c of palQ.RAMP_PALETTE) {
+      const [d, hit] = near(c);
+      landed.add(hit.join(','));
+      sum += d; worst = Math.max(worst, d);
+    }
+    note('the art in the small box', `256 art colours land on ${landed.size} uzebox ones, ` +
+      `${(sum / 256).toFixed(1)}/255 away on average and ${worst.toFixed(0)} at worst`);
+    check('the art has colours the small box does not, which is what the dither is for',
+      landed.size < 256 && sum / 256 > 2, `${landed.size} distinct, mean ${(sum / 256).toFixed(1)}`);
+  }
+
+  /* THE ART IS UNTOUCHED BY ALL OF IT, which is the check that matters
+     most: this whole section is allowed to exist only because the game
+     as it was drawn is exactly the game as it was drawn. */
+  check('and after everything above, the art is still in its own box and the screen in the default',
+    palQ.displayName === 'ramps' && palQ.PALETTE === palQ.RAMP_PALETTE);
 }
 
 section('what it costs to draw');

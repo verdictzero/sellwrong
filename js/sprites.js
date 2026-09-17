@@ -37,7 +37,7 @@
 import * as THREE from 'three';
 import { Pix, fbm, valueNoise, speckle, drawTextCentred } from './pixel.js';
 import { makeRng, pRandom } from './util.js';
-import { ramp, fromRampPalette } from './palette.js';
+import { ramp, PALETTE } from './palette.js';
 import { WEAPON_TILE, WEAPON_TOP, CLEAR_INDEX, CUTOUTS } from './art-data.js';
 import { CELLS, ADULT, SHOPPERS, SPLATS, ASHES, BLASTS,
          SHOPPER_SPRITE, SPLAT_SPRITE, ASH_SPRITE, BLAST_SPRITE,
@@ -65,13 +65,6 @@ export class SpriteBank {
       /* how far up off the floor the sprite's foot sits — 0 for anything
          standing on it, positive for something hanging or flying */
       lift: opts.lift ?? 0,
-      /* WHETHER THIS FRAME IS A PICTURE SOMEBODY ELSE DREW. The people,
-         the troops and the splats land on top of stand-ins of the same
-         name that this file already baked (see js/spriteload.js), so a
-         frame's key does not say where it came from — and the thing
-         that re-bakes the art when the palette changes has to know, or
-         it puts the stand-ins back and the crowd loses its faces. */
-      fromArt: !!opts.fromArt,
     };
     this.frames.set(key, entry);
     return entry;
@@ -615,9 +608,7 @@ export function decodeArtTile(tile, w, h) {
   for (let i = 0; i + 1 < bytes.length && at < N; i += 2)
     for (let n = bytes[i + 1]; n > 0 && at < N; n--, at++) {
       if (bytes[i] === CLEAR_INDEX) continue;
-      /* out of the palette these indices were baked against, and into
-         whatever box is active — see fromRampPalette */
-      const c = fromRampPalette(bytes[i]);
+      const c = PALETTE[bytes[i]];
       p.set(at % w, (at / w) | 0, c[0], c[1], c[2], 255);
     }
   return p;

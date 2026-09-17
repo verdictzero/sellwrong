@@ -152,14 +152,14 @@ function rampColors(spec) {
 
    So they are two things now. RAMP_RGB is what a material IS: fifteen
    ramps of arithmetic, computed once, never changing, and what
-   ramp(key, t) answers with. PALETTE is what the machine can actually
-   show, and it can be swapped — see setPalette. Painting picks the
-   material; snapping (snapImageData, nearestIndex) puts it in the box.
+   ramp(key, t) answers with. The palette is what a machine can actually
+   show. Painting picks the material; snapping (snapImageData,
+   nearestIndex) puts it in the box.
 
-   UNDER THE DEFAULT THE TWO ARE THE SAME LIST, so a colour asked for is
-   a colour the box has and the snap is the identity — which is why this
-   change is invisible until somebody swaps the box, and why the test
-   holds the default palette against the ramps entry for entry.
+   THE ART PALETTE AND THE BOX BELOW IT ARE THE SAME LIST, so a colour
+   asked for is a colour it has and the snap is the identity. Which box
+   the SCREEN holds is a separate question and is answered further down,
+   under TWO PALETTES, AND THEY ARE ANSWERS TO DIFFERENT QUESTIONS.
    ------------------------------------------------------------------ */
 const RAMP_RGB = {};
 export const RAMP_PALETTE = (() => {
@@ -203,31 +203,89 @@ export const UZEBOX_PALETTE = (() => {
   return pal;
 })();
 
-/** The boxes there are, by the name the setting uses. */
-export const PALETTES = { ramps: RAMP_PALETTE, uzebox: UZEBOX_PALETTE };
+/* --------------------------------------------------------------------
+   TWO PALETTES, AND THEY ARE ANSWERS TO DIFFERENT QUESTIONS
 
-/* THE ACTIVE BOX, and it is a mutable array rather than a rebindable
-   one on purpose: a dozen modules imported PALETTE years ago and hold
-   the reference, so the contents are replaced in place and every one of
-   them is looking at the new box without being told. */
-export const PALETTE = RAMP_PALETTE.slice();
-export let paletteName = 'ramps';
+   THE ART PALETTE is what a picture is PAINTED in: the fifteen ramps,
+   and it never changes. Every texture and every sprite in the game is
+   snapped to it as it is baked, which is what makes them look like they
+   came out of one box of crayons, and it is the whole of this game's
+   colour. PALETTE is that, and nearestIndex and snapImageData snap to
+   it.
+
+   THE DISPLAY PALETTE is what the SCREEN can hold. The post pass
+   dithers the finished frame and snaps it through a lookup cube built
+   from this one (buildLutAtlas below, and js/lofi.js), and so does the
+   sky as it bakes. By default it is the same list, so the snap is the
+   identity and nothing happens — and it can be the Uzebox's instead,
+   which is a real console's hardware limit.
+
+   THAT WAY ROUND ON PURPOSE, at the user's request, and it is the
+   difference between a good picture and a noisy one. The art keeps all
+   the colour it was drawn with and the ORDERED DITHER carries it down
+   to the hardware box at the last moment — which is how you get a
+   console's palette to look like a console rather than like a
+   photograph that has been through it twice. Painting the textures in
+   the small box as well meant dithering at 64 texels and then dithering
+   again at grid resolution, and two dithers over each other is not
+   twice the texture, it is noise.
+   ------------------------------------------------------------------ */
+export const PALETTE = RAMP_PALETTE;
+
+/* --------------------------------------------------------------------
+   AND THE DITHER'S GRID BELONGS TO THE BOX, not to the pipeline.
+
+   The Bayer threshold moves a pixel up to half a step of an RGB grid
+   before the snap, and a dither is only doing its job if that step is
+   about as wide as the GAP IT HAS TO CROSS. The gap is a property of
+   the box, so the step is too, and this is where both live.
+
+   RAMPS: 16 16 16, a sixteenth of each channel, chosen by hand at the
+   user's request and unchanged. The ramps are not a regular cube —
+   fifteen curves through the colour solid — so there is no spacing to
+   derive and the number is a look.
+
+   UZEBOX: 7 7 3, which is not a look, it is the hardware. Eight levels
+   of red are seven gaps of 255/7; four of blue are THREE gaps of 85.
+   Leave the step at a sixteenth there and the dither spans sixteen
+   units of an eighty-five-unit gap — a narrow band of checker with
+   flat colour either side of it, which is the banding it was supposed
+   to break up, with a seam through it. At 7 7 3 the whole gap
+   checkers and a gradient the box cannot hold comes out as a gradient.
+   ------------------------------------------------------------------ */
+
+/** The boxes the SCREEN can be, by the name the setting uses: the
+ *  colours it holds, and the RGB grid its dither steps on. */
+export const DISPLAY_PALETTES = {
+  ramps:  { colors: RAMP_PALETTE,   dither: [16, 16, 16] },
+  uzebox: { colors: UZEBOX_PALETTE, dither: [7, 7, 3] },
+};
+
+/** The box the game starts in, and the one a module that needs a number
+ *  at load time has to ask for BY NAME. displayName is a live value: a
+ *  module constant that reads it is a constant only until somebody
+ *  changes the setting, which is a bug waiting for whoever imports that
+ *  module second. */
+export const DEFAULT_DISPLAY = 'ramps';
+export let displayName = DEFAULT_DISPLAY;
+
+/** Which one the lookup cube is built from. */
+export function displayPalette() { return DISPLAY_PALETTES[displayName].colors; }
+
+/** And the grid its dither is one step of — see the note above. */
+export function displayDither() { return DISPLAY_PALETTES[displayName].dither; }
 
 /**
- * Swap the box of crayons.
+ * Choose what the screen can hold.
  *
- * Everything already PAINTED out of the old one has to be painted again
- * — the textures, the sprites, the lookup cube the post pass snaps with
- * and the sky that was baked through it — and this function does none
- * of that, because none of it lives here. See applyPalette in
- * js/main.js, which is the one place that knows the whole list.
+ * It changes nothing that is already painted: the lookup cube built
+ * from it, the dither grid that aims at it, and the sky that was baked
+ * through both, have to be made again. See applyPalette in js/main.js,
+ * which is the one place that knows which those are.
  */
-export function setPalette(name) {
-  const pal = PALETTES[name];
-  if (!pal || name === paletteName) return false;
-  for (let i = 0; i < 256; i++) PALETTE[i] = pal[i].slice();
-  paletteName = name;
-  _snapCache.fill(-1);          // every answer it cached was about the old box
+export function setDisplayPalette(name) {
+  if (!DISPLAY_PALETTES[name] || name === displayName) return false;
+  displayName = name;
   return true;
 }
 
@@ -235,27 +293,16 @@ export function setPalette(name) {
    every sprite in the game asks for its colours this way, which is what
    keeps them looking like they came out of the same box.
 
-   IT ANSWERS WITH THE MATERIAL and not with a palette entry — see the
-   note above. Under the default palette those are the same colour; under
-   any other, the snap at the end of the picture is what moves it. */
+   IT ANSWERS WITH THE MATERIAL rather than by indexing the palette, which
+   is the same colour and a better sentence: a ramp is arithmetic and a
+   palette is a box, and keeping them apart is what let the screen's box
+   become a setting without the art moving. See the note above. */
 export function ramp(key, t) {
   const r = RAMP_RGB[key];
   const i = Math.max(0, Math.min(r.length - 1, Math.round(t * (r.length - 1))));
   return r[i];
 }
 export function rampCss(key, t) { const c = ramp(key, t); return `rgb(${c[0]},${c[1]},${c[2]})`; }
-/** A colour out of the ramp palette, moved into whatever box is active.
- *  The photographs in js/art-data.js are stored as INDICES into the ramp
- *  palette — that is what tools/bake-art.mjs wrote — so decoding one
- *  means looking it up there and then snapping, or every headstone in
- *  the cemetery changes colour when the box does. Under the default the
- *  two are the same list and this is the identity. */
-export function fromRampPalette(index) {
-  const c = RAMP_PALETTE[index];
-  if (paletteName === 'ramps') return c;
-  return PALETTE[nearestIndex(c[0], c[1], c[2])];
-}
-
 export function rampIndex(key, t) {
   const r = RAMP[key];
   return r.start + Math.max(0, Math.min(r.n - 1, Math.round(t * (r.n - 1))));
@@ -287,7 +334,7 @@ export const LUT_SIZE = 32;
    feature check, and the indexing is three lines of shader either way.
 
    Slice = blue. Within a slice, x = red and y = green. */
-export function buildLutAtlas(palette = PALETTE) {
+export function buildLutAtlas(palette = displayPalette()) {
   const N = LUT_SIZE, W = N * N, H = N;
   const data = new Uint8Array(W * H * 4);
   const pr = new Float64Array(256), pg = new Float64Array(256), pb = new Float64Array(256);

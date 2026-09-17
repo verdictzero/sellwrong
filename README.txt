@@ -138,7 +138,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         1785 checks, no install and no browser
+  the smoke test         1791 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -2960,10 +2960,12 @@ what they are worth, measured:
             drops the far, cold end, which is the right end to drop
 
 PALETTE IS ON THAT MENU AND IS NOT ON THAT LIST, because it costs
-nothing to draw either way — it is a different game to look at. RAMPS is
-the fifteen material ramps this game was drawn out of; UZEBOX is a real
-console's box of crayons. See THE RAMPS ARE THE MATERIALS AND THE
-PALETTE IS THE BOX OF CRAYONS.
+nothing to draw either way — it is a different game to look at. It is
+the box the FINISHED FRAME is dithered down into on its way to the
+screen, not the box the art was painted in: RAMPS is the fifteen
+material ramps this game was drawn out of, UZEBOX is a real console's
+8 x 8 x 4, and the art underneath is the same art either way. See THE
+RAMPS ARE THE MATERIALS AND THE PALETTE IS THE BOX OF CRAYONS.
 
 NONE OF THEM TOUCHES THE SIMULATION. The shop is the same shop at every
 setting: the same seven hundred and thirty-six people, walking the same
@@ -3003,20 +3005,28 @@ material does. Fire gets seven stops and 44 of the 256 entries, because the
 store burning down is the only thing anyone is going to look at closely.
 
 Colours are snapped to the palette on the GPU through a 32x32x32 lookup
-cube, built once at start-up, flattened into a 1024x32 texture. Dither
+cube, built at start-up and flattened into a 1024x32 texture. Dither
 first, then snap: dithering afterwards would put back colours the palette
-does not contain.
+does not contain. It is built from the DISPLAY palette — the box the
+screen can hold, which is a setting and is not the box the art was
+painted in — and it is rewritten in place when that setting changes.
 
 THE DITHER IS ONE STEP OF A 16 BY 16 BY 16 RGB GRID, at the user's
 request — it was one step of the cube's own 32 — so the Bayer threshold
 can move a chunky pixel a sixteenth of a channel either way before the
 snap, and a band the palette would have drawn as two flat colours comes
 out as a checker of the two, twice as far apart in colour as before and
-visibly so. Three numbers rather than one (DITHER_LEVELS in js/lofi.js,
-a vec3 the shader divides by per channel), because a channel the eye is
-worse at could carry a coarser grain than one it is better at; today all
-three are 16. The sky bake adds the same step off the same GLSL function,
-so the sky's grain and the picture's are one grain.
+visibly so. Three numbers rather than one (a vec3 the shader divides by
+per channel), because a channel the eye is worse at could carry a
+coarser grain than one it is better at; in the box the game starts in
+all three are 16. The sky bake adds the same step off the same GLSL
+function, so the sky's grain and the picture's are one grain.
+
+THE GRID IS THE DISPLAY PALETTE'S, not the pipeline's — it lives beside
+the colours in DISPLAY_PALETTES, js/palette.js, because how far the
+dither must reach is a fact about the box being aimed at. A grid too
+fine for a coarse box does not dither it, it puts a seam in the middle
+of the band. See AND THE DITHER'S GRID HAD TO GO WITH IT.
 
 THE FIRE IS THE ONE THING DRAWN ADDITIVELY, at the user's request, and it
 is the one thing in the game that should be. Doom had exactly one way of
@@ -3376,16 +3386,46 @@ it is the reason there could only ever be one — swap the box and every
 index into it means a different colour, so every texture in the game
 comes out SCRAMBLED rather than recoloured.
 
-They are two things now, at the user's request, and the split is three
-lines: RAMP_RGB is what a material IS, fifteen ramps of arithmetic
-computed once and never changing, and what ramp(key, t) answers with;
-PALETTE is what the machine can show, and can be swapped. Painting picks
-the material, snapping puts it in the box. UNDER THE DEFAULT THE TWO ARE
-THE SAME LIST, so a colour asked for is a colour the box has and the
-snap is the identity — which is why the change is invisible until
-somebody swaps the box, and why the test holds the default against the
-ramps entry for entry and every ramp against the palette entry it always
-landed on.
+They are two things now, and the split is three lines: RAMP_RGB is what
+a material IS, fifteen ramps of arithmetic computed once and never
+changing, and what ramp(key, t) answers with; the palette is what the
+machine can show. Painting picks the material, snapping puts it in the
+box.
+
+AND THEN THERE ARE TWO PALETTES, which is the part worth reading
+carefully, because they answer different questions and the first attempt
+had them the wrong way round.
+
+  THE ART PALETTE is what a picture is PAINTED in. It is the fifteen
+  ramps, it is what every texture generator and every sprite decoder
+  reaches for, it is what js/art-data.js's indices mean, and it NEVER
+  CHANGES. Nothing in the game has ever been painted in any other box
+  and nothing ever will be.
+
+  THE DISPLAY PALETTE is what the SCREEN can hold. The post pass
+  dithers the finished frame and snaps it through a lookup cube built
+  from this one, the sky bakes through the same cube, and this is the
+  one the setting swaps. It carries the dither's grid as well as its
+  colours, because how far the dither has to reach is a fact about the
+  box — see AND THE DITHER'S GRID HAD TO GO WITH IT.
+
+THAT WAY ROUND ON PURPOSE, at the user's request, and it is the
+difference between a good picture and a noisy one. Painting the textures
+in the small box as well was the first thing built and it was WORSE: a
+texture dithered at 64 texels and then dithered again at grid resolution
+is not twice the texture, it is noise, and the crosshatch of the first
+dither shows up as a pattern moving over the wall as you walk. Leave the
+art at full colour and the ordered dither carries it down to the
+hardware box ONCE, at the last moment, at the resolution the screen
+actually is. Same box, better picture.
+
+IT IS ALSO WHY THE SWAP IS FAST. There is nothing to repaint: the
+setting rebuilds the lookup cube in place — with the new box's dither
+grid alongside it — and bakes the sky again, because the sky is a
+picture baked THROUGH that cube and is otherwise left in the old box.
+Under sixty milliseconds, measured, against the eight hundred and
+thirty-eight the re-bake version cost. applyPalette in js/main.js is
+three lines now and the third is the sky.
 
 THE SECOND BOX IS THE UZEBOX'S, which the user sent as 256 lines of hex.
 It is not a mood board, it is a piece of hardware: an AVR driving a
@@ -3396,39 +3436,46 @@ because 256 lines of hex is a table nobody can check and three loops is
 a table that cannot be wrong; art/uzebox.hex is kept as the file it is
 checked against, entry for entry.
 
-WHAT IT DOES, MEASURED BEFORE IT WAS OFFERED: the 256 the ramps make
-land on 81 distinct entries of that box, and the sky ramp's twenty land
-on thirteen. Two bits of blue is the whole story — a night sky that is a
-gradient here is four flat bands there. That is not a defect in the
-palette, it is what the hardware was, and it is the reason this is a
-SETTING and not a replacement.
+WHAT IT DOES, MEASURED: the 256 the ramps make land on 81 distinct
+entries of that box, twenty-six units of 255 away on average, and the
+sky ramp's twenty land on thirteen. Two bits of blue is the whole story
+— a night sky that is a gradient here is four flat bands there, and the
+dither is what stands between those bands and the eye. That is not a
+defect in the palette, it is what the hardware was, and it is the reason
+this is a SETTING and not a replacement.
 
-SWAPPING IT IS THE INTERESTING PART, because setPalette changes which
-box is active and that is ALL it changes: everything already painted out
-of the old one is still painted out of the old one. applyPalette in
-js/main.js is the one place that knows the whole list, and the list is
-the lookup cube the post pass snaps every frame through (which on its
-own changes the whole picture), the textures, the sprites, and the sky,
-which is a picture baked THROUGH that cube and is therefore in the old
-box until it is baked again. About three quarters of a second, once, on
-a button nobody presses in a firefight.
+AND THE DITHER'S GRID HAD TO GO WITH IT, which is the part that was
+wrong in the first build and is the difference between the two
+screenshots. The Bayer threshold moves a pixel half a step of an RGB
+grid before the snap, and the shipped grid was a sixteenth of a channel
+— sixteen units. Four levels of blue are gaps of EIGHTY-FIVE. A
+sixteen-unit wobble at an eighty-five-unit gap does not dither it: the
+picture comes out flat, then a narrow band of checker where the two
+nearest entries happen to fall within a sixteenth of each other, then
+flat again, which is banding with a seam through it. The night sky came
+out as a black and olive crosshatch, because the nearest thing that box
+has to a dark blue is a tie between black and a dark yellow-green, and
+the dither could not reach the blue that would have broken the tie.
 
-TWO THINGS IT DELIBERATELY DOES NOT REPAINT. The frames that came from a
-PHOTOGRAPH — the people, the troops, the splats — land on top of
-stand-ins of the SAME NAME that js/sprites.js already baked, so a frame's
-key does not say where it came from; re-baking blindly would put the
-stand-ins back and the crowd would lose its faces. They carry `fromArt`
-and are skipped, and they ride the frame's own snap the way the vehicles
-and the wood do. And the canvas behind a texture is replaced rather than
-the texture itself, because every material in the level is holding the
-old texture object and re-making them would mean rebuilding the world.
+SO THE GRID IS A PROPERTY OF THE BOX and travels with it: 16 16 16 for
+the ramps, which is a look and was chosen by hand, and 7 7 3 for the
+Uzebox, which is not a look — it is that box's own gaps, eight levels
+being seven of them and four being three. At 7 7 3 the whole gap
+checkers, the sky is dark BLUE again and the dawn is a gradient. It
+changed forty per cent of the frame in that box and nothing at all in
+the default, which is the shape a change like this should have.
 
-AND THE PHOTOGRAPHS ARE INDICES. js/art-data.js stores the logo, the
-weapon, the headstones, the cemetery iron and the street lamp as palette
-indices into the RAMP palette, which is what tools/bake-art.mjs wrote —
-so decoding one goes through the ramp palette and then snaps
-(fromRampPalette), or every headstone in the cemetery changes colour
-when the box does.
+THE SKY IS THE ONE THING THAT HAS TO BE TOLD. Everything else in the
+frame arrives at the post pass as full-colour art and gets snapped on
+the way out; the sky arrives already snapped, because it is baked to a
+texture once an hour of game time rather than shaded per pixel, and the
+bake does its own dither-and-snap against a palette handed to it at
+start-up. So buildLutAtlas still takes an explicit palette even though
+nothing passes one in the normal path — the sky's own test wants to ask
+about a box that is not the one in use — and the pipeline rewrites its
+cube IN PLACE rather than making a new texture, because the sky baker
+was handed that exact texture object when the game booted and a new one
+would leave the two drifting apart with only the sky in the old box.
 
 THE WEATHER IS A ROW multiplied over the hour's: clear, overcast, rain
 and mist. Each says how far the air lets you see — WHICH IS THE DRAW
@@ -4781,7 +4828,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-1785 checks. Every one of them earns its place by having caught something
+1791 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

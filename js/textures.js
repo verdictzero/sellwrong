@@ -33,7 +33,7 @@ import { Pix, fbm, valueNoise, speckle, drawText, drawTextCentred, textWidth } f
 import { makeRng } from './util.js';
 import { LOGO_TILES, CUTOUTS as ART_CUTOUTS, LAMP as ART_LAMP } from './art-data.js';
 import { cutoutPix } from './sprites.js';
-import { fromRampPalette } from './palette.js';
+import { PALETTE } from './palette.js';
 
 export class TextureBank {
   constructor() { this.map = new Map(); this.missing = new Set(); }
@@ -1310,10 +1310,10 @@ const logoTile = i => () => {
   const px = decodeTile(LOGO_TILES[i]);
   const p = new Pix(64, 64, 200 + i, false);
   for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
-    const c = fromRampPalette(px[y * 64 + x]);
+    const c = PALETTE[px[y * 64 + x]];
     p.set(x, y, c[0], c[1], c[2], 255);
   }
-  return p;                                    // already in the box
+  return p;                                    // already in the palette
 };
 T.LOGO0 = logoTile(0);   // top left
 T.LOGO1 = logoTile(1);   // top right

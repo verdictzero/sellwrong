@@ -103,8 +103,8 @@
    ===================================================================== */
 
 import * as THREE from 'three';
-import { PALETTE_GLSL, DITHER_LEVELS } from './lofi.js';
-import { LUT_SIZE, toLinear } from './palette.js';
+import { PALETTE_GLSL } from './lofi.js';
+import { LUT_SIZE, toLinear, displayDither } from './palette.js';
 
 /* WHAT THE SKY ASKS FOR. What it gets may be less — see the clamp in
    SkyBaker — and everything below is a FRACTION of the real size rather
@@ -333,7 +333,7 @@ export class SkyBaker {
            dithered again on the way to the screen, and the two at full
            strength made the dawn a crosshatch */
         tLut: { value: lut }, uLutSize: { value: LUT_SIZE }, uDither: { value: 0.6 },
-        uDitherLevels: { value: new V3(DITHER_LEVELS[0], DITHER_LEVELS[1], DITHER_LEVELS[2]) },
+        uDitherLevels: { value: new V3(...displayDither()) },
         uSeed: { value: opts.seed ?? 0.0 },
         uZenith: { value: new V3() }, uHorizon: { value: new V3() }, uGround: { value: new V3() },
         uSunDir: { value: new V3(1, 0, 0) }, uSunCol: { value: new V3() }, uGlow: { value: new V3() },
@@ -383,6 +383,12 @@ export class SkyBaker {
     u.uCover.value = f.cover; u.uCloudDark.value = f.cloudDark; u.uFlat.value = f.flat;
     u.uCloudTime.value = f.cloudTime;
     u.uWind.value.set(f.wind[0], -f.wind[1]);     // map y is the renderer's minus z
+    /* THE SAME GRAIN AS THE PASS IN FRONT OF IT, including when the box
+       the screen holds has changed since the last bake: the grid is the
+       box's, not the pipeline's, and a bake is the only place the sky
+       can be told. */
+    const d = displayDither();
+    u.uDitherLevels.value.set(d[0], d[1], d[2]);
 
     const r = this.renderer;
     const prev = r.getRenderTarget();

@@ -121,7 +121,7 @@
    ===================================================================== */
 
 import * as THREE from 'three';
-import { buildLutAtlas, LUT_SIZE } from './palette.js';
+import { buildLutAtlas, LUT_SIZE, displayDither, DISPLAY_PALETTES, DEFAULT_DISPLAY } from './palette.js';
 
 /* How many samples the block average is allowed to take across one
    chunky pixel, per axis. Four is not arbitrary: at a ratio of four or
@@ -137,9 +137,18 @@ const MAX_TAPS = 4;
    the snap, so at 16 it spans a sixteenth of each channel — twice what
    it spanned at the lookup cube's 32, at the user's request. Three
    numbers and not one because a channel the eye is worse at could carry
-   a coarser grain than one it is better at; today all three are the
-   same, and the shader divides by them per channel either way. */
-export const DITHER_LEVELS = [16, 16, 16];
+   a coarser grain than one it is better at; in the box the game starts
+   in all three are the same, and the shader divides by them per channel
+   either way.
+
+   IT IS THE STARTING BOX'S and not the pipeline's. The grid belongs to
+   the palette the frame is snapped to — see DISPLAY_PALETTES in
+   js/palette.js, where the reasoning is — and rebuildLut pushes the new
+   one when the setting changes. This names the starting box rather than
+   asking which box is current, because a module is evaluated once and
+   whatever the setting happened to be at that moment would be frozen
+   into it. The MATERIAL asks for the current one, below. */
+export const DITHER_LEVELS = DISPLAY_PALETTES[DEFAULT_DISPLAY].dither;
 
 /* A CEILING ON THE BUFFER'S WIDTH, for a window wider than any monitor.
    It is 4096 and not 2048 because the buffer is 960 rows tall by default
@@ -420,7 +429,7 @@ export class LofiPipeline {
         uGridSize:  { value: new THREE.Vector2(320, this.height) },
         uTaps:      { value: new THREE.Vector2(1, 1) },
         uDither:    { value: opts.dither ?? 1.0 },
-        uDitherLevels: { value: new THREE.Vector3(DITHER_LEVELS[0], DITHER_LEVELS[1], DITHER_LEVELS[2]) },
+        uDitherLevels: { value: new THREE.Vector3(...displayDither()) },
         uLutSize:   { value: LUT_SIZE },
         uSnap:      { value: opts.snap ?? 1.0 },
         uPicture:   { value: new THREE.Vector3(1, 1, 1) },
@@ -499,6 +508,10 @@ export class LofiPipeline {
     const atlas = buildLutAtlas();
     this.lutData.set(atlas.data);
     this.lut.needsUpdate = true;
+    /* and the dither aims at the same box it snaps to, or it is spraying
+       a sixteenth of a channel at gaps three times that wide */
+    const d = displayDither();
+    this.material.uniforms.uDitherLevels.value.set(d[0], d[1], d[2]);
     return this.lut;
   }
 
