@@ -137,7 +137,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         1749 checks, no install and no browser
+  the smoke test         1756 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -3246,41 +3246,72 @@ down. The sky sphere takes the smoke and not the air, which is a proof
 and not a preference: the air IS the sky's horizon, so mixing the sky
 toward the air is the identity. Both are in the test.
 
-THE SKY IS BAKED IN THE PAGE, js/skyart.js, on the GPU, into a 2048 by
-512 equirect — twice the photograph's 1024 by 256 each way, at the
-user's request — for the hour and the weather: a ramp, horizon to
+THE SKY IS BAKED IN THE PAGE, js/skyart.js, on the GPU, into a 4096 by
+1024 equirect — four times the photograph's 1024 by 256 each way, in
+two doublings and both at the user's request — for the hour and the
+weather: a ramp, horizon to
 zenith, and a ground below that starts as the horizon's own colour so
 the far plane's cut has nothing to show; the sun as a disc with a
 tight corona, and a glow along the horizon on its side that under a
 dozen degrees of sun is the whole dawn; the moon two degrees across,
 four times life size and the smallest thing that read as a moon at
-the three texels a degree it was drawn for (it is nearly six now);
-stars one texel each off a hash of the texel — a single chunky pixel
-now rather than a blob of four, at half the density per texel, off a
-hash that can be that sparing: the sine hash everything else uses has
-about 256 values in a 32-bit float, and a band of 0.0035 is narrower
-than one of its steps, so on it the finer sky had four stars in it,
-measured; on a hash without a sine the lit texels come out about
-equal to what the old sky lit, four times the stars at a quarter of
-the size, the same light, finer — thinned by the cosine of the
-elevation because an
+the three texels a degree it was drawn for (it is over eleven now);
+stars off a hash of the cell, one chunky pixel each, thinned by the
+cosine of the elevation because an
 equirect has as many texels round the zenith as round the horizon and
-the sky does not, and a band across them with more in it; the dither
-alone is worked out on 1024 by 256 cells of two texels square, the
-grid the sky had before, because a checker finer than a chunky pixel
-is a checker the post pass's averaging eats, and what would be left
-is the post pass's own grain, nailed to the screen, which is the crawl
-a baked sky exists to prevent; and the doubling is
-because a texel of the old sky was a third of a degree, and at 320
-rows of chunky pixels over a 72-degree view a chunky pixel is 0.225
-degrees tall: the sky was visibly blockier than the picture in front
-of it, and at 0.176 degrees a texel it is not. The fog, which reads
-the bake's horizon row, reads it half a texel up in the bake's own row
-count rather than in a number typed next to it;
-clouds of value noise on a plane over your head, big overhead and
+the sky does not, and a band across them with more in it; clouds of
+value noise on a plane over your head, big overhead and
 crowding to the horizon the way clouds do, drifting with the wind,
 lit by the dawn from the side and by the town from below, and taking
 the stars away; and the sodium glow of the town, low in the west.
+
+THE SIZE IS ABOUT ONE NUMBER, which is a chunky pixel. At the picture
+the game ships — 320 rows over a 72-degree view — a chunky pixel is
+0.225 degrees tall, and a sky texel coarser than that is a sky visibly
+blockier than the picture in front of it. The bake is 4:1 rather than
+an equirect's usual 2:1, being mostly sky and a little ground, so its
+two axes are not the same and both are worth writing down:
+
+                    across            up and down
+  1024 x 256        0.352 deg         0.703 deg
+  2048 x 512        0.176             0.352
+  4096 x 1024       0.088             0.176
+
+The first doubling fixed the horizontal and left the VERTICAL still
+coarser than a pixel is tall, and that is the axis the horizon, the
+sun's lower limb and the cloud bases all lie along — which is where
+the blockiness that was left came from. At 4096 both axes are finer
+than a chunky pixel with room over.
+
+AND TWO GRIDS DID NOT MOVE, which is the whole trick of doubling a
+picture that is going to be dithered and shrunk. THE DITHER is worked
+out on 1024 by 256 cells, now four texels square, because a checker
+finer than a chunky pixel is a checker the post pass's averaging eats,
+and what would be left is the post pass's own grain nailed to the
+screen — the crawl a baked sky exists to prevent. AND A STAR IS ONE
+CHUNKY PIXEL, so the stars are worked out on 2048 by 512 cells, the
+grid they were already on: left on the fine grid a star would be a
+quarter of a pixel, and a quarter-pixel star does not come out of the
+post pass smaller and sharper, it comes out as a DIM SMUDGE, because
+the averaging spreads it over the whole pixel at a quarter the
+brightness. Read back out of the bake, the stars' share of the sky is
+0.129 per cent against 0.130 before: the same count, the same size,
+the same light, behind four times the paint.
+
+IT IS CLAMPED TO WHAT THE MACHINE HAS. A render target wider than
+MAX_TEXTURE_SIZE is one the driver refuses, and the answer to asking
+anyway is a black sky on exactly the device that can least afford to
+be debugged — so the baker asks the renderer, halves until it fits and
+builds its shader for what it got. Both grids above are fractions of
+the real size rather than numbers of texels, so a machine that can
+only give 2048 gets the sky this had before: the same grain and the
+same stars on half the paint. The bake costs 0.12ms against 0.04, at
+most twice a second, and the picture is 16MB of texture against 4.
+
+The fog, which reads the bake's horizon row, reads it half a texel up
+in the bake's own row count rather than in a number typed next to it,
+so it lands on the first row above the line whichever size the sky
+came out.
 
 IT IS STILL A PICTURE AND NOT A SHADER ON THE SPHERE, and that was
 decided by one sentence in tools/bake-sky.mjs: baking is "what makes
@@ -4681,7 +4712,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-1749 checks. Every one of them earns its place by having caught something
+1756 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

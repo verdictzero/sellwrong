@@ -3664,7 +3664,7 @@ await (async () => {
       /uniform vec3\s+uDitherLevels/.test(L.PALETTE_GLSL) && /vec3 ditherAt\(vec2 cell, float amount\)/.test(L.PALETTE_GLSL) &&
       /\/ uDitherLevels;/.test(L.PALETTE_GLSL) &&
       /c \+= ditherAt\(vUv \* uGridSize, uDither\);/.test(lofiSrc) &&
-      /ditherAt\(floor\(gl_FragCoord\.xy \/ \$\{SKY_CELL\}\.0\), uDither\)/.test(skySrc));
+      /ditherAt\(floor\(gl_FragCoord\.xy \/ \$\{cell\}\.0\), uDither\)/.test(skySrc));
     check('and neither pass is still adding a thirty-second on its own',
       !/1\.0 \/ 32\.0/.test(lofiSrc) && !/1\.0 \/ 32\.0/.test(skySrc));
     check('and both materials carry the levels as a uniform',
@@ -3685,15 +3685,60 @@ await (async () => {
     const fsD = await import('node:fs');
     const skySrc = fsD.readFileSync('js/skyart.js', 'utf8');
     const matSrc = fsD.readFileSync('js/material.js', 'utf8');
-    check('the sky bakes at 2048 by 512, twice the photograph each way, at the user\'s request',
-      SK2.SKY_W === 2048 && SK2.SKY_H === 512, `${SK2.SKY_W}x${SK2.SKY_H}`);
-    check('and a texel of it is finer than a chunky pixel of the picture it ships with',
-      360 / SK2.SKY_W < 72 / 320, `${(360 / SK2.SKY_W).toFixed(3)} against ${(72 / 320).toFixed(3)} degrees`);
+    check('the sky bakes at 4096 by 1024, four times the photograph each way, at the user\'s request',
+      SK2.SKY_W === 4096 && SK2.SKY_H === 1024, `${SK2.SKY_W}x${SK2.SKY_H}`);
+    /* BOTH AXES, because the picture is 4:1 and they are not the same.
+       The first doubling fixed the horizontal and left the vertical —
+       the axis the horizon and the sun's lower limb lie along — still
+       coarser than a chunky pixel is tall. */
+    const acrossDeg = 360 / SK2.SKY_W, upDeg = 180 / SK2.SKY_H;
+    note('a sky texel', `${acrossDeg.toFixed(3)} deg across, ${upDeg.toFixed(3)} up, ` +
+      `against a chunky pixel of ${(72 / 320 * 320 / 480).toFixed(3)} by ${(72 / 320).toFixed(3)}`);
+    check('and a texel of it is finer than a chunky pixel BOTH WAYS, which is what the doubling was for',
+      acrossDeg < 72 / 320 && upDeg < 72 / 320,
+      `${acrossDeg.toFixed(3)} across and ${upDeg.toFixed(3)} up against ${(72 / 320).toFixed(3)}`);
     check('but the grain stays on the 1024 by 256 cells it had, coarser than a chunky pixel',
-      SK2.SKY_CELL === SK2.SKY_W / 1024 && SK2.SKY_H / SK2.SKY_CELL === 256 &&
+      SK2.SKY_CELL === SK2.SKY_W / SK2.DITHER_GRID_W && SK2.DITHER_GRID_W === 1024 &&
+      SK2.SKY_H / SK2.SKY_CELL === 256 &&
       360 / (SK2.SKY_W / SK2.SKY_CELL) > 72 / 320);
-    check('and a star is one texel of the finer sky, at half the density per texel',
-      /floor\(vUv \* vec2\(\$\{SKY_W\}\.0, \$\{SKY_H\}\.0\)\)/.test(skySrc) && /float density = 0\.0035 \*/.test(skySrc));
+    /* AND A STAR STAYS ONE CHUNKY PIXEL. On the fine grid it would be a
+       quarter of one, and the post pass would average it to a dim
+       smudge rather than draw a smaller sharper star. */
+    check('and a star is worked out on the 2048 by 512 grid, which is one chunky pixel',
+      SK2.STAR_GRID_W === 2048 && SK2.STAR_CELL === SK2.SKY_W / SK2.STAR_GRID_W &&
+      SK2.SKY_H / SK2.STAR_CELL === 512,
+      `${SK2.SKY_W / SK2.STAR_CELL}x${SK2.SKY_H / SK2.STAR_CELL} cells of ${SK2.STAR_CELL}`);
+    check('drawn off that grid rather than the picture\'s, at the density it has always had',
+      /floor\(vUv \* vec2\(\$\{W \/ starCell\}\.0, \$\{H \/ starCell\}\.0\)\)/.test(skySrc) &&
+      /float density = 0\.0035 \*/.test(skySrc));
+    check('and a star cell is no finer than a chunky pixel either',
+      360 / (SK2.SKY_W / SK2.STAR_CELL) >= 72 / 320 * 0.6,
+      `${(360 / (SK2.SKY_W / SK2.STAR_CELL)).toFixed(3)} deg`);
+    /* WHAT THE MACHINE WILL GIVE. A render target wider than
+       MAX_TEXTURE_SIZE is one the driver refuses, and the answer to
+       asking anyway is a black sky on exactly the device that can least
+       afford to be debugged. Halved until it fits, and both grids are
+       fractions of the real size, so the fallback is the sky this had
+       before rather than a broken one. */
+    {
+      const THREEK = await import('three');
+      const fake = cap => ({ capabilities: { maxTextureSize: cap } });
+      const big = new SK2.SkyBaker(fake(8192), null, {});
+      check('the sky takes the whole 4096 where the machine has it',
+        big.width === 4096 && big.height === 1024 && big.cell === 4 && big.starCell === 2);
+      const small = new SK2.SkyBaker(fake(2048), null, {});
+      check('and halves down to fit a machine that has less, keeping its aspect',
+        small.width === 2048 && small.height === 512, `${small.width}x${small.height}`);
+      check('and the two grids come out the size they always were, so the fallback is the old sky',
+        small.width / small.cell === SK2.DITHER_GRID_W && small.height / small.cell === 256 &&
+        small.width / small.starCell === SK2.STAR_GRID_W && small.height / small.starCell === 512,
+        `dither ${small.width / small.cell}, stars ${small.width / small.starCell}`);
+      check('and it never goes finer than the grid the stars are on',
+        new SK2.SkyBaker(fake(256), null, {}).width === SK2.STAR_GRID_W);
+      check('and its target is the size it settled on',
+        big.target.width === big.width && big.target.height === big.height &&
+        small.target.width === 2048 && small.target.height === 512);
+    }
     /* the sine hash has about 256 values in a 32-bit float, and a band
        of 0.0035 is narrower than one of its steps: read back out of
        the bake, stars on it numbered four. The stars roll on a hash
