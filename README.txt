@@ -139,7 +139,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         2404 checks, no install and no browser
+  the smoke test         2434 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -4514,10 +4514,29 @@ Past the seventh second the charge stops climbing and a second counter
 starts. It runs for forty seconds — OVERCHARGE_TICS — and it is the only
 clock in this game that ends with the player dead by their own hand.
 The gun says so the entire time: the bar across the bottom of its screen
-from the first second, the chassis going from dull red to white, and at
-thirty seconds the game itself puts COIL CRITICAL across the middle of
-the picture, because a player who is looking at neither the screen nor
-the gun is a player about to be very surprised.
+from the first second, the chassis going from dull red to white, and
+four separate shouts across the middle of the picture, because a player
+who is looking at neither the screen nor the gun is a player about to be
+very surprised.
+
+AND THE WARNINGS SAY CAPACITOR, at the user's request. A ladder rather
+than one shout — eight seconds in, eighteen, twenty-eight and
+thirty-five — each rung firing exactly once, on the tic the counter
+crosses it:
+
+  CAPACITOR OVERCHARGE        8s
+  CAPACITOR CRITICAL         18s
+  CAPACITOR BREACH IMMINENT  28s
+  EJECT THE CELL             35s
+
+The gun's own screen says a shorter version of the same thing in TWO
+ROWS — CAPACITOR over CRITICAL, EJECT over THE CELL — because that panel
+is forty chunky pixels across by the time the filter has had it and
+eighteen characters on one line of it is a green smear. Nine characters
+a row reads at a glance, and the full phrase is in the middle of the
+picture at the same moment anyway. The zoom step's little label steps
+aside to make room: past the top of the charge there is more urgent news
+in those two rows.
 
 THE COUNTER IS ONLY WOUND DOWN BY AN IDLE COIL, and getting that wrong
 was the one real bug in this pass. The reset lived in the cooling block
@@ -4531,13 +4550,35 @@ is now conditional on a charge of zero, and the clock is cleared where
 the charge is: on the vent, on the shot, and on the first tic of a new
 wind.
 
-THE BLAST is the biggest single explosion in the game and by some
-distance: nine hundred units of radius, four thousand of damage, seven
-of structural damage over fourteen hundred units — enough to bring down
-whatever region you are standing in and the ones either side — plus
-forty-six fireballs, twenty-six puffs, and two beam cuts at right angles
-through the walls around you, so the hole it leaves is a cross and not a
-circle. And the whole town hears it.
+THE BLAST is the biggest single explosion in the game and not by a
+little: sixteen hundred units of radius against the hundred and fifty a
+car gets, which is a city block; twelve thousand damage, which is a
+hundred and twenty shoppers' worth in one tic; and sixteen points of
+structural damage over twenty-eight hundred units, which takes down
+every region inside it and most of the ones looking at it. There is no
+survivable distance and there is not meant to be. The whole town hears
+it — eight thousand units of noise, twice the range of anything else.
+
+WHAT IT LOOKS LIKE IS A MUSHROOM, and that is three tiers rather than
+one cloud: a hundred and twenty fireballs split between a core, a skirt
+and a canopy, at three sizes and three heights, because a hundred and
+twenty of anything at one size and one height is a blob. Seventy-two
+smoke puffs out to seventeen hundred units under it.
+
+AND IT BLOWS A STAR THROUGH THE BUILDINGS. Eight beam cuts at
+forty-five degrees, seventeen hundred units long and three hundred and
+twenty wide — every one of them a full beam's worth of hole with its own
+ring of debris (see A TUNNEL OF DEBRIS, below) — so what is left of the
+junction you were standing in is a set of spokes blown through every
+elevation facing you. Two cuts at right angles was enough to prove the
+mechanism and was nowhere near enough to be absurd, which is what the
+user asked for.
+
+AND THE BODY LEAVES. deathTic already carried momentum and gravity on a
+corpse and slid it against the walls, so throwing you is four lines:
+sixty-two units a tic backwards and seventeen up. You tumble, you land,
+you slide — and the death camera follows, because it tracks the body
+rather than the patch of road the body was standing on.
 
 IT IGNORES THE INVINCIBLE SWITCH, deliberately and documented in the
 source. Every other way of dying in this game respects it; this one does
@@ -4545,6 +4586,73 @@ not, because the overcharge is not damage arriving from outside, it is
 the weapon the player chose to hold ending the run. A debug flag that
 let you stand in the middle of it would make the forty seconds mean
 nothing.
+
+
+LETTING GO DURING IT FIRES THE ABSURD ONE
+-----------------------------------------
+
+At the user's request: "make the overcharged beam even more destructive
+and crazy and absurd and make the player fly back".
+
+The forty seconds were only ever a way to die. They are also a way to
+SHOOT: the trigger still works the whole time it is running down, and
+what comes out is not a stage-three discharge that happened to be held
+longer. The coil has been storing past full for up to forty seconds and
+every one of those seconds is in the column.
+
+ONE NUMBER DOES ALL OF IT. `over` is how far past the top the trigger
+came up, zero to one, read off the counter at the moment of release —
+before it is cleared, because the shot is the only thing that will ever
+ask — and handed to the beam. Everything scales off it along a straight
+line from zero, so a shot let go two seconds past red is barely
+different from a clean one and a shot let go at thirty-nine is a
+different weapon:
+
+  the column   130 units wide becomes 338 — OVER_WIDE, and it is on the
+               one radius getter, so the GEOMETRY and the damage sweep
+               cannot disagree about how wide it is
+  the bite     damage, structural damage and heat all times 3.4 —
+               OVER_BITE, one multiplier, because an overcharge has no
+               reason to be selective about which of the three
+  the life     five seconds of beam becomes ten and a half —
+               OVER_LONGER, which lives in js/player.js next to
+               BEAM_SECONDS because how long a trigger keeps a weapon
+               firing is the trigger's business
+  the shake    half again as hard, all the way through
+  the flash    fifty-eight fireballs at the muzzle instead of eighteen
+
+Nothing here is a fourth stage. The stage tables are untouched and still
+decide the shape; this scales it. Measured across a town: eight regions
+brought down, six killed and nearly seven thousand wall-holes cut in a
+single ten-second discharge.
+
+AND IT THROWS YOU BACKWARDS. Thirty-eight units of momentum a tic
+straight away from where you are pointing, and seven and a half up.
+That is about twenty-four running strides put into you in one tic, and
+the friction in move() turns it into a slide worth roughly ten times the
+kick — three hundred units measured, which is across a street and into
+the far kerb.
+
+IT IS THE ONLY THING THAT CAN MOVE YOU while the beam is out, which is
+what makes it interesting rather than annoying: your feet are pinned
+(grip is zero while braced) and your aim is slowed to a fifth, so an
+overcharged shot SWEEPS ITS OWN COLUMN across whatever you were pointing
+at as you go down the street on your back. Momentum and not a teleport,
+so walls stop it, and the lift means the ground stops being something
+you are standing on until you land.
+
+AND THE NEAR END STILL HAS TO BE HIDDEN, which was the one bug this
+added. The eye is forty-six units behind the muzzle and NECK and HIDE —
+the world distances over which the column opens out and over which it is
+not drawn at all — were four hundred and thirty and a hundred and ninety,
+fixed, because at the time nothing was wider than a hundred and thirty.
+At three hundred and four the player is back inside their own beam
+looking at the inside of a double-sided additive tube, which is a white
+screen and nothing else: the first screenshot of an overcharged shot was
+exactly the first screenshot of a stage-three one, for exactly the same
+reason. Both distances are now measured in RADII — the ratios the old
+numbers already worked out to — so a clean shot hides precisely what it
+always hid and a wide one hides more.
 
 
 AND THE CAMERA LEAVES THE BODY
@@ -7141,7 +7249,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-2404 checks. Every one of them earns its place by having caught something
+2434 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

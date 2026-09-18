@@ -284,6 +284,51 @@ export const CHARGE_WALK = 0.35;
    screen on the back of it is saying so. Nobody does this by accident
    twice. */
 export const OVERCHARGE_TICS = 40 * TICRATE;
+
+/* WHAT LETTING GO OF AN OVERCHARGE THROWS YOU BACKWARDS BY, at the
+   user's request, in momentum units at the top of the forty seconds.
+   For scale: RUN_FWD below is 50/32, so this is about twenty-four times
+   a running stride put into you in one tic, and FRICTION at 0.90625
+   means the slide is worth roughly ten times the kick in total distance
+   — four hundred units, which is across a street and into the far
+   kerb. You are BRACED while the beam is out and cannot walk out of it;
+   the shove is the one thing that moves you, so an overcharged shot
+   sweeps its own column sideways across whatever you were aiming at as
+   you go. Up as well, because the ground stops being a thing you are
+   standing on. */
+export const OVER_KICK = 38;
+export const OVER_LIFT = 7.5;
+
+/* AND HOW MUCH LONGER THE COLUMN STAYS OUT for it, as a multiple of the
+   stage's own seconds at the top of the overcharge: five becomes ten
+   and a half. The other two multipliers an overcharge carries — how
+   wide the column is and how hard it bites — are OVER_WIDE and
+   OVER_BITE in js/beam.js, because those are the beam's business. This
+   one is here, next to BEAM_SECONDS, because how long a trigger keeps
+   a weapon firing is the trigger's. */
+export const OVER_LONGER = 1.1;
+
+/* AND WHAT THE CAPACITOR LETTING GO THROWS YOU BY, which is more: you
+   are dead by then and this is the corpse leaving. deathTic already
+   carries momentum and gravity on a body, so it tumbles, lands and
+   slides, and the death camera follows it because it tracks the body
+   rather than the place the body used to be. */
+export const BLAST_KICK = 62;
+export const BLAST_LIFT = 17;
+
+/* THE WARNINGS, AND THEY SAY CAPACITOR, at the user's request. A ladder
+   rather than one shout: each line goes off once as the overcharge
+   crosses its mark, and the marks are close enough together at the end
+   that the last ten seconds are a countdown rather than a state. The
+   gun's own screen is saying a shorter version of the same thing the
+   whole time — see js/scope.js — but this is the one that is in the
+   middle of the picture whether you are looking at the gun or not. */
+export const OVERCHARGE_CALLS = [
+  [0.20, 'CAPACITOR OVERCHARGE'],
+  [0.45, 'CAPACITOR CRITICAL'],
+  [0.70, 'CAPACITOR BREACH IMMINENT'],
+  [0.88, 'EJECT THE CELL'],
+];
 /* and what venting costs: a third of the heat a shot would have made,
    because the coil was at full and the energy went somewhere */
 export const VENT_HEAT = 0.30;
@@ -1064,13 +1109,16 @@ export class Player {
          seconds of it and the coil lets go where you are standing. */
       if (this.charge >= CHARGE_MAX) {
         if (++this.overcharge >= OVERCHARGE_TICS) { this.blowUp(); return; }
-        /* AND THE GAME SHOUTS ONCE, three quarters of the way in. The
-           gun's own screen has been saying so since the first second
-           (see js/scope.js) and the chassis has been glowing since
-           before that, but a player who is not looking at either of
-           them is a player about to be very surprised. */
-        if (this.overcharge === Math.round(OVERCHARGE_TICS * 0.75))
-          this.game.setBigMessage?.('COIL CRITICAL', OVERCHARGE_TICS - this.overcharge);
+        /* AND THE GAME SHOUTS, four times, in the middle of the
+           picture. The gun's own screen has been saying so since the
+           first second (see js/scope.js) and the chassis has been
+           glowing since before that, but a player who is looking at
+           neither is a player about to be very surprised. Each rung
+           fires on the tic the counter crosses it, which is exactly
+           once — see OVERCHARGE_CALLS. */
+        for (const [at, said] of OVERCHARGE_CALLS)
+          if (this.overcharge === Math.round(OVERCHARGE_TICS * at))
+            this.game.setBigMessage?.(said, Math.min(120, OVERCHARGE_TICS - this.overcharge));
       }
       this.coilTic();
       return;
@@ -1083,7 +1131,13 @@ export class Player {
          The cell is not spent, nothing leaves the muzzle, and the coil
          fizzles down. Letting go early is how you cancel a charge you
          have changed your mind about, and it is the only way. */
-      if (stage >= FIRE_AT) { this.charge = 0; this.overcharge = 0; this.fireBeam(stage); }
+      /* AND THE OVERCHARGE GOES WITH IT. Read before it is cleared,
+         because the shot is the only thing that will ever ask. */
+      if (stage >= FIRE_AT) {
+        const over = this.overFraction;
+        this.charge = 0; this.overcharge = 0;
+        this.fireBeam(stage, over);
+      }
       else this.ventCharge();
       return;
     }
@@ -1094,18 +1148,39 @@ export class Player {
 
   /** One cell, one line drawn through the map. The stage decides how
    *  wide and for how long; js/beam.js decides everything else. */
-  fireBeam(stage) {
+  fireBeam(stage, over = 0) {
     const d = this.def;
     if (d.ammo) this.ammo[d.ammo] = Math.max(0, this.ammo[d.ammo] - (d.ammoPerShot ?? 1));
     if (d.ammo && this.ammo[d.ammo] <= 0) this.cellDry = true;
     this.shotsFired++;
     this.beamStage = stage;
-    this.beamTics = BEAM_TICS[stage - 1];
+    this.beamOver = over;
+    /* AND AN OVERCHARGED COLUMN STAYS OUT LONGER, on top of being wider
+       and hungrier — see OVER_WIDE and the rest in js/beam.js. Five
+       seconds becomes ten and a half at the top of the forty. */
+    this.beamTics = Math.round(BEAM_TICS[stage - 1] * (1 + over * OVER_LONGER));
     this.fireIndex = 1;
-    /* BRACED. The momentum goes now rather than being ignored by move()
-       for the next five seconds, so you stop where you are standing
-       instead of sliding to a halt under a beam that is already out. */
-    this.momx = 0; this.momy = 0;
+    if (over > 0) {
+      /* AND IT THROWS YOU BACKWARDS, at the user's request. You are
+         braced and cannot walk while the beam is out, so this is the
+         only thing that moves you: the column sweeps across whatever
+         you were aiming at as you go down the street on your back.
+         Momentum rather than a teleport, so walls stop it, the friction
+         in move() eases it off, and the lift means the ground stops
+         being something you are standing on. See OVER_KICK. */
+      const k = OVER_KICK * over;
+      this.momx = -Math.cos(this.angle) * k;
+      this.momy = -Math.sin(this.angle) * k;
+      this.momz = Math.max(this.momz, OVER_LIFT * over);
+      this.onGround = false;
+      this.launched = 30;
+    } else {
+      /* BRACED. The momentum goes now rather than being ignored by
+         move() for the next five seconds, so you stop where you are
+         standing instead of sliding to a halt under a beam that is
+         already out. */
+      this.momx = 0; this.momy = 0;
+    }
     /* THE DISCHARGE IS THREE RECORDINGS AT ONCE: the transient the
        moment the trigger comes up, and then the two layers of the shot
        itself, which were mixed as two and are played as two. The charge
@@ -1123,11 +1198,11 @@ export class Player {
     const boom = 1.14 - 0.13 * stage;
     snd?.sample('lancefire', this, { rate: boom });
     snd?.sample('lancefire2', this, { rate: boom });
-    this.game.beam?.fire(this, stage);
+    this.game.beam?.fire(this, stage, over);
     /* AND THE WHOLE TOWN HEARD IT. Two and a half thousand units, which
        is further than anything else in the game wakes: a positron
        discharge is not a noise you keep to one aisle. */
-    this.game.noise(this, 2400);
+    this.game.noise(this, 2400 + over * 3200);
   }
 
   /** THE COIL'S TEMPERATURE WHILE THE TRIGGER IS DOWN, and it is a pure
@@ -1179,34 +1254,67 @@ export class Player {
     /* the shot that never left, arriving where it was standing */
     g.sound?.play('bigboom', this);
     g.sound?.play('lancefire', this);
+    /* AND IT IS ABSURD, at the user's request, and the numbers are the
+       whole of that: sixteen hundred units of radius against the
+       hundred and fifty a car gets, which is a city block; twelve
+       thousand damage, which is a hundred and twenty shoppers' worth in
+       one tic; and enough structural damage over twenty-eight hundred
+       units to take down every region within it and most of the ones
+       looking at it. There is no survivable distance and there is not
+       meant to be. */
     g.explode(at, {
-      radius: 900, damage: 4000, heat: 520, heatRadius: 640, ignite: 900,
-      structure: 7, structureRadius: 1400, sound: 'explode',
+      radius: 1600, damage: 12000, heat: 900, heatRadius: 1100, ignite: 1600,
+      structure: 16, structureRadius: 2800, sound: 'explode',
     });
     /* and what it looks like: a column of fire standing where you were,
-       which is the same shape the beam makes and is not a coincidence */
-    for (let i = 0; i < 46; i++) {
-      const a = Math.random() * Math.PI * 2, r = Math.random() * 260;
-      g.fx?.fireball(at.x + Math.cos(a) * r, at.y + Math.sin(a) * r,
-                     at.z + Math.random() * 900, 120 + Math.random() * 220, 26 + (i & 15));
+       which is the same shape the beam makes and is not a coincidence.
+       Three rings of it — a core, a skirt and a canopy — because one
+       cloud of a hundred and twenty fireballs at one size is a blob and
+       the same hundred and twenty in three sizes is a mushroom. */
+    for (let i = 0; i < 120; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const tier = i % 3;
+      const r = tier === 0 ? Math.random() * 200
+              : tier === 1 ? 180 + Math.random() * 420
+              : 300 + Math.random() * 900;
+      const z = tier === 0 ? Math.random() * 500
+              : tier === 1 ? 200 + Math.random() * 900
+              : 900 + Math.random() * 1500;
+      g.fx?.fireball(at.x + Math.cos(a) * r, at.y + Math.sin(a) * r, at.z + z,
+                     150 + Math.random() * 380, 30 + (i & 23));
     }
-    for (let i = 0; i < 26; i++) {
-      const a = Math.random() * Math.PI * 2, r = 120 + Math.random() * 700;
-      g.fx?.puff(at.x + Math.cos(a) * r, at.y + Math.sin(a) * r, at.z + Math.random() * 400,
-                 160 + Math.random() * 200, 220);
+    for (let i = 0; i < 72; i++) {
+      const a = Math.random() * Math.PI * 2, r = 120 + Math.random() * 1700;
+      g.fx?.puff(at.x + Math.cos(a) * r, at.y + Math.sin(a) * r, at.z + Math.random() * 1100,
+                 220 + Math.random() * 340, 260);
     }
-    g.spawnSparks?.(at.x, at.y, at.z + 40, 40);
-    g.fx?.wash?.(at.x, at.y, at.z + 40, 3);
-    /* and the walls go with it, the same way the beam takes them */
-    g.breaches?.cut({ x: at.x, y: at.y, z: at.z + 40 }, this.angle, 0, 900, 260);
-    g.breaches?.cut({ x: at.x, y: at.y, z: at.z + 40 }, this.angle + Math.PI / 2, 0, 900, 260);
-    g.noise(this, 4000);
+    g.spawnSparks?.(at.x, at.y, at.z + 40, 140);
+    g.fx?.wash?.(at.x, at.y, at.z + 40, 6);
+    /* AND THE WALLS GO WITH IT, the same way the beam takes them, but as
+       a STAR rather than a cross: eight cuts at forty-five degrees,
+       every one of them a beam's worth of hole, so what is left of the
+       junction you were standing in is a set of spokes blown through
+       every building around it. Two was enough to prove the mechanism
+       and is not enough to be absurd. */
+    const from = { x: at.x, y: at.y, z: at.z + 40 };
+    for (let i = 0; i < 8; i++)
+      g.breaches?.cut(from, this.angle + i * Math.PI / 4, 0, 1700, 320);
+    g.noise(this, 8000);
     /* and then you. Not through damage(): see the note above. */
     this.health = 0;
     this.armour1 = 0; this.armour2 = 0;
     this.damageFlash = 60;
     if (!this.dead) { this.deathCam = { tics: 0, dist: 40, yaw: this.angle, pitch: 0.18 }; this.die(); }
-    g.setBigMessage?.('THE COIL LET GO', 300);
+    /* AND THE BODY LEAVES. deathTic already carries momentum and
+       gravity on a corpse and slides it against the walls, so this is
+       the whole of it: thrown back the way an overcharged shot throws
+       you, only harder, and the death camera follows because it tracks
+       the body rather than the spot the body used to be standing on. */
+    this.momx = -Math.cos(this.angle) * BLAST_KICK;
+    this.momy = -Math.sin(this.angle) * BLAST_KICK;
+    this.momz = BLAST_LIFT;
+    this.onGround = false;
+    g.setBigMessage?.('THE CAPACITOR LET GO', 300);
   }
 
   /** HOW FAR INTO THE OVERCHARGE IT IS, 0 to 1 — what the screen on the

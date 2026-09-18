@@ -111,6 +111,32 @@ export const BEAM_DAMAGE = [900, 1800, 3200];
    stage three takes one. */
 export const BEAM_STRUCTURE = [0.34, 0.72, 1.30];
 
+/* ---------------------------------------------------------------------
+   AND WHAT FORTY SECONDS OF HELD CHARGE ADDS TO ALL OF IT
+
+   At the user's request: an overcharged discharge is not a stage-three
+   discharge that happened to be held longer, it is the absurd one. The
+   coil has been storing for up to forty seconds past the point where it
+   was full and every one of those seconds is in the column.
+
+   These are multipliers AT THE TOP of the overcharge, applied along a
+   straight line from zero, so a shot let go two seconds past red is
+   barely different from a clean one and a shot let go at thirty-nine is
+   a different weapon. Nothing here is a new stage: the stage tables
+   above still decide the shape and these scale it, which is why a
+   fourth entry was not added to them. One number, threaded from the
+   trigger to the geometry.
+
+   WIDE is the one you see. A stage three column is 130 units across,
+   which is the whole front of a house; times 2.6 is 338, which is the
+   house. BITE is damage, structural damage and heat together, because
+   an overcharge has no reason to be selective about which of the three
+   it multiplies. HOW LONG it stays out is not here: BEAM_SECONDS lives
+   in js/player.js because the trigger owns it, and so does the
+   multiplier on it. */
+export const OVER_WIDE = 2.6;
+export const OVER_BITE = 3.4;
+
 /* how much heat and accelerant it leaves, by stage */
 export const BEAM_HEAT = [200, 320, 470];
 
@@ -274,9 +300,22 @@ const SHELLS = [
    covers the join is the muzzle bloom, which is particles and is meant
    to be there anyway: a beam leaves a gun in a ball of light, and the
    ball is where the tube would have been in your face.
-   ------------------------------------------------------------------- */
+
+   AND BOTH SCALE WITH THE RADIUS, which the first version of them did
+   not, because at the time there was nothing wider than a hundred and
+   thirty units to scale for. An overcharged column is three hundred and
+   four — see OVER_WIDE — and a hide distance of a hundred and ninety
+   against a radius of three hundred puts the eye back inside the tube
+   and bleaches the whole frame white again, which is precisely what the
+   first screenshot of an overcharged shot was. The ratios below are
+   the ones the stage-three numbers already worked out to (430/130 and
+   190/130), so nothing about a clean shot changes; they are simply
+   written as what they always were. */
 export const NECK = 430;
 export const HIDE = 190;
+/* how many radii of neck and of hide, which is what those two are */
+export const NECK_R = NECK / 130;
+export const HIDE_R = HIDE / 130;
 
 const VERT = /* glsl */`
 attribute vec3 aNormal;
@@ -355,6 +394,12 @@ export class BeamSystem {
        axis frozen where the beam last was, and a level falling to
        nothing over AFTERGLOW seconds. `glow` is 0..1 of LIGHT_PEAK. */
     this.glow = 0;
+    /* HOW FAR PAST THE TOP the shot that made this was let go, 0 to 1,
+       and the same for the light that outlives it — the column stops
+       but its glow does not, so the afterglow needs its own copy the
+       same way it needs its own stage. See AFTERGLOW. */
+    this.over = 0;
+    this.glowOver = 0;
     this.glowStage = 1;
     this.lit = { x: 0, y: 0, z: 0, dx: 1, dy: 0, dz: 0, len: 1 };
     /* and how hard the picture is being shaken, 0..1 — read by
@@ -362,7 +407,12 @@ export class BeamSystem {
     this.shake = 0;
   }
 
-  get radius() { return BEAM_RADIUS[this.stage - 1] || 0; }
+  /** HOW FAR PAST THE TOP OF THE CHARGE THIS SHOT WAS LET GO, 0 to 1.
+   *  Set once at the trigger and read by everything below, so there is
+   *  exactly one place that knows and no second copy to fall out of
+   *  step with the player's. */
+  get overMul() { return 1 + this.over * (OVER_BITE - 1); }
+  get radius() { return (BEAM_RADIUS[this.stage - 1] || 0) * (1 + this.over * (OVER_WIDE - 1)); }
   /** 0 at the muzzle flash, 1 as it dies — what the geometry fades on. */
   get age() { return this.total > 0 ? this.tics / this.total : 0; }
 
@@ -372,8 +422,9 @@ export class BeamSystem {
 
   /** The trigger came up at `stage`. js/player.js has already spent the
    *  cell and nailed the feet down; this starts the column. */
-  fire(player, stage) {
+  fire(player, stage, over = 0) {
     this.live = true;
+    this.over = clamp(over || 0, 0, 1);
     this.stage = clamp(stage | 0, 1, BEAM_RADIUS.length);
     this.tics = 0;
     this.total = player.beamTics || 1;
@@ -388,17 +439,21 @@ export class BeamSystem {
        second that says it left a gun. */
     const g = this.game;
     const f = this.from;
-    for (let i = 0; i < 18; i++) g.fx?.fireball(f.x, f.y, f.z, 34 + i * 8, 10 + (i & 7));
-    g.fx?.wash?.(f.x, f.y, f.z, 1.9);
-    g.spawnSparks?.(f.x, f.y, f.z, 14);
+    const flash = 18 + Math.round(this.over * 40);
+    for (let i = 0; i < flash; i++)
+      g.fx?.fireball(f.x, f.y, f.z, (34 + i * 8) * (1 + this.over), 10 + (i & 7));
+    g.fx?.wash?.(f.x, f.y, f.z, 1.9 + this.over * 2.4);
+    g.spawnSparks?.(f.x, f.y, f.z, 14 + Math.round(this.over * 60));
     this.shake = 1;
     this.glow = 1;
     this.glowStage = this.stage;
+    this.glowOver = this.over;
   }
 
   stop() {
     this.live = false;
     this.stage = 0;
+    this.over = 0;
     this.tics = 0;
     /* the light is NOT stopped: it stays on the axis it was on and
        fades over AFTERGLOW seconds — see the note there */
@@ -448,7 +503,7 @@ export class BeamSystem {
     if (++this.pass >= PASS_EVERY) {
       this.pass = 0;
       this.downed += g.fire?.damageLine(this.from, this.angle, this.slope, BEAM_RANGE, r,
-                                        BEAM_STRUCTURE[this.stage - 1] * PASS_EVERY) || 0;
+                                        BEAM_STRUCTURE[this.stage - 1] * PASS_EVERY * this.overMul) || 0;
       /* AND A HOLE THROUGH EVERY WALL IT CROSSES, at the user's
          request. Integrity is a question about whether a REGION is
          still standing; this is a question about the brick itself, and
@@ -472,12 +527,17 @@ export class BeamSystem {
     L.len = BEAM_RANGE;
     this.glow = 1;
     this.glowStage = this.stage;
+    this.glowOver = this.over;
 
     /* THE SHAKE: everything in the first half second, and a hum after
        it. See SHAKE_PEAK — a discharge you cannot aim through for five
        seconds is a discharge that wastes its own best feature. */
     const settle = Math.min(1, this.tics / SHAKE_SETTLE);
-    this.shake = SHAKE_PEAK + (SHAKE_HUM - SHAKE_PEAK) * settle;
+    /* and an overcharged column shakes half again as hard, all the way
+       through: it is nearly three times as wide and stays out twice as
+       long, and a picture that held still for it would be saying the
+       shot was the same size as a clean one */
+    this.shake = (SHAKE_PEAK + (SHAKE_HUM - SHAKE_PEAK) * settle) * (1 + this.over * 0.55);
   }
 
   /** The light fading after the column has gone, and the shake with it.
@@ -490,7 +550,7 @@ export class BeamSystem {
     }
     if (!world.beam) return;
     const g = this.glow;
-    world.beam.value = g * g * (LIGHT_PEAK[this.glowStage - 1] || 1);
+    world.beam.value = g * g * (LIGHT_PEAK[this.glowStage - 1] || 1) * (1 + this.glowOver * 0.5);
     if (g > 0) {
       const L = this.lit;
       /* game coordinates into the renderer's, which is the one
@@ -498,7 +558,7 @@ export class BeamSystem {
       world.beamPos.value.set(L.x, L.z, -L.y);
       world.beamDir.value.set(L.dx, L.dz, -L.dy);
       world.beamLen.value = L.len;
-      world.beamRange.value = LIGHT_RANGE[this.glowStage - 1] || 700;
+      world.beamRange.value = (LIGHT_RANGE[this.glowStage - 1] || 700) * (1 + this.glowOver * 1.2);
       /* the clock the flicker rides — see the shader. It runs fast
          while the beam is out and slows as the afterglow dies, so the
          light settles rather than strobing to the last frame. */
@@ -513,7 +573,7 @@ export class BeamSystem {
     const g = this.game;
     const ux = Math.cos(this.angle), uy = Math.sin(this.angle);
     const f = this.from;
-    const dmg = BEAM_DAMAGE[this.stage - 1];
+    const dmg = BEAM_DAMAGE[this.stage - 1] * this.overMul;
     for (const a of g.actors) {
       if (a === player || a.removed || a.dead || !a.shootable) continue;
       const wx = a.x - f.x, wy = a.y - f.y;
@@ -542,7 +602,7 @@ export class BeamSystem {
     const ux = Math.cos(this.angle), uy = Math.sin(this.angle);
     const f = this.from;
     const step = Math.max(64, r * 1.4);
-    const heat = BEAM_HEAT[this.stage - 1];
+    const heat = BEAM_HEAT[this.stage - 1] * this.overMul;
     for (let s = 0; s <= BEAM_RANGE; s += step) {
       const bz = f.z + this.slope * s;
       const x = f.x + ux * s, y = f.y + uy * s;
@@ -709,6 +769,11 @@ export class BeamSystem {
     if (!this.live || this.stage < 1) { geo.setDrawRange(0, 0); return; }
     const { pos, nrm, fade } = this._v;
     const R = this.radius;
+    /* the neck and the hidden stub, in world units, off THIS column's
+       width rather than off the widest one anybody had in mind when the
+       constants were written — see the note at NECK */
+    const neckLen = Math.max(NECK, R * NECK_R);
+    const hideLen = Math.max(HIDE, R * HIDE_R);
 
     /* the axis, in game coordinates, and two perpendiculars to sweep the
        rings around */
@@ -749,13 +814,13 @@ export class BeamSystem {
            stops the player standing inside their own beam), a slow pulse
            along the length, and a taper at the far end so the column
            recedes rather than being cut off */
-        const neck = 0.05 + 0.95 * Math.min(1, s / NECK);
+        const neck = 0.05 + 0.95 * Math.min(1, s / neckLen);
         const pulse = 1 + 0.12 * Math.sin(t * 26 - time * 9);
         const tail = 1 - 0.55 * Math.max(0, (t - 0.9) / 0.1);
         const rad = R * sh.r * neck * pulse * tail;
         /* and nothing at all within HIDE of the muzzle: what is there is
            the bloom, which is particles */
-        const near = Math.min(1, Math.max(0, (s - HIDE * 0.25) / HIDE));
+        const near = Math.min(1, Math.max(0, (s - hideLen * 0.25) / hideLen));
         const fd = life * sh.w * near;
         const cx = f.x + dx * s, cy = f.y + dy * s, cz = f.z + dz * s;
         for (let k = 0; k <= SIDES; k++) {
@@ -773,14 +838,14 @@ export class BeamSystem {
     for (let i = 0; i < RINGS; i++) {
       const trav = ((time * RING_SPEED + i / RINGS) % 1);
       const s = trav * BEAM_RANGE;
-      const rad = R * (1.25 + trav * 1.7) * (0.06 + 0.94 * Math.min(1, s / NECK));
+      const rad = R * (1.25 + trav * 1.7) * (0.06 + 0.94 * Math.min(1, s / neckLen));
       const wide = R * 0.055;
       /* DIM, and dimmer than the first cut by a lot: a ring is a thing
          that moves and a moving thing is read at a fraction of the
          brightness of a still one. At half this they were five
          concentric bright circles round the muzzle, which is a target
          and not a shock front. */
-      const fd = life * (1 - trav) * 0.26 * Math.min(1, Math.max(0, (s - HIDE * 0.25) / HIDE));
+      const fd = life * (1 - trav) * 0.26 * Math.min(1, Math.max(0, (s - hideLen * 0.25) / hideLen));
       for (const off of [-wide, wide]) {
         const cx = f.x + dx * (s + off), cy = f.y + dy * (s + off), cz = f.z + dz * (s + off);
         for (let k = 0; k <= SIDES; k++) {
@@ -796,7 +861,7 @@ export class BeamSystem {
        beam at whoever fired it */
     for (let c = 0; c < CAPS; c++) {
       const s = (CAP_SEG / SEGS) * BEAM_RANGE;
-      const fd = life * SHELLS[c].w * Math.min(1, Math.max(0, (s - HIDE * 0.25) / HIDE));
+      const fd = life * SHELLS[c].w * Math.min(1, Math.max(0, (s - hideLen * 0.25) / hideLen));
       put(f.x + dx * s, f.y + dy * s, f.z + dz * s, -dx, -dy, -dz, fd);
     }
 

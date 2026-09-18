@@ -636,8 +636,11 @@ export class Scope {
     /* ---- AND THE ONE CHARACTER --------------------------------------- */
     label(ctx, firing ? '\u25b2' : stage > 0 ? String(stage) : '\u00b7',
           cx, N * 0.245, N * 0.125, firing ? HOT : stage > 0 ? stageInk : INK_DIM);
-    label(ctx, `${ZOOMS[this.zoomIndex]}\u00d7`, cx, N * 0.675, N * 0.078,
-          this.zoomIndex ? INK : INK_DIM);
+    /* the zoom step steps aside once the coil is over: the warning
+       below wants those two rows and is the more urgent news */
+    if (!(over > 0))
+      label(ctx, `${ZOOMS[this.zoomIndex]}\u00d7`, cx, N * 0.675, N * 0.078,
+            this.zoomIndex ? INK : INK_DIM);
 
     /* ---- AND THE THING THE SCREEN IS REALLY FOR ----------------------
        Past the top of the charge the coil is overcharging, and in forty
@@ -654,9 +657,22 @@ export class Scope {
       ctx.strokeStyle = HOT;
       ctx.beginPath(); ctx.moveTo(cx - bw / 2, y); ctx.lineTo(cx - bw / 2 + bw * over, y); ctx.stroke();
       const blink = (tics >> 2) & 1;
-      if (over < 0.75 || blink)
-        label(ctx, over > 0.75 ? 'EJECT' : 'OVERCHARGE', cx, N * 0.79, N * 0.072, HOT);
-      if (over > 0.75 && blink) {
+      /* TWO ROWS, AND THEY SAY CAPACITOR, at the user's request. One row
+         cannot: this panel is forty chunky pixels across by the time
+         the filter has had it, and CAPACITOR CRITICAL on one line is
+         eighteen characters of green smear. Split, each half is eight
+         or nine and reads at a glance — and the full phrase is on the
+         game's own big message at the same moment anyway (see
+         OVERCHARGE_CALLS in js/player.js), so the panel is the thing
+         you glance at and that is the thing you read. */
+      const row = over > 0.70 ? ['EJECT', 'THE CELL']
+                : over > 0.45 ? ['CAPACITOR', 'CRITICAL']
+                : ['CAPACITOR', 'OVERCHARGE'];
+      if (over < 0.70 || blink) {
+        label(ctx, row[0], cx, N * 0.700, N * 0.070, HOT);
+        label(ctx, row[1], cx, N * 0.790, N * 0.070, HOT);
+      }
+      if (over > 0.70 && blink) {
         ctx.fillStyle = 'rgba(255, 70, 40, 0.28)';
         ctx.fillRect(0, 0, N, N);
       }
