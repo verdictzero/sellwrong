@@ -203,6 +203,8 @@ THE PICTURE.
   1 2 3 4       flamer / extinguisher / bore / minigun
   [  ]          render size     SHIFT [ ] pixel size
   N             palette on / off          ESC       pause
+  IN THE MENU:  arrows turn the page, or move an open window's slider;
+                escape closes the window, then the menu
   `             the frame-rate readout, off by default
 
 GAMEPAD, laid out the way every shooter lays it out, at the user's
@@ -770,6 +772,56 @@ you overlapped. DEBUG: INVINCIBLE still refuses the whole function,
 launch included, which is the documented reading of the word.
 
 
+THE PAUSE MENU
+--------------
+
+FOUR PAGES OF TILES, at the user's request, and nothing in it scrolls.
+It was one column of small words with a scrollbar down the side, which
+is the wrong shape for the machine this is mostly played on: a phone
+held sideways is a WIDE, SHORT window, and a long column in one is empty
+down both sides and cut off at the bottom — and a list you drag with the
+thumb that is meant to be pressing the thing you want is a list you lose
+your place in.
+
+So every option is a SQUARE TILE with rounded corners, three across and
+two down, and each one says three things: what it is, what it is set to,
+and where that sits among what it could be — a dot per stop for a list,
+a bar for a number. Tapping it does one of two things:
+
+  A LIST      cycles to the next value and wraps round. Three or four
+              stops is short enough to walk round, and a switch is a
+              list of two: CROWD, EFFECTS, THE WOOD, WEATHER, PIXEL
+              ASPECT, and the toggles
+  A NUMBER    opens A WINDOW with one slider in it, a nudge either side
+              of the slider for the step a thumb cannot hit, and the
+              value under: LOOK SPEED, MUSIC, BRIGHTNESS, CONTRAST,
+              GAMMA, and the two ladders below
+
+AND THE PAGES ARE TABBED — 1 CONTROLS, 2 PICTURE, 3 WORLD, 4 DEBUG —
+which is what replaced the scrollbar: if a page is full the next one is
+a tab away. The tiles are the same size and the page the same height on
+every one of them, so the tabs and the two words underneath stay where
+they are and the only thing a tab changes is what is under your thumb.
+On a keyboard the arrows turn the page, or move the slider while a
+window is open; escape shuts the WINDOW rather than the menu, so one
+escape closes the window and the next unpauses.
+
+RENDER and PIXELS are windows rather than tiles you cycle for the reason
+the steppers existed: nine rungs is too many to walk round to go back
+one. The slider walks the rungs, the two nudges are the old minus and
+plus, and the readout in the window prints both actual sizes — 720P
+1280x720 — because "400P" says nothing about how wide it is and the
+width is where the pixels are. The tile has room for the setting and not
+for the proof of it.
+
+What the page holds and what the code reaches for are two files apart,
+so the smoke test holds them against each other: every tile either names
+a control js/main.js knows or opens a window that is there, every page
+has a tab and every tab a page, and there is no scroller anywhere in the
+menu's CSS. A tile that lights up under the thumb and does nothing at
+all is the one thing this layout can quietly become.
+
+
 BRIGHTNESS, CONTRAST, GAMMA
 ---------------------------
 
@@ -834,10 +886,12 @@ were designed rather than bolted on. Open the page, tap, and:
                 the newest, at the user's request, and took the spot
                 beside FIRE because jumping and firing are the two
                 things you do without looking.
-  PAUSE         top corner. The menu has look speed, invert, a
-                left-handed mirror of the whole layout, vibration,
-                brightness, contrast and gamma, chunkiness and
-                fullscreen, and remembers them.
+  PAUSE         top corner. Four tabbed pages of square tiles, which
+                is a layout that fits a window this shape — look speed,
+                invert, a left-handed mirror of the whole layout,
+                vibration, brightness, contrast and gamma, chunkiness
+                and fullscreen — and it remembers all of it. Nothing in
+                it scrolls; see THE PAUSE MENU.
 
 AND A PAD TAKES THEM OFF THE PICTURE, at the user's request. A phone
 with a controller paired is still a phone — no keyboard, menus you tap
@@ -3516,8 +3570,9 @@ screen, and it is a bad control because the two answers pull opposite
 ways. Turn it up for a sharper picture and the pixels vanish; turn it down
 for the pixels and the far end of the shop turns to mush. There was no
 setting at which the store was legible AND the picture was made of visible
-squares, which is the look. So there are two now, both steppers in the
-pause menu:
+squares, which is the look. So there are two now, a tile each on the pause
+menu's PICTURE page, each opening a window with a slider that walks the
+rungs (see THE PAUSE MENU):
 
   RENDER    the buffer's height, 120 to 960, on [ and ]. How much the
             world is drawn with, and where the frame rate goes

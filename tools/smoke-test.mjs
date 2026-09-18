@@ -3490,9 +3490,11 @@ section('the cold');
       const fs2 = await import('node:fs');
       const html = fs2.readFileSync('index.html', 'utf8');
       const main = fs2.readFileSync('js/main.js', 'utf8');
+      /* they are TILES now rather than a row of words, so the name is
+         in the face of the tile and not the button's own text */
       check('the pause menu offers both debug switches',
-        /id="opt-debug"[^>]*>DEBUG: INFINITE AMMO</.test(html) &&
-        /id="opt-godmode"[^>]*>DEBUG: INVINCIBLE</.test(html));
+        /id="opt-debug"[\s\S]{0,160}?DEBUG: INFINITE AMMO</.test(html) &&
+        /id="opt-godmode"[\s\S]{0,160}?DEBUG: INVINCIBLE</.test(html));
       check('and both are remembered and put on the player',
         /godmode: true/.test(main) && /toggle\('opt-godmode', 'godmode'\)/.test(main) &&
         /game\.player\.invincible = !!prefs\.godmode/.test(main));
@@ -4104,6 +4106,62 @@ await (async () => {
   note('the options', opts.join(', '));
   check('and every option in the page is wired to something',
     unwired.length === 0, unwired.join(', '));
+
+  /* --- AND THE MENU IS TILES, FOUR PAGES OF THEM ------------------
+     Square, rounded, three across, tabbed, and nothing in it scrolls.
+     That is a layout with four ways to go quietly wrong, none of which
+     a module test could see: a page with no tab to reach it, a tab
+     pointing at a page that is not there, a tile whose window has no
+     slot in it, and a scrollbar creeping back in. */
+  {
+    const css = fs2.readFileSync('css/style.css', 'utf8');
+    const menu = html.slice(html.indexOf('<div id="pause"'), html.indexOf('<div id="dial"'));
+    const win = html.slice(html.indexOf('<div id="dial"'));
+    const tabbed = [...menu.matchAll(/class="tab[^"]*"[^>]*data-page="(\d+)"/g)].map(m => m[1]);
+    const paged = [...menu.matchAll(/class="tiles"[^>]*data-page="(\d+)"/g)].map(m => m[1]);
+    const tiles = [...menu.matchAll(/<button([^>]*class="tile[^"]*"[^>]*)>/g)].map(m => m[1]);
+    note('the pages', `${tabbed.length} tabs over ${paged.length} pages, ` +
+      `${tiles.length} tiles: ${paged.map(p => (menu.split(`class="tiles" data-page="${p}"`)[1] || '')
+        .split('</div>')[0].match(/class="tile/g)?.length || 0).join(' + ')}`);
+    check('every page has a tab and every tab a page, in that order',
+      tabbed.length > 1 && tabbed.join(',') === paged.join(','), `${tabbed.join(',')} against ${paged.join(',')}`);
+    check('and one of them is showing and the rest are not',
+      paged.length - (menu.match(/class="tiles"[^>]*hidden/g) || []).length === 1);
+    /* A DEAD TILE IS SILENT, the same way a dead button was: it is
+       either a control the code names by id, or it opens a window, and
+       the window has to have the slot it opens. */
+    const named = tiles.filter(t => /id="(opt-[^"]+)"/.test(t)).map(t => t.match(/id="(opt-[^"]+)"/)[1]);
+    const dialled = tiles.filter(t => /data-dial="([^"]+)"/.test(t)).map(t => t.match(/data-dial="([^"]+)"/)[1]);
+    const slotted = [...win.matchAll(/class="slot"[^>]*data-dial="([^"]+)"/g)].map(m => m[1]);
+    check('every tile either cycles a setting or opens a window on one',
+      named.length + dialled.length === tiles.length,
+      `${named.length} cycles, ${dialled.length} windows, ${tiles.length} tiles`);
+    check('and every window a tile opens has a slot with a slider in it',
+      dialled.every(k => slotted.includes(k)) &&
+      slotted.every(k => new RegExp(`data-dial="${k}"[\\s\\S]*?<input[^>]*type="range"`).test(win)),
+      dialled.filter(k => !slotted.includes(k)).join(', '));
+    check('and every slot in the window is a tile somebody can open',
+      slotted.every(k => dialled.includes(k)), slotted.filter(k => !dialled.includes(k)).join(', '));
+    /* THE SHAPE OF ONE, which is the whole of what was asked for: a
+       square with rounded corners, sized off the window both ways so
+       three across and two down always fit. */
+    const tileCss = css.slice(css.indexOf('.tile {'), css.indexOf('.tile:hover'));
+    check('a tile is square, rounded, and sized off the window both ways',
+      /width: var\(--tile\); height: var\(--tile\)/.test(tileCss) && /border-radius: calc\(var\(--tile\)/.test(tileCss) &&
+      /--tile: min\([^)]*vw[^)]*v(h|min)[^)]*\)/.test(css));
+    /* AND NOTHING SCROLLS. The menu was a column with a scrollbar down
+       the side of it; the pages are what replaced it, so a scroller
+       left anywhere in here is the old menu coming back. */
+    check('and nothing in the menu scrolls: the pages are what replaced it',
+      /\.menu \{[^}]*overflow: hidden/.test(css) && !/overflow-y: (auto|scroll)/.test(css));
+    /* the two kinds of tap, which is the other half of what was asked
+       for: a list wraps round, a number opens the window */
+    check('tapping a list cycles it and wraps, tapping a number opens the window',
+      /prefs\[key\] = \(prefs\[key\] \+ 1\) % list\.length/.test(main) &&
+      /#pause \.tile\[data-dial\]/.test(main) && /showDial\(t\.dataset\.dial/.test(main));
+    check('and the window goes when the menu goes',
+      /if \(!on\) closeDial\(\);/.test(main));
+  }
 
   /* --- THE THREE DIALS --- */
   const ladder = (name) => {

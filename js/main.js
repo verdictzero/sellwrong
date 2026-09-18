@@ -544,51 +544,108 @@ async function boot() {
      which is not a mode change, only a fade; see Input.padHeld */
   input.onPadChange = on => touch.setPadHeld(on);
 
-  /* ---- the settings ------------------------------------------------ */
-  const sensEl = $('opt-sens'), sensV = $('opt-sens-v');
-  const musicEl = $('opt-music'), musicV = $('opt-music-v');
-  /* the three picture dials: pref key, the slider, and its readout */
-  const PICTURE = [['bright', 'opt-bright', 'opt-bright-v'], ['contrast', 'opt-contrast', 'opt-contrast-v'],
-                   ['gamma', 'opt-gamma', 'opt-gamma-v']];
-  const setTog = (id, on) => $(id).setAttribute('aria-pressed', on ? 'true' : 'false');
+  /* ---- the settings -------------------------------------------------
+     THE MENU IS TILES NOW, at the user's request: a square with rounded
+     corners for every option, three across and two down, four tabbed
+     pages of them, and nothing anywhere that scrolls. A tile carries
+     its own name, what it is set to, and a mark saying where that sits
+     among what it could be — a dot per stop for a list, a bar for a
+     number. Tapping it does one of two things:
+
+       A LIST      cycles to the next value and wraps. Three or four
+                   stops is short enough to walk round, and a switch is
+                   a list of two
+       A NUMBER    opens THE WINDOW, which is the one place left in this
+                   menu with a slider in it: a dial between two numbers
+                   on a tile would be a slider the size of a stamp
+
+     What the page holds and what the code reaches for are two files
+     apart, so the smoke test holds them against each other — a typo in
+     either leaves a tile that lights up under the thumb and does
+     nothing at all. */
+
+  /* THE DIALS, in the order their slots stand in the window: the pref
+     this one is, the slider, its readout, and how the number reads. */
+  const DIALS = [
+    { key: 'sens',     el: 'opt-sens',     v: 'opt-sens-v',     fmt: x => x.toFixed(1) + 'X' },
+    { key: 'music',    el: 'opt-music',    v: 'opt-music-v',    fmt: x => Math.round(x * 100) + '%' },
+    { key: 'bright',   el: 'opt-bright',   v: 'opt-bright-v',   fmt: x => x.toFixed(2) },
+    { key: 'contrast', el: 'opt-contrast', v: 'opt-contrast-v', fmt: x => x.toFixed(2) },
+    { key: 'gamma',    el: 'opt-gamma',    v: 'opt-gamma-v',    fmt: x => x.toFixed(2) },
+  ];
+
+  /* the face of a tile: the value, and the mark under it — a string is
+     written as it stands, a number fills the bar that far along */
+  const tileOf = key => document.querySelector(`#pause .tile[data-dial="${key}"]`) || $(key);
+  function face(key, value, mark) {
+    const t = tileOf(key);
+    if (!t) return;
+    t.querySelector('.tv').textContent = value;
+    const m = t.querySelector('.tm');
+    if (!m) return;
+    if (typeof mark === 'number') m.firstElementChild.style.width = (Math.max(0, Math.min(1, mark)) * 100).toFixed(1) + '%';
+    else if (mark != null) m.textContent = mark;
+  }
+  /* where a value stands in a list, and how far a slider is along */
+  const dots = (i, n) => Array.from({ length: n }, (_, k) => (k === i ? '\u25cf' : '\u25cb')).join(' ');
+  const along = el => { const lo = +el.min, hi = +el.max; return hi > lo ? (+el.value - lo) / (hi - lo) : 0; };
+  /* THE NIGHT RUNS PAST MIDNIGHT, so the hours are ordered along the
+     night rather than round the clock: ten at night is before two in
+     the morning. Both the TIME tile's bar and the step it takes read
+     the hour through this. */
+  const night = h => (h <= 12 ? h + 24 : h);
+  const NIGHT_FROM = night(HOUR_STOPS[0]), NIGHT_TO = night(HOUR_STOPS[HOUR_STOPS.length - 1]);
+
+  const setTog = (id, on) => {
+    $(id).setAttribute('aria-pressed', on ? 'true' : 'false');
+    face(id, on ? 'ON' : 'OFF');
+  };
   function syncMenu() {
-    sensEl.value = prefs.sens;
-    sensV.textContent = prefs.sens.toFixed(1) + 'X';
-    musicEl.value = prefs.music;
-    musicV.textContent = Math.round(prefs.music * 100) + '%';
-    for (const [key, id, vid] of PICTURE) { $(id).value = prefs[key]; $(vid).textContent = prefs[key].toFixed(2); }
+    for (const d of DIALS) {
+      const el = $(d.el);
+      el.value = prefs[d.key];
+      const text = d.fmt(prefs[d.key]);
+      $(d.v).textContent = text;
+      face(d.key, text, along(el));
+    }
     setTog('opt-invert', prefs.invert);
     setTog('opt-lefty', prefs.lefty);
     setTog('opt-haptic', prefs.haptics);
-    /* BOTH SIZES SHOWN IN FULL, because "400P" says nothing about how
-       wide it is and the width is where the pixels are — and because the
-       grid is clamped to the buffer, so the second number is the only
-       place you can see that asking for pixels finer than the render did
-       nothing. */
+    /* BOTH SIZES SHOWN IN FULL IN THE WINDOW, because "400P" says
+       nothing about how wide it is and the width is where the pixels
+       are — and because the grid is clamped to the buffer, so the
+       second number is the only place you can see that asking for
+       pixels finer than the render did nothing. The tile has room for
+       the setting and not for the proof of it. */
+    $('opt-res').value = detailIndex;
     $('opt-res-v').textContent = DETAIL[detailIndex] + 'P  ' + pipeline.width + '\u00d7' + pipeline.height;
     $('opt-res-down').disabled = detailIndex === 0;
     $('opt-res-up').disabled = detailIndex === DETAIL.length - 1;
+    face('res', DETAIL[detailIndex] + 'P', detailIndex / (DETAIL.length - 1));
+    $('opt-pix').value = pixelIndex;
     $('opt-pix-v').textContent = (PIXELS[pixelIndex] ? PIXELS[pixelIndex] + 'P' : 'OFF') +
       '  ' + pipeline.gridWidth + '\u00d7' + pipeline.gridHeight;
     $('opt-pix-down').disabled = pixelIndex === 0;
     $('opt-pix-up').disabled = pixelIndex === PIXELS.length - 1;
-    $('opt-pixar').textContent = 'PIXEL ASPECT: ' + PIXEL_ASPECT[pixarIndex].n;
+    face('pix', PIXELS[pixelIndex] ? PIXELS[pixelIndex] + 'P' : 'OFF', pixelIndex / (PIXELS.length - 1));
+    face('opt-pixar', PIXEL_ASPECT[pixarIndex].n, dots(pixarIndex, PIXEL_ASPECT.length));
     /* WITH NO GRID THERE IS NOTHING FOR AN ASPECT TO BE THE ASPECT OF.
-       A button that is present and inert is worse than one that is
-       plainly unavailable, so it greys out with the filter. */
+       A tile that is present and inert is worse than one that is
+       plainly unavailable, so it greys out and stops taking taps. */
     $('opt-pixar').disabled = !PIXELS[pixelIndex];
-    $('opt-crowd').textContent = 'CROWD: ' + CROWD[prefs.crowd].n;
-    $('opt-fx').textContent = 'EFFECTS: ' + FX[prefs.fx].n;
-    $('opt-wood').textContent = 'THE WOOD: ' + WOOD[prefs.wood].n;
-    $('opt-palette').textContent = 'PALETTE: ' + PALETTE_SET[prefs.palette].n;
-    $('opt-tone').textContent = 'TONE: ' + TONE_SET[prefs.tone].n;
-    $('opt-time').textContent = 'TIME: ' + game.weather.label;
-    $('opt-weather').textContent = 'WEATHER: ' + WEATHERS[WEATHER_ORDER[prefs.weather]].name;
+    face('opt-crowd', CROWD[prefs.crowd].n, dots(prefs.crowd, CROWD.length));
+    face('opt-fx', FX[prefs.fx].n, dots(prefs.fx, FX.length));
+    face('opt-wood', WOOD[prefs.wood].n, dots(prefs.wood, WOOD.length));
+    face('opt-palette', PALETTE_SET[prefs.palette].n, dots(prefs.palette, PALETTE_SET.length));
+    face('opt-tone', TONE_SET[prefs.tone].n, dots(prefs.tone, TONE_SET.length));
+    face('opt-time', game.weather.label,
+      (night(game.weather.hour) - NIGHT_FROM) / (NIGHT_TO - NIGHT_FROM));
+    face('opt-weather', WEATHERS[WEATHER_ORDER[prefs.weather]].name, dots(prefs.weather, WEATHER_ORDER.length));
     setTog('opt-fps', prefs.fps);
     setTog('opt-debug', prefs.debug);
     setTog('opt-godmode', prefs.godmode);
     setTog('opt-haze', prefs.haze);
-    $('opt-full').textContent = inFullscreen() ? 'LEAVE FULLSCREEN' : 'FULLSCREEN';
+    face('opt-full', inFullscreen() ? 'ON' : 'OFF');
   }
   function applyPrefs() {
     input.sensitivity = 0.0022 * prefs.sens;    // the mouse and the thumb share one dial
@@ -610,21 +667,94 @@ async function boot() {
     savePrefs(prefs);
     syncMenu();
   }
+
+  /* ---- the pages ----------------------------------------------------
+     Four of them, tabbed. The tiles are the same size on every page, so
+     the only thing a tab changes is which six are under your thumb. */
+  const tabs = [...document.querySelectorAll('#pause .tab')];
+  const pages = [...document.querySelectorAll('#pause .tiles')];
+  function showPage(n) {
+    const want = String(n);
+    for (const t of tabs) {
+      const on = t.dataset.page === want;
+      t.classList.toggle('on', on);
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+    }
+    for (const p of pages) p.hidden = p.dataset.page !== want;
+  }
+  const pageStep = d => {
+    const i = Math.max(0, tabs.findIndex(t => t.classList.contains('on')));
+    showPage(tabs[(i + d + tabs.length) % tabs.length].dataset.page);
+  };
+  for (const t of tabs) t.addEventListener('click', () => showPage(t.dataset.page));
+  showPage(1);
+
+  /* ---- the window a dial opens --------------------------------------
+     One window, one slot shown in it at a time, and the slot is the
+     slider that has always been there — moved off the face of the menu
+     and into a box big enough to aim at. */
+  const dialEl = $('dial');
+  const slots = [...document.querySelectorAll('#dial .slot')];
+  let openDial = '';
+  function showDial(key, name) {
+    openDial = key;
+    $('dial-name').textContent = name;
+    for (const s of slots) s.hidden = s.dataset.dial !== key;
+    dialEl.classList.remove('gone');
+  }
+  function closeDial() {
+    openDial = '';
+    dialEl.classList.add('gone');
+  }
+  const dialSlider = () => (openDial ? $('dial').querySelector(`.slot[data-dial="${openDial}"] input`) : null);
+  const nudge = (el, d) => {
+    if (!el) return;
+    if (d < 0) el.stepDown(); else el.stepUp();
+    el.dispatchEvent(new Event('input'));
+  };
+  for (const t of document.querySelectorAll('#pause .tile[data-dial]'))
+    t.addEventListener('click', () => showDial(t.dataset.dial, t.querySelector('.tn').textContent));
+  $('dial-done').addEventListener('click', closeDial);
+  /* the dark round the box is a way out of it, the way a window's is */
+  dialEl.addEventListener('click', e => { if (e.target === dialEl) closeDial(); });
+  /* the nudge either side of a slider, for the step a thumb cannot hit.
+     The two ladders have their own, because a rung is not a step of a
+     number — see below. */
+  for (const s of slots) {
+    const el = s.querySelector('input');
+    for (const b of s.querySelectorAll('.nudge[data-nudge]'))
+      b.addEventListener('click', () => nudge(el, +b.dataset.nudge));
+  }
+
+  $('opt-res').max = DETAIL.length - 1;
+  $('opt-pix').max = PIXELS.length - 1;
   applyPrefs();
-  sensEl.addEventListener('input', () => { prefs.sens = parseFloat(sensEl.value) || 1; applyPrefs(); });
-  musicEl.addEventListener('input', () => { prefs.music = Math.max(0, Math.min(1, parseFloat(musicEl.value) || 0)); applyPrefs(); });
-  for (const [key, id] of PICTURE)
-    $(id).addEventListener('input', () => { prefs[key] = parseFloat($(id).value) || 1; applyPrefs(); });
+  for (const d of DIALS) {
+    const el = $(d.el);
+    el.addEventListener('input', () => {
+      const x = parseFloat(el.value);
+      prefs[d.key] = Number.isFinite(x) ? x : DEFAULT_PREFS[d.key];
+      applyPrefs();
+    });
+  }
   const toggle = (id, key) => $(id).addEventListener('click', () => { prefs[key] = !prefs[key]; applyPrefs(); });
   toggle('opt-invert', 'invert');
   toggle('opt-lefty', 'lefty');
   toggle('opt-haptic', 'haptics');
+  /* THE TWO LADDERS ARE RUNGS, so their sliders count in whole steps
+     and the readout is the rung's name rather than its number. The
+     minus and plus either side are the steppers this menu used to wear
+     on its face: a cycling button is fine for three states and wrong
+     for nine — you should not have to go all the way round to go back
+     one. */
+  $('opt-res').addEventListener('input', () => setDetail(+$('opt-res').value));
+  $('opt-pix').addEventListener('input', () => setPixels(+$('opt-pix').value));
   $('opt-res-down').addEventListener('click', () => setDetail(detailIndex - 1));
   $('opt-res-up').addEventListener('click', () => setDetail(detailIndex + 1));
   $('opt-pix-down').addEventListener('click', () => setPixels(pixelIndex - 1));
   $('opt-pix-up').addEventListener('click', () => setPixels(pixelIndex + 1));
-  /* THE LADDERS WRAP, because three states is short enough to walk
-     round and a stepper for three is two buttons doing one job. */
+  /* THE LISTS WRAP, because three or four stops is short enough to walk
+     round, and the dots on the tile say how far round you are. */
   const ladder = (id, key, list, after) => $(id).addEventListener('click', () => {
     prefs[key] = (prefs[key] + 1) % list.length;
     if (after) after();                 // the ones that resize the picture
@@ -646,11 +776,10 @@ async function boot() {
   ladder('opt-tone', 'tone', TONE_SET, () => applyTone(TONE_SET[prefs.tone].v));
   ladder('opt-weather', 'weather', WEATHER_ORDER);
   /* THE HOUR IS NOT A PREFERENCE, it is where the night has got to; the
-     button steps it to the next keyframe, for looking at the dawn
-     without waiting nine minutes for it */
+     tile steps it to the next keyframe, for looking at the dawn without
+     waiting nine minutes for it */
   $('opt-time').addEventListener('click', () => {
-    const h = game.weather.hour;
-    const next = HOUR_STOPS.find(x => (x <= 12 ? x + 24 : x) > (h <= 12 ? h + 24 : h) + 0.01) ?? HOUR_STOPS[0];
+    const next = HOUR_STOPS.find(x => night(x) > night(game.weather.hour) + 0.01) ?? HOUR_STOPS[0];
     game.weather.setHour(next);
     syncMenu();
   });
@@ -670,6 +799,9 @@ async function boot() {
   game.onPauseChange = on => {
     pauseEl.classList.toggle('gone', !on);
     $('touch').classList.toggle('paused', on);
+    /* the window is part of the menu: it goes when the menu goes, or it
+       is still standing there over the game the next time you pause */
+    if (!on) closeDial();
     if (on) { touch.releaseAll(); input.exitLock(); syncMenu(); }
   };
   $('btn-resume').addEventListener('click', () => {
@@ -720,6 +852,21 @@ async function boot() {
   title.addEventListener('click', start);
   addEventListener('keydown', e => {
     if (!started && (e.code === 'Space' || e.code === 'Enter')) { start(); return; }
+    /* THE MENU ON A KEYBOARD. The arrows turn the page, or move the
+       slider when a window is open; escape shuts the window rather than
+       the menu, and the key is taken off the input on the way past so
+       the pause switch downstream never sees it — Input latches a press
+       so a tap shorter than a tic still counts, which is the same
+       latch. One escape closes the window, the next unpauses. */
+    if (game.paused) {
+      if (e.code === 'Escape' && openDial) {
+        closeDial();
+        input.keys.delete('pause'); input.latch.delete('pause');
+        return;
+      }
+      if (e.code === 'ArrowLeft') { openDial ? nudge(dialSlider(), -1) : pageStep(-1); return; }
+      if (e.code === 'ArrowRight') { openDial ? nudge(dialSlider(), 1) : pageStep(1); return; }
+    }
     if (started && game.state !== 'play' && e.code === 'Space') location.reload();
     /* SHIFT MOVES THE OTHER ONE. Two brackets for two sizes: the picture
        on its own, and the pixels it is made of with shift held. */

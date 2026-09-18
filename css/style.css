@@ -63,7 +63,7 @@ html, body {
 }
 
 /* ---- the screens: loading, title, pause -------------------------- */
-#loading, #title, #pause {
+#loading, #title, #pause, #dial {
   position: fixed; inset: 0;
   display: flex; align-items: center; justify-content: center;
   padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
@@ -78,7 +78,7 @@ html, body {
   background: linear-gradient(to bottom, rgba(5, 6, 10, .18), rgba(5, 6, 10, .34) 55%, rgba(5, 6, 10, .62));
 }
 #pause { background: rgba(5, 6, 10, .58); z-index: 20; }
-#loading.gone, #title.gone, #pause.gone { opacity: 0; pointer-events: none; }
+#loading.gone, #title.gone, #pause.gone, #dial.gone { opacity: 0; pointer-events: none; }
 
 .panel { text-align: center; max-width: 42rem; padding: 2rem; }
 
@@ -130,24 +130,101 @@ h2 { font-size: .78rem; letter-spacing: .42em; color: rgba(207, 207, 214, .55); 
    by input.js, stamped on <html> */
 html.touch .desk-only, html:not(.touch) .touch-only { display: none !important; }
 
-/* a phone in landscape is short: pull it all in so it fits */
-@media (max-height: 480px) {
-  .panel { padding: .8rem 1.2rem; }
-  .logo { width: min(52vw, 24rem); }
-  .logo-slot { margin-bottom: .8rem; }
-  .prompt { margin-bottom: .5rem; }
-  h2 { margin-bottom: .5rem; }
-  .menu .row { margin: .2rem 0; gap: .3rem; }
-  .btn { min-height: 40px; padding: .3rem .7rem; font-size: .64rem; }
-  .slider input { height: 40px; }
-}
 
-/* ---- the pause menu: words, not boxes ----------------------------- */
-.menu { max-width: 34rem; width: 100%; max-height: 100%; overflow-y: auto; }
-.menu .row {
-  display: flex; flex-wrap: wrap; justify-content: center; align-items: center;
-  gap: .4rem; margin: .35rem 0;
+/* ---- the pause menu: tiles, four pages of them --------------------
+   It was a column of words with a scrollbar down the side, which is the
+   wrong shape for the machine this is mostly played on: a phone held
+   sideways is a WIDE, SHORT window, and a long column in one is empty
+   down both sides and cut off at the bottom. So every option is a
+   square tile with rounded corners, six to a page, and the pages are
+   tabbed. NOTHING IN HERE SCROLLS, at the user's request — if a page is
+   full the next one is a tab away. */
+.menu {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: .5rem;
+  width: min(100%, 34rem); height: 100%;
+  padding: 1rem;
+  overflow: hidden;                      /* clipped rather than scrolled, deliberately */
 }
+.menu h2 { margin: 0; }
+
+/* HOW BIG A TILE IS — the only size in here, because the tiles are
+   square: one number settles the width and the height of the whole
+   grid. Three across and two down have to fit under the tabs and over
+   the two words at the bottom, so it is bounded by the window BOTH ways
+   and capped, or a desktop gets six dinner plates. */
+#pause { --tile: min(28vw, 22vh, 8rem); --gap: .45rem; }
+@supports (height: 1dvh) { #pause { --tile: min(28vw, 22dvh, 8rem); } }
+
+/* the tabs: which page, and which page you are on */
+.tabs { display: flex; flex-wrap: wrap; justify-content: center; gap: .3rem; }
+.tab {
+  min-height: 34px; padding: .4rem .7rem;
+  font: inherit; font-size: .58rem; letter-spacing: .18em; text-transform: uppercase;
+  color: rgba(207, 207, 214, .5); background: transparent;
+  border: 1px solid rgba(207, 207, 214, .16); border-radius: 10px;
+  cursor: pointer; touch-action: manipulation;
+  transition: color .1s, border-color .1s, background .1s;
+}
+.tab:hover, .tab:focus-visible { color: #fff; border-color: rgba(207, 207, 214, .4); outline: none; }
+.tab.on { color: #e8c34a; border-color: rgba(232, 195, 74, .55); background: rgba(232, 195, 74, .08); }
+
+/* the page: three tiles across, always two rows tall whether or not
+   the page has six on it, and the tiles are the same size on every
+   page — so the tabs and the two words below them stay where they are
+   and the only thing a tab changes is what is under your thumb */
+.pages {
+  display: flex; align-items: center; justify-content: center;
+  flex: 0 1 auto; min-height: calc(var(--tile) * 2 + var(--gap)); overflow: hidden;
+}
+.tiles { display: grid; grid-template-columns: repeat(3, var(--tile)); gap: var(--gap); justify-content: center; }
+
+/* A TILE SAYS THREE THINGS: what it is, what it is set to, and where
+   that sits among what it could be — a bar for a dial, a dot per stop
+   for a cycle. */
+.tile {
+  display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+  width: var(--tile); height: var(--tile);
+  padding: .5rem .3rem;
+  font: inherit; text-align: center;
+  color: rgba(207, 207, 214, .72);
+  /* dark glass with a light top edge, the same bevel the thumb buttons
+     wear — solid enough to read a word off over a burning car park */
+  background: linear-gradient(160deg, rgba(255, 255, 255, .08), rgba(255, 255, 255, .02) 55%, rgba(0, 0, 0, .16)), rgba(8, 10, 16, .78);
+  border: 1px solid rgba(207, 207, 214, .2);
+  border-radius: calc(var(--tile) * .18);
+  cursor: pointer; touch-action: manipulation;
+  overflow: hidden;
+  transition: color .1s, border-color .1s, background .1s, transform .08s;
+}
+.tile:hover, .tile:focus-visible {
+  color: #fff;
+  background: linear-gradient(160deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .05) 55%, rgba(0, 0, 0, .16)), rgba(14, 17, 26, .86);
+  border-color: rgba(207, 207, 214, .45); outline: none;
+}
+.tile:active { transform: scale(.96); }
+.tile:disabled { opacity: .3; pointer-events: none; }
+.tile .tn { font-size: .5rem; letter-spacing: .13em; line-height: 1.35; color: rgba(207, 207, 214, .55); }
+.tile .tv { font-size: .66rem; letter-spacing: .07em; line-height: 1.25; font-weight: normal; color: #e8c34a; }
+/* a switch that is off says so in grey; one that is on lights the tile */
+.tile[aria-pressed="false"] .tv { color: rgba(207, 207, 214, .45); }
+.tile[aria-pressed="true"] {
+  border-color: rgba(232, 195, 74, .5);
+  /* a layer of the yellow over the same glass: only the last layer of a
+     background may be a flat colour, so the tint is a gradient of one */
+  background: linear-gradient(160deg, rgba(255, 255, 255, .08), rgba(255, 255, 255, .02) 55%, rgba(0, 0, 0, .16)),
+              linear-gradient(rgba(232, 195, 74, .14), rgba(232, 195, 74, .14)), rgba(8, 10, 16, .82);
+}
+.tile .tm {
+  min-height: .72rem;
+  font-size: .46rem; font-style: normal; letter-spacing: .1em; line-height: 1;
+  color: rgba(232, 195, 74, .75);
+}
+.tile .tm.bar { width: 60%; min-height: 0; height: 3px; margin-bottom: .18rem; border-radius: 2px; background: rgba(207, 207, 214, .16); }
+.tile .tm.bar span { display: block; height: 100%; border-radius: 2px; background: #e8c34a; }
+
+/* the two that are not settings, under every page */
+.foot { display: flex; flex-wrap: wrap; justify-content: center; gap: .5rem; }
 .btn {
   min-height: 44px; min-width: 44px;                 /* a thumb's worth, still */
   padding: .5rem 1rem;
@@ -163,23 +240,58 @@ html.touch .desk-only, html:not(.touch) .touch-only { display: none !important; 
 .btn.primary:hover { color: #ffe07a; border-bottom-color: #e8c34a; }
 .btn.quiet { color: rgba(207, 207, 214, .45); }
 .btn.quiet.armed { color: #e8c34a; }
-.btn.tog::before { content: '○ '; color: rgba(207, 207, 214, .35); }
-.btn.tog[aria-pressed="true"] { color: #e8c34a; }
-.btn.tog[aria-pressed="true"]::before { content: '● '; color: #e8c34a; }
-/* THE STEPPER, for a setting with an order to it: a name, minus, the
-   value, plus. A cycling button is fine for three states and wrong for
-   eight — you should not have to go all the way round to go back one. */
-.step { font-size: .7rem; letter-spacing: .2em; color: rgba(207, 207, 214, .55); }
-.step > span { min-width: 6.5rem; text-align: right; }
-.step b { min-width: 7.5rem; text-align: center; color: #e8c34a; font-weight: normal; }
-.btn.narrow { min-width: 44px; padding: .5rem .6rem; font-size: .9rem; letter-spacing: 0; }
 
-.slider { font-size: .7rem; letter-spacing: .2em; color: rgba(207, 207, 214, .55); }
-.slider span { min-width: 6.5rem; text-align: right; }
-.slider b { min-width: 3rem; text-align: left; color: #e8c34a; font-weight: normal; }
-.slider input {
-  flex: 1 1 8rem; min-width: 7rem; height: 44px;
+/* ---- the window a tile opens -------------------------------------
+   For the settings that are a number between two numbers. It sits OVER
+   the menu rather than in it, so asking for a slider does not move the
+   page underneath, and it is the one place in this menu with a slider
+   in it at all. */
+#dial { background: rgba(5, 6, 10, .72); z-index: 30; transition: opacity .12s ease; }
+.dial-box {
+  width: min(24rem, 86vw);
+  padding: 1.1rem 1.2rem;
+  text-align: center;
+  background: #0a0c12;
+  border: 1px solid rgba(207, 207, 214, .22);
+  border-radius: 18px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .6);
+}
+.dial-box h3 {
+  margin-bottom: .8rem; font-weight: normal;
+  font-size: .64rem; letter-spacing: .3em; color: rgba(207, 207, 214, .6);
+}
+.slot { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: .5rem; }
+.slot b {
+  grid-column: 1 / -1;
+  font-weight: normal; font-size: .82rem; letter-spacing: .16em; color: #e8c34a;
+}
+.slot input {
+  width: 100%; height: 44px;
   accent-color: #e8c34a; touch-action: pan-x; cursor: pointer;
+}
+.nudge {
+  width: 44px; height: 44px;
+  font: inherit; font-size: 1rem;
+  color: rgba(207, 207, 214, .72); background: rgba(207, 207, 214, .05);
+  border: 1px solid rgba(207, 207, 214, .18); border-radius: 12px;
+  cursor: pointer; touch-action: manipulation;
+  transition: color .1s, border-color .1s, background .1s;
+}
+.nudge:hover, .nudge:focus-visible { color: #fff; border-color: rgba(207, 207, 214, .45); outline: none; }
+.nudge:disabled { opacity: .3; pointer-events: none; }
+#dial-done { margin-top: .7rem; }
+
+/* a phone in landscape is short: pull it all in so it fits */
+@media (max-height: 480px) {
+  .panel { padding: .8rem 1.2rem; }
+  .logo { width: min(52vw, 24rem); }
+  .logo-slot { margin-bottom: .8rem; }
+  .prompt { margin-bottom: .5rem; }
+  h2 { margin-bottom: .5rem; }
+  .menu { gap: .35rem; padding: .5rem; }
+  .btn { min-height: 40px; padding: .3rem .7rem; font-size: .64rem; }
+  .tab { min-height: 30px; padding: .3rem .55rem; }
+  .dial-box { padding: .8rem .9rem; }
 }
 
 /* ---- the touch controls ------------------------------------------ */

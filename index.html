@@ -81,85 +81,178 @@
   <div id="version"></div>
 </div>
 
-<!-- Paused: a short column of small words. -->
+<!-- Paused: four pages of square tiles, and nothing in here scrolls.
+     A tile says what it is, what it is set to, and — as a bar, or a dot
+     per stop — where that sits among what it could be. TAPPING ONE
+     CYCLES IT, a switch being a cycle of two; a tile holding a number
+     between two numbers opens THE WINDOW below instead, with a slider
+     in it big enough for a thumb. The pages are tabbed rather than
+     scrolled, at the user's request: a phone held sideways is a wide,
+     short window, and a long column in one is empty down both sides and
+     cut off at the bottom. -->
 <div id="pause" class="gone">
   <div class="panel menu">
     <h2>PAUSED</h2>
-    <div class="row">
-      <button id="btn-resume" class="btn primary">RESUME</button>
-      <button id="btn-restart" class="btn quiet">RESTART</button>
+    <div class="tabs" role="tablist" aria-label="Menu pages">
+      <button class="tab on" type="button" role="tab" aria-selected="true" data-page="1">1 CONTROLS</button>
+      <button class="tab" type="button" role="tab" aria-selected="false" data-page="2">2 PICTURE</button>
+      <button class="tab" type="button" role="tab" aria-selected="false" data-page="3">3 LEVELS</button>
+      <button class="tab" type="button" role="tab" aria-selected="false" data-page="4">4 WORLD</button>
+      <button class="tab" type="button" role="tab" aria-selected="false" data-page="5">5 DEBUG</button>
     </div>
-    <label class="row slider" for="opt-sens">
-      <span>LOOK SPEED</span>
-      <input id="opt-sens" type="range" min="0.4" max="2.4" step="0.1" value="1">
+
+    <div class="pages">
+      <!-- 1: how it is played -->
+      <div class="tiles" data-page="1" role="tabpanel" aria-label="Controls">
+        <button class="tile" type="button" data-dial="sens">
+          <span class="tn">LOOK SPEED</span><b class="tv">1.0X</b><i class="tm bar"><span></span></i>
+        </button>
+        <button id="opt-invert" class="tile" type="button" aria-pressed="false">
+          <span class="tn">INVERT LOOK</span><b class="tv">OFF</b><i class="tm"></i>
+        </button>
+        <button id="opt-lefty" class="tile touch-only" type="button" aria-pressed="false">
+          <span class="tn">LEFT-HANDED</span><b class="tv">OFF</b><i class="tm"></i>
+        </button>
+        <button id="opt-haptic" class="tile touch-only" type="button" aria-pressed="true">
+          <span class="tn">VIBRATION</span><b class="tv">ON</b><i class="tm"></i>
+        </button>
+        <button class="tile" type="button" data-dial="music">
+          <span class="tn">MUSIC</span><b class="tv">50%</b><i class="tm bar"><span></span></i>
+        </button>
+        <button id="opt-full" class="tile" type="button" hidden>
+          <span class="tn">FULLSCREEN</span><b class="tv">OFF</b><i class="tm"></i>
+        </button>
+      </div>
+
+      <!-- 2: what the picture is made of -->
+      <div class="tiles" data-page="2" role="tabpanel" aria-label="Picture" hidden>
+        <button class="tile" type="button" data-dial="res">
+          <span class="tn">RENDER</span><b class="tv">720P</b><i class="tm bar"><span></span></i>
+        </button>
+        <button class="tile" type="button" data-dial="pix">
+          <span class="tn">PIXELS</span><b class="tv">240P</b><i class="tm bar"><span></span></i>
+        </button>
+        <button id="opt-pixar" class="tile" type="button">
+          <span class="tn">PIXEL ASPECT</span><b class="tv">TALL 5:6</b><i class="tm"></i>
+        </button>
+        <button id="opt-palette" class="tile" type="button">
+          <span class="tn">PALETTE</span><b class="tv">RAMPS</b><i class="tm"></i>
+        </button>
+        <button id="opt-tone" class="tile" type="button">
+          <span class="tn">TONE</span><b class="tv">EARTH</b><i class="tm"></i>
+        </button>
+      </div>
+
+      <!-- 3: the three dials the finished frame goes through -->
+      <div class="tiles" data-page="3" role="tabpanel" aria-label="Levels" hidden>
+        <button class="tile" type="button" data-dial="bright">
+          <span class="tn">BRIGHTNESS</span><b class="tv">1.35</b><i class="tm bar"><span></span></i>
+        </button>
+        <button class="tile" type="button" data-dial="contrast">
+          <span class="tn">CONTRAST</span><b class="tv">1.00</b><i class="tm bar"><span></span></i>
+        </button>
+        <button class="tile" type="button" data-dial="gamma">
+          <span class="tn">GAMMA</span><b class="tv">1.00</b><i class="tm bar"><span></span></i>
+        </button>
+      </div>
+
+      <!-- 4: what is in it, and what the night is doing -->
+      <div class="tiles" data-page="4" role="tabpanel" aria-label="World" hidden>
+        <button id="opt-crowd" class="tile" type="button">
+          <span class="tn">CROWD</span><b class="tv">EVERYONE</b><i class="tm"></i>
+        </button>
+        <button id="opt-fx" class="tile" type="button">
+          <span class="tn">EFFECTS</span><b class="tv">FULL</b><i class="tm"></i>
+        </button>
+        <button id="opt-wood" class="tile" type="button">
+          <span class="tn">THE WOOD</span><b class="tv">ALL OF IT</b><i class="tm"></i>
+        </button>
+        <button id="opt-time" class="tile" type="button">
+          <span class="tn">TIME</span><b class="tv">02:00</b><i class="tm bar"><span></span></i>
+        </button>
+        <button id="opt-weather" class="tile" type="button">
+          <span class="tn">WEATHER</span><b class="tv">CLEAR</b><i class="tm"></i>
+        </button>
+      </div>
+
+      <!-- 5: the switches, and what the frame is spent on -->
+      <div class="tiles" data-page="5" role="tabpanel" aria-label="Debug" hidden>
+        <button id="opt-debug" class="tile" type="button" aria-pressed="true">
+          <span class="tn">DEBUG: INFINITE AMMO</span><b class="tv">ON</b><i class="tm"></i>
+        </button>
+        <button id="opt-godmode" class="tile" type="button" aria-pressed="true">
+          <span class="tn">DEBUG: INVINCIBLE</span><b class="tv">ON</b><i class="tm"></i>
+        </button>
+        <button id="opt-haze" class="tile" type="button" aria-pressed="true">
+          <span class="tn">DEBUG: FIRE HAZE</span><b class="tv">ON</b><i class="tm"></i>
+        </button>
+        <button id="opt-fps" class="tile" type="button" aria-pressed="false">
+          <span class="tn">FRAME RATE</span><b class="tv">OFF</b><i class="tm"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- the two that are not settings, on every page -->
+    <div class="foot">
+      <button id="btn-resume" class="btn primary" type="button">RESUME</button>
+      <button id="btn-restart" class="btn quiet" type="button">RESTART</button>
+    </div>
+  </div>
+</div>
+
+<!-- THE WINDOW A TILE OPENS, for the settings that are a number between
+     two numbers rather than a short list to walk round: the name, the
+     slider, a nudge either side of it for the step a thumb cannot hit,
+     and the value under. One window; the slot for whichever tile asked
+     is the one that is shown. -->
+<div id="dial" class="gone">
+  <div class="dial-box" role="dialog" aria-modal="true" aria-labelledby="dial-name">
+    <h3 id="dial-name">LOOK SPEED</h3>
+    <div class="slot" data-dial="sens" hidden>
+      <button class="nudge" type="button" data-nudge="-1" aria-label="lower">&minus;</button>
+      <input id="opt-sens" type="range" min="0.4" max="2.4" step="0.1" value="1" aria-label="Look speed">
+      <button class="nudge" type="button" data-nudge="1" aria-label="higher">+</button>
       <b id="opt-sens-v">1.0X</b>
-    </label>
-    <label class="row slider" for="opt-music">
-      <span>MUSIC</span>
-      <input id="opt-music" type="range" min="0" max="1" step="0.05" value="0.5">
+    </div>
+    <div class="slot" data-dial="music" hidden>
+      <button class="nudge" type="button" data-nudge="-1" aria-label="quieter">&minus;</button>
+      <input id="opt-music" type="range" min="0" max="1" step="0.05" value="0.5" aria-label="Music">
+      <button class="nudge" type="button" data-nudge="1" aria-label="louder">+</button>
       <b id="opt-music-v">50%</b>
-    </label>
-    <label class="row slider" for="opt-bright">
-      <span>BRIGHTNESS</span>
-      <input id="opt-bright" type="range" min="0.5" max="2.2" step="0.05" value="1.35">
+    </div>
+    <div class="slot" data-dial="bright" hidden>
+      <button class="nudge" type="button" data-nudge="-1" aria-label="darker">&minus;</button>
+      <input id="opt-bright" type="range" min="0.5" max="2.2" step="0.05" value="1.35" aria-label="Brightness">
+      <button class="nudge" type="button" data-nudge="1" aria-label="brighter">+</button>
       <b id="opt-bright-v">1.35</b>
-    </label>
-    <label class="row slider" for="opt-contrast">
-      <span>CONTRAST</span>
-      <input id="opt-contrast" type="range" min="0.5" max="1.8" step="0.05" value="1">
+    </div>
+    <div class="slot" data-dial="contrast" hidden>
+      <button class="nudge" type="button" data-nudge="-1" aria-label="flatter">&minus;</button>
+      <input id="opt-contrast" type="range" min="0.5" max="1.8" step="0.05" value="1" aria-label="Contrast">
+      <button class="nudge" type="button" data-nudge="1" aria-label="harder">+</button>
       <b id="opt-contrast-v">1.00</b>
-    </label>
-    <label class="row slider" for="opt-gamma">
-      <span>GAMMA</span>
-      <input id="opt-gamma" type="range" min="0.6" max="2.0" step="0.05" value="1">
+    </div>
+    <div class="slot" data-dial="gamma" hidden>
+      <button class="nudge" type="button" data-nudge="-1" aria-label="lower">&minus;</button>
+      <input id="opt-gamma" type="range" min="0.6" max="2.0" step="0.05" value="1" aria-label="Gamma">
+      <button class="nudge" type="button" data-nudge="1" aria-label="higher">+</button>
       <b id="opt-gamma-v">1.00</b>
-    </label>
-    <div class="row">
-      <button id="opt-invert" class="btn tog" aria-pressed="false">INVERT LOOK</button>
-      <button id="opt-lefty" class="btn tog touch-only" aria-pressed="false">LEFT-HANDED</button>
-      <button id="opt-haptic" class="btn tog touch-only" aria-pressed="true">VIBRATION</button>
     </div>
-    <div class="row step">
-      <span>RENDER</span>
-      <button id="opt-res-down" class="btn narrow" aria-label="lower">&minus;</button>
-      <b id="opt-res-v">400P</b>
-      <button id="opt-res-up" class="btn narrow" aria-label="higher">+</button>
+    <!-- the two ladders: the slider walks the rungs, and the nudges are
+         the steppers this menu used to wear on its face -->
+    <div class="slot" data-dial="res" hidden>
+      <button id="opt-res-down" class="nudge" type="button" aria-label="lower">&minus;</button>
+      <input id="opt-res" type="range" min="0" max="8" step="1" value="8" aria-label="Render height">
+      <button id="opt-res-up" class="nudge" type="button" aria-label="higher">+</button>
+      <b id="opt-res-v">720P</b>
     </div>
-    <div class="row step">
-      <span>PIXELS</span>
-      <button id="opt-pix-down" class="btn narrow" aria-label="chunkier">&minus;</button>
-      <b id="opt-pix-v">OFF</b>
-      <button id="opt-pix-up" class="btn narrow" aria-label="finer">+</button>
+    <div class="slot" data-dial="pix" hidden>
+      <button id="opt-pix-down" class="nudge" type="button" aria-label="chunkier">&minus;</button>
+      <input id="opt-pix" type="range" min="0" max="8" step="1" value="3" aria-label="Pixel height">
+      <button id="opt-pix-up" class="nudge" type="button" aria-label="finer">+</button>
+      <b id="opt-pix-v">240P</b>
     </div>
-    <div class="row">
-      <button id="opt-pixar" class="btn">PIXEL ASPECT: SQUARE</button>
-    </div>
-    <div class="row">
-      <button id="opt-crowd" class="btn">CROWD: EVERYONE</button>
-      <button id="opt-fx" class="btn">EFFECTS: FULL</button>
-    </div>
-    <div class="row">
-      <button id="opt-wood" class="btn">THE WOOD: ALL OF IT</button>
-      <button id="opt-fps" class="btn tog" aria-pressed="false">FRAME RATE</button>
-    </div>
-    <div class="row">
-      <button id="opt-palette" class="btn">PALETTE: RAMPS</button>
-      <button id="opt-tone" class="btn">TONE: EARTH</button>
-    </div>
-    <div class="row">
-      <button id="opt-time" class="btn">TIME: 02:00</button>
-      <button id="opt-weather" class="btn">WEATHER: CLEAR</button>
-    </div>
-    <div class="row">
-      <button id="opt-debug" class="btn tog" aria-pressed="true">DEBUG: INFINITE AMMO</button>
-      <button id="opt-godmode" class="btn tog" aria-pressed="true">DEBUG: INVINCIBLE</button>
-    </div>
-    <div class="row">
-      <button id="opt-haze" class="btn tog" aria-pressed="true">DEBUG: FIRE HAZE</button>
-    </div>
-    <div class="row">
-      <button id="opt-full" class="btn" hidden>FULLSCREEN</button>
-    </div>
+    <button id="dial-done" class="btn primary" type="button">DONE</button>
   </div>
 </div>
 
