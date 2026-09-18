@@ -139,7 +139,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         2188 checks, no install and no browser
+  the smoke test         2219 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -4165,9 +4165,12 @@ had them the wrong way round.
 
   THE ART PALETTE is what a picture is PAINTED in. It is the fifteen
   ramps, it is what every texture generator and every sprite decoder
-  reaches for, it is what js/art-data.js's indices mean, and it NEVER
-  CHANGES. Nothing in the game has ever been painted in any other box
-  and nothing ever will be.
+  reaches for, and it is what js/art-data.js's indices mean. It never
+  changed for most of this project's life, and this chapter said so in
+  those words. It is a setting now — see AND THEN A SECOND BOX TO PAINT
+  IN below — and the thing that made that possible is the thing this
+  chapter is about: the ramps and the box were separated, so swapping
+  either one no longer scrambles the other.
 
   THE DISPLAY PALETTE is what the SCREEN can hold. The post pass
   dithers the finished frame and snaps it through a lookup cube built
@@ -4243,6 +4246,121 @@ about a box that is not the one in use — and the pipeline rewrites its
 cube IN PLACE rather than making a new texture, because the sky baker
 was handed that exact texture object when the game booted and a new one
 would leave the two drifting apart with only the sky in the old box.
+
+AND THEN A SECOND BOX TO PAINT IN
+---------------------------------
+
+At the user's request, and asked for as a TEST THEY COULD UNDO: remap
+the textures and the palette to muted, earthy tones. Which is the right
+shape for it: a repository is a bad place to keep an experiment, and
+this game already had the machinery to make it a setting instead.
+
+WHAT IT IS. Fifteen more ramps in js/palette.js, with the same keys, the
+same lengths and the same order as the fifteen the game was drawn in.
+The greys go warm stone, the greens go sage and dried grass, the blues
+go slate, cyan goes verdigris, yellow goes ochre, purple goes heather,
+pink goes clay. The blacks go BROWN — a shadow in the stock box is
+[6,7,11], a shadow full of skylight, and in this one it is [16,14,12], a
+shadow full of dust. And nothing reaches white: the top of every ramp
+comes down from the 248-252 the stock box runs to, into the 190s and
+220s, and warms on the way, because the single loudest thing about a
+faded picture is that its highlights are not white.
+
+Measured over the whole 256: the saturation goes from 0.281 to 0.219 and
+the brightest thing in the box from 252 to 238.
+
+THE THREE THAT WERE ALREADY EARTH HARDLY MOVE, and that is the argument
+for the box rather than a coincidence. Weighted 3:6:1 across R:G:B — the
+eye's own weighting, the same one the palette snaps with — cyan travels
+25, yellow 21, red 21, green 18, and brown travels 5, rust 7, flesh 8.
+Brown, rust and flesh were the answer before the question was asked.
+
+AND THE FIRE DOES NOT MUTE. It travels 11, less than any of the four
+most coloured ramps in the box, and it keeps its route exactly: the same
+seven stops in the same places, black to dark red to blood to ember to
+orange to yellow to white heat. What comes off it is the neon — the
+white heat down from [255,255,226] to a warm bone — and nothing else,
+because the fire is the subject of this game and the one thing in the
+frame that is supposed to be the brightest thing in the frame. Muting it
+would be muting the point. THE EMBER RAMP is not in the swap at all for
+the same reason: it is what everything still glowing after the flame has
+gone is lit by, and it stays the colour a coal is.
+
+THE SAME FIFTEEN IS THE WHOLE TRICK, and it is a constraint rather than
+a convenience. RAMP[key] lands at the same index in both boxes, so entry
+n of the palette is the same MATERIAL in both — which means the two
+photographed pictures in art/, which are kept as palette INDICES in
+js/art-data.js and would otherwise have to go back through
+tools/bake-art.mjs, come out RECOLOURED rather than scrambled. Change an
+`n` and that stops being true silently, so the suite holds the two lists
+against each other, ramp for ramp.
+
+AND IT IS FILLED IN PLACE AND NEVER REPLACED. Half the game is holding
+that array — PALETTE is it, the default display box is it, the art
+decoder indexes it — and a module that captured it at load time would
+keep the old colours for ever if setArtPalette handed back a new one. So
+every entry is written THROUGH and everybody holding it sees the new box
+on the next pixel they ask for. The snap cache goes with it, which is
+not a nicety: every answer in it is an index into a palette that no
+longer holds those colours, and the first texture repainted through a
+stale one would come out in the box it was supposed to be leaving.
+
+WHAT HAS TO BE MADE AGAIN is more than the display palette needed, and
+that is the difference between the two settings. The display palette
+changes what the screen HOLDS and there is nothing to repaint; this one
+changes what the art IS. So: the textures, repainted into the same
+three.js texture objects every material in the scene is already holding;
+the sprites, and then THE PHOTOGRAPHS LAID OVER THEM AGAIN, because a
+repaint puts every stand-in back and the order is what makes a face a
+face; the weapons the HUD draws; and then the lookup cube and the sky,
+exactly as the display setting already does them. About a second, once,
+on a button nobody presses in a firefight — and the way back is the same
+button.
+
+WHAT IS NOT MADE AGAIN, on purpose: the particle atlases, the GLB
+models and the photographs themselves. All three are snapped through the
+cube at the last moment like everything else in the frame, so they land
+in the new box anyway — the same argument the Uzebox palette already
+makes. The difference between that and a repaint is that a repaint DRAWS
+in the new box instead of being quantised into it, and drawing is what
+fifteen ramps make possible and a photograph does not.
+
+TONE: AS DRAWN | EARTH, in the pause menu, remembered, and applied
+BEFORE anything is painted when the game starts — a game that boots in
+EARTH should not spend three quarters of a second at the loading screen
+painting itself twice.
+
+AND THE HAZE THE FIRE MAKES, ON A SWITCH
+----------------------------------------
+
+At the user's request. It is a debug switch and not a picture setting,
+because what it turns off is not an effect: a town alight from end to
+end really does put a lid over itself, and that lid is why the last four
+screenshots of this game have all been orange.
+
+WHAT IT TAKES AWAY is the two things a fire does to the AIR. The smoke
+sky — the brown lid that reddens the sun, kills the stars, dims the
+light and pulls the visible distance in from a clear night's fourteen
+thousand units to under three. And the warm fog, the near-field murk
+that fills the room you are standing in. Measured, with the town
+properly alight: smoke 0.95 and fog 0.62 and three thousand units of
+seeing, against 0 and 0 and fourteen thousand with the switch off.
+
+WHAT IT LEAVES ALONE is everything that is the fire ITSELF — the flames,
+the embers, the sparks, the light they throw, the charring, and the
+ambient that lifts as the building goes so you can still find the way
+out of a gutted store. Those last two are checked: the minimum light and
+the global light do not move by a thousandth when the haze goes.
+
+IT SNAPS RATHER THAN EASING. The smoke takes forty seconds to come in
+and a hundred and fifty to clear, which is exactly right for a sky and
+useless for a switch you are flicking to compare two frames — so turning
+it off is immediate. Turning it back on is not: it comes back in the way
+a sky does, by degrees, because that is the thing itself again.
+
+DEBUG: FIRE HAZE, in the pause menu with the other two, on by default,
+remembered.
+
 
 THE WEATHER IS A ROW multiplied over the hour's: clear, overcast, rain
 and mist. Each says how far the air lets you see — WHICH IS THE DRAW
@@ -6088,7 +6206,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-2188 checks. Every one of them earns its place by having caught something
+2219 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

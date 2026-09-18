@@ -39,6 +39,21 @@ export class TextureBank {
   constructor() { this.map = new Map(); this.missing = new Set(); }
 
   add(name, pix, opts = {}) {
+    /* REPAINTED, NOT REPLACED. A name already in the bank keeps its
+       three.js texture and is given new pixels, because every material
+       in the scene is holding that object and a new one would leave all
+       of them pointing at the old picture. It is what lets the art
+       palette be a setting — see setArtPalette in js/palette.js and
+       applyTone in js/main.js — and it costs the ordinary path one map
+       lookup that always misses. */
+    const had = this.map.get(name);
+    if (had) {
+      had.pix = pix;
+      had.texture.image = pix.toCanvas();
+      had.texture.needsUpdate = true;
+      had.w = opts.w ?? pix.w; had.h = opts.h ?? pix.h; had.masked = !!opts.masked;
+      return had;
+    }
     const tex = new THREE.CanvasTexture(pix.toCanvas());
     tex.magFilter = THREE.NearestFilter;
     /* Chunky mipmaps: nearest WITHIN a level and nearest BETWEEN levels,
@@ -7981,8 +7996,14 @@ const AFTER_THE_FIRE = {
   CEILFIT: p => fitTray(p, 16, 25, 32, 14, 47, false),
 };
 
-export function bakeTextures() {
-  const bank = new TextureBank();
+/**
+ * Every texture in the game, drawn.
+ *
+ * Handed a bank it already filled, it REPAINTS it: same names, same
+ * texture objects, new pixels — which is how the art palette changes
+ * under a scene that is already built. See TextureBank.add.
+ */
+export function bakeTextures(bank = new TextureBank()) {
   const t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
   const raw = {};
   for (const [name, gen] of Object.entries(T)) {
@@ -8000,6 +8021,10 @@ export function bakeTextures() {
   console.log(`baked ${bank.map.size} textures in ${ms.toFixed(0)}ms`);
   return bank;
 }
+
+/** The same thing said the other way round, for the one caller that
+ *  means it: repaint what is already there. */
+export const repaintTextures = bank => bakeTextures(bank);
 
 export const TEXTURE_NAMES = Object.keys(T);
 export { SIZES as TEXTURE_SIZES };

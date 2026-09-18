@@ -260,12 +260,46 @@ export class Weather {
     this.cloudTime = 0;
     /* how much of the sky the fire has, 0..1 — see apply */
     this.smoke = 0;
+    /* AND WHETHER IT HAS ANY, which is a debug switch and not a
+       setting: see setFireHaze. */
+    this.fireHaze = opts.fireHaze !== false;
     this.frame = sampleFrame(this.hour, this.kind, 0, 0);
     this._sync();
   }
 
   setHour(h) { this.hour = nightHour(h); this.hour = this.hour > 24 ? this.hour - 24 : this.hour; this._sync(); }
   setKind(k) { if (WEATHERS[k]) { this.kind = k; this._sync(); } }
+
+  /**
+   * THE HAZE THE FIRE MAKES, ON A SWITCH — at the user's request, and
+   * it is a debug switch rather than a picture setting because what it
+   * turns off is not an effect, it is a fact about the world: a town
+   * alight from end to end really does put a lid over itself.
+   *
+   * WHAT IT TAKES AWAY is the two things a fire does to the AIR. The
+   * smoke sky, which is `smoke` below — the brown lid that reddens the
+   * sun, kills the stars, dims the light and pulls the visible distance
+   * in from a clear night's to a few hundred metres. And the warm fog,
+   * which is `smokeDensity` — the near-field murk that fills the room
+   * you are standing in.
+   *
+   * WHAT IT LEAVES ALONE is everything that is the fire itself: the
+   * flames, the embers, the sparks, the light they throw, the charring,
+   * and the ambient that lifts as the building goes so you can still
+   * find the way out of it. Turn the haze off and the place still burns
+   * down; you can just see what you are doing while it does.
+   *
+   * IT SNAPS RATHER THAN EASING. The smoke takes forty seconds to come
+   * in and a hundred and fifty to clear, which is right for a sky and
+   * useless for a switch you are flicking to compare two frames.
+   */
+  setFireHaze(on) {
+    const want = !!on;
+    if (want === this.fireHaze) return false;
+    this.fireHaze = want;
+    if (!want) { this.smoke = 0; this.frame = sampleFrame(this.hour, this.kind, this.cloudTime, 0); this._sync(); }
+    return true;
+  }
 
   /** One world tic: the night advances. */
   tic() {
@@ -292,10 +326,13 @@ export class Weather {
        lasts. So the sky, the air and the light change as the fire
        grows, by degrees, the way a weather comes in. */
     const hot = live ? (live.hot || 0) / SMOKE_HOT + (live.wood || 0) / SMOKE_WOOD : 0;
-    const target = Math.min(1, hot + (burn + wood) * 0.7);
-    const tau = target > this.smoke ? SMOKE_RISE : SMOKE_FALL;
-    this.smoke += (target - this.smoke) * Math.min(1, dt / tau);
-    if (target === 0 && this.smoke < 0.003) this.smoke = 0;
+    const target = this.fireHaze ? Math.min(1, hot + (burn + wood) * 0.7) : 0;
+    if (!this.fireHaze) this.smoke = 0;
+    else {
+      const tau = target > this.smoke ? SMOKE_RISE : SMOKE_FALL;
+      this.smoke += (target - this.smoke) * Math.min(1, dt / tau);
+      if (target === 0 && this.smoke < 0.003) this.smoke = 0;
+    }
     this.frame = sampleFrame(this.hour, this.kind, this.cloudTime, this.smoke);
     const f = this.frame;
 
@@ -308,7 +345,7 @@ export class Weather {
        this in js/fire.js. The wood adds its share and a forest is big,
        so its share stays small. */
     const sm = this.smoke;
-    world.smokeDensity.value = Math.min(0.62, burn * 1.2 + wood * 0.5 + sm * 0.30);
+    world.smokeDensity.value = this.fireHaze ? Math.min(0.62, burn * 1.2 + wood * 0.5 + sm * 0.30) : 0;
     world.smokeColor.value.setRGB(lerp(0.46 + burn * 0.12, 0.60, sm), lerp(0.34 + burn * 0.08, 0.33, sm), lerp(0.24 + burn * 0.03, 0.14, sm));
     /* A gutted store lit only by embers is, accurately, almost pitch
        black — and the player still has to find the way out of it. So

@@ -108,8 +108,19 @@ function radial(draw, w = 32, h = 40, seed = 1) {
 /* ====================================================================
    Bake the lot
    ==================================================================== */
-export function bakeSprites() {
-  const bank = new SpriteBank();
+/**
+ * Every sprite this program draws itself.
+ *
+ * Handed a bank it already filled, it draws over the top of it — which
+ * is how the art palette changes under a game that is already running.
+ * `addFrame` replaces an entry by key, so the result is the same bank
+ * it would have made from empty. WHAT IT DOES NOT KNOW ABOUT is the
+ * photographed art that lands on top of some of these names at boot
+ * (see THE PEOPLE ARE NOT DRAWN BY THIS PROGRAM in js/main.js): a
+ * repaint puts the stand-ins back, and the caller has to lay the
+ * photographs over them again. applyTone in js/main.js does.
+ */
+export function bakeSprites(bank = new SpriteBank()) {
   const t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
   /* --- something visibly wrong, for a frame that does not exist --- */

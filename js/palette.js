@@ -63,7 +63,7 @@
           has the most resolution and where linear spacing wastes half a
           ramp on highlights nobody can tell apart.
    ------------------------------------------------------------------ */
-const RAMPS = [
+const STOCK_RAMPS = [
   /* greys — concrete, steel, shadow. Cool at the bottom, because a shadow
      full of skylight is blue and a shadow full of nothing is still not
      brown. */
@@ -116,6 +116,100 @@ const RAMPS = [
       [1.00,[255, 255, 226]] ] },
 ];
 
+/* --------------------------------------------------------------------
+   AND A SECOND BOX OF CRAYONS: MUTED, EARTHY
+
+   At the user's request, and asked for as a test that could be undone —
+   so it is a SETTING and not a repaint. What follows is the same fifteen
+   ramps with different colours in them.
+
+   THE SAME FIFTEEN IS THE WHOLE TRICK, and it is a constraint rather
+   than a convenience. Every ramp below has the same `key`, the same `n`
+   and the same position in the list as the one above it, so RAMP[key]
+   lands at the same index, every entry of the 256 means the same
+   MATERIAL in both boxes, and the two pictures in art/ — which are kept
+   as palette indices in js/art-data.js and would otherwise have to be
+   baked again by tools/bake-art.mjs — come out recoloured rather than
+   scrambled. Change an `n` here and that stops being true; the smoke
+   test holds the two lists against each other for exactly that reason.
+
+   WHAT EARTHY MEANS, in numbers rather than in adjectives:
+
+     the blacks go brown. A shadow in the box above is cool — [6,7,11],
+       a shadow full of skylight. Here it is [16,14,12], a shadow full of
+       dust, which is what a shadow in a dry place is.
+     nothing reaches white. The top of every ramp comes down from the
+       248-252 the stock box runs to, to somewhere in the 190s to 220s,
+       and warms on the way — the single loudest thing about a faded
+       picture is that its highlights are not white.
+     the saturation comes off the middle, which is where a ramp's
+       material lives. Greens go to sage and dried grass, blues to
+       slate, cyan to verdigris, purple to heather, pink to clay,
+       yellow to ochre. The three that were already earth — brown, rust
+       and flesh — barely move, because they were already the answer.
+     THE FIRE DOES NOT MUTE, or hardly. It is the subject of the game
+       and the one thing in the frame that is supposed to be the
+       brightest thing in the frame; muting it would be muting the point.
+       What it loses is the neon: the white heat comes down from
+       [255,255,226] to a warm bone, and the orange loses its edge, and
+       that is all.
+
+   The gammas are the stock box's, unchanged, so the two are directly
+   comparable: the same entry of each is the same distance along the
+   same kind of ramp, and only the colour differs.
+   ------------------------------------------------------------------ */
+const EARTH_RAMPS = [
+  /* stone rather than steel: a warm grey with the blue taken out of the
+     bottom of it */
+  { key:'grey',   n:24, gamma:1.30, stops:[[0,[16,14,12]],[0.5,[96,90,80]],[1,[226,218,200]]] },
+  /* unbleached — plaster, lino gone yellow, ceiling tile in a building
+     somebody smoked in */
+  { key:'bone',   n:16, gamma:1.25, stops:[[0,[26,22,18]],[0.5,[124,112,92]],[1,[226,212,184]]] },
+  /* brown was already earth and barely moves */
+  { key:'brown',  n:16, gamma:1.20, stops:[[0,[20,14,10]],[0.5,[98,70,46]],[1,[198,160,118]]] },
+  /* iron oxide: brick and old blood rather than corporate red */
+  { key:'red',    n:16, gamma:1.20, stops:[[0,[22,12,10]],[0.5,[118,52,38]],[1,[204,124,96]]] },
+  /* flesh, a shade duller and a shade warmer */
+  { key:'flesh',  n:16, gamma:1.20, stops:[[0,[24,16,13]],[0.5,[122,90,70]],[1,[220,188,158]]] },
+  /* sage and dried grass, which is what green is in a dry summer */
+  { key:'green',  n:16, gamma:1.20, stops:[[0,[14,18,12]],[0.5,[64,86,50]],[1,[168,186,132]]] },
+  /* khaki */
+  { key:'olive',  n:16, gamma:1.20, stops:[[0,[18,16,10]],[0.5,[88,80,46]],[1,[190,180,132]]] },
+  /* slate and faded denim: the one ramp that loses the most, because
+     the stock blue is the most saturated thing in the box */
+  { key:'blue',   n:16, gamma:1.25, stops:[[0,[12,14,20]],[0.5,[54,66,88]],[1,[150,168,190]]] },
+  /* verdigris rather than ice */
+  { key:'cyan',   n:8,  gamma:1.20, stops:[[0,[14,20,20]],[0.5,[64,104,100]],[1,[170,200,194]]] },
+  /* ochre and mustard */
+  { key:'yellow', n:16, gamma:1.15, stops:[[0,[24,19,10]],[0.5,[150,120,44]],[1,[226,204,134]]] },
+  /* terracotta, which is where rust was going anyway */
+  { key:'rust',   n:16, gamma:1.20, stops:[[0,[20,13,9]],[0.5,[110,66,40]],[1,[204,148,102]]] },
+  /* heather: a plum with the light gone out of it */
+  { key:'purple', n:8,  gamma:1.20, stops:[[0,[18,14,18]],[0.5,[76,56,74]],[1,[180,158,168]]] },
+  /* clay */
+  { key:'pink',   n:8,  gamma:1.20, stops:[[0,[26,16,14]],[0.5,[148,94,84]],[1,[222,184,168]]] },
+  /* a dustier dawn: the same five stops, every one of them with the
+     colour turned down and the whole thing warmer at the horizon */
+  { key:'sky',    n:20, gamma:1.10, stops:[[0,[16,18,30]],[0.30,[58,58,76]],[0.55,[142,110,104]],[0.78,[208,176,136]],[1,[196,206,212]]] },
+  /* AND THE FIRE, which does not mute. Seven stops in the same places;
+     what comes off is the neon at the top. */
+  { key:'fire',   n:44, gamma:1.0, stops:[
+      [0.00,[  0,  0,  0]],
+      [0.10,[ 30,  4,  2]],
+      [0.24,[ 84, 12,  4]],
+      [0.40,[150, 36,  8]],
+      [0.56,[204, 80, 18]],
+      [0.72,[232, 140, 40]],
+      [0.87,[244, 198, 92]],
+      [1.00,[250, 238, 206]] ] },
+];
+
+/** The boxes the ART can be PAINTED in, by the name the setting uses.
+ *  Which one is current is a live value — see setArtPalette. */
+export const ART_PALETTES = { stock: STOCK_RAMPS, earth: EARTH_RAMPS };
+export const DEFAULT_ART = 'stock';
+export let artName = DEFAULT_ART;
+
 /* Where each ramp starts, filled in as we build */
 export const RAMP = {};
 
@@ -162,21 +256,57 @@ function rampColors(spec) {
    under TWO PALETTES, AND THEY ARE ANSWERS TO DIFFERENT QUESTIONS.
    ------------------------------------------------------------------ */
 const RAMP_RGB = {};
-export const RAMP_PALETTE = (() => {
-  const pal = [];
-  for (const r of RAMPS) {
-    RAMP[r.key] = { start: pal.length, n: r.n };
+/* IT IS FILLED IN PLACE AND NEVER REPLACED, and that is what lets the
+   box be swapped at all. Half the game holds a reference to this array
+   — PALETTE is it, DISPLAY_PALETTES.ramps.colors is it, decodeArtTile
+   in js/sprites.js indexes it — and a module that captured it at load
+   time would keep the old colours for ever if buildArt handed back a
+   new one. So every entry is written THROUGH, and everybody holding it
+   sees the new box on the next pixel they ask for. Same for RAMP_RGB,
+   which is what ramp() answers out of. */
+export const RAMP_PALETTE = [];
+function buildArt(specs) {
+  let at = 0;
+  for (const r of specs) {
+    RAMP[r.key] = { start: at, n: r.n };
     const cols = rampColors(r);
     RAMP_RGB[r.key] = cols;
-    for (const c of cols) pal.push(c);
+    for (const c of cols) { RAMP_PALETTE[at] = c; at++; }
   }
   /* Whatever is left over becomes pure saturated markers — useful when a
-     placeholder needs to SCREAM that it is a placeholder. */
+     placeholder needs to SCREAM that it is a placeholder. The fifteen
+     ramps come to exactly 256, so there are none; the loop is what
+     would keep the palette 256 long if one of them ever shrank. */
   const markers = [[255,0,255],[0,255,255],[255,255,0],[255,0,0],[0,255,0],[0,0,255],[255,128,0],[128,0,255]];
   let m = 0;
-  while (pal.length < 256) pal.push(markers[m++ % markers.length].slice());
-  return pal.slice(0, 256);
-})();
+  while (at < 256) { RAMP_PALETTE[at] = markers[m++ % markers.length].slice(); at++; }
+  RAMP_PALETTE.length = 256;
+}
+buildArt(ART_PALETTES[DEFAULT_ART]);
+
+/**
+ * Choose what the art is PAINTED in — see the note on EARTH_RAMPS.
+ *
+ * It changes nothing that is already painted, which is the whole of
+ * what a caller has to do about it: every texture and every sprite in
+ * the bank was drawn through ramp() and is still the colour it was
+ * drawn. See repaintTextures in js/textures.js, repaintSprites in
+ * js/sprites.js, and applyTone in js/main.js, which is the one place
+ * that knows the whole list of things to remake.
+ */
+export function setArtPalette(name) {
+  if (!ART_PALETTES[name] || name === artName) return false;
+  artName = name;
+  buildArt(ART_PALETTES[name]);
+  /* THE SNAP CACHE IS A CACHE OF THE OLD BOX. It answers "which of the
+     256 is nearest to this colour" out of a table keyed on rgb555, and
+     every answer in it is an index into a palette that no longer holds
+     those colours. Left alone it is not stale by a shade, it is wrong:
+     the first texture repainted would snap through it and come out in
+     the box it was supposed to be leaving. */
+  _snapCache.fill(-1);
+  return true;
+}
 
 /* --------------------------------------------------------------------
    THE UZEBOX BOX, which is a piece of hardware and not a mood board.

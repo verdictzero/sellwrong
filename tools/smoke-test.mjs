@@ -231,6 +231,162 @@ check('ramps are monotonic in luma', ['grey', 'red', 'blue', 'fire'].every(k => 
         return pal.RAMP_PALETTE.some(q => q[0] === s2[0] && q[1] === s2[1] && q[2] === s2[2]);
       }));
   }
+
+  /* ------------------------------------------------------------------
+     AND A SECOND BOX TO PAINT IN
+
+     At the user's request, and asked for as a test that could be undone
+     — so it is a setting, and the first duty of these checks is that
+     the way back is exact.
+
+     THE SAME FIFTEEN IS THE WHOLE TRICK. Every ramp in the earth box has
+     the same key, the same length and the same place in the list as the
+     one it replaces, so RAMP[key] lands at the same index and entry n of
+     the palette means the same MATERIAL in both boxes — which is what
+     lets the two pictures in art/, kept as palette indices in
+     js/art-data.js, come out recoloured rather than scrambled without
+     tools/bake-art.mjs being run again. Change an `n` and that stops
+     being true silently, which is what this first check is for.
+     ------------------------------------------------------------------ */
+  {
+    const shape = t => pal.ART_PALETTES[t].map(r => `${r.key}:${r.n}`).join(' ');
+    check('there are two boxes to paint in and the game starts in the one it was drawn in',
+      Object.keys(pal.ART_PALETTES).join(',') === 'stock,earth' && pal.artName === 'stock' &&
+      pal.DEFAULT_ART === 'stock');
+    check('and the second has the same fifteen ramps, same lengths, same order',
+      shape('stock') === shape('earth'), `${shape('earth')}`);
+    check('which is what keeps a palette index meaning the same material in both',
+      pal.ART_PALETTES.stock.reduce((a, r) => a + r.n, 0) === 256);
+
+    const stock = pal.RAMP_PALETTE.map(c => c.slice());
+    const starts = Object.fromEntries(Object.keys(pal.RAMP).map(k => [k, pal.RAMP[k].start]));
+    const wasObject = pal.RAMP_PALETTE;
+
+    check('a box that is not a box is refused', pal.setArtPalette('nonsense') === false);
+    check('and the one already in use is refused', pal.setArtPalette('stock') === false);
+    check('and the earth one is taken', pal.setArtPalette('earth') === true && pal.artName === 'earth');
+
+    /* IT IS FILLED IN PLACE AND NEVER REPLACED. Half the game is holding
+       this array — PALETTE is it, the default display box is it,
+       decodeArtTile indexes it — and a module that captured it at load
+       time would keep the old colours for ever if setArtPalette handed
+       back a new one. */
+    check('the palette is the same array it always was, with new colours in it',
+      pal.RAMP_PALETTE === wasObject && pal.PALETTE === wasObject &&
+      pal.DISPLAY_PALETTES.ramps.colors === wasObject && pal.RAMP_PALETTE.length === 256);
+    check('and not one ramp moved, so every index still means what it meant',
+      Object.keys(pal.RAMP).every(k => pal.RAMP[k].start === starts[k]));
+
+    const earth = pal.RAMP_PALETTE.map(c => c.slice());
+    const sat = c => (Math.max(...c) - Math.min(...c)) / 255;
+    const lum = c => (3 * c[0] + 6 * c[1] + c[2]) / 10;
+    const mean = a => a.reduce((x, y) => x + y, 0) / a.length;
+    note('the two boxes', `saturation ${mean(stock.map(sat)).toFixed(3)} -> ${mean(earth.map(sat)).toFixed(3)}, ` +
+      `brightest ${Math.max(...stock.map(lum)) | 0} -> ${Math.max(...earth.map(lum)) | 0}`);
+    check('the earth box is a different box', earth.some((c, i) => c.some((v, k) => v !== stock[i][k])));
+    check('and it is muted: less colour in it than the one it replaces',
+      mean(earth.map(sat)) < mean(stock.map(sat)) * 0.9,
+      `${mean(earth.map(sat)).toFixed(3)} against ${mean(stock.map(sat)).toFixed(3)}`);
+    check('and nothing in it reaches white, which is what says faded',
+      Math.max(...earth.map(lum)) < Math.max(...stock.map(lum)) - 8 &&
+      earth.every(c => Math.max(...c) <= 250));
+    /* THE BLACKS GO BROWN. A shadow in the stock box is cool — a shadow
+       full of skylight; in the earth box it is a shadow full of dust. */
+    {
+      const g0 = pal.RAMP.grey.start;
+      check('and the blacks are warm rather than cool, which is the other half of earthy',
+        earth[g0][0] >= earth[g0][2] && stock[g0][0] <= stock[g0][2],
+        `${earth[g0].join(',')} against ${stock[g0].join(',')}`);
+    }
+    /* HOW FAR EACH RAMP TRAVELLED, weighted 3:6:1 across R:G:B — the
+       eye's own weighting, and the same one nearestIndex snaps with.
+       Plain luminance is the wrong ruler here and was the first one
+       tried: the earth blue is about as BRIGHT as the stock blue and
+       most of the way to slate, so by luminance it had barely moved
+       when by eye it had moved further than almost anything. */
+    {
+      const dist = (a, b) => Math.sqrt(3 * (a[0] - b[0]) ** 2 + 6 * (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2) / Math.sqrt(10);
+      const moved = k => { const r = pal.RAMP[k]; let d = 0;
+        for (let i = r.start; i < r.start + r.n; i++) d += dist(earth[i], stock[i]);
+        return d / r.n; };
+      const far = Object.keys(pal.RAMP).map(k => [k, moved(k)]).sort((a, b) => b[1] - a[1]);
+      note('how far each ramp moved', far.map(([k, d]) => `${k} ${d.toFixed(0)}`).join(' '));
+      /* THE THREE THAT WERE ALREADY EARTH hardly move, which is the
+         whole argument for the box: brown, rust and flesh were the
+         answer before the question was asked. */
+      check('brown, rust and flesh barely move, because they were already the answer',
+        ['brown', 'rust', 'flesh'].every(k => moved(k) < moved('fire')),
+        far.slice(-4).map(([k, d]) => `${k} ${d.toFixed(0)}`).join(' '));
+      /* AND THE FIRE MOVES LESS THAN THE COLOURS AROUND IT. It is the
+         subject of the game and the brightest thing in the frame, and
+         what comes off it is the neon rather than the fire. */
+      check('and the fire moves less than the four most coloured ramps in the box',
+        ['cyan', 'yellow', 'red', 'green'].every(k => moved('fire') < moved(k)),
+        `fire ${moved('fire').toFixed(0)} against ` +
+        ['cyan', 'yellow', 'red', 'green'].map(k => `${k} ${moved(k).toFixed(0)}`).join(', '));
+      /* AND IT KEEPS ITS ROUTE. Seven stops bunched toward the bottom
+         because most of a flame, most of the time, is the dull end —
+         the colours along it change and where they sit does not. */
+      const stops = t => pal.ART_PALETTES[t].find(r => r.key === 'fire').stops.map(x => x[0]).join(',');
+      check('and it keeps its route: the same seven stops in the same places',
+        stops('stock') === stops('earth'), stops('earth'));
+    }
+
+    /* THE SNAP CACHE IS A CACHE OF THE OLD BOX. Every answer in it is an
+       index into a palette that no longer holds those colours, so a
+       texture repainted through a stale one would come out in the box it
+       was supposed to be leaving. */
+    check('and the snap cache went with the box, or the first repaint would undo it',
+      pal.PALETTE[pal.nearestIndex(...stock[pal.RAMP.green.start + 8])]
+        .some((v, k) => v !== stock[pal.RAMP.green.start + 8][k]));
+
+    /* A TEXTURE PAINTED IN IT IS A DIFFERENT TEXTURE, which is the
+       difference between a repaint and a filter: the art is DRAWN in
+       the new box rather than quantised into it. */
+    {
+      const texP = await import('../js/textures.js');
+      const earthTex = texP.TEXTURE_GENERATORS.CLAPBRD();
+      pal.setArtPalette('stock');
+      const stockTex = texP.TEXTURE_GENERATORS.CLAPBRD();
+      let differs = 0;
+      for (let i = 0; i < stockTex.data.length; i += 4) if (stockTex.data[i] !== earthTex.data[i]) differs++;
+      check('a texture painted in the earth box is a different texture',
+        differs > stockTex.data.length / 8, `${differs} texels of ${stockTex.data.length / 4}`);
+      /* AND REPAINTING A BANK KEEPS THE TEXTURE OBJECTS, because every
+         material in the scene is holding them. */
+      const bank = new texP.TextureBank();
+      bank.add('CLAPBRD', stockTex, {});
+      const held = bank.get('CLAPBRD').texture;
+      pal.setArtPalette('earth');
+      texP.repaintTextures(bank);
+      check('and repainting a bank gives it new pixels and the same texture object',
+        bank.get('CLAPBRD').texture === held && bank.map.size > 400);
+      pal.setArtPalette('stock');
+    }
+
+    /* AND THE WAY BACK IS EXACT, which is the whole of what "a test I
+       can undo" means. */
+    const back = pal.RAMP_PALETTE.map(c => c.slice());
+    check('and the way back is exact, entry for entry',
+      pal.artName === 'stock' && back.every((c, i) => c.every((v, k) => v === stock[i][k])));
+  }
+  /* and it is on a button, and remembered, and applied before anything
+     is painted rather than after */
+  {
+    const fs3 = await import('node:fs');
+    const html = fs3.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+    const main = fs3.readFileSync(new URL('../js/main.js', import.meta.url), 'utf8');
+    check('the tone is a ladder in the pause menu, AS DRAWN by default and remembered',
+      /id="opt-tone"/.test(html) && /TONE_SET = \[\{ v: 'stock'/.test(main) &&
+      /tone: 0,/.test(main) && /ladder\('opt-tone', 'tone', TONE_SET/.test(main));
+    check('and a game that starts in the other one paints itself once, not twice',
+      /setArtPalette\(TONE_SET\[prefs\.tone\]\.v\)/.test(main) &&
+      main.indexOf('setArtPalette(TONE_SET') < main.indexOf('const textures = bakeTextures()'));
+    check('and applyTone remakes the four things a repaint moves',
+      /function applyTone/.test(main) && /bakeTextures\(textures\)/.test(main) &&
+      /bakeSprites\(sprites\)/.test(main) && /dressSprites\(\); dressTroops\(\)/.test(main) &&
+      /weapons = bakeWeapons\(\)/.test(main) && /pipeline\.rebuildLut\(\)/.test(main));
+  }
   pal.setDisplayPalette('ramps');
   check('and the default is restored for everything after this',
     pal.displayName === 'ramps' && pal.displayPalette() === pal.RAMP_PALETTE);
@@ -1863,6 +2019,66 @@ section('the air');
     check('and not in the shop', inside < 40, `${inside}`);
     g.weather.setKind('clear'); g.weather.apply(0.016, 0, 0);
     W.climate.rain = 0;
+  }
+
+  /* --- THE HAZE THE FIRE MAKES, ON A SWITCH ------------------------
+     At the user's request, and it is a debug switch rather than a
+     picture setting because what it turns off is not an effect, it is
+     a fact about the world. What is checked is the line it draws:
+     everything the fire does to the AIR goes, and everything the fire
+     IS stays. */
+  {
+    const wz = new W.Weather({ hour: 3, kind: 'clear', running: false });
+    const air = () => ({ smoke: wz.smoke, density: M.world.smokeDensity.value,
+                         far: wz.frame.airFar, light: M.world.minLight.value,
+                         global: M.world.globalLight.value });
+    /* a town well alight: the smoke rises over forty seconds, so it is
+       run for two minutes of them */
+    const alight = { hot: 4000, wood: 900 };
+    for (let i = 0; i < 120; i++) wz.apply(1, 0.4, 0.2, alight);
+    const on = air();
+    note('a town alight, with the haze', `smoke ${on.smoke.toFixed(2)}, fog ${on.density.toFixed(2)}, seeing ${on.far | 0}`);
+    check('a fire alight puts a lid of smoke over the town',
+      on.smoke > 0.8 && on.density > 0.4, `${on.smoke.toFixed(2)} / ${on.density.toFixed(2)}`);
+    check('and pulls the distance you can see in to a few hundred metres',
+      on.far < 3000, `${on.far | 0}`);
+
+    check('the switch is a switch', wz.setFireHaze(false) === true && wz.setFireHaze(false) === false);
+    wz.apply(1, 0.4, 0.2, alight);
+    const off = air();
+    note('the same town, without it', `smoke ${off.smoke.toFixed(2)}, fog ${off.density.toFixed(2)}, seeing ${off.far | 0}`);
+    check('off, the smoke goes out of the sky and the fog out of the air',
+      off.smoke === 0 && off.density === 0, `${off.smoke} / ${off.density}`);
+    check('and the night is as far-seeing as the weather says it is',
+      off.far === W.WEATHERS.clear.airFar, `${off.far} against ${W.WEATHERS.clear.airFar}`);
+    /* IT SNAPS. Forty seconds to come in and a hundred and fifty to
+       clear is right for a sky and useless for a switch you are
+       flicking to compare two frames. */
+    check('and it snapped rather than easing, which is what a switch is for',
+      off.smoke === 0);
+    /* AND THE FIRE IS STILL THE FIRE. The ambient that lifts as the
+       building goes — so you can find the way out of a gutted store —
+       is the burn's and not the haze's, and does not move. */
+    check('what the fire IS is untouched: the light it throws still lifts with the burn',
+      Math.abs(off.light - on.light) < 1e-9 && Math.abs(off.global - on.global) < 1e-9,
+      `${off.light.toFixed(3)} against ${on.light.toFixed(3)}`);
+
+    wz.setFireHaze(true);
+    for (let i = 0; i < 60; i++) wz.apply(1, 0.4, 0.2, alight);
+    check('and it comes back in the way a sky does, by degrees',
+      wz.smoke > 0.5 && wz.smoke < 1.001, `${wz.smoke.toFixed(2)}`);
+    /* put the world uniforms back for whoever runs next */
+    const wc = new W.Weather({ hour: 3, kind: 'clear', running: false });
+    wc.apply(0.016, 0, 0);
+  }
+  /* and it is on a button, on by default, and remembered */
+  {
+    const fs2 = await import('node:fs');
+    const html = fs2.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+    const main = fs2.readFileSync(new URL('../js/main.js', import.meta.url), 'utf8');
+    check('the fire haze is a switch in the pause menu, on by default and remembered',
+      /id="opt-haze"/.test(html) && /haze: true/.test(main) &&
+      /toggle\('opt-haze', 'haze'\)/.test(main) && /setFireHaze\(!!prefs\.haze\)/.test(main));
   }
   /* the wind's old home is gone */
   {

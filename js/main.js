@@ -39,7 +39,7 @@ import { atlasTexture, imageTexture } from './particles.js';
 import { bakeEffectAtlases } from './effects.js';
 import { bakeRainAtlas } from './rain.js';
 import { SkyBaker } from './skyart.js';
-import { setDisplayPalette, displayName } from './palette.js';
+import { setDisplayPalette, displayName, setArtPalette, artName } from './palette.js';
 import { Weather, WEATHERS, WEATHER_ORDER, HOUR_STOPS } from './weather.js';
 import { Weapon3D } from './weapon3d.js';
 import { KINDS } from './forest.js';
@@ -147,6 +147,14 @@ const CROWD  = [{ v: 1, n: 'EVERYONE' }, { v: 0.5, n: 'HALF' }, { v: 0.25, n: 'A
    three bits of red, three of green and two of blue. See the note on
    applyPalette, and js/palette.js. */
 const PALETTE_SET = [{ v: 'ramps', n: 'RAMPS' }, { v: 'uzebox', n: 'UZEBOX' }];
+/* AND WHAT THE ART IS PAINTED IN, which is the other question and the
+   one nothing had asked before. PALETTE above is the box the finished
+   frame is snapped DOWN to; this is the box every texture and every
+   sprite is DRAWN in, and changing it is a repaint of the game rather
+   than a filter over it. AS DRAWN is the fifteen ramps the game was
+   made in; EARTH is the same fifteen, muted and warmed — see
+   EARTH_RAMPS in js/palette.js and applyTone below. */
+const TONE_SET = [{ v: 'stock', n: 'AS DRAWN' }, { v: 'earth', n: 'EARTH' }];
 const FX     = [{ v: 1, n: 'FULL' }, { v: 0.5, n: 'FEWER' }, { v: 0.25, n: 'LEAST' }];
 const WOOD   = [{ v: 1, n: 'ALL OF IT' }, { v: 0.6, n: 'NEARER' }, { v: 0.35, n: 'NEAREST' }];
 
@@ -169,6 +177,9 @@ const DEFAULT_PREFS = { v: PREF_VERSION, sens: 1, invert: false, lefty: false, h
                         /* the box of crayons: 0 is RAMPS, which is the game as
                            it was drawn. See PALETTE_SET and applyPalette. */
                         palette: 0,
+                        /* and the box it is PAINTED in: 0 is AS DRAWN. See
+                           TONE_SET and applyTone. */
+                        tone: 0,
                         /* the night's weather — see js/weather.js; the hour is not
                            kept, because a night starts at two */
                         weather: 0,
@@ -177,6 +188,13 @@ const DEFAULT_PREFS = { v: PREF_VERSION, sens: 1, invert: false, lefty: false, h
                            from the pause menu, where either can still be turned
                            off and the choice is kept */
                         debug: true, godmode: true,
+                        /* AND A THIRD, at the user's request: the haze the fire
+                           makes — the smoke sky over the town and the warm fog
+                           in the room — on a switch, so what the fire does to
+                           the AIR can be taken off without taking the fire off.
+                           On, because it is what the game looks like. See
+                           Weather.setFireHaze. */
+                        haze: true,
                         /* the three picture dials, at the user's request — see
                            LofiPipeline.setPicture; 1 is the picture as drawn */
                         bright: 1.35, contrast: 1, gamma: 1,
@@ -239,6 +257,11 @@ async function loadForestArt() {
 
 async function boot() {
   const prefs = loadPrefs();
+  /* THE TONE GOES ON BEFORE ANYTHING IS PAINTED. It can be changed from
+     the pause menu at any time and everything is repainted when it is
+     (applyTone), but a game that starts in EARTH should not spend three
+     quarters of a second at the loading screen painting itself twice. */
+  if (TONE_SET[prefs.tone]?.v !== artName) setArtPalette(TONE_SET[prefs.tone].v);
   let detailIndex = Math.max(0, Math.min(DETAIL.length - 1, prefs.detail | 0));
   let pixelIndex = Math.max(0, Math.min(PIXELS.length - 1, prefs.pixels | 0));
   let pixarIndex = Math.max(0, Math.min(PIXEL_ASPECT.length - 1, prefs.pixar | 0));
@@ -317,7 +340,7 @@ async function boot() {
 
   status('BAKING SPRITES', 0.30); await breathe();
   const sprites = bakeSprites();
-  const weapons = bakeWeapons();
+  let weapons = bakeWeapons();
   const fxAtlases = bakeEffectAtlases();
   const rainAtlas = bakeRainAtlas();
   /* the stream out of the gun is fireballs (bakeEffectAtlases); the
@@ -331,12 +354,10 @@ async function boot() {
      particles, and a particle wants one atlas, not eleven textures. */
   status('THE CROWD', 0.45); await breathe();
   const peopleImgs = await peopleP;
+  const troopImgs = (await troopsP) || [];
   let gibAtlases = null;
   if (peopleImgs) {
-    const [shopperImg, gibletImg, splatImg, blastImg] = peopleImgs;
-    const people = addStandees(sprites, imageData(shopperImg));
-    const splats = addSplats(sprites, imageData(splatImg));
-    const blast = addStrip(sprites, BLAST_SPRITE, imageData(blastImg), CELLS.blast.w, { fullbright: true });
+    const [, gibletImg] = peopleImgs;
     gibAtlases = {
       giblets: { texture: imageTexture(gibletImg), frames: GIBLETS },
       /* the fire on a piece in the air is the same fireball the gun
@@ -344,13 +365,29 @@ async function boot() {
          the same paint */
       trail: { texture: fxAtlases.fireball, frames: 8 },
     };
-    console.log(`the crowd: ${people} shoppers, ${splats} splats, ${blast} frames of fireball`);
   }
-  {
-    const [swatImg, armyImg] = (await troopsP) || [];
-    if (swatImg) console.log(`the squad: ${addTroops(sprites, imageData(swatImg), 'SWAT')} cells of SWAT`);
-    if (armyImg) console.log(`and behind them: ${addTroops(sprites, imageData(armyImg), 'ARMY')} cells of army`);
+  /* AND THE PHOTOGRAPHS GO ON LAST — AND GO ON AGAIN. Every one of these
+     lands on top of a stand-in of the same name that bakeSprites has
+     already drawn, so the ORDER is what makes a face a face. It matters
+     twice now: the art palette is a setting, a repaint draws every
+     stand-in again (bakeSprites, over the bank it already filled), and
+     these have to be laid over the top of them a second time. So it is
+     a function, and applyTone calls it. */
+  function dressSprites() {
+    if (!peopleImgs) return;
+    const [shopperImg, , splatImg, blastImg] = peopleImgs;
+    const people = addStandees(sprites, imageData(shopperImg));
+    const splats = addSplats(sprites, imageData(splatImg));
+    const blast = addStrip(sprites, BLAST_SPRITE, imageData(blastImg), CELLS.blast.w, { fullbright: true });
+    return `the crowd: ${people} shoppers, ${splats} splats, ${blast} frames of fireball`;
   }
+  function dressTroops() {
+    const [swatImg, armyImg] = troopImgs;
+    const a = swatImg ? addTroops(sprites, imageData(swatImg), 'SWAT') : 0;
+    const b = armyImg ? addTroops(sprites, imageData(armyImg), 'ARMY') : 0;
+    return `the squad: ${a} cells of SWAT and ${b} of army`;
+  }
+  { const m = dressSprites(); if (m) console.log(m); console.log(dressTroops()); }
 
   /* THE FIRE ON THE TREES AND ON THE GUN. The store's three fire sets
      are already in the bank — bakeSprites drew them — and this is the
@@ -502,11 +539,13 @@ async function boot() {
     $('opt-fx').textContent = 'EFFECTS: ' + FX[prefs.fx].n;
     $('opt-wood').textContent = 'THE WOOD: ' + WOOD[prefs.wood].n;
     $('opt-palette').textContent = 'PALETTE: ' + PALETTE_SET[prefs.palette].n;
+    $('opt-tone').textContent = 'TONE: ' + TONE_SET[prefs.tone].n;
     $('opt-time').textContent = 'TIME: ' + game.weather.label;
     $('opt-weather').textContent = 'WEATHER: ' + WEATHERS[WEATHER_ORDER[prefs.weather]].name;
     setTog('opt-fps', prefs.fps);
     setTog('opt-debug', prefs.debug);
     setTog('opt-godmode', prefs.godmode);
+    setTog('opt-haze', prefs.haze);
     $('opt-full').textContent = inFullscreen() ? 'LEAVE FULLSCREEN' : 'FULLSCREEN';
   }
   function applyPrefs() {
@@ -525,6 +564,7 @@ async function boot() {
        Player.damage, which are one branch each */
     game.player.debug = !!prefs.debug;
     game.player.invincible = !!prefs.godmode;
+    game.weather.setFireHaze(!!prefs.haze);
     savePrefs(prefs);
     syncMenu();
   }
@@ -559,6 +599,9 @@ async function boot() {
   /* the one setting that re-bakes the art: about three quarters of a
      second, once, on a button nobody presses in a firefight */
   ladder('opt-palette', 'palette', PALETTE_SET, () => applyPalette(PALETTE_SET[prefs.palette].v));
+  /* and the one that repaints the art: about a second, once, and the
+     way back is the same button again */
+  ladder('opt-tone', 'tone', TONE_SET, () => applyTone(TONE_SET[prefs.tone].v));
   ladder('opt-weather', 'weather', WEATHER_ORDER);
   /* THE HOUR IS NOT A PREFERENCE, it is where the night has got to; the
      button steps it to the next keyframe, for looking at the dawn
@@ -572,6 +615,7 @@ async function boot() {
   toggle('opt-fps', 'fps');
   toggle('opt-debug', 'debug');
   toggle('opt-godmode', 'godmode');
+  toggle('opt-haze', 'haze');
   $('opt-full').addEventListener('click', () => (inFullscreen() ? exitFullscreen() : enterFullscreen()));
   document.addEventListener('fullscreenchange', syncMenu);
   document.addEventListener('webkitfullscreenchange', syncMenu);
@@ -759,8 +803,64 @@ async function boot() {
   const wanted = PALETTE_SET[prefs.palette]?.v;
   if (wanted && wanted !== displayName) applyPalette(wanted);
 
+  /* ------------------------------------------------------------------
+     AND WHAT THE ART IS PAINTED IN, which is the other one
+
+     At the user's request, and asked for as a test that could be undone
+     — so it is a setting with two entries in it and not a repaint of
+     the repository. Everything in this game that is DRAWN is drawn
+     through ramp(key, t), fifteen curves through the colour solid; swap
+     the fifteen for fifteen muted, warmer ones of exactly the same
+     shape (EARTH_RAMPS in js/palette.js) and every picture the program
+     makes comes out recoloured rather than scrambled — because the
+     ramps are the same length, so entry n of the palette is the same
+     MATERIAL in both boxes.
+
+     WHAT HAS TO BE MADE AGAIN, and it is more than the display palette
+     needs because this one changes the art rather than the box it is
+     shown in:
+
+       THE TEXTURES, repainted into the same three.js textures every
+         material in the scene is already holding (TextureBank.add).
+       THE SPRITES, likewise — and then the PHOTOGRAPHS laid over them
+         again, because a repaint puts every stand-in back. See
+         dressSprites above.
+       THE WEAPONS, which are Pix handed to the HUD each frame.
+       THE LOOKUP CUBE and THE SKY, exactly as applyPalette does: the
+         default display box IS the art palette, the same array, so
+         changing the art changes what the screen holds too.
+
+     WHAT IS NOT MADE AGAIN, on purpose: the particle atlases, the GLB
+     models, and the photographs themselves. All three are snapped
+     through the cube at the last moment like everything else in the
+     frame, so they land in the new box anyway — which is the same
+     argument the Uzebox palette already makes one paragraph up. The
+     difference between that and a repaint is that a repaint DRAWS in
+     the new box instead of being quantised into it, and a repaint is
+     what the fifteen ramps make possible and a photograph does not.
+
+     THE EMBERS ARE NOT IN IT EITHER, and that is a decision rather than
+     an omission. EMBER_RAMP is what everything still glowing after the
+     flame has gone is lit by, and the fire is the subject of this game:
+     the earth box mutes the whole world and takes only the neon off the
+     fire, which is the point of looking at a burning building through
+     it.
+     ------------------------------------------------------------------ */
+  function applyTone(name) {
+    if (!setArtPalette(name)) return false;
+    const t0 = performance.now();
+    bakeTextures(textures);
+    bakeSprites(sprites);
+    dressSprites(); dressTroops();
+    weapons = bakeWeapons();
+    pipeline.rebuildLut();
+    skyBaker.bake(game.weather.frame);
+    console.log(`the tone: ${name}, repainted in ${(performance.now() - t0) | 0}ms`);
+    return true;
+  }
+
   /* let the console poke at it */
-  window.SELLWRONG = { game, pipeline, renderer, scene, camera, textures, sprites, world, level, input, touch, weapon3d, music, weather: game.weather, skyBaker, applyPalette,
+  window.SELLWRONG = { game, pipeline, renderer, scene, camera, textures, sprites, world, level, input, touch, weapon3d, music, weather: game.weather, skyBaker, applyPalette, applyTone,
                        responders: game.responders, giblets: game.giblets };
 }
 
