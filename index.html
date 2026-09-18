@@ -21,7 +21,13 @@
 </head>
 <body>
 
-<div id="game"></div>
+<div id="game">
+  <!-- THE READOUT, and it is not part of the picture. Its own canvas,
+       over the frame, outside the pixel filter entirely: real type at
+       the device's own resolution, drawn by js/hud.js. The game itself
+       is the sibling canvas #view, which IS filtered. -->
+  <canvas id="ui"></canvas>
+</div>
 
 <!-- The phone's controls. Hidden until the game is being played by
      touch; touch.js does everything else. -->

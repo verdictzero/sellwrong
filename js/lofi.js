@@ -63,23 +63,31 @@
    picture shows exactly the same store as a square-pixel one, in taller
    squares.
 
-   WHY THE HUD AND THE GUN GO IN THE SAME BUFFER. If the numbers and the
-   weapon in your hands are drawn at native resolution over a chunky
-   world, the whole illusion collapses — you get a crisp modern overlay
-   sitting on a retro photograph. So every overlay scene renders into the
-   same buffer and goes through the same filter. There can be several:
-   the flamethrower is a 3D model with its own perspective camera, the
-   readout is a flat quad with an orthographic one, and they draw in
-   order, each clearing depth so it lands over whatever came before.
+   WHY THE GUN GOES IN THE SAME BUFFER AND THE READOUT DOES NOT. The gun
+   in your hands is IN the room — lit by it, moving with your step — and
+   drawing it at native resolution over a chunky world collapses the
+   whole illusion: a cardboard cut-out held up to a photograph. So it is
+   an overlay scene, rendering into this buffer and going through this
+   filter. There can be several of them: the flamethrower is a 3D model
+   with its own perspective camera, the wash over a pickup is a flat
+   quad with an orthographic one, and they draw in order, each clearing
+   depth so it lands over whatever came before.
 
-   THE HUD IS LAID OUT IN CHUNKY PIXELS, not in buffer pixels, which is
-   what keeps it the same size on screen when the RENDER control moves.
-   Its camera is orthographic, so its extents are a unit of measure
-   rather than a resolution: give it the grid's size and a six-pixel
-   glyph is six CHUNKY pixels at any buffer size. At an integer ratio the
-   block average puts each of its texels back exactly, so the readout
-   comes out of a 600-row buffer bit-for-bit identical to the one drawn
-   straight into a 200-row one.
+   THE NUMBERS ARE NOT IN THE ROOM, and at the user's request they left.
+   Nothing occludes them and nothing lights them; they are printed on
+   the glass, and a label on the glass is not more honest for being out
+   of focus. The bars, the weapon's name and the end-of-night card are
+   their own 2D canvas over the frame now, at the device's resolution,
+   and this file never sees them — see the top of js/hud.js.
+
+   AN OVERLAY IS LAID OUT IN CHUNKY PIXELS, not in buffer pixels, which
+   is what keeps it the same size on screen when the RENDER control
+   moves. An orthographic camera's extents are a unit of measure rather
+   than a resolution: give it the grid's size and a six-pixel sprite is
+   six CHUNKY pixels at any buffer size. At an integer ratio the block
+   average puts each of its texels back exactly, so it comes out of a
+   600-row buffer bit-for-bit identical to the one drawn straight into a
+   200-row one.
 
    THE ORDER MATTERS. Average, then dither, then snap. Dithering after
    the snap would just put colours back that the palette does not
@@ -470,8 +478,8 @@ export class LofiPipeline {
 
   /* Called on resize, and whenever either control moves. Returns the
      sizes the rest of the game needs: the buffer, which is what the
-     camera's aspect comes off, and the grid, which is what the HUD is
-     laid out in. */
+     camera's aspect comes off, and the grid, which is what an overlay
+     is laid out in and what the geometry LOD calls a visible pixel. */
   resize(displayW, displayH) {
     this.displayW = Math.max(1, displayW);
     this.displayH = Math.max(1, displayH);
@@ -552,7 +560,7 @@ export class LofiPipeline {
    * World first, then each overlay on top of it in turn, all into the
    * buffer; the buffer down onto the grid, averaged and dithered and
    * snapped; the grid onto the screen. Every overlay clears depth but
-   * not colour, so the gun draws over the world and the readout over the
+   * not colour, so the gun draws over the world and the wash over the
    * gun without anybody's depth values fighting.
    *
    * `overlays` is a list of { scene, camera }; a null entry, or one

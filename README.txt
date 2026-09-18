@@ -139,7 +139,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         2221 checks, no install and no browser
+  the smoke test         2245 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -190,6 +190,11 @@ The count of the living went with the text and went on purpose; a bar
 cannot say a number and the shop on fire in front of you was always the
 better readout anyway. From the first hit it is five: the two gauges and
 the three layers of you — see AND YOU CAN BE HURT NOW.
+
+AND THE READOUT IS NOT PART OF THE PICTURE ANY MORE, at the user's
+request: it is its own canvas over the frame, at the screen's own
+resolution, outside the pixel filter entirely — see THE READOUT CAME OFF
+THE PICTURE.
 
   WASD          move            MOUSE     look
   SHIFT         run             LMB/CTRL  fire
@@ -4387,6 +4392,87 @@ DEBUG: FIRE HAZE, in the pause menu with the other two, on by default,
 remembered.
 
 
+THE READOUT CAME OFF THE PICTURE
+--------------------------------
+
+At the user's request, and it is a line about what a thing IS rather
+than about how it looks.
+
+For most of this project's life everything drawn over the world went
+into the same low-resolution buffer as the walls: the same chunky pixel
+size, the same ordered dither, the same snap to two hundred and fifty-six
+colours. The argument was good and it is still in js/lofi.js — a crisp
+modern overlay on a chunky world reads as a filter applied to a
+photograph, and one frame of it undoes what the renderer is doing.
+
+THAT ARGUMENT IS RIGHT ABOUT THE PICTURE AND WRONG ABOUT THE READOUT.
+The gun in your hands is IN the room. It is lit by the room, it moves
+with your step, and a crisp gun over a chunky shop is a cardboard cut-out
+held up to a photograph. The numbers are not in the room. Nothing
+occludes them, nothing lights them, they do not move when you move: they
+are printed on the glass, and a label on the glass is not more honest for
+being out of focus. A six-pixel bitmap face, doubled, averaged down onto
+a grid three hundred and twenty pixels wide and then quantised to the
+nearest of 256 colours is four separate things happening to a word whose
+only job is to be read at a glance.
+
+SO THE SPLIT IS BY WHAT A THING IS, not by which file it was in, and
+js/hud.js is now in two halves that live on opposite sides of the filter.
+
+  THE PICTURE HALF stays exactly where it was: an overlay scene handed to
+  the pipeline, filtered and dithered and snapped with the walls. Two
+  things are in it. The WASH — the few frames of gold on a pickup, the
+  red when something hits you — because that is a thing that happens to
+  the photograph and it should be made of the photograph's colours. And
+  the FALLBACK GUN, the flat sprite shown only on the day the 3D model
+  does not load, because it is the gun and the gun is in the room.
+
+  THE READOUT HALF is a 2D canvas over the frame at the device's own
+  ratio, and the pipeline never sees it. Real type, real anti-aliasing,
+  real colours. On a 3x phone the bars and the words are drawn at 3x
+  while the shop behind them is 288 pixels across, which is the whole
+  point and looks like the point.
+
+IT IS MEASURED IN THE WINDOW'S OWN PIXELS NOW, which is the part that was
+an actual bug rather than a taste. The readout used to be laid out in
+CHUNKY pixels — six glyph pixels meant six of the pixels you can see — so
+turning the PIXELS dial DOWN made the bars and the letters GROW. A
+readout that changes size when you change how the world is drawn is a
+readout tangled up in the renderer's business. Its size comes off the
+height of the window and nothing else, and the smoke test lays the same
+window out at 288x120 and at 1707x960 and checks it gets the same
+readout.
+
+AND IT HAS ITS OWN BOX OF CRAYONS, which is the other half of being
+decoupled. The art palette is a setting and the display palette is
+another; a readout drawn out of the fifteen material ramps would go muddy
+when the world did, for no reason, because the readout is not made of any
+material. So it has fixed colours named for what they MEAN — burn, full,
+low, empty, the three layers of you — and they are the page's own: the
+amber the pause menu highlights with, the bone its body text is set in.
+The readout is the same readout in every box.
+
+WHAT IT LOOKS LIKE. A dark track with a hairline round it so a bar has an
+edge on a pale floor as well as a black one, rounded ends, a little
+gradient down the fill so a full bar is not a flat block, a soft bloom off
+the lit end, and a drop shadow under the lot. The weapon's name in the far
+corner in letter-spaced caps over a short amber rule. The end-of-night
+card centred, its first line amber and large and the rest dim and small.
+No words in the left corner: that was asked for, and a better face is not
+a reason to put the plate of numbers back.
+
+AND IT IS CHEAPER THAN WHAT IT REPLACED. The old readout rebuilt a
+pixel buffer and uploaded a texture whenever a value moved — and then, on
+top of that, every one of its texels went through the block average and
+the palette search EVERY frame, moved or not. The canvas is redrawn only
+when something on it has changed, which on most frames is nothing, and
+the frames where it does redraw cost about fifty canvas calls.
+
+THE PAGE IS WHERE IT LIVES: a canvas in index.html inside the frame, over
+#view and under the thumb controls and the menus, taking no pointer
+events, and smoothed where the picture under it is explicitly not.
+
+
 THE WEATHER IS A ROW multiplied over the hour's: clear, overcast, rain
 and mist. Each says how far the air lets you see — WHICH IS THE DRAW
 DISTANCE, because past where the air is opaque there is provably
@@ -6231,7 +6317,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-2221 checks. Every one of them earns its place by having caught something
+2245 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

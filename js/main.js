@@ -444,7 +444,11 @@ async function boot() {
   const vtol = await vtolP;
 
   status('THE FLAMETHROWER', 0.78);
-  const hud = new Hud(null);
+  /* THE READOUT'S OWN CANVAS, which is not the renderer's. It sits over
+     the frame at the device's own resolution and outside the pixel
+     filter entirely — see the top of js/hud.js. The wash and the
+     fallback gun stay in the buffer, as an overlay, below. */
+  const hud = new Hud(null, $('ui'));
   const input = new Input(renderer.domElement);
   const game = new Game({ level, scene, camera, textures, sprites, hud, audio, input, sky: skyBaker.texture,
                          flameAtlas: streamAtlas, bodyAtlas: flameAtlas, fxAtlases, gibAtlases, rainAtlas,
@@ -471,25 +475,35 @@ async function boot() {
     camera.aspect = r.width / r.height;
     camera.updateProjectionMatrix();
     weapon3d.setAspect(camera.aspect);
-    /* THE READOUT IS MEASURED IN CHUNKY PIXELS, not in buffer ones. Its
-       camera is orthographic, so its extents are a unit of measure
-       rather than a resolution: a six-pixel glyph is six of the pixels
-       you can SEE at any render size, and at a whole-number ratio the
-       block average puts every one of its texels back exactly. */
+    /* THE HUD'S TWO HALVES TAKE TWO DIFFERENT SIZES, which is the whole
+       of what decoupling the readout came to — see the top of js/hud.js.
+
+       The PICTURE half — the wash over a pickup, and the flat gun on the
+       day the model does not load — goes into the buffer as an overlay
+       and is measured in CHUNKY pixels, not buffer ones: its camera is
+       orthographic, so its extents are a unit of measure rather than a
+       resolution, and a sprite is the same size on screen at any render
+       size. */
     hud.resize(r.gridWidth, r.gridHeight);
+    /* The READOUT is measured in the WINDOW's own pixels. It used to be
+       laid out in chunky ones too, so turning PIXELS down made the bars
+       and the letters GROW — a readout tangled up in how the world is
+       drawn. Its canvas is backed at the device's ratio, so the type is
+       as sharp as the screen can render it whatever the game is doing. */
+    hud.resizeUi(w, h, window.devicePixelRatio || 1);
     /* nothing is drawn along the bottom of the picture any more, so the
        controls sit on the edge */
     $('touch').style.setProperty('--bar', '0px');
     nameInset();
   }
   /* THE PAUSE BUTTON AND THE WEAPON'S NAME SHARE A CORNER on a phone,
-     so the name steps left by the button's width — measured off the
-     page in CSS pixels and handed to the readout in chunky ones, the
-     same way the bar's height used to go the other way. */
+     so the name steps left by the button's width. It is the button's
+     own size in CSS pixels now, straight across — the readout is laid
+     out in the same units the page is, so there is no conversion left
+     to get wrong. */
   function nameInset() {
     const on = input.mode === 'touch';
-    const w = container.clientWidth || window.innerWidth;
-    hud.setNameInset(on ? Math.ceil(60 * pipeline.gridWidth / w) : 0);
+    hud.setNameInset(on ? 60 : 0);
   }
   addEventListener('resize', resize);
   resize();
@@ -755,7 +769,12 @@ async function boot() {
     skyBaker.update(game.weather.frame, now / 1000);
     const p = game.player;
     if (started) weapon3d.update(p, p.firing, game.tics, dt);
-    hud.update(p, weapons);
+    /* THE READOUT DRAWS ITSELF, ON ITS OWN CANVAS, and only when
+       something on it has moved; with no game running there is nothing
+       to read, so the canvas is wiped and the title has a clean picture
+       behind it. The overlay below is the other half of js/hud.js — the
+       wash and the fallback gun — which still goes into the buffer. */
+    if (started) hud.update(p, weapons); else hud.clear();
     overlays[0].visible = started && weapon3d.ready && !p.dead;
     overlays[1].visible = started;
     pipeline.render(scene, camera, overlays);

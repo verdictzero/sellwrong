@@ -45,6 +45,23 @@ html, body {
   image-rendering: crisp-edges;
 }
 
+/* THE READOUT, WHICH IS THE OPPOSITE OF THAT, at the user's request.
+   The bars and the weapon's name used to be drawn into the same chunky
+   buffer as the walls and quantised with them; they are their own
+   canvas now, over the frame, at the device's own resolution, smoothed
+   like anything else on a web page. See the top of js/hud.js for why
+   the wash and the gun stayed behind.
+
+   It is UNDER the thumb controls (z 6) and under the menus (z 10, 20),
+   and it never takes a pointer: it is a label on the glass. */
+#ui {
+  position: absolute; inset: 0;
+  display: block; width: 100%; height: 100%;
+  z-index: 5;
+  pointer-events: none;
+  image-rendering: auto;
+}
+
 /* ---- the screens: loading, title, pause -------------------------- */
 #loading, #title, #pause {
   position: fixed; inset: 0;

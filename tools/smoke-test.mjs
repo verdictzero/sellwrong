@@ -4362,11 +4362,14 @@ await (async () => {
      two gauges it grew out of are what is left. */
   {
     const hudSrc = fs2.readFileSync('js/hud.js', 'utf8');
-    const top = hudSrc.slice(hudSrc.indexOf('buildTop('), hudSrc.indexOf('buildBig('));
+    const top = hudSrc.slice(hudSrc.indexOf('_drawBars('), hudSrc.indexOf('_drawName('));
     note('what is left in the corner', `${top.split('\n').length} lines, ` +
-      `${(top.match(/\bbar\(/g) || []).length} bars drawn`);
+      `${(top.match(/this\._bar\(/g) || []).length} bars drawn`);
+    /* THE CORNER IS STILL WORDLESS, and the readout getting a real face
+       is not a licence to put the plate of numbers back: the corner does
+       not call either of the two things in this file that set type. */
     check('nothing in the corner writes a word',
-      !/bigText\s*\(/.test(top), 'bigText is still reached for in buildTop');
+      !/\btracked\s*\(/.test(top) && !/fillText/.test(top), 'the corner sets type again');
     check('and the message queue is gone with it, not merely unread',
       !/this\.messages/.test(hudSrc) && !/\bticMessages\b/.test(hudSrc));
     check('and nothing anywhere still tries to post one',
@@ -4375,13 +4378,13 @@ await (async () => {
     /* the two gauges: how much of the store has gone, and what is in
        whatever you are holding */
     check('the two gauges are still drawn',
-      /bar\(M, burn \/ 100/.test(top) && /bar\(y, tank \/ 100/.test(top));
+      /_bar\([^)]*g\.burnPercent \/ 100/.test(top) && /_bar\([^)]*tank \/ 100/.test(top));
     check('and the tank is the held weapon\'s, not the flamer\'s by name',
       /WEAPONS\[p\.weapon\]/.test(top) && !/maxAmmo\.fuel/.test(top));
     /* AND THE END-OF-NIGHT CARD STAYS, which is in the middle and is not
        a notification: it is the only thing left that says anything. */
     check('the card in the middle of the screen is untouched',
-      /buildBig\(\)/.test(hudSrc) && /bigMessage/.test(hudSrc));
+      /_drawBig\(\)/.test(hudSrc) && /bigMessage/.test(hudSrc));
   }
 
   /* --- AND THE SIMULATION CANNOT SEE THEM --- */
@@ -4438,6 +4441,184 @@ await (async () => {
 })();
 
 /* ---------- the wiring ---------- */
+/* ---------- THE READOUT, AND WHICH SIDE OF THE FILTER IT IS ON ----------
+
+   For most of this project's life the bars, the weapon's name and the
+   end-of-night card were drawn into the same low-resolution buffer as
+   the walls, at the same chunky pixel size, and quantised to the same
+   256 colours. At the user's request they are not any more: they are
+   their own 2D canvas over the frame, at the device's own resolution,
+   and the pipeline never sees them.
+
+   WHAT IS CHECKED IS THE SPLIT ITSELF, because it is the kind of thing
+   that gets quietly undone — one overlay added back to the list in
+   main.js and the readout is a chunky readout again with nothing
+   throwing. So: what is left in the buffer is exactly the two things
+   that belong to the PICTURE (the wash, and the fallback gun); the
+   readout is measured in the window's own pixels and not in chunky
+   ones; the canvas is backed at the device's ratio; and it costs
+   nothing on a frame where nothing has moved. */
+section('the readout');
+{
+  const fs = await import('node:fs');
+  const hudSrc = fs.readFileSync('js/hud.js', 'utf8');
+  const mainSrc = fs.readFileSync('js/main.js', 'utf8');
+  const lofiSrc = fs.readFileSync('js/lofi.js', 'utf8');
+  const html = fs.readFileSync('index.html', 'utf8');
+  const css = fs.readFileSync('css/style.css', 'utf8');
+  const { Hud } = await import('../js/hud.js');
+
+  /* --- WHAT IS LEFT IN THE BUFFER --------------------------------- */
+  {
+    const hud = new Hud({ burnPercent: 0, bigMessage: null });
+    note('what still goes through the filter', `${hud.scene.children.length} meshes in the overlay scene`);
+    check('the overlay scene is down to the two things that belong to the picture',
+      hud.scene.children.length === 2 &&
+      hud.scene.children.includes(hud.weaponMesh) && hud.scene.children.includes(hud.tintMesh),
+      `${hud.scene.children.length} children`);
+    /* the wash is a thing that happens to the photograph, so it is made
+       of the photograph's colours and stays where it is */
+    check('the wash over a pickup is still one of them',
+      /tintMesh/.test(hudSrc) && /this\.scene\.add\(this\.tintMesh\)/.test(hudSrc));
+    /* and the gun, on the day the model does not arrive, is the gun */
+    check('and so is the flat gun, for the day the model does not load',
+      /showWeaponSprite/.test(hudSrc) && /this\.scene\.add\(this\.weaponMesh\)/.test(hudSrc));
+    check('nothing in the readout is a texture uploaded into the frame any more',
+      !/CanvasTexture/.test(hudSrc) && !/from '\.\/pixel\.js'/.test(hudSrc) && !/\bbigText\b/.test(hudSrc));
+    check('and main.js still hands the pipeline two overlays, neither of them the readout',
+      /\{ scene: weapon3d\.scene, camera: weapon3d\.camera/.test(mainSrc) &&
+      /\{ scene: hud\.scene, camera: hud\.camera/.test(mainSrc) &&
+      (mainSrc.match(/\{ scene: [a-z]/g) || []).length === 2);
+    /* and the two files do not know each other: the pipeline is never
+       handed the readout's canvas and the readout never asks the
+       pipeline how big a pixel is */
+    check('the pipeline and the readout share nothing but the window',
+      !/getElementById|'ui'/.test(lofiSrc) &&
+      !/\bnew LofiPipeline|\.gridWidth\b|\.gridHeight\b|\bthis\.pipeline\b/.test(hudSrc));
+  }
+
+  /* --- THE PAGE ---------------------------------------------------- */
+  {
+    check('the page carries a canvas for it, inside the frame',
+      /<canvas id="ui">/.test(html) && html.indexOf('<canvas id="ui">') > html.indexOf('<div id="game">') &&
+      html.indexOf('<canvas id="ui">') < html.indexOf('</div>', html.indexOf('<div id="game">')));
+    const ui = css.slice(css.indexOf('#ui {'), css.indexOf('}', css.indexOf('#ui {')));
+    check('which takes no pointer, so it is a label on the glass and not a lid on the game',
+      /pointer-events: none/.test(ui));
+    check('and is smoothed, where the picture under it is not',
+      /image-rendering: auto/.test(ui) && /#view \{[^}]*image-rendering: pixelated/s.test(css));
+    /* under the thumb controls (6) and under the menus (10, 20), so a
+       paused game dims the readout with everything else */
+    const z = +(/z-index: (\d+)/.exec(ui) || [])[1];
+    note('where the readout sits in the stack', `z ${z}, under #touch at 6 and #pause at 20`);
+    check('and sits under the thumb controls and the menus', z > 0 && z < 6, `z ${z}`);
+  }
+
+  /* --- IT IS MEASURED IN THE WINDOW'S OWN PIXELS -------------------
+     Which is the whole of what decoupling it came to. It used to be laid
+     out in chunky ones, so turning the PIXELS dial down made the bars
+     GROW: a readout that changes size when you change how the world is
+     drawn. A fake canvas is enough to prove it, and cheaper than a GPU. */
+  {
+    const fake = () => {
+      const calls = [];
+      const ctx = { calls, _font: '' };
+      for (const m of ['save', 'restore', 'beginPath', 'moveTo', 'arcTo', 'closePath', 'fill', 'stroke',
+                       'fillRect', 'clearRect', 'clip', 'setTransform', 'roundRect', 'fillText',
+                       'createLinearGradient', 'addColorStop'])
+        ctx[m] = (...a) => { calls.push(m); return m === 'createLinearGradient' ? { addColorStop() {} } : undefined; };
+      ctx.measureText = t => ({ width: 7 * t.length });
+      return { width: 0, height: 0, style: {}, getContext: () => ctx, ctx };
+    };
+    const player = {
+      weapon: 'FLAMER', dead: false, maxAmmo: { fuel: 100 }, ammoFor: () => 62, refireMark: 0,
+      armour2: 1000, armour1: 500, health: 100, damageFlash: 0, pickupFlash: 0, bobPhase: 0, bob: 0,
+    };
+    const game = { burnPercent: 12, bigMessage: null };
+
+    const c = fake();
+    const hud = new Hud(game, c);
+    hud.resizeUi(960, 600, 2);
+    check('the canvas is backed at the device\'s ratio and sized in CSS pixels',
+      c.width === 1920 && c.height === 1200 && c.style.width === '960px' && c.style.height === '600px',
+      `${c.width}x${c.height} css ${c.style.width}x${c.style.height}`);
+    /* AND THE BACKING STORE HAS A CEILING, because a full-screen 4K page
+       at a ratio of two is a thirty-megapixel canvas for two bars and a
+       word. Same 4096 the pipeline's own buffer is capped at. */
+    {
+      const sizes = [[960, 600, 2], [2560, 1440, 2], [3840, 2160, 2], [844, 390, 3], [1280, 800, 1]]
+        .map(([w, h, d]) => { const k = fake(); const u = new Hud(game, k); u.resizeUi(w, h, d);
+                              return { ask: `${w}x${h}@${d}`, got: `${k.width}x${k.height}`, w: k.width, r: u.dpr }; });
+      note('what the canvas costs, by screen', sizes.map(q => `${q.ask} -> ${q.got}`).join(', '));
+      check('and it is never wider than 4096 real pixels, whatever the screen claims',
+        sizes.every(q => q.w <= 4096 && q.r >= 1), sizes.map(q => q.got).join(' '));
+    }
+
+    hud.update(player, null);
+    const first = c.ctx.calls.length;
+    check('the first frame draws it, on the canvas and nowhere else', first > 20, `${first} calls`);
+    check('and it starts by putting the device ratio into the transform',
+      c.ctx.calls[0] === 'setTransform' && c.ctx.calls[1] === 'clearRect');
+
+    /* AND A FRAME WHERE NOTHING MOVED COSTS NOTHING. The old readout
+       rebuilt a Pix and uploaded a texture on the same conditions, and
+       then had every one of its texels go through the block average and
+       the palette search on TOP of that, every frame, changed or not. */
+    hud.update(player, null);
+    check('a second frame with nothing moved draws nothing at all',
+      c.ctx.calls.length === first, `${c.ctx.calls.length - first} extra calls`);
+    game.burnPercent = 13;
+    hud.update(player, null);
+    check('and one more percent of the shop going redraws it',
+      c.ctx.calls.length > first);
+
+    /* THE SIZE COMES OFF THE WINDOW AND NOTHING ELSE, which is the
+       claim. Same window, both pixel dials moved: the same readout. */
+    const geom = (h, gw, gh) => {
+      const k = fake();
+      const u = new Hud({ burnPercent: 12, bigMessage: null }, k);
+      u.resize(gw, gh);               // the chunky grid, for the wash and the gun
+      u.resizeUi(960, h, 1);
+      return { s: u.s, w: u.cssW, h: u.cssH };
+    };
+    const fine = geom(600, 1707, 960), chunky = geom(600, 288, 120);
+    check('the same window with the world drawn at 288x120 and at 1707x960 lays the readout out identically',
+      fine.s === chunky.s && fine.w === chunky.w && fine.h === chunky.h,
+      `${fine.s} vs ${chunky.s}`);
+    note('how big it is, by window', [360, 600, 720, 1440]
+      .map(h => `${h}px tall -> ${geom(h, 960, 320).s.toFixed(2)}x`).join(', '));
+    check('and it grows with the window, within reason, at both ends',
+      geom(360, 960, 320).s < geom(720, 960, 320).s && geom(720, 960, 320).s < geom(1440, 960, 320).s &&
+      geom(200, 960, 320).s >= 0.7 && geom(4000, 960, 320).s <= 2);
+    check('main.js hands it the window in CSS pixels and the device\'s ratio',
+      /hud\.resizeUi\(w, h, window\.devicePixelRatio \|\| 1\)/.test(mainSrc));
+    check('and the pause button\'s corner is measured the same way, not in chunky pixels',
+      /hud\.setNameInset\(on \? 60 : 0\)/.test(mainSrc));
+    check('and with no game running the canvas is wiped, so the title has a clean picture',
+      /if \(started\) hud\.update\(p, weapons\); else hud\.clear\(\);/.test(mainSrc));
+  }
+
+  /* --- ITS OWN BOX OF CRAYONS --------------------------------------
+     The art palette is a setting (stock or earth) and the display
+     palette is another. A readout drawn out of the material ramps would
+     go muddy when the world did, for no reason: it is not made of any
+     material. So it has fixed colours of its own, and they are the
+     page's — the amber the menus highlight with, the bone the body text
+     is set in. */
+  {
+    const imports = (hudSrc.match(/^import .*$/gm) || []).join('\n');
+    note('what the readout imports', imports.split('\n').map(l => (/'([^']+)'/.exec(l) || [])[1]).join(', '));
+    check('the readout takes no colour from the box the world is painted in',
+      !/palette\.js/.test(imports) && !/\bramp\s*\(/.test(hudSrc));
+    const names = [...hudSrc.matchAll(/^\s{2}(\w+):\s*'/gm)].map(m => m[1]);
+    note('the readout\'s own colours', names.join(', '));
+    check('it names its colours for what they MEAN, not for which ramp they came off',
+      ['burn', 'full', 'low', 'empty', 'armour1', 'armour2', 'health', 'ink', 'card'].every(k => names.includes(k)));
+    check('and the amber is the page\'s own amber, so the readout and the menus agree',
+      /#e8c34a/.test(hudSrc) && /#e8c34a/.test(css));
+  }
+}
+
 /* EVERY NAME ONE MODULE TAKES FROM ANOTHER HAS TO BE THERE.
 
    This exists because of one afternoon: a comment block was rewritten
@@ -7303,8 +7484,9 @@ section('the van');
     /* the corner grows a third bar the moment something hurts you */
     const hudSrc = fs.readFileSync('js/hud.js', 'utf8');
     check('the corner draws all three bars, and only once you are hurt',
-      /bar\(y, hp \/ HEALTH/.test(hudSrc) && /hurt \? 3 : 0/.test(hudSrc) &&
-      /bar\(y, a2 \/ ARMOUR2, 'blue'/.test(hudSrc) && /bar\(y, a1 \/ ARMOUR1, 'purple'/.test(hudSrc));
+      /if \(hurt\) \{/.test(hudSrc) && /_bar\([^)]*hp \/ HEALTH/.test(hudSrc) &&
+      /_bar\([^)]*a2 \/ ARMOUR2, UI\.armour2\)/.test(hudSrc) &&
+      /_bar\([^)]*a1 \/ ARMOUR1, UI\.armour1\)/.test(hudSrc));
     check('and it knows it is hurt when any of the three has moved',
       /a2 < ARMOUR2 \|\| a1 < ARMOUR1 \|\| hp < HEALTH/.test(hudSrc));
   }
@@ -7712,7 +7894,7 @@ section('the minigun, the jump and the van');
       /btn\(7\)/.test(inSrc) && /padEdge\(6\)/.test(inSrc) && /padEdge\(4\)\) this\.weaponCycle = -1/.test(inSrc) && /padEdge\(5\)\) this\.weaponCycle = 1/.test(inSrc));
     check('space jumps, F uses, 4 is the minigun', /Space: 'jump'/.test(inSrc) && /KeyF: 'use'/.test(inSrc) && /Digit4: 'weapon4'/.test(inSrc));
     check('the readout names what you are holding, top right, and steps past the pause button on a phone',
-      /buildName\(/.test(hudSrc) && /setNameInset/.test(hudSrc) && /hud\.setNameInset\(on \?/.test(mainSrc));
+      /_drawName\(/.test(hudSrc) && /setNameInset/.test(hudSrc) && /hud\.setNameInset\(on \?/.test(mainSrc));
     check('brightness, contrast and gamma are three sliders applied before the palette snap',
       ['opt-bright', 'opt-contrast', 'opt-gamma'].every(id => html.includes(`id="${id}"`)) &&
       /setPicture\(/.test(lofiSrc) && lofiSrc.indexOf('uPicture.x') < lofiSrc.indexOf('vec3 snapped = palSnap(c)') &&
