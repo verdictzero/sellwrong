@@ -139,7 +139,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         2050 checks, no install and no browser
+  the smoke test         2051 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -4756,6 +4756,43 @@ the same move, so there is nothing to notice, and the suite holds them
 to that number rather than to the rule. Two hundred and sixteen of them.
 Everything the size of a skip went back to being a REGION.
 
+AND NO TWO OF THEM MAY SHARE A FACE, which the user found by seeing it
+shimmer at the checkout.
+
+Z-fighting is two coplanar quads facing the same way. Every face of a
+box winds outward, so two boxes that merely INTERSECT are fine — a
+chimney driven through a coping has no two faces in one plane — and two
+that merely TOUCH are fine as well, because the plane they share carries
+one quad facing each way and whichever you could see is the far side of
+solid geometry. What is not fine is two boxes sharing a face plane AND a
+volume: both have a front-facing quad there, at the same depth, and the
+depth buffer has no answer. What you get is a seam that crawls as you
+move.
+
+Four places had it and every one was the same mistake — a piece of trim
+run the full length and another run the full width, meeting at a corner
+they both wanted:
+
+  the belt guards            against the end plate and the roller cover
+  the shopfront mullions     against the cill they stand on
+  a door frame's jambs       against the head that sits on them
+  and two wall packs         both wanting the mullion between the doors
+
+All four are fixed the way a joiner would: the guards run BETWEEN the
+plates, the mullion starts at the top of the cill, the head sits ON the
+jambs, and there is one pack on the mullion instead of two.
+
+IT IS ONLY A BUG WHERE YOU CAN SEE IT, and that is not pedantry. Every
+cornice and every window head in the town starts two units inside the
+wall, so all of them share that plane with each other — two hundred and
+thirty-nine pairs, every one back-facing and culled, and a check that
+counted those would be a check nobody could keep green. So the suite
+steps off along the face's own outward normal and asks whether a player
+can stand there, by the same flood and the same standing floor the
+head-height rule uses. A hundred and fifty-eight pairs failed that test
+before this pass and none do now.
+
+
 AND A BOX CAN HAVE AN UNDERSIDE, which it could not at first. Six faces
 was really five: a box has no bottom, so from below every side is wound
 away from you and there is nothing there at all — the thing goes
@@ -5739,7 +5776,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-2050 checks. Every one of them earns its place by having caught something
+2051 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

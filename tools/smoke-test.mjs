@@ -843,7 +843,7 @@ const inTown = s => s.bbox[3] <= TOWN_EDGE;
     const counts = [...perBelt.values()].sort((a, b) => b - a);
     note('shopping, belt by belt', counts.join(' '));
     check('and your own belt is the busiest one in the shop, because it is the one you look down',
-      myBelt && myBelt.name === 'belt' && mineN >= 14 && mineN === counts[0] && mineN > counts[1],
+      myBelt && myBelt.name === 'belt' && mineN >= 12 && mineN === counts[0] && mineN > counts[1],
       `${mineN} on yours against ${counts[1]} at the next busiest of the sixteen`);
     /* AND THE OTHERS ARE NOT COPIES OF IT. A front end where every belt
        holds the same amount is eight copies of one lane; a real one has
@@ -9165,6 +9165,80 @@ section('the town');
         .every(q => Math.min(q.x1 - q.x0, q.y1 - q.y0) <= 10),
       props.filter(q => FLAT.includes(q.tex) && Math.min(q.x1 - q.x0, q.y1 - q.y0) > 10)
         .slice(0, 3).map(q => `${q.tex} ${Math.min(q.x1 - q.x0, q.y1 - q.y0)} deep`).join(', '));
+    /* ===============================================================
+       AND NO TWO OF THEM SHARE A FACE YOU CAN SEE
+
+       At the user's request, who saw it shimmering at the checkout.
+
+       Z-FIGHTING IS TWO COPLANAR QUADS FACING THE SAME WAY. Every face
+       of a free box winds outward, so two boxes that merely INTERSECT
+       are fine — a chimney through a coping has no two faces in the
+       same plane — and two that merely TOUCH are fine as well, because
+       the plane they share carries one quad facing each way and the one
+       you could see is always the far side of solid geometry.
+
+       What is not fine is two boxes sharing a face plane AND a volume.
+       Then both have a front-facing quad there, at the same depth, and
+       the depth buffer has no answer: what you get is a seam that
+       crawls as you move. Four places in this game had it and every one
+       was the same mistake — a piece of trim run the full length and
+       another run the full width, meeting at a corner where they both
+       wanted to be:
+
+         the belt guards against the end plate and the roller cover
+         the shopfront mullions against the cill they stand on
+         a door frame's jambs against the head that sits on them
+         and two wall packs both wanting the mullion between the doors
+
+       IT IS ONLY A BUG WHERE YOU CAN SEE IT, and that is not pedantry:
+       the town's cornices and window trims all start two units inside
+       the wall and therefore all share that plane with each other, two
+       hundred and thirty-nine pairs of them, every one back-facing and
+       culled. So the face is stepped off along its own outward normal
+       and the question is whether a player can stand there — the same
+       flood, and the same standing floor, as the head-height rule
+       above. */
+    {
+      const ol = (a0, a1, b0, b1) => Math.min(a1, b1) - Math.max(a0, b0) > 0.01;
+      /* can anybody be just outside this face, looking at it */
+      const facing = (axis, plane, dir, a0, a1, z0, z1) => {
+        for (const t of [0.15, 0.5, 0.85]) {
+          const m = a0 + (a1 - a0) * t, p = plane + dir * 1.5;
+          const s2 = axis === 'x' ? level.sectorAt(p, m) : level.sectorAt(m, p);
+          if (s2 && reach.has(s2.index) && z1 > s2.floor + 0.5 && z0 < s2.ceil) return true;
+        }
+        return false;
+      };
+      const clash = [];
+      for (let i = 0; i < props.length; i++) for (let j = i + 1; j < props.length; j++) {
+        const a = props[i], b = props[j];
+        if (a.x1 < b.x0 - 1 || b.x1 < a.x0 - 1 || a.y1 < b.y0 - 1 || b.y1 < a.y0 - 1) continue;
+        const zlo = Math.max(a.z0, b.z0), zhi = Math.min(a.z1, b.z1);
+        const hit = [];
+        const side = (axis, plane, dir, c0, c1) => {
+          if (facing(axis, plane, dir, c0, c1, zlo, zhi)) hit.push(plane);
+        };
+        if (ol(a.z0, a.z1, b.z0, b.z1)) {
+          if (ol(a.y0, a.y1, b.y0, b.y1)) {
+            const c0 = Math.max(a.y0, b.y0), c1 = Math.min(a.y1, b.y1);
+            if (Math.abs(a.x0 - b.x0) < 1e-6) side('x', a.x0, -1, c0, c1);
+            if (Math.abs(a.x1 - b.x1) < 1e-6) side('x', a.x1, +1, c0, c1);
+          }
+          if (ol(a.x0, a.x1, b.x0, b.x1)) {
+            const c0 = Math.max(a.x0, b.x0), c1 = Math.min(a.x1, b.x1);
+            if (Math.abs(a.y0 - b.y0) < 1e-6) side('y', a.y0, -1, c0, c1);
+            if (Math.abs(a.y1 - b.y1) < 1e-6) side('y', a.y1, +1, c0, c1);
+          }
+        }
+        /* and two lids at one height, which is the same failure looking up */
+        if (a.topTex && b.topTex && Math.abs(a.z1 - b.z1) < 1e-6 &&
+            ol(a.x0, a.x1, b.x0, b.x1) && ol(a.y0, a.y1, b.y0, b.y1)) hit.push('lid');
+        if (hit.length) clash.push(`${a.tex}/${b.tex} at ${Math.round(a.x0)},${Math.round(a.y0)}`);
+      }
+      check('and no two free boxes share a face plane a player can look at',
+        clash.length === 0, `${clash.length}: ${clash.slice(0, 4).join(', ')}`);
+    }
+
     /* AND NOTHING BIG IS STANDING ON THE GROUND AS A BOX. The skips and
        the condensing sets in the service yard were free boxes for about
        an hour and it was the wrong call: a steel skip the size of a car

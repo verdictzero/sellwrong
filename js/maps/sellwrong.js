@@ -1102,7 +1102,14 @@ export function buildSellWrong(opts = {}) {
         /* the anchor has no roller: it has two sets of sliders, and a
            pack either side of each so the doors are the lit thing on
            the whole elevation */
-        for (const dx of [ENT_A0 - 90, ENT_A0 + ENTRY_W + 58, ENT_B0 - 90, ENT_B0 + ENTRY_W + 58])
+        /* THREE AND NOT FOUR. "A pack either side of each door" is four
+           packs, and the two inner ones both want the mullion between
+           the entrance and the exit — they came out four units apart on
+           the same piece of wall, overlapping, with their fronts on the
+           same plane. One pack on the mullion is what is actually there
+           and what the wording meant. */
+        const mid = (ENT_A0 + ENTRY_W + ENT_B0 - PACK_W) / 2;
+        for (const dx of [ENT_A0 - 90, mid, ENT_B0 + ENTRY_W + 58])
           prop(dx, -WALL - 10, dx + PACK_W, -WALL, 172, 172 + PACK_H, 'WALLPACK', { light: 1.15 });
       }
     }
@@ -1201,10 +1208,16 @@ export function buildSellWrong(opts = {}) {
       /* THE MULLION each side of it, and each one laid once: the pane
          on the left of a mullion owns it, and the last pane in the run
          also owns the return at the end. */
+      /* FROM THE TOP OF THE CILL, not from the bottom of the glass. The
+         cill laps four units over the pane (see below), so a mullion
+         starting at the glass line shared four units of front face with
+         it — two coplanar quads facing the footway at the same depth,
+         which is z-fighting down the whole parade. A mullion stands ON
+         a cill anyway. */
       prop(i ? Math.round(a - mull) : x0, -WALL - FRAME_OUT, a, -WALL,
-           PANE_Z0, PANE_Z1, 'SHOPFRAM', { light: 0.54 });
+           PANE_Z0 + 4, PANE_Z1, 'SHOPFRAM', { light: 0.54 });
       if (i === n - 1)
-        prop(c, -WALL - FRAME_OUT, x1, -WALL, PANE_Z0, PANE_Z1, 'SHOPFRAM', { light: 0.54 });
+        prop(c, -WALL - FRAME_OUT, x1, -WALL, PANE_Z0 + 4, PANE_Z1, 'SHOPFRAM', { light: 0.54 });
     }
     /* AND THE CILL AND THE HEAD, one of each for the whole run, because
        a shopfront's bottom rail is one length of aluminium and not one
@@ -1346,6 +1359,11 @@ export function buildSellWrong(opts = {}) {
      and the recess is painted into SCANBED where it belongs. */
   const H_SCAN = H_BELT;                  // the scale plate, flush with it
   const RAIL_W = 5, RAIL_H = 8;           // the guards down the belt
+  /* AND THE TWO THINGS THEY RUN BETWEEN, named because the shopping has
+     to stop short of one of them and the guards have to stop short of
+     both. See NOTHING MAY SHARE A FACE below. */
+  const STOP_D = 7;                       // the plate the shopping piles against
+  const COVER_D = 9;                      // the roller housing at the far end
   const CS_LIGHT = 0.42;                  // what the front end throws
 
   /* WHICH ONE IS YOURS. The middle of the eight, because the well of it
@@ -1441,10 +1459,24 @@ export function buildSellWrong(opts = {}) {
        reason a pile can be drawn at all. */
     const rail = (a, b, c, d, z0, z1, light = CS_LIGHT) =>
       prop(a, b, c, d, z0, z1, 'TILLRAIL', { topTex: 'TILLRAIL', light });
-    rail(x0, CS_SCAN, x0 + RAIL_W, Y_TILLEND, H_BELT, H_BELT + RAIL_H);
-    rail(x1 - RAIL_W, CS_SCAN, x1, Y_TILLEND, H_BELT, H_BELT + RAIL_H);
-    rail(x0, CS_SCAN, x1, CS_SCAN + 7, H_BELT, H_BELT + 13, CS_LIGHT + 0.06);
-    rail(x0, Y_TILLEND - 9, x1, Y_TILLEND, H_BELT, H_BELT + 11, CS_LIGHT - 0.04);
+    /* NOTHING MAY SHARE A FACE WITH ANYTHING ELSE, and this is where it
+       was got wrong. The end plate and the roller cover run the whole
+       width of the run, and the guards used to run the whole LENGTH, so
+       at each of the four corners a guard and a plate occupied the same
+       volume — and two boxes in the same volume have a west face on the
+       same plane, pointing the same way, at the same depth. The depth
+       buffer has no answer to that and the shimmer it makes is the one
+       the user saw at the till.
+
+       Butting is fine and overlapping is not. A shared plane between
+       two boxes that merely TOUCH carries one quad facing each way, and
+       whichever one you could see is the far side of solid geometry. So
+       the guards run BETWEEN the plates and the four corners have one
+       box in them. */
+    rail(x0, CS_SCAN, x1, CS_SCAN + STOP_D, H_BELT, H_BELT + 13, CS_LIGHT + 0.06);
+    rail(x0, Y_TILLEND - COVER_D, x1, Y_TILLEND, H_BELT, H_BELT + 11, CS_LIGHT - 0.04);
+    for (const [a, b] of [[x0, x0 + RAIL_W], [x1 - RAIL_W, x1]])
+      rail(a, CS_SCAN + STOP_D, b, Y_TILLEND - COVER_D, H_BELT, H_BELT + RAIL_H);
 
     /* THE REGISTER SITS BESIDE THE SCANNER, NOT ON IT, and the reason is
        the shot you get when you spawn. The cashier's line of sight west
@@ -1521,8 +1553,15 @@ export function buildSellWrong(opts = {}) {
        one item every forty units. */
     const clear = RUN_W - RAIL_W * 2 - 4;
     const span = Y_TILLEND - CS_SCAN;
-    let y = CS_SCAN + 8, put = 0;
-    while (y < Y_TILLEND - 14) {
+    /* and it starts clear of the end plate and stops clear of the roller
+       cover, because a tin whose lid lands on the cover's lid is the
+       same bug as the one the guards had. Asked PER PIECE rather than
+       as one margin for the deepest of them: a blanket seventeen units
+       threw away a whole row of the belt to make room for a carton that
+       might not be the one drawn. */
+    const lastY = Y_TILLEND - COVER_D - 1;
+    let y = CS_SCAN + STOP_D + 2, put = 0;
+    while (y + 9 < lastY) {
       const far = (y - CS_SCAN) / span;
       const across = Math.max(1, Math.min(3,
         Math.round(0.9 + busy * 2.2 - far * (2.2 - busy * 1.3) + (rnd() - 0.5))));
@@ -1530,6 +1569,7 @@ export function buildSellWrong(opts = {}) {
       for (let c = 0; c < across; c++) {
         const it = GROCERIES[Math.floor(rnd() * GROCERIES.length)];
         if (x + it.w > mid + clear / 2) break;
+        if (y + it.d + 1 > lastY) continue;
         prop(x, y, x + it.w, y + it.d, H_BELT, H_BELT + it.h, it.tex,
           { topTex: it.top, light: CS_LIGHT - 0.02 });
         put++; deep = Math.max(deep, it.d);
@@ -1845,9 +1885,14 @@ export function buildSellWrong(opts = {}) {
       const inner = side < 0 ? ANCHOR_X0 : ANCHOR_X1;
       for (const [f0, f1] of [[face, face + side * D], [inner, inner - side * D]]) {
         const b0 = Math.min(f0, f1), b1 = Math.max(f0, f1);
-        prop(b0, cy - EXIT_W / 2 - F, b1, cy - EXIT_W / 2, FLOOR_WALK, DOOR_TOP + F,
+        /* THE JAMBS STOP AT THE HEAD and the head sits on them, which is
+           how a doorset is put together and also the only way to build
+           it out of boxes: run the jambs the full height and the head
+           across them and the two share a face plane at each top
+           corner, which shimmers. */
+        prop(b0, cy - EXIT_W / 2 - F, b1, cy - EXIT_W / 2, FLOOR_WALK, DOOR_TOP,
              'DOORFRAM', { light: 0.52 });
-        prop(b0, cy + EXIT_W / 2, b1, cy + EXIT_W / 2 + F, FLOOR_WALK, DOOR_TOP + F,
+        prop(b0, cy + EXIT_W / 2, b1, cy + EXIT_W / 2 + F, FLOOR_WALK, DOOR_TOP,
              'DOORFRAM', { light: 0.52 });
         prop(b0, cy - EXIT_W / 2 - F, b1, cy + EXIT_W / 2 + F, DOOR_TOP, DOOR_TOP + F,
              'DOORFRAM', { botTex: 'DOORFRAM', light: 0.58, botLight: 0.30 });
@@ -1919,8 +1964,9 @@ export function buildSellWrong(opts = {}) {
   {
     const F = 7, D = 6;                    // how wide the frame is, how proud
     for (const [a, b] of [[Y_BACKXEND - D, Y_BACKXEND], [BOH_Y0, BOH_Y0 + D]]) {
-      prop(SD_X0 - F, a, SD_X0, b, FLOOR_WALK, DOOR_TOP + F, 'DOORFRAM', { light: 0.46 });
-      prop(SD_X1, a, SD_X1 + F, b, FLOOR_WALK, DOOR_TOP + F, 'DOORFRAM', { light: 0.46 });
+      /* to the head and no further; the head sits on them */
+      prop(SD_X0 - F, a, SD_X0, b, FLOOR_WALK, DOOR_TOP, 'DOORFRAM', { light: 0.46 });
+      prop(SD_X1, a, SD_X1 + F, b, FLOOR_WALK, DOOR_TOP, 'DOORFRAM', { light: 0.46 });
       prop(SD_X0 - F, a, SD_X1 + F, b, DOOR_TOP, DOOR_TOP + F, 'DOORFRAM',
            { botTex: 'DOORFRAM', light: 0.52, botLight: 0.24 });
     }
