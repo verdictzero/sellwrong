@@ -6115,6 +6115,128 @@ section('the decals');
     /this\.decals\.tic\(\)/.test(gsrc) && /this\.decals\.render\(ex, ey, vx, vy\)/.test(gsrc) && /if \(fxAtlases\) this\.decals\.attach\(scene\)/.test(gsrc));
 }
 
+/* ---------- the wall as mass ---------- */
+section('the voxel wall');
+{
+  const VX = await import('../js/voxel.js');
+  const { VoxelSpan, VoxelWall, solidSpans, voxelisable, alongLine,
+          VOX, SPAN, THICK, EMPTY, MID, UPPER, LOWER, TORN, MAX_LINE } = VX;
+  const { TICRATE } = await import('../js/util.js');
+
+  /* THE ONE PROPERTY EVERYTHING ELSE RESTS ON. A wall nobody has
+     touched must come back out of the lattice as the two rectangles it
+     went in as — one per side — or voxelising a shopfront changes the
+     picture before anybody has fired at it, and every stage after this
+     one is built on sand. */
+  const flat = [{ z0: 0, z1: 480, slot: MID }];
+  const sp = new VoxelSpan(0, SPAN, flat, 0.5);
+  let quads = 0, byAxis = [0, 0, 0], torn = 0;
+  sp.mesh((slot, axis) => { quads++; byAxis[axis]++; if (slot === TORN) torn++; });
+  note('intact span', `${sp.nu}x${sp.nz}x${sp.nw} voxels, ${sp.bytes} bytes`);
+  check('an untouched wall is two rectangles', quads === 2, `${quads}`);
+  check('and both of them are the wall, not its edges', byAxis[2] === 2 && torn === 0,
+    `u/z/w = ${byAxis.join('/')}, ${torn} torn`);
+
+  /* A wall is two voxels through — one from each of the two one-sided
+     lines that face each other across the map's 16-unit void. */
+  check('a line owns one voxel of the void', sp.nw === Math.round(THICK / VOX) && sp.nw === 1);
+  check('the lattice covers the whole height', sp.nz * VOX >= 480 && (sp.nz - 1) * VOX < 480);
+
+  /* A WINDOW IS A HOLE IN THE MASS. Two skins with air between them —
+     the lintel over a shopfront and the stall riser under it — must
+     leave the middle empty, or a pane of glass is a solid block. */
+  {
+    const split = new VoxelSpan(0, SPAN, [{ z0: 0, z1: 48, slot: LOWER }, { z0: 200, z1: 480, slot: UPPER }], 0);
+    const mid = split.get(4, Math.floor((120 - split.zBot) / VOX), 0);
+    check('the gap between two skins is empty', mid === EMPTY, `slot ${mid}`);
+    check('and the skins themselves are not',
+      split.get(4, 0, 0) === LOWER && split.get(4, split.nz - 1, 0) === UPPER);
+  }
+
+  /* ONE ROUND IS NOT A CANNON. A minigun round is 24 to 48 and a voxel
+     is 23 centimetres across; if one round took one voxel every bullet
+     would blow a fist through a wall. It has to take a few dozen on one
+     spot, which is about half a second of holding the trigger. */
+  {
+    const w = new VoxelSpan(0, SPAN, flat, 0.5);
+    check('one round opens nothing', w.hit(128, 240, 36, 10) === 0);
+    let tics = 0, broke = 0;
+    while (!broke && tics < 200) { for (let r = 0; r < 4; r++) broke += w.hit(128, 240, 36, 10); tics++; }
+    note('held on one spot, the wall opens after', `${tics} tics (${(tics / TICRATE).toFixed(2)} s)`);
+    check('a held burst does open it', broke > 0 && tics < 60, `${tics} tics`);
+    check('and you can see through where it went', w.openAt(128, 240));
+    check('but not through the wall beside it', !w.openAt(200, 240));
+  }
+
+  /* WHAT A HOLE COSTS. The edges of one are faces that did not exist
+     before, and they are the thing that makes a hole read as a hole —
+     but they are also the only way this grows, so it is worth knowing
+     the number rather than discovering it. */
+  {
+    const w = new VoxelSpan(0, SPAN, flat, 0.5);
+    w.carve(128, 240, 24);
+    let q = 0, t = 0;
+    w.mesh((slot) => { q++; if (slot === TORN) t++; });
+    note('one 24-unit hole costs', `${q} rectangles, ${t} of them torn edge`);
+    check('a hole has a torn edge round it', t > 0);
+    check('a hole does not cost the earth', q < 40, `${q}`);
+
+    const t0 = process.hrtime.bigint();
+    for (let i = 0; i < 100; i++) w.mesh(() => {});
+    const ms = Number(process.hrtime.bigint() - t0) / 1e8;
+    note('re-merging that span', `${ms.toFixed(3)} ms of a ${(1000 / TICRATE).toFixed(1)} ms tic`);
+    check('re-merging a shot wall fits in a tic many times over', ms < 3, `${ms.toFixed(3)} ms`);
+  }
+
+  /* NOTHING IS BUILT UNTIL SOMETHING HITS IT, which is the whole reason
+     the building still loads in half a second. */
+  {
+    const wall = level.lines.filter(l => voxelisable(l, level.sectors)).sort((a, b) => b.len - a.len)[0];
+    const vw = new VoxelWall(wall, level.sectors);
+    check('a wall nobody has shot holds no lattice', vw.live === 0 && vw.bytes === 0);
+    const mid = alongLine(wall, (wall.x1 + wall.x2) / 2, (wall.y1 + wall.y2) / 2);
+    vw.carve(mid, 100, 20);
+    note('the longest eligible wall', `${Math.round(wall.len)} units, ${vw.count} spans`);
+    check('one hit builds one span of it', vw.live === 1, `${vw.live}`);
+    check('and that span is small', vw.bytes < 8192, `${vw.bytes} bytes`);
+    check('the hit landed where it was aimed', vw.openAt(mid, 100));
+  }
+
+  /* A HIT ON A SPAN JOIN REACHES BOTH SIDES, or a hole that straddles
+     one comes out as a half hole with a straight edge down the middle. */
+  {
+    const wall = level.lines.filter(l => voxelisable(l, level.sectors) && l.len > SPAN * 2)[0];
+    const vw = new VoxelWall(wall, level.sectors);
+    vw.carve(SPAN, 100, 24);
+    check('a hole across a span join opens both', vw.live === 2, `${vw.live}`);
+  }
+
+  /* WHAT IS ELIGIBLE. One-sided walls only for now — a two-sided lintel
+     is drawn with no thickness at all and giving it some would shift its
+     faces half a voxel. And the wood's own boundary is scenery: four
+     lines of nine thousand units and up that no round will ever reach. */
+  {
+    const elig = level.lines.filter(l => voxelisable(l, level.sectors));
+    const longest = Math.max(...elig.map(l => l.len));
+    note('voxelisable lines', `${elig.length} of ${level.lines.length}`);
+    check('every eligible line is one-sided',
+      elig.every(l => l.front === null || l.back === null));
+    check('the wood is not eligible', longest <= MAX_LINE, `longest ${Math.round(longest)}`);
+    check('but the building is', elig.length > 200, `${elig.length}`);
+    check('a two-sided line still has mass on it',
+      level.lines.some(l => l.front !== null && l.back !== null && solidSpans(l, level.sectors).length > 0));
+  }
+
+  /* AND IT DOES NOT IMPORT A RENDERER. The arithmetic runs headless for
+     the same reason js/decals.js's does, and the way it stays that way
+     is that nothing in the file reaches for three. */
+  {
+    const fs = await import('node:fs');
+    const src = fs.readFileSync('js/voxel.js', 'utf8');
+    check('the lattice has no three.js in it', !/from 'three'/.test(src));
+  }
+}
+
 /* ---------- the vans under fire ---------- */
 section('the vans under fire');
 {

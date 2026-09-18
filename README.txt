@@ -24,8 +24,10 @@ somewhere else: the people, the trees, the sky, and the gun.
   manifest.webmanifest  what a phone calls it when it is added to a home screen
   icon.png              and what it draws there — node tools/bake-icons.mjs
   vendor/three.module.js  three r160, local so the game runs off a memory stick
-  js/                   the game — js/ruin.js is the newest of it: the
-                          steel frame a burnt-out roof leaves behind
+  js/                   the game — js/voxel.js is the newest of it: a
+                          wall cut into eight-unit cubes so that a round
+                          can take some of it away, which nothing draws
+                          yet
   art/                  the logo, the old sprite weapon, the seven four-view
                           vehicle sheets and the atlas packed out of them —
                           which nothing loads any more — and art/people/,
@@ -99,7 +101,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         1278 checks, no install and no browser
+  the smoke test         1301 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -3549,7 +3551,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-1278 checks. Every one of them earns its place by having caught something
+1301 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
