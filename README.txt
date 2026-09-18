@@ -139,7 +139,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         2219 checks, no install and no browser
+  the smoke test         2221 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -4325,10 +4325,35 @@ makes. The difference between that and a repaint is that a repaint DRAWS
 in the new box instead of being quantised into it, and drawing is what
 fifteen ramps make possible and a photograph does not.
 
-TONE: AS DRAWN | EARTH, in the pause menu, remembered, and applied
-BEFORE anything is painted when the game starts — a game that boots in
-EARTH should not spend three quarters of a second at the loading screen
-painting itself twice.
+AND THEN IT BECAME THE DEFAULT, at the user's request, which is the
+happiest way for a test you can undo to end. TONE: EARTH | AS DRAWN, in
+the pause menu, remembered, and applied BEFORE anything is painted when
+the game starts — a game that boots in a box should not spend three
+quarters of a second at the loading screen painting itself twice.
+
+TWO THINGS HAD TO BE SAID OUT LOUD when the default moved, and both of
+them are the kind that would otherwise have gone wrong quietly.
+
+THE ART BAKE PINS THE STOCK BOX BY NAME. tools/bake-art.mjs writes the
+two photographs in art/ as palette INDICES, and an index is only
+meaningful because both boxes have the same fifteen ramps in the same
+order. But which box to QUANTISE against is a different question with
+one right answer: the fuller one. A photograph snapped into a muted box
+and then recoloured is a photograph that has been through two
+quantisations. So the tool asks for `stock` outright rather than taking
+whatever is current — which also keeps js/art-data.js byte-identical
+when the default tone moves, and that matters, because CI re-bakes it
+and fails on a diff.
+
+AND A SAVED `tone` IS AN INDEX. TONE_SET was reordered to put the new
+default first, so a saved 0 used to mean AS DRAWN and now means EARTH —
+right for anybody who never touched it, wrong for anybody who did. The
+preferences version is bumped and a saved tone dropped rather than
+reinterpreted. WHILE DOING THAT the reset itself got narrower: it used
+to throw away the same four picture settings on ANY version bump, so
+saying one thing about the tone would have taken away a picture somebody
+had spent a while dialling in. Each line of it says which version it
+belongs to now.
 
 AND THE HAZE THE FIRE MAKES, ON A SWITCH
 ----------------------------------------
@@ -6206,7 +6231,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-2219 checks. Every one of them earns its place by having caught something
+2221 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

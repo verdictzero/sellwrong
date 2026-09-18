@@ -207,7 +207,15 @@ const EARTH_RAMPS = [
 /** The boxes the ART can be PAINTED in, by the name the setting uses.
  *  Which one is current is a live value — see setArtPalette. */
 export const ART_PALETTES = { stock: STOCK_RAMPS, earth: EARTH_RAMPS };
-export const DEFAULT_ART = 'stock';
+/* AND EARTH IS THE ONE THE GAME IS IN, at the user's request. STOCK is
+   the box every texture in this game was originally drawn in and is
+   still what `stock` means; it is also the box the two photographs in
+   art/ are quantised against, because a picture is best quantised in
+   the fuller box and the earth one then recolours it through the shared
+   index — which is the whole reason the two lists have the same shape.
+   tools/bake-art.mjs asks for it BY NAME for exactly that reason, and
+   does not simply take whatever is current. */
+export const DEFAULT_ART = 'earth';
 export let artName = DEFAULT_ART;
 
 /* Where each ramp starts, filled in as we build */

@@ -250,21 +250,30 @@ check('ramps are monotonic in luma', ['grey', 'red', 'blue', 'fire'].every(k => 
      ------------------------------------------------------------------ */
   {
     const shape = t => pal.ART_PALETTES[t].map(r => `${r.key}:${r.n}`).join(' ');
-    check('there are two boxes to paint in and the game starts in the one it was drawn in',
-      Object.keys(pal.ART_PALETTES).join(',') === 'stock,earth' && pal.artName === 'stock' &&
-      pal.DEFAULT_ART === 'stock');
-    check('and the second has the same fifteen ramps, same lengths, same order',
+    /* THE EARTH BOX IS THE ONE THE GAME IS IN, at the user's request,
+       and STOCK is the one it was drawn in and the one the two pictures
+       in art/ are baked against — see the note at the top of
+       tools/bake-art.mjs, which pins itself to it. */
+    check('there are two boxes to paint in and the game starts in the earth one',
+      Object.keys(pal.ART_PALETTES).join(',') === 'stock,earth' && pal.artName === 'earth' &&
+      pal.DEFAULT_ART === 'earth');
+    check('and the two have the same fifteen ramps, same lengths, same order',
       shape('stock') === shape('earth'), `${shape('earth')}`);
     check('which is what keeps a palette index meaning the same material in both',
       pal.ART_PALETTES.stock.reduce((a, r) => a + r.n, 0) === 256);
 
-    const stock = pal.RAMP_PALETTE.map(c => c.slice());
+    const earthFirst = pal.RAMP_PALETTE.map(c => c.slice());
     const starts = Object.fromEntries(Object.keys(pal.RAMP).map(k => [k, pal.RAMP[k].start]));
     const wasObject = pal.RAMP_PALETTE;
 
     check('a box that is not a box is refused', pal.setArtPalette('nonsense') === false);
-    check('and the one already in use is refused', pal.setArtPalette('stock') === false);
-    check('and the earth one is taken', pal.setArtPalette('earth') === true && pal.artName === 'earth');
+    check('and the one already in use is refused', pal.setArtPalette('earth') === false);
+    check('and the one it was drawn in is taken', pal.setArtPalette('stock') === true && pal.artName === 'stock');
+    const stock = pal.RAMP_PALETTE.map(c => c.slice());
+    check('and switching back to earth gives back exactly the box it started in',
+      pal.setArtPalette('earth') === true &&
+      pal.RAMP_PALETTE.every((c, i) => c.every((v, k) => v === earthFirst[i][k])));
+    pal.setArtPalette('stock');
 
     /* IT IS FILLED IN PLACE AND NEVER REPLACED. Half the game is holding
        this array — PALETTE is it, the default display box is it,
@@ -277,6 +286,7 @@ check('ramps are monotonic in luma', ['grey', 'red', 'blue', 'fire'].every(k => 
     check('and not one ramp moved, so every index still means what it meant',
       Object.keys(pal.RAMP).every(k => pal.RAMP[k].start === starts[k]));
 
+    pal.setArtPalette('earth');
     const earth = pal.RAMP_PALETTE.map(c => c.slice());
     const sat = c => (Math.max(...c) - Math.min(...c)) / 255;
     const lum = c => (3 * c[0] + 6 * c[1] + c[2]) / 10;
@@ -348,6 +358,7 @@ check('ramps are monotonic in luma', ['grey', 'red', 'blue', 'fire'].every(k => 
       const earthTex = texP.TEXTURE_GENERATORS.CLAPBRD();
       pal.setArtPalette('stock');
       const stockTex = texP.TEXTURE_GENERATORS.CLAPBRD();
+      pal.setArtPalette('earth');
       let differs = 0;
       for (let i = 0; i < stockTex.data.length; i += 4) if (stockTex.data[i] !== earthTex.data[i]) differs++;
       check('a texture painted in the earth box is a different texture',
@@ -355,20 +366,22 @@ check('ramps are monotonic in luma', ['grey', 'red', 'blue', 'fire'].every(k => 
       /* AND REPAINTING A BANK KEEPS THE TEXTURE OBJECTS, because every
          material in the scene is holding them. */
       const bank = new texP.TextureBank();
-      bank.add('CLAPBRD', stockTex, {});
+      bank.add('CLAPBRD', earthTex, {});
       const held = bank.get('CLAPBRD').texture;
-      pal.setArtPalette('earth');
+      pal.setArtPalette('stock');
       texP.repaintTextures(bank);
       check('and repainting a bank gives it new pixels and the same texture object',
         bank.get('CLAPBRD').texture === held && bank.map.size > 400);
-      pal.setArtPalette('stock');
+      pal.setArtPalette('earth');
     }
 
     /* AND THE WAY BACK IS EXACT, which is the whole of what "a test I
-       can undo" means. */
+       can undo" means — and it is the way back to EITHER box, because
+       the default moved and the one the art was drawn in is now the one
+       you switch to. */
     const back = pal.RAMP_PALETTE.map(c => c.slice());
-    check('and the way back is exact, entry for entry',
-      pal.artName === 'stock' && back.every((c, i) => c.every((v, k) => v === stock[i][k])));
+    check('and the default is restored for everything after this, entry for entry',
+      pal.artName === pal.DEFAULT_ART && back.every((c, i) => c.every((v, k) => v === earthFirst[i][k])));
   }
   /* and it is on a button, and remembered, and applied before anything
      is painted rather than after */
@@ -376,9 +389,11 @@ check('ramps are monotonic in luma', ['grey', 'red', 'blue', 'fire'].every(k => 
     const fs3 = await import('node:fs');
     const html = fs3.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
     const main = fs3.readFileSync(new URL('../js/main.js', import.meta.url), 'utf8');
-    check('the tone is a ladder in the pause menu, AS DRAWN by default and remembered',
-      /id="opt-tone"/.test(html) && /TONE_SET = \[\{ v: 'stock'/.test(main) &&
+    check('the tone is a ladder in the pause menu, EARTH by default and remembered',
+      /id="opt-tone"/.test(html) && /TONE_SET = \[\{ v: 'earth'/.test(main) &&
       /tone: 0,/.test(main) && /ladder\('opt-tone', 'tone', TONE_SET/.test(main));
+    check('and a saved tone from before the default moved is not kept alive',
+      /delete saved\.tone/.test(main) && /PREF_VERSION = 8/.test(main));
     check('and a game that starts in the other one paints itself once, not twice',
       /setArtPalette\(TONE_SET\[prefs\.tone\]\.v\)/.test(main) &&
       main.indexOf('setArtPalette(TONE_SET') < main.indexOf('const textures = bakeTextures()'));
@@ -1798,17 +1813,34 @@ section('the air');
      snaps three grey levels away from what the table asked for is a
      dawn that comes out grey. */
   {
-    let worst = 0, worstAt = '';
-    for (const k of W.KEYFRAMES) {
-      for (const key of ['zenith', 'horizon', 'ground', 'glow', 'sunCol']) {
-        const c = [1, 3, 5].map(i => parseInt(k[key].slice(i, i + 2), 16));
-        if (c[0] + c[1] + c[2] === 0) continue;
-        const p = pal.PALETTE[pal.nearestIndex(...c)];
-        const d = Math.hypot(...c.map((v, i) => v - p[i]));
-        if (d > worst) { worst = d; worstAt = `${k.hour}h ${key} ${k[key]} -> ${p}`; }
+    /* AGAINST THE BOX THE TABLE WAS WRITTEN FOR, which is the one the
+       game was drawn in and is asked for by name. The claim here is
+       about the SKY RAMP — whether it has enough entries to hold a
+       dawn — and that is a fact about a box of ramps, not about which
+       box the game happens to be showing. The earth box is measured
+       too and printed rather than asserted: it is deliberately duller,
+       so of course the table's saturated blues land further away in
+       it, and a check that failed for that would be a check that
+       fails whenever anybody does what the box is for. */
+    const miss = box => {
+      pal.setArtPalette(box);
+      let worst = 0, worstAt = '';
+      for (const k of W.KEYFRAMES) {
+        for (const key of ['zenith', 'horizon', 'ground', 'glow', 'sunCol']) {
+          const c = [1, 3, 5].map(i => parseInt(k[key].slice(i, i + 2), 16));
+          if (c[0] + c[1] + c[2] === 0) continue;
+          const p = pal.PALETTE[pal.nearestIndex(...c)];
+          const d = Math.hypot(...c.map((v, i) => v - p[i]));
+          if (d > worst) { worst = d; worstAt = `${k.hour}h ${key} ${k[key]} -> ${p}`; }
+        }
       }
-    }
-    note('worst palette miss in the table', `${worst.toFixed(0)} — ${worstAt}`);
+      return { worst, worstAt };
+    };
+    const inEarth = miss('earth');
+    const { worst, worstAt } = miss('stock');
+    pal.setArtPalette(pal.DEFAULT_ART);
+    note('worst palette miss in the table', `${worst.toFixed(0)} in the box it was written for — ${worstAt}`);
+    note('and in the earth box', `${inEarth.worst.toFixed(0)} — ${inEarth.worstAt}`);
     check('every colour in the night snaps within a step or two of itself', worst < 40, worstAt);
     check('the palette has a ramp for the sky', pal.RAMP.sky && pal.RAMP.sky.n >= 16, JSON.stringify(pal.RAMP.sky));
     check('and it still has 256 entries', pal.PALETTE.length === 256);
@@ -3906,8 +3938,17 @@ section('the lights');
     `${m.tray.toFixed(2)} against ${m.far.toFixed(2)} of ceiling tile`);
   check('and it throws light on the tiles around it', m.halo > m.far + 0.025,
     `${m.halo.toFixed(2)} beside it, ${m.far.toFixed(2)} away from it`);
-  check('the brightest thing on the ceiling is inside a fitting', m.inside && m.max > 0.88,
-    `${m.max.toFixed(2)}`);
+  /* AND BRIGHT IS RELATIVE TO THE BOX. The threshold was a flat 0.88,
+     which is a number about the ramps the game was drawn in: the earth
+     box's brightest entry is dimmer, so a lit fitting in it tops out at
+     0.85 and a flat threshold calls a correct ceiling a broken one.
+     What is actually being claimed is that the fitting is near the top
+     of what the palette can draw, so that is what is asked. */
+  {
+    const ceiling = Math.max(...pal.PALETTE.map(c => (3 * c[0] + 6 * c[1] + c[2]) / 2550));
+    check('the brightest thing on the ceiling is inside a fitting', m.inside && m.max > 0.88 * ceiling,
+      `${m.max.toFixed(2)} against ${(0.88 * ceiling).toFixed(2)}, the box topping out at ${ceiling.toFixed(2)}`);
+  }
   check('four tubes read as four', m.peaks === 4, `${m.peaks} bands across the tray`);
   /* THE ONE GENUINELY DARK DETAIL. Without the holders a lit troffer at
      this size is a white slab, and a white slab in a ceiling is a hole. */
@@ -10730,7 +10771,8 @@ section('the box the screen can hold');
     /const wanted = PALETTE_SET\[prefs\.palette\]\?\.v;/.test(mainSrc) &&
     /if \(wanted && wanted !== displayName\) applyPalette\(wanted\);/.test(mainSrc));
   check('and the saved settings were versioned up, so an old one does not come back without it',
-    /const PREF_VERSION = 7;/.test(mainSrc));
+    /const PREF_VERSION = 8;/.test(mainSrc) &&
+    /if \(was < 7\) \{ delete saved\.detail;/.test(mainSrc));
   const htmlQ = fsQ.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   check('and there is a button for it', /id="opt-palette"/.test(htmlQ));
 

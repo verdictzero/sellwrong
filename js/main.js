@@ -153,8 +153,13 @@ const PALETTE_SET = [{ v: 'ramps', n: 'RAMPS' }, { v: 'uzebox', n: 'UZEBOX' }];
    sprite is DRAWN in, and changing it is a repaint of the game rather
    than a filter over it. AS DRAWN is the fifteen ramps the game was
    made in; EARTH is the same fifteen, muted and warmed — see
-   EARTH_RAMPS in js/palette.js and applyTone below. */
-const TONE_SET = [{ v: 'stock', n: 'AS DRAWN' }, { v: 'earth', n: 'EARTH' }];
+   EARTH_RAMPS in js/palette.js and applyTone below.
+
+   EARTH IS FIRST because it is the default, at the user's request. AS
+   DRAWN is still there and is one press of the same button away; it is
+   also still what tools/bake-art.mjs quantises the photographs against,
+   which is a different question and is answered where it is asked. */
+const TONE_SET = [{ v: 'earth', n: 'EARTH' }, { v: 'stock', n: 'AS DRAWN' }];
 const FX     = [{ v: 1, n: 'FULL' }, { v: 0.5, n: 'FEWER' }, { v: 0.25, n: 'LEAST' }];
 const WOOD   = [{ v: 1, n: 'ALL OF IT' }, { v: 0.6, n: 'NEARER' }, { v: 0.35, n: 'NEAREST' }];
 
@@ -169,16 +174,22 @@ const PREF_KEY = 'sellwrong.prefs';
    brighter — so a saved 200 and a saved 1.0 are not kept alive.
    5: the two debug switches default to on.
    6: the picture moved again — 320 rows of 2:3 pixels off a 960-row
-   render — so a saved 240, 5:6 and 720 are not kept alive either. */
-const PREF_VERSION = 7;
+   render — so a saved 240, 5:6 and 720 are not kept alive either.
+   8: EARTH is the default tone. A saved `tone` is an INDEX into
+   TONE_SET, and TONE_SET was reordered to put the new default first —
+   so a saved 0 meant AS DRAWN and now means EARTH, which is the right
+   answer for anybody who never touched it and the wrong one for
+   anybody who did. Dropped rather than reinterpreted. */
+const PREF_VERSION = 8;
 const DEFAULT_PREFS = { v: PREF_VERSION, sens: 1, invert: false, lefty: false, haptics: true,
                         detail: DEFAULT_DETAIL, pixels: DEFAULT_PIXELS, pixar: DEFAULT_PIXAR,
                         crowd: 0, fx: 0, wood: 0, fps: false,
                         /* the box of crayons: 0 is RAMPS, which is the game as
                            it was drawn. See PALETTE_SET and applyPalette. */
                         palette: 0,
-                        /* and the box it is PAINTED in: 0 is AS DRAWN. See
-                           TONE_SET and applyTone. */
+                        /* and the box it is PAINTED in: 0 is EARTH, which is
+                           what the game looks like now. See TONE_SET and
+                           applyTone. */
                         tone: 0,
                         /* the night's weather — see js/weather.js; the hour is not
                            kept, because a night starts at two */
@@ -203,8 +214,16 @@ const DEFAULT_PREFS = { v: PREF_VERSION, sens: 1, invert: false, lefty: false, h
 function loadPrefs() {
   try {
     const saved = JSON.parse(localStorage.getItem(PREF_KEY) || '{}');
-    if (saved.v !== PREF_VERSION) {
-      delete saved.detail; delete saved.pixels; delete saved.pixar; delete saved.bright;
+    const was = saved.v | 0;
+    if (was !== PREF_VERSION) {
+      /* AND ONLY WHAT THAT VERSION MOVED. The reset used to be the same
+         four keys whatever the bump was for, so bumping the version to
+         say one thing about the tone would also have taken away a
+         picture somebody had spent a while dialling in. Each line says
+         which version it belongs to, and a bump after this one costs
+         nothing that is not actually stale. */
+      if (was < 7) { delete saved.detail; delete saved.pixels; delete saved.pixar; delete saved.bright; }
+      if (was < 8) delete saved.tone;
       saved.v = PREF_VERSION;
     }
     return { ...DEFAULT_PREFS, ...saved };

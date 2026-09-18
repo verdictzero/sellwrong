@@ -51,7 +51,19 @@ register('./loader.mjs', import.meta.url);
 import fs from 'node:fs';
 import { readPNG } from './png-read.mjs';
 
-const { PALETTE } = await import('../js/palette.js');
+/* THE STOCK BOX, BY NAME AND NOT BY DEFAULT. What this tool writes is a
+   list of palette INDICES, and an index is only meaningful because every
+   box of ramps has the same fifteen in the same order — see the note on
+   EARTH_RAMPS in js/palette.js. Which box to QUANTISE against is a
+   separate question with one right answer: the fuller one, because a
+   photograph snapped into a muted box and then recoloured is a
+   photograph that has been through two quantisations. So this asks for
+   `stock` outright. It also keeps js/art-data.js stable when the game's
+   default tone moves, which is what the CI step that re-bakes and diffs
+   is there to notice. */
+const pal = await import('../js/palette.js');
+pal.setArtPalette('stock');
+const { PALETTE } = pal;
 
 /* ---------- where the artwork is ----------
    The bounding box of everything that is not the background. Background
