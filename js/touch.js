@@ -127,10 +127,22 @@ export class TouchControls {
     this._idle = 0; this._hint = 0;
 
     const $ = sel => this.root.querySelector(sel);
-    this.el = { stick: $('.stick'), knob: $('.stick .knob') };
+    this.el = { stick: $('.stick'), knob: $('.stick .knob'), zoom: $('.tb-zoom') };
     this._bind();
     this.applyPrefs();
     this.resize();
+  }
+
+  /** THE SCOPE BUTTON IS THE ONE CONTROL THAT COMES AND GOES, because it
+   *  is the only one that belongs to a single weapon. js/main.js says
+   *  what is in hand and what step the scope is on; this puts the
+   *  button on the glass or takes it off, and writes the step on it so
+   *  the player can see what tapping it did. */
+  setScope(on, label) {
+    const el = this.el.zoom;
+    if (!el) return;
+    if (el.hidden === !on) { el.hidden = !on; if (!on) el.classList.remove('held'); }
+    if (on && el.textContent !== label) el.textContent = label;
   }
 
   _bind() {
@@ -201,6 +213,9 @@ export class TouchControls {
       /* a TAP and not a hold: it fires on the way down and the input
          layer clears it, the same way the use pulse works */
       if (kind === 'swap') t.cycle = 1;
+      /* the same tap, for the one weapon that has a scope — see ZOOMS
+         in js/scope.js. The input layer clears it. */
+      if (kind === 'zoom') t.zoomPulse = true;
       return;
     }
     const x = e.clientX - this.left;

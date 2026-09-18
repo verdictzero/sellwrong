@@ -95,6 +95,49 @@ export const world = {
   fireLight:      { value: 0.0 },
   fireLightColor: { value: new THREE.Color(1.0, 0.55, 0.18) },
 
+  /* ------------------------------------------------------------------
+     AND A SECOND LIGHT, WHICH IS A LINE
+
+     The paragraph below this one says a spotlight was taken out and
+     that one light is enough. It is enough for FIRE, and the reasoning
+     holds: a burning aisle is one glow because you never see two fires
+     as two sources. It does not hold for the positron lance, which is
+     not a source at a point — it is a column eight metres across drawn
+     from the muzzle to the far side of the map, and the whole thing is
+     lit. A point light at the muzzle would put a bright spot on the
+     wall you are standing next to and leave the street the beam is
+     actually crossing in the dark, which is exactly backwards.
+
+     So this one is a SEGMENT: a start, a direction, a length, and a
+     radius round the axis. Every fragment measures its distance to the
+     nearest point ON THE LINE, which is one dot product and one
+     subtract, and is lit by that. A person standing beside the column a
+     hundred metres away is lit as hard as the wall behind the muzzle,
+     because they are as near the light.
+
+     AND IT IS DIFFERENTIAL AND RANDOMISED, at the user's request, which
+     is the part that makes it read as a discharge rather than as a
+     lamp. `beamSeed` is a clock; the noise is keyed off the fragment's
+     own world position rounded to a coarse grid, so two objects either
+     side of the column flicker at different rates and different phases
+     and neither of them flickers with the frame. What you get is a
+     street where every surface is being lit by the same thing and none
+     of them agrees about it, which is what a fifty-megajoule line of
+     plasma a few metres away would actually look like.
+
+     It OUTLIVES THE BEAM. js/beam.js leaves the axis where it was and
+     fades the intensity over a second and a half, so the street stays
+     lit by a thing that has already gone — the after-image of the shot
+     — which is the "post charge" half of the same request.
+     ------------------------------------------------------------------ */
+  beamPos:        { value: new THREE.Vector3(0, -10000, 0) },
+  beamDir:        { value: new THREE.Vector3(0, 0, 1) },
+  beamLen:        { value: 0.0 },
+  beamRange:      { value: 700.0 },
+  beam:           { value: 0.0 },
+  beamSeed:       { value: 0.0 },
+  beamColor:      { value: new THREE.Color(0.62, 1.0, 0.78) },
+
   /* THERE WAS A SECOND LIGHT HERE FOR AN AFTERNOON, and it is worth a
      paragraph because the reasoning is the file's: the gunship's
      searchlight (js/vtol.js) was a lit cone — spotPos, spotDir, two
@@ -181,6 +224,13 @@ uniform vec3  fireLightPos;
 uniform float fireLightRange;
 uniform float fireLight;
 uniform vec3  fireLightColor;
+uniform vec3  beamPos;
+uniform vec3  beamDir;
+uniform float beamLen;
+uniform float beamRange;
+uniform float beam;
+uniform float beamSeed;
+uniform vec3  beamColor;
 uniform float emberTime;
 uniform vec3  emberRamp[8];
 uniform sampler2D burnGrid;
@@ -494,6 +544,27 @@ vec3 worldShade(vec3 albedo, float l, float depth, vec3 world, float fullbright)
     float fa = clamp(1.0 - fd / fireLightRange, 0.0, 1.0);
     fa *= fa;
     c += albedo * fireLightColor * (fa * fireLight * (1.0 - fullbright * 0.7));
+  }
+
+  /* THE BEAM, and it is a line and not a point — see the note on
+     beamPos. Distance to the nearest point on the segment, squared
+     falloff like the fire's, and then the differential flicker: a hash
+     of the fragment's own place on a coarse grid picks both the RATE
+     and the PHASE of its wobble, so no two surfaces near the column are
+     doing the same thing at the same time and none of them is doing it
+     at the frame rate. */
+  if (beam > 0.0) {
+    vec3 rel = world - beamPos;
+    float along = clamp(dot(rel, beamDir), 0.0, beamLen);
+    float off = distance(rel, beamDir * along);
+    float ba = clamp(1.0 - off / beamRange, 0.0, 1.0);
+    ba *= ba;
+    float n = fract(sin(dot(floor(world * 0.017), vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+    float flick = 0.62 + 0.38 * sin(beamSeed * (4.0 + n * 9.0) + n * 31.4);
+    c += albedo * beamColor * (ba * beam * flick * (1.0 - fullbright * 0.5));
+    /* and a hard white core to it very close in, which is what stops a
+       wall a metre from the column reading as merely green */
+    c += beamColor * ba * ba * beam * 0.22 * flick;
   }
 
   /* THE AIR. The fog colour is a texel of the sky: the horizon row of
@@ -1006,6 +1077,18 @@ export function worldUniforms() {
     fireLightRange: world.fireLightRange,
     fireLight:      world.fireLight,
     fireLightColor: world.fireLightColor,
+    /* AND THE LINE LIGHT. This list is a whitelist and not a spread, on
+       purpose — a material takes exactly the uniforms it uses — which
+       means a uniform added to `world` and to the GLSL and not to this
+       is declared, sampled, and never bound: the branch reads zero and
+       the feature is silently off. Six lines, and they are the six. */
+    beamPos:        world.beamPos,
+    beamDir:        world.beamDir,
+    beamLen:        world.beamLen,
+    beamRange:      world.beamRange,
+    beam:           world.beam,
+    beamSeed:       world.beamSeed,
+    beamColor:      world.beamColor,
     airNear:      world.airNear,
     airFar:       world.airFar,
     skyTex:       world.skyTex,

@@ -506,10 +506,23 @@ export class Hud {
       }
     } else this.weaponMesh.visible = false;
 
-    /* the wash over everything: a few frames of gold on a pickup */
+    /* the wash over everything: a few frames of gold on a pickup, and
+       the glare of a positron discharge going off a metre from your
+       face — which is the one wash that is not about being hurt, and is
+       the reason this is a ladder rather than a pair. Hardest in the
+       first half second and then a haze for as long as the column is
+       out, so the shot bleaches the picture and then merely brightens
+       it. The colour is the beam's own. */
     let tintA = 0, tintC = 0xff2010;
     if (p.damageFlash > 0) tintA = Math.min(0.30, p.damageFlash / 70);
     else if (p.pickupFlash > 0) { tintA = Math.min(0.18, p.pickupFlash / 60); tintC = 0xffd060; }
+    if (p.beamTics > 0) {
+      /* how far through the discharge it is, off the beam's own clock
+         rather than a second copy of it here — see BeamSystem.age */
+      const age = this.game?.beam?.age ?? 0;
+      tintA = Math.max(tintA, 0.20 * Math.max(0, 1 - age * 6) + 0.045);
+      tintC = 0xbdffd2;
+    }
     if (p.dead) tintA = Math.max(tintA, 0.35);
     this.tintMesh.material.opacity = tintA;
     this.tintMesh.material.color.setHex(tintC);

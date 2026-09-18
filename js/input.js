@@ -42,6 +42,12 @@ const KEYMAP = {
   Space: 'jump', KeyF: 'use',
   ControlLeft: 'attack', ControlRight: 'attack',
   Digit1: 'weapon1', Digit2: 'weapon2', Digit3: 'weapon3', Digit4: 'weapon4',
+  Digit5: 'weapon5',
+  /* ZOOM, which the game had no use for until the lance arrived with a
+     screen on it: a press steps the magnification round — see ZOOMS in
+     js/scope.js. The right mouse button is where every game since Halo
+     has put this, and Z is for the hand that is not on a mouse. */
+  KeyZ: 'zoom', KeyC: 'zoom',
   Tab: 'map', KeyM: 'map',
   Escape: 'pause', KeyP: 'pause',
 };
@@ -58,14 +64,18 @@ export class Input {
     this.latch = new Set();
     this.mouseDown = false;
     this.mouseRight = false;
+    this.mouseRightPulse = false;
     this.mouseDX = 0; this.mouseDY = 0;
     this.wheel = 0;
     this.locked = false;
     this.sensitivity = 0.0022;
+    /* and what the scope multiplies it by while it is narrowed — see
+       sample(). Nothing but js/main.js writes it. */
+    this.zoomScale = 1;
     this.invertY = false;
     this.touch = {
       move: { x: 0, y: 0 }, look: { x: 0, y: 0 },
-      attack: false, use: false, usePulse: false, jumpPulse: false, run: false, weapon: 0,
+      attack: false, use: false, usePulse: false, jumpPulse: false, zoomPulse: false, run: false, weapon: 0,
     };
     /* WHETHER A PAD IS IN CHARGE, which is a different question from
        which MODE the game is in: a phone with a controller paired is
@@ -118,7 +128,12 @@ export class Input {
 
     this.canvas.addEventListener('mousedown', e => {
       if (e.button === 0) this.mouseDown = true;
-      if (e.button === 2) this.mouseRight = true;
+      /* A PRESS AND NOT A HOLD. The right button was carried for years
+         and read by nothing; it steps the scope now, and a step is an
+         edge — so the press is latched here and consumed in sample(),
+         the same bargain the key presses make, because a click can be
+         shorter than a tic. */
+      if (e.button === 2) { this.mouseRight = true; this.mouseRightPulse = true; }
       if (!this.locked) this.requestLock();
     });
     addEventListener('mouseup', e => {
@@ -212,7 +227,14 @@ export class Input {
     lx += this.touch.look.x; ly += this.touch.look.y;
     this.touch.look.x = 0; this.touch.look.y = 0;
     if (this.invertY) ly = -ly;
-    this.look = { x: lx, y: ly };
+    /* A ZOOMED PICTURE TURNS SLOWER, by exactly as much as it is zoomed.
+       js/main.js sets this off the scope's step (see VIEW_ZOOM in
+       js/scope.js); it is 1 the rest of the time and this line does
+       nothing. Without it, a narrowed field of view is a mouse that has
+       become twice as twitchy at the moment you were trying to be
+       careful, which is the opposite of what a scope is for. */
+    const zs = this.zoomScale ?? 1;
+    this.look = { x: lx * zs, y: ly * zs };
 
     this.attack = this.mouseDown || this.down('attack') || this.touch.attack || btn(7);
     /* a tap shorter than a tic still counts as one press of Use */
@@ -229,6 +251,7 @@ export class Input {
     if (this.pressed('weapon2')) this.weaponSlot = 2;
     if (this.pressed('weapon3')) this.weaponSlot = 3;
     if (this.pressed('weapon4')) this.weaponSlot = 4;
+    if (this.pressed('weapon5')) this.weaponSlot = 5;
     if (this.touch.weapon) { this.weaponSlot = this.touch.weapon; this.touch.weapon = 0; }
     this.weaponCycle = this.wheel; this.wheel = 0;
     if (this.touch.cycle) { this.weaponCycle = this.touch.cycle; this.touch.cycle = 0; }
@@ -243,6 +266,12 @@ export class Input {
       for (let i = 0; i < pad.buttons.length && !used; i++) if (pad.buttons[i]?.pressed) used = true;
       if (used) this.setPadHeld(true);
     }
+
+    /* THE SCOPE STEPS ON A PRESS: the right button, Z or C, the pad's B.
+       One edge per press, whichever of the four it came from. */
+    this.zoomPressed = this.pressed('zoom') || this.mouseRightPulse || this.touch.zoomPulse || padEdge(1);
+    this.mouseRightPulse = false;
+    this.touch.zoomPulse = false;
 
     this.pausePressed = this.pressed('pause');
     this.mapPressed = this.pressed('map');

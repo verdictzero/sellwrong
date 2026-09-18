@@ -28,9 +28,10 @@
    file makes up, not about the ones the user made. */
 export const MUTED = true;
 
-/* THE RECORDED ONES, and the first sounds in the game that are files:
-   the minigun winding up, a two-second loop of it firing, and it
-   winding down, the user's own. Fetched at boot, decoded once there is
+/* THE RECORDED ONES, and they are the user's own: the minigun winding
+   up, a two-second loop of it firing and it winding down, and then the
+   lance's five — a charge loop, a stage-three whine, a pre-fire
+   transient and two layers of discharge. Fetched at boot, decoded once there is
    a context, and played by the same play() as everything else — a
    name in SAMPLE_FOR is a sample, and everything else is synthesised
    — so the player asks for 'spinup' the way it always did and gets
@@ -40,13 +41,74 @@ export const SAMPLES = {
   minigun_start: 'assets/sfx/minigun_start.wav',
   minigun_fire:  'assets/sfx/minigun_fire.wav',
   minigun_stop:  'assets/sfx/minigun_stop.wav',
+  /* AND THE LANCE'S FIVE, the user's own again, and the first weapon in
+     the game whose whole voice is recorded rather than synthesised.
+     They map onto the three states a charged weapon has (see
+     js/player.js, lanceTic) and nothing else has to know:
+
+       lance_charge_start the moment the trigger goes down, once
+       lance_charge_loop  two seconds of coil, held round and round for
+                          as long as the trigger stays down, started
+                          under the one above rather than after it —
+                          the two are meant to overlap
+       lance_charge_full  the stage-three whine, which takes over from
+                          the loop the moment the third mark is passed
+                          and is the sound of a gun that is finished
+                          asking. Held too, so standing at full charge
+                          is a sound and not a silence
+       lance_prefire      the transient the moment the trigger comes UP
+       lance_fire_a/b     and the discharge, in two layers, played
+                          together — which is how it was mixed and is
+                          why there are two of them rather than one */
+  lance_charge_start: 'assets/sfx/lance_charge_start.wav',
+  lance_charge_loop: 'assets/sfx/lance_charge_loop.wav',
+  lance_charge_full: 'assets/sfx/lance_charge_full.wav',
+  lance_prefire:     'assets/sfx/lance_prefire.wav',
+  lance_fire_a:      'assets/sfx/lance_fire_a.wav',
+  lance_fire_b:      'assets/sfx/lance_fire_b.wav',
 };
-export const SAMPLE_FOR = { spinup: 'minigun_start', minigunloop: 'minigun_fire', spindown: 'minigun_stop' };
+export const SAMPLE_FOR = {
+  spinup: 'minigun_start', minigunloop: 'minigun_fire', spindown: 'minigun_stop',
+  lancestart: 'lance_charge_start', lancecharge: 'lance_charge_loop',
+  lancecharge3: 'lance_charge_full',
+  lanceprefire: 'lance_prefire', lancefire: 'lance_fire_a', lancefire2: 'lance_fire_b',
+};
 /* HOW LOUD EACH RECORDING IS, against the music: the minigun as
    recorded drowned the three tracks the user mixed, so it is turned
    down here — the loop most, since it is what runs — and the music is
    left where the fader puts it. 1 is the file as it came. */
-export const SAMPLE_GAIN = { minigun_fire: 0.32, minigun_start: 0.42, minigun_stop: 0.42 };
+/* ---------------------------------------------------------------------
+   WHICH RECORDINGS ARE MADE LOOPABLE, AND HOW LONG THE JOIN IS
+
+   A .wav does not loop. `src.loop = true` sends the playhead from the
+   last sample straight back to the first, and unless the file was cut
+   on a zero crossing with matching phase on both sides — which no
+   recording of a real coil ever is — that jump is a step in the
+   waveform, which is a click, once every two seconds, for the whole
+   seven seconds the trigger is down. The user heard it and asked for it
+   fixed, and the fix is not a fade on playback: it is to make a buffer
+   that is ACTUALLY periodic, once, when the file decodes. See
+   _loopify, which is where it happens and where the argument for doing
+   it that way rather than with a pair of crossfading sources is
+   written out.
+
+   The number is the join, in seconds. Long enough to hide the splice in
+   a continuous texture; short enough that the loop is still most of the
+   file. A third of a second on a two-second coil. */
+export const SAMPLE_LOOP = { lance_charge_loop: 0.34 };
+
+export const SAMPLE_GAIN = {
+  minigun_fire: 0.32, minigun_start: 0.42, minigun_stop: 0.42,
+  /* THE LANCE IS THE LOUDEST THING IN THE GAME and is still turned down
+     against the music, on the same terms the minigun was. The two fire
+     layers are billed together — they play at the same instant and
+     what the player hears is their sum — so each is set where the pair
+     sits where one minigun burst does. The charge loop is the quietest
+     of the five because it runs for seven seconds under everything
+     else. */
+  lance_charge_start: 0.46, lance_charge_loop: 0.34, lance_charge_full: 0.46,
+  lance_prefire: 0.52, lance_fire_a: 0.50, lance_fire_b: 0.44,
+};
 
 const DEFS = {
   /* the store */
@@ -180,9 +242,62 @@ export class Audio {
   async _decodeSamples() {
     for (const k of Object.keys(this.bytes)) {
       if (this.samples[k] || !this.ctx) continue;
-      try { this.samples[k] = await this.ctx.decodeAudioData(this.bytes[k].slice(0)); }
-      catch (e) { console.warn('sample would not decode:', k, e.message); }
+      try {
+        const buf = await this.ctx.decodeAudioData(this.bytes[k].slice(0));
+        this.samples[k] = SAMPLE_LOOP[k] ? this._loopify(buf, SAMPLE_LOOP[k]) : buf;
+      } catch (e) { console.warn('sample would not decode:', k, e.message); }
     }
+  }
+
+  /* ------------------------------------------------------------------
+     A BUFFER THAT IS ACTUALLY PERIODIC
+
+     The ordinary answer to a clicking loop is to play two copies half a
+     period apart and crossfade between them for ever, so the seam of
+     one is covered by the middle of the other. It works, and it is the
+     wrong answer HERE, for one reason: this loop is pitch-ramped. The
+     whole point of it is that the coil rises as it charges (see
+     Player.lanceVoice), and a playback rate that climbs from 0.72 to
+     1.45 is a loop period that shrinks by half over seven seconds. A
+     crossfade scheduled against a period that is moving has to be
+     rescheduled continuously, and any drift puts the fade somewhere
+     other than over the seam — which is a click again, at a moment you
+     cannot predict.
+
+     So the join is baked into the SAMPLES instead, once, at decode, and
+     after that the buffer is genuinely periodic: the last sample and
+     the first are neighbours in the original recording, so the wrap is
+     not a discontinuity at any playback rate at all. One source, no
+     scheduling, and the pitch can do whatever it likes.
+
+     HOW: a buffer of length L becomes one of length n = L - X. The
+     middle is copied straight through. The first X samples are the
+     head mixed with the TAIL that was cut off, equal power, the tail
+     fading out as the head fades in — so position 0 of the loop IS
+     sample n of the original, which is the sample that followed n-1,
+     which is the last sample of the loop. The join is exact.
+
+     Equal power (cos/sin) rather than a straight line because the two
+     sides are different parts of the same continuous noise and so are
+     uncorrelated: summed linearly their energy dips in the middle of
+     the fade, which is audible as a breath. cos² + sin² = 1 does not.
+     ------------------------------------------------------------------ */
+  _loopify(buf, xfade) {
+    const sr = buf.sampleRate;
+    const X = Math.min(Math.round(xfade * sr), Math.floor(buf.length / 3));
+    if (X < 32) return buf;
+    const n = buf.length - X;
+    const out = this.ctx.createBuffer(buf.numberOfChannels, n, sr);
+    for (let c = 0; c < buf.numberOfChannels; c++) {
+      const src = buf.getChannelData(c), dst = out.getChannelData(c);
+      dst.set(src.subarray(0, n));
+      for (let i = 0; i < X; i++) {
+        const t = (i + 0.5) / X;
+        const head = Math.sin(t * Math.PI / 2), tail = Math.cos(t * Math.PI / 2);
+        dst[i] = src[i] * head + src[n + i] * tail;
+      }
+    }
+    return out;
   }
 
   /* Browsers will not start an AudioContext until the user has done
@@ -210,33 +325,75 @@ export class Audio {
     return Math.max(0, 1 - d / this.maxDistance) ** 1.7;
   }
 
-  /** One recording, once. */
-  _playSample(key, from, loop = false) {
+  /**
+   * One recording, once or round and round, with a handle on it.
+   *
+   * `rate` is the playback rate it STARTS at. A buffer source's rate is
+   * a pitch and a speed at the same time — there is no formant
+   * correction and none is wanted, because what a coil winding up
+   * actually does is get faster and higher together. The lance rides
+   * this from 0.72 to 1.45 as it charges; everything else leaves it at
+   * 1 and this costs nothing.
+   */
+  _playSample(key, from, loop = false, rate = 1) {
     const buf = this.samples[key];
     if (!buf) return null;
     const gain = this._gainFor(from) * (SAMPLE_GAIN[key] ?? 1);
     if (gain < 0.004) return null;
     const src = this.ctx.createBufferSource();
     src.buffer = buf; src.loop = loop;
+    if (rate !== 1) src.playbackRate.value = rate;
     const g = this.ctx.createGain();
     g.gain.value = gain;
     src.connect(g); g.connect(this.master);
     src.start();
     const ctx = this.ctx;
     return {
-      src, gain: g,
+      src, gain: g, base: gain,
+      /** Slide the pitch. `over` is roughly how long it takes to get
+       *  there — setTargetAtTime, so it is a chase and never a step,
+       *  which is what lets this be called thirty-five times a second
+       *  from the tic without stepping on itself. */
+      rate(v, over = 0.06) {
+        try { src.playbackRate.setTargetAtTime(v, ctx.currentTime, Math.max(0.005, over / 3)); } catch (e) { /* gone */ }
+      },
+      /** And slide the level, for something that dies away rather than
+       *  being switched off. */
+      fade(to, over = 0.5) {
+        try { g.gain.setTargetAtTime(gain * to, ctx.currentTime, Math.max(0.01, over / 3)); } catch (e) { /* gone */ }
+      },
+      /** Let it run to the end of itself and then go — for a one-shot
+       *  handed out so its pitch can be ridden, which must not be cut
+       *  off when the thing that was riding it lets go. */
+      release(over = 0.9) {
+        try { g.gain.setTargetAtTime(0, ctx.currentTime, over / 3); src.stop(ctx.currentTime + over); } catch (e) { /* gone */ }
+      },
       /* a short ramp out, so a loop that stops mid-cycle does not click */
       stop() { try { g.gain.setTargetAtTime(0, ctx.currentTime, 0.02); src.stop(ctx.currentTime + 0.12); } catch (e) { /* already gone */ } },
     };
   }
 
-  /** A held sound: starts now, runs until the handle's stop() is
-   *  called. Only a name in SAMPLE_FOR can be held. */
-  loop(name, from) {
+  /**
+   * A recording with a handle on it, whether or not it loops — which is
+   * what a held, pitch-ridden sound needs and what play() cannot give,
+   * because play() is fire and forget and answers for the synthesised
+   * sounds too.
+   *
+   * @param name  a key of SAMPLE_FOR
+   * @param opts  { loop, rate }
+   * @returns the handle, or null if there is no such recording (which
+   *          is the ordinary case on a machine that could not decode
+   *          it, and every caller treats it as "no sound")
+   */
+  sample(name, from, { loop = false, rate = 1 } = {}) {
     if (!name || !this.enabled || !this.ctx) return null;
     const key = SAMPLE_FOR[name];
-    return key ? this._playSample(key, from, true) : null;
+    return key ? this._playSample(key, from, loop, rate) : null;
   }
+
+  /** A held sound: starts now, runs until the handle's stop() is
+   *  called. Only a name in SAMPLE_FOR can be held. */
+  loop(name, from, rate = 1) { return this.sample(name, from, { loop: true, rate }); }
 
   setVolume(v) { if (this.master) this.master.gain.value = v; }
 

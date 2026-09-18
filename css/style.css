@@ -249,7 +249,7 @@ html.touch .desk-only, html:not(.touch) .touch-only { display: none !important; 
   --fire-cx: calc(var(--edge-x) + var(--btn) * .5);
   --fire-cy: calc(var(--edge-y) + var(--btn) * .5);
 }
-.tb-use, .tb-swap, .tb-jump {
+.tb-use, .tb-swap, .tb-jump, .tb-zoom {
   width: var(--small); height: var(--small);
   font-size: 11px;
 }
@@ -270,6 +270,18 @@ html.touch .desk-only, html:not(.touch) .touch-only { display: none !important; 
   bottom: calc(var(--fire-cy) + var(--arc) - var(--small) * .5);
   border-color: rgba(122, 196, 224, .40);
 }
+
+/* AND THE SCOPE, which only one weapon has: the fourth point of the
+   arc, between SWAP and the top of it, in the lance's own screen green.
+   It is hidden unless the lance is in hand — a button for a thing you
+   are not holding is a button you learn to ignore. */
+.tb-zoom {
+  right: calc(var(--fire-cx) + var(--arc) * .38 - var(--small) * .5);
+  bottom: calc(var(--fire-cy) + var(--arc) * 1.28 - var(--small) * .5);
+  border-color: rgba(150, 255, 138, .46);
+  color: rgba(198, 255, 190, .92);
+}
+#touch.lefty .tb-zoom { right: auto; left: calc(var(--fire-cx) + var(--arc) * .38 - var(--small) * .5); }
 
 .tb-pause { width: 44px; height: 44px; top: 8px; right: 8px; border-color: rgba(207, 207, 214, .22); }
 .tb-pause i { display: block; width: 4px; height: 14px; margin: 0 2px; background: currentColor; }

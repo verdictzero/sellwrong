@@ -42,6 +42,7 @@ import { SkyBaker } from './skyart.js';
 import { setDisplayPalette, displayName, setArtPalette, artName } from './palette.js';
 import { Weather, WEATHERS, WEATHER_ORDER, HOUR_STOPS } from './weather.js';
 import { Weapon3D } from './weapon3d.js';
+import { Scope } from './scope.js';
 import { KINDS } from './forest.js';
 import { Music } from './music.js';
 import { VERSION } from './version.js';
@@ -299,7 +300,8 @@ async function boot() {
 
   /* Far enough to see across the wood: the forest floor runs sixteen
      thousand units before the sky's own dark ground takes over. */
-  const camera = new THREE.PerspectiveCamera(72, 1.6, 4, 16000);
+  const BASE_FOV = 72;
+  const camera = new THREE.PerspectiveCamera(BASE_FOV, 1.6, 4, 16000);
 
   /* yield to the browser between steps so the loading bar can move */
   const breathe = () => new Promise(r => setTimeout(r, 0));
@@ -456,7 +458,14 @@ async function boot() {
   hud.game = game;
   const touch = new TouchControls(input, { root: $('touch'), prefs, onPause: () => pause(true) });
 
-  const weapon3d = new Weapon3D({ aspect: 1.6 });
+  /* THE SCREEN ON THE BACK OF THE LANCE, and it is given the renderer
+     rather than making one: what fills it is another render of the same
+     scene from the same eye through a narrower camera, and every
+     render() call in this game lives in this file. See js/scope.js. The
+     gun is handed the scope so that when the loader meets the model's
+     own `dynamic_display_surface_mat` it has something to put there. */
+  const scope = new Scope(renderer);
+  const weapon3d = new Weapon3D({ aspect: 1.6, scope });
   await weapon3d.load(flameAtlas);
   game.weapon3d = weapon3d.ready ? weapon3d : null;
   hud.showWeaponSprite = !weapon3d.ready;
@@ -764,10 +773,32 @@ async function boot() {
        pixel. With the pixel dial off the grid IS the buffer, and the
        LOD goes back to dropping almost nothing, which is right. */
     game.viewRows = pipeline.gridHeight;
+    const p = game.player;
+    /* ---- THE SCOPE, WHICH IS A SETTING AND THEN A RENDER -------------
+       The zoom is a press, and it does two things: it steps the gun's
+       own magnification, and it narrows the WORLD camera with it, which
+       is what makes holding a scope feel different from looking at one.
+       The look sensitivity comes down by the same factor, so a zoomed
+       sweep is as fine as the picture it is moving. See VIEW_ZOOM in
+       js/scope.js for why the two numbers are not the same number. */
+    if (started) {
+      const lance = p.weapon === 'LANCE' && !p.dead;
+      scope.held = lance && weapon3d.ready;
+      if (!lance && scope.zoomIndex) scope.setZoom(0);
+      else if (lance && input.zoomPressed) scope.cycleZoom();
+      /* once, not every frame: the stage marks are a constant of the
+         weapon and the getter that hands them over allocates */
+      if (!scope.stageMarks) scope.setStages(p.stageMarks);
+      const want = BASE_FOV * (lance ? scope.viewScale : 1);
+      if (Math.abs(camera.fov - want) > 0.01) { camera.fov = want; camera.updateProjectionMatrix(); }
+      input.zoomScale = lance ? scope.viewScale : 1;
+      /* and the phone gets a button for it, only while the lance is in
+         hand — see TouchControls.setScope */
+      touch.setScope(lance && input.mode === 'touch', scope.magnification + '\u00d7');
+    } else { scope.held = false; scope.setZoom(0); touch.setScope(false); }
     game.render(now);
     /* the sky, again, when the hour or the cloud has moved enough */
     skyBaker.update(game.weather.frame, now / 1000);
-    const p = game.player;
     if (started) weapon3d.update(p, p.firing, game.tics, dt);
     /* THE READOUT DRAWS ITSELF, ON ITS OWN CANVAS, and only when
        something on it has moved; with no game running there is nothing
@@ -775,6 +806,13 @@ async function boot() {
        behind it. The overlay below is the other half of js/hud.js — the
        wash and the fallback gun — which still goes into the buffer. */
     if (started) hud.update(p, weapons); else hud.clear();
+    /* AND THE GUN'S OWN SCREEN, which is the other readout in this game
+       and the only one drawn from inside the world. The feed goes first
+       because it is a render of `scene` and the pipeline below is about
+       to take the render target away; the gauges after it, because they
+       are a canvas and cost nothing when nothing on them has moved. */
+    scope.render(scene, camera);
+    if (started) scope.update(p, game.tics);
     overlays[0].visible = started && weapon3d.ready && !p.dead;
     overlays[1].visible = started;
     pipeline.render(scene, camera, overlays);
@@ -898,7 +936,7 @@ async function boot() {
   }
 
   /* let the console poke at it */
-  window.SELLWRONG = { game, pipeline, renderer, scene, camera, textures, sprites, world, level, input, touch, weapon3d, music, weather: game.weather, skyBaker, applyPalette, applyTone,
+  window.SELLWRONG = { game, pipeline, renderer, scene, camera, textures, sprites, world, level, input, touch, weapon3d, scope, music, weather: game.weather, skyBaker, applyPalette, applyTone,
                        responders: game.responders, giblets: game.giblets };
 }
 

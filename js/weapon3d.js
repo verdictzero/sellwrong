@@ -102,10 +102,17 @@ export const GUN_LENGTH = 1.4;
              none
      rot     and its own turn on VIEW's, pitch yaw roll, for the same
              reason. Absent means none
-     heat    the material that glows with use and the run of the
-             barrels along it — see GUN_FRAG. Only the minigun has one
+     heat    the material that glows with use, the run of the barrels
+             along it, and WHICH NUMBER ON THE PLAYER it reads — see
+             GUN_FRAG. Two guns have one and they must not share a
+             number, or a minigun put away hot hands its glow to
+             whatever is drawn next
      spin    turns a second the part the file names as rotating makes
-             at full speed. Only the minigun has one */
+             at full speed. Only the minigun has one
+     display a material the file paints flat, which is a SCREEN: it gets
+             the live feed and the gauges instead of the gun shader —
+             see js/scope.js. Only the lance has one
+     optics  and a material that is a LENS, for the same reason */
 export const GUNS = {
   /* THE CEREBRAL BORE, the user's third model and the one with nothing
      coming out of the nozzle but a red line: the projectile is the
@@ -224,8 +231,62 @@ export const GUNS = {
        flash that faced the eye is gone, and the tracers — which now
        start at the end of the barrel and are very long — are what
        says the gun is firing. See js/tracers.js. */
-    heat: { material: 'minigun_barrel_mat', z: [-0.83, 10.56] },
+    heat: { material: 'minigun_barrel_mat', z: [-0.83, 10.56], from: 'heat' },
     spin: 6,
+  },
+
+  /* THE WZBR-1 POSITRON SNIPER LANCE, the user's fifth model and the
+     first one with a SCREEN in it.
+
+     Vaportrash's again, and this one carries its own answers the way
+     the minigun did — not as marker spheres but as NAMED MESHES. Four
+     meshes on three materials: `wzbr_mat`, the painted metal, over
+     seventy thousand vertices of receiver and barrel; `optics_mat`, a
+     fifty-millimetre lens up front, painted flat green; and
+     `dynamic_display_surface_mat`, a panel eighty millimetres across on
+     the rear deck facing straight back at whoever is holding it, painted
+     flat near-black. A modeller does not name a node
+     `dynamic_display_surface_1` by accident. See js/scope.js for what
+     goes on it.
+
+     THE LONGEST THING IN THE RACK by half again — two and a half metres
+     of gun, and `fit` keeps it that — and HELD THE FURTHEST OUT, which
+     is not vanity. The panel sits at the BACK of the model; the back of
+     a two-and-a-half-metre weapon held where a hose is held is inside
+     the near plane and across the whole picture. Pushed out it recedes
+     to where a monitor on a gun should be: readable, in the upper left
+     of the corner the gun fills, with the barrel running away from it
+     to the muzzle. `pos` then slides the whole thing left and down so
+     the screen clears the middle of the frame rather than sitting in
+     it, and `rot` cants it a few degrees so you are looking at the
+     panel rather than across it.
+
+     `heat` is the whole gun and not a barrel set, and it reads
+     `lanceHeat` rather than the minigun's `heat`: a positron coil that
+     has just fired cooks from the muzzle back down the body, which is
+     what GUN_FRAG's gradient already draws and what the screen's static
+     is reading off.
+
+     The muzzle effect is small and additive and green-white — the thing
+     that says this gun is firing is the beam, which is js/beam.js's, and
+     this is only the bloom where it leaves the metal. */
+  LANCE: {
+    url: 'assets/models/lance.glb',
+    fit: GUN_LENGTH * 1.9,
+    out: 2.4,
+    pos: [-0.12, 0.23, 0],
+    rot: [0.03, -0.09, 0.06],
+    /* the mouth of the bore, off the model's own vertices: the twenty
+       furthest along +z average to (-0.002, 0.018, 1.588) and this is a
+       little past them and on the centre of them */
+    nozzle: [0, 0.018, 1.63],
+    pilot: null,
+    tint: [0.55, 1.35, 0.80],
+    cold: true,
+    muzzle: { len: 0.46, wid: 0.26, additive: true },
+    display: { material: 'dynamic_display_surface_mat' },
+    optics: { material: 'optics_mat', base: [0.34, 0.80, 0.0] },
+    heat: { material: 'wzbr_mat', z: [-0.40, 1.59], from: 'lanceHeat' },
   },
 };
 
@@ -387,7 +448,12 @@ function tongue(len, wid, vertical) {
 }
 
 export class Weapon3D {
-  constructor({ aspect = 1.6 } = {}) {
+  /** `scope` is js/scope.js's, or null: the thing that owns the lance's
+   *  screen and its lens. It is passed in rather than made here because
+   *  filling the screen is a render of the WORLD, and every render call
+   *  in this game lives in js/main.js. */
+  constructor({ aspect = 1.6, scope = null } = {}) {
+    this.scope = scope;
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(VIEW.fov, aspect, 0.02, 12);
     this.guns = {};                  // name -> what load() built
@@ -447,6 +513,19 @@ export class Weapon3D {
   async _loadOne(name, def, atlas) {
     const { root, extras } = await loadGLB(def.url, {
       material: (mdef, maps) => {
+        /* TWO OF THE LANCE'S THREE MATERIALS ARE NOT METAL and must not
+           go through the gun shader: the file paints them flat — a
+           near-black panel and a green disc — because in the original
+           they are a screen that was never switched on and a lens that
+           was never lit. Here they are both. See js/scope.js.
+
+           This is checked before the `maps.map` fallback below, and has
+           to be: neither carries a texture, so without it they would
+           both come out of that line as the same flat dark grey and the
+           gun would have a hole where its instruments are. */
+        const nm = mdef?.name || '';
+        if (this.scope && def.display && nm === def.display.material) return this.scope.screenMaterial();
+        if (this.scope && def.optics && nm === def.optics.material) return this.scope.opticsMaterial(def.optics.base);
         if (!maps.map) return new THREE.MeshBasicMaterial({ color: 0x0c1410, toneMapped: false });
         const m = new THREE.ShaderMaterial({
           uniforms: {
@@ -517,6 +596,26 @@ export class Weapon3D {
       if (def.heat && o.material.name === def.heat.material) heatMaterial = o.material;
     });
     if (heatMaterial) heatMaterial.uniforms.heatZ.value.fromArray(def.heat.z);
+
+    /* --- AND WHERE THE SCREEN IS ON ITS OWN MESH --------------------
+       Measured off the geometry the file shipped and not off a number
+       written here, because the panel's picture is laid out across its
+       own bounding box (see js/scope.js): a re-export that moves the
+       panel a centimetre moves the picture with it and nothing has to
+       be edited. The mesh is planar in z — all thirteen of its vertices
+       sit at the same depth — so x and y across that box ARE the two
+       axes of the screen. */
+    if (this.scope && def.display) {
+      root.traverse(o => {
+        if (!o.isMesh || o.material !== this.scope.screen) return;
+        const a = o.geometry?.attributes?.position;
+        if (!a || !a.array) return;
+        let lo = [Infinity, Infinity], hi = [-Infinity, -Infinity];
+        for (let i = 0; i < a.array.length; i += a.itemSize)
+          for (let k = 0; k < 2; k++) { lo[k] = Math.min(lo[k], a.array[i + k]); hi[k] = Math.max(hi[k], a.array[i + k]); }
+        if (Number.isFinite(lo[0])) this.scope.setPanelBox(lo, [hi[0] - lo[0], hi[1] - lo[1]]);
+      });
+    }
 
     /* AND THE PART THAT TURNS, named in the file's extras by
        tools/prep-model.mjs — the minigun's barrel set. Spun about its
@@ -639,7 +738,10 @@ export class Weapon3D {
       G.spinAngle = (G.spinAngle + rate * dt) % (Math.PI * 2);
       G.spin.rotation.z = G.spinAngle;
     }
-    if (G.heatMaterial) G.heatMaterial.uniforms.heat.value = player.heat || 0;
+    /* AND OFF THE NUMBER THE DEF NAMES, not off one called `heat`:
+       two guns cook now and they cook separately, so a minigun put
+       away glowing does not hand its barrels to the lance. */
+    if (G.heatMaterial) G.heatMaterial.uniforms.heat.value = player[G.def.heat?.from || 'heat'] || 0;
 
     /* the muzzle, only while firing */
     G.muzzle.visible = !!firing;

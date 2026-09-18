@@ -37,6 +37,7 @@ import { Forest } from './forest.js';
 import { FlameStream } from './flame.js';
 import { Decals, wallNormal, UP, DOWN } from './decals.js';
 import { Tracers } from './tracers.js';
+import { BeamSystem } from './beam.js';
 import { FrostStream } from './frost.js';
 import { Effects, SMOKE_PUFFS } from './effects.js';
 import { Giblets } from './people.js';
@@ -161,6 +162,14 @@ export class Game {
     /* and the minigun's tracers, a streak from the muzzle to the hit */
     this.tracers = new Tracers(this);
     if (fxAtlases) this.tracers.attach(scene);
+    /* THE LANCE'S COLUMN, which is not a streak and not a projectile: a
+       tube of light from the muzzle to the far side of the map that is
+       out for seconds at a time and deletes what it crosses. It has no
+       tic() of its own in this list — js/player.js drives it, because a
+       beam only exists for as long as a trigger has been released and
+       that is the player's business. See js/beam.js. */
+    this.beam = new BeamSystem(this);
+    if (fxAtlases) this.beam.attach(scene);
     /* where the last hitscan stopped, for a tracer to be drawn to */
     this.lastHit = { x: 0, y: 0, z: 0 };
     if (flameAtlas) this.flame.attach(scene);
@@ -1242,6 +1251,32 @@ export class Game {
       ex += 3.0 * Math.sin(t * 0.19 + 0.5); ey += 2.4 * Math.cos(t * 0.27);
       ez += 1.4 * Math.sin(t * 0.47 + 1.1);
     }
+    /* ------------------------------------------------------------------
+       AND THE LANCE SHAKES IT, which is the one thing in this game that
+       moves the eye while the player is standing still.
+
+       Off the WALL CLOCK and not the tic, because a shake is something
+       the picture does and not something the world does: at a tic it
+       would step thirty-five times a second whatever the frame rate is,
+       and a step is a judder rather than a shudder. Four sines at rates
+       that do not divide into each other, so it never repeats inside
+       the five seconds a discharge lasts, and the turn is bigger than
+       the lift because that is what a recoil you are braced against
+       does to a view.
+
+       It is added to the eye and NOT to the player: p.angle is
+       untouched, so the shake does not walk your aim off the street you
+       picked. See js/beam.js for how hard it is shaking. */
+    const shake = this.beam ? this.beam.shake : 0;
+    if (shake > 0.001) {
+      const t = now * 0.001;
+      const k = shake * shake;
+      yaw   += k * (0.022 * Math.sin(t * 47.3) + 0.013 * Math.sin(t * 29.1 + 1.7));
+      pitch += k * (0.017 * Math.sin(t * 41.7 + 0.9) + 0.010 * Math.sin(t * 23.3 + 2.4));
+      ex += k * 5.5 * Math.sin(t * 53.1 + 0.3);
+      ey += k * 5.5 * Math.cos(t * 44.9 + 1.9);
+      ez += k * 4.0 * Math.sin(t * 61.7 + 2.6);
+    }
     /* THE ATMOSPHERE, once a frame: the clouds drift, and every uniform
        the hour and the weather own is set — the air's reach, the sky's
        light, the smoke off the two fires. See js/weather.js. */
@@ -1319,6 +1354,11 @@ export class Game {
     this.giblets.render(billboardRot);
     this.decals.render(ex, ey, vx, vy);
     this.tracers.render(ex, ey, ez);
+    /* the beam, rebuilt round whichever way the barrel is pointing this
+       frame — the feet are nailed down and the barrel is not — and the
+       light it throws on the street, which outlives it */
+    this.beam.render(now / 1000);
+    this.beam.ticLight(dt);
     this.gunships.render(ex, ey, ez, vx, vy);
     this.streetLights.render(ex, ey, ez, vx, vy);
     this.renderProjectiles(billboardRot);

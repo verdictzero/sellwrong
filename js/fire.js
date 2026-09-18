@@ -1041,6 +1041,109 @@ export class FireSystem {
     return down;
   }
 
+  /* ------------------------------------------------------------------
+     AND THE THIRD WAY TO BRING A BUILDING DOWN, WHICH IS A LINE
+
+     Fire is patient, a blast is a circle, and the positron lance is a
+     CYLINDER: a column of light a couple of metres across drawn from
+     the muzzle to the far side of the map, and everything standing in
+     it stops standing. See js/beam.js, which owns the beam; this owns
+     the grid, so this is where the walk lives — the same argument
+     damageStructure makes about the blast circle, said about a swept
+     one.
+
+     WALKED IN THE LINE'S OWN FRAME. A cell's place is turned into two
+     numbers: `s`, how far along the ground track it lies, and `off`,
+     how far to the side of it. `off` decides whether the cell is in the
+     column at all and how hard it is hit; `s` decides how HIGH the beam
+     is over that cell, which is the part a circle never has to think
+     about. A shot fired level from the eye passes through ground floors
+     for its whole length; one fired up the road at ten degrees is
+     through the bedrooms by the end of the street and over the roofs
+     after that, and this is the arithmetic that makes those two
+     different.
+
+     EVERY STOREY THE COLUMN TOUCHES, not the one it is aimed at. The
+     column has a radius and a storey has a height, and at the widest
+     stage the first is bigger than the second — so a level shot through
+     a house takes the bedroom with the front room, because it does.
+
+     THE NEAREST POINT OF A REGION DECIDES ITS BITE, exactly as in
+     damageStructure and for the same reason: a region clipped by the
+     edge of the column is grazed and one straddling the middle is cut,
+     and averaging the cells in between would say neither.
+
+     @param from    { x, y, z } the muzzle, in game coordinates
+     @param angle   which way, and `slope` the rise per unit travelled
+     @param range   how far along the ground track to walk
+     @param radius  the column's own radius
+     @param amount  integrity off a region at the centre of the column
+     @returns how many regions came down
+     ------------------------------------------------------------------ */
+  damageLine(from, angle, slope, range, radius, amount) {
+    if (!(amount > 0) || !(radius > 0) || !(range > 0)) return 0;
+    const sectors = this.game.level.sectors;
+    const seen = this._lineSeen || (this._lineSeen = new Map());
+    seen.clear();
+    const ux = Math.cos(angle), uy = Math.sin(angle);
+    /* and the perpendicular, which is what the column is swept across */
+    const vx = -uy, vy = ux;
+    const ox = from.x, oy = from.y, oz = from.z;
+
+    /* MARCHED ALONG THE LINE, NOT SCANNED OVER ITS BOX, and the
+       difference is a factor of sixty.
+
+       The obvious walk is the blast's: take the rectangle that bounds
+       the shape and test every cell in it. For a circle that is four
+       cells wasted in nine. For a segment eight thousand units long and
+       two hundred and sixty wide, laid diagonally, the bounding box is
+       eight thousand SQUARE — the whole town, a quarter of a million
+       cells, to find the two thousand that are actually under the beam.
+       Twelve times a second, for five seconds.
+
+       So this marches: half a cell at a time along the line, and half a
+       cell at a time across it out to the radius. Half, because a cell
+       is CELL across and a step of CELL could straddle two of them and
+       land in neither — at CELL/2 every cell the column covers is
+       stepped into at least once. Cells near the middle are stepped
+       into several times, which costs nothing: `seen` keeps the biggest
+       bite a region took and a repeat is one map lookup.
+
+       (range/step) * (2*radius/step) points, which for the widest
+       stage is about eight thousand and does not grow with how far
+       off the axes the shot happens to be pointing. */
+    const step = CELL * 0.5;
+    const maxX = this.cols - 1, maxY = this.rows - 1;
+    for (let s = 0; s <= range; s += step) {
+      /* how high the column is over this point, and which storeys that
+         puts it through */
+      const bz = oz + slope * s;
+      const px = ox + ux * s, py = oy + uy * s;
+      for (let t = -radius; t <= radius; t += step) {
+        const x = px + vx * t, y = py + vy * t;
+        const cx = Math.floor((x - this.originX) / CELL);
+        if (cx < 0 || cx > maxX) continue;
+        const cy = Math.floor((y - this.originY) / CELL);
+        if (cy < 0 || cy > maxY) continue;
+        const bite = amount * (1 - Math.abs(t) / radius);
+        for (let lv = 0; lv < this.levels; lv++) {
+          const si = this.sectorOf[this.idx(cx, cy, lv)];
+          if (si < 0 || !this.structural[si] || sectors[si].collapsed) continue;
+          const sec = sectors[si];
+          if (bz + radius < sec.floor || bz - radius > sec.ceil) continue;
+          if (!(seen.get(si) >= bite)) seen.set(si, bite);
+        }
+      }
+    }
+    let down = 0;
+    for (const [si, bite] of seen) {
+      const sec = sectors[si];
+      sec.integrity = (sec.integrity ?? 1) - bite;
+      if (sec.integrity <= 0 && this.bringDown(si)) down++;
+    }
+    return down;
+  }
+
   /** Will the fire travel here, and how eagerly?
    *
    *  The answer is about the NEIGHBOUR and not about the cell doing the

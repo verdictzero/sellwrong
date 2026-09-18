@@ -3478,8 +3478,8 @@ section('the cold');
     const fs3 = await import('node:fs');
     note('the guns', Object.entries(w3.GUNS).map(([k, d]) =>
       `${k} ${d.url.split('/').pop()}${d.fit ? ' (fitted)' : ''}`).join(', '));
-    check('there are four guns and all four files are there',
-      Object.keys(w3.GUNS).length === 4 &&
+    check('there are five guns and all five files are there',
+      Object.keys(w3.GUNS).length === 5 &&
       Object.values(w3.GUNS).every(d => fs3.existsSync(d.url)));
     const E = w3.GUNS.EXTINGUISHER;
     /* THE MODEL IS SOMEBODY ELSE'S AND IS NOT REWRITTEN, which is the
@@ -3502,11 +3502,19 @@ section('the cold');
        model again, with a marker cylinder in it for the emission point,
        so its nozzle is null here — the file says — and the reader that
        was kept for exactly that day reads it. */
-    check('all four guns are fitted to the game\'s length, and three say where they point',
+    check('all five guns are fitted to the game\'s length, and four say where they point',
       Object.values(w3.GUNS).every(d => d.fit) &&
       Object.entries(w3.GUNS).every(([k, d]) => k === 'MINIGUN' ? d.nozzle === null : Array.isArray(d.nozzle) && d.nozzle.length === 3));
     check('and the flamethrower is the only one with a pilot light, being the only one that burns',
-      Array.isArray(w3.GUNS.FLAMER.pilot) && E.pilot === null && w3.GUNS.BORE.pilot === null);
+      Array.isArray(w3.GUNS.FLAMER.pilot) && E.pilot === null && w3.GUNS.BORE.pilot === null
+      && w3.GUNS.LANCE.pilot === null);
+    /* AND THE TWO THAT COOK DO NOT SHARE A NUMBER. The minigun's
+       barrels and the lance's whole body both glow with GUN_FRAG's heat
+       term, and both read a property off the player by name — so a
+       minigun put away white-hot must not hand its glow to the next
+       thing drawn. */
+    check('the two guns that heat read different numbers off the player',
+      w3.GUNS.MINIGUN.heat.from === 'heat' && w3.GUNS.LANCE.heat.from === 'lanceHeat');
     check('and it is the only one whose muzzle is fire as painted',
       !w3.GUNS.FLAMER.cold && w3.GUNS.FLAMER.tint.every(v => v === 1));
 
@@ -4439,6 +4447,314 @@ await (async () => {
   check('but one at your elbow is drawn whichever way you face',
     someone.drawn);
 })();
+
+/* =====================================================================
+   THE POSITRON SNIPER LANCE
+   =====================================================================
+
+   The fifth weapon, and the first one in this game that is not a
+   trigger you pull. It is a trigger you HOLD: three seconds is a stage,
+   five is two, seven is three, and what comes out is a column of light
+   a few metres across drawn from the muzzle to the far side of the map
+   that stays out for three to five seconds and deletes everything it
+   crosses. The player is nailed to the floor for the whole of it.
+
+   WHAT IS CHECKED HERE is the arithmetic and the wiring, because the
+   look is a matter for a screenshot and the arithmetic is not: the
+   stage thresholds are the seconds the user asked for; a release under
+   the first mark spends nothing; the beam's line is walked in the
+   fire grid's own frame and takes buildings down along it; the screen
+   on the back of the gun is fed by a second camera and not by a
+   painted picture; and the six recordings are all there and all
+   reachable.
+   ===================================================================== */
+section('the lance');
+{
+  const fs = await import('node:fs');
+  const P = await import('../js/player.js');
+  const B = await import('../js/beam.js');
+  const S = await import('../js/scope.js');
+  const w3 = await import('../js/weapon3d.js');
+  const beamSrc = fs.readFileSync('js/beam.js', 'utf8');
+  const scopeSrc = fs.readFileSync('js/scope.js', 'utf8');
+  const playerSrc = fs.readFileSync('js/player.js', 'utf8');
+  const mainSrc = fs.readFileSync('js/main.js', 'utf8');
+  const matSrc = fs.readFileSync('js/material.js', 'utf8');
+  const TICRATE = 35;
+
+  /* ---- the three stages are the three numbers that were asked for -- */
+  note('the stages', P.CHARGE_STAGES.map((s, i) =>
+    `${s}s -> ${(P.BEAM_TICS[i] / TICRATE).toFixed(0)}s of beam, r${B.BEAM_RADIUS[i]}`).join('; '));
+  check('the charge has three stages, at three, five and seven seconds',
+    P.CHARGE_STAGES.length === 3 &&
+    P.CHARGE_STAGES[0] === 3 && P.CHARGE_STAGES[1] === 5 && P.CHARGE_STAGES[2] === 7);
+  check('and a full charge is the last of them, in tics',
+    P.CHARGE_MAX === 7 * TICRATE);
+  check('the beam lasts three to five seconds, by stage, as asked',
+    P.BEAM_SECONDS.length === 3 && P.BEAM_SECONDS[0] === 3 && P.BEAM_SECONDS[2] === 5 &&
+    P.BEAM_TICS.every((t, i) => t === Math.round(P.BEAM_SECONDS[i] * TICRATE)));
+  check('and a later stage is always a longer, wider, harder shot',
+    P.BEAM_TICS[0] < P.BEAM_TICS[1] && P.BEAM_TICS[1] < P.BEAM_TICS[2] &&
+    B.BEAM_RADIUS[0] < B.BEAM_RADIUS[1] && B.BEAM_RADIUS[1] < B.BEAM_RADIUS[2] &&
+    B.BEAM_STRUCTURE[0] < B.BEAM_STRUCTURE[2] && B.BEAM_DAMAGE[0] < B.BEAM_DAMAGE[2]);
+
+  /* ---- and the dial and the weapon cannot disagree about them ------ */
+  {
+    const p = Object.create(P.Player.prototype);
+    p.charge = 0; p.beamTics = 0; p.beamStage = 0;
+    const marks = p.stageMarks;
+    check('the stage marks on the gun\'s dial are computed from the stages themselves',
+      marks.length === 3 && Math.abs(marks[0] - 3 / 7) < 1e-9 && Math.abs(marks[2] - 1) < 1e-9);
+    /* the stage a given held time reaches */
+    const stageAt = tics => { p.charge = tics; return p.chargeStage; };
+    check('under three seconds is no stage at all',
+      stageAt(0) === 0 && stageAt(2.9 * TICRATE | 0) === 0);
+    check('and three, five and seven seconds are one, two and three',
+      stageAt(3 * TICRATE) === 1 && stageAt(4.9 * TICRATE | 0) === 1 &&
+      stageAt(5 * TICRATE) === 2 && stageAt(6.9 * TICRATE | 0) === 2 &&
+      stageAt(7 * TICRATE) === 3);
+    check('and the charge cannot be held past the top',
+      P.CHARGE_MAX === 7 * TICRATE && stageAt(P.CHARGE_MAX) === 3);
+    /* the pitch every charge sound rides */
+    p.charge = 0;
+    const lo = p.chargePitch;
+    p.charge = P.CHARGE_MAX;
+    const hi = p.chargePitch;
+    check('every charge sound rides one rising pitch, off the charge alone',
+      Math.abs(lo - P.CHARGE_PITCH[0]) < 1e-9 && Math.abs(hi - P.CHARGE_PITCH[1]) < 1e-9 && hi > lo * 1.5);
+  }
+
+  /* ---- a released trigger fires, a tapped one does not -------------- */
+  check('firing spends one cell whatever the stage, out of a magazine of four',
+    P.WEAPONS.LANCE.ammo === 'cells' && P.WEAPONS.LANCE.ammoPerShot === 1 && P.CELLS === 4);
+  check('and the lance is the only weapon whose trigger is a charge',
+    Object.entries(P.WEAPONS).filter(([, d]) => d.charge).map(([k]) => k).join() === 'LANCE');
+  check('a charged weapon never runs the frame-list firing path',
+    /if \(this\.def\.charge\) \{ this\.lanceTic\(input\); return; \}/.test(playerSrc));
+  check('a tap under the first mark vents rather than firing, and spends nothing',
+    /if \(stage > 0\) \{ this\.charge = 0; this\.fireBeam\(stage\); \}\s*\n\s*else this\.ventCharge\(\);/.test(playerSrc));
+  check('and a charge held at the top vents itself after three seconds',
+    P.CHARGE_HOLD === 3 * TICRATE &&
+    /if \(this\.charge >= CHARGE_MAX && \+\+this\.holdTics > CHARGE_HOLD\) this\.ventCharge\(\);/.test(playerSrc));
+  check('a trigger held through a vent does not start another charge',
+    /if \(!input\.attack\) this\.vented = false;/.test(playerSrc) &&
+    /input\.attack && can && !this\.vented/.test(playerSrc));
+
+  /* ---- the feet are nailed down and the barrel is not --------------- */
+  check('the player cannot walk while the beam is out',
+    /const braced = this\.beamTics > 0;/.test(playerSrc) &&
+    /const grip = braced \? 0 : this\.charge > 0 \? CHARGE_WALK : 1;/.test(playerSrc));
+  check('nor jump out of one',
+    /input\.jump && !braced/.test(playerSrc));
+  check('but can still sweep it, slowly',
+    P.BEAM_TURN > 0 && P.BEAM_TURN < 0.5 &&
+    /const rate = this\.beamTics > 0 \? BEAM_TURN : 1;/.test(playerSrc));
+  check('and the shot takes the momentum with it rather than sliding to a halt',
+    (() => {
+      const body = playerSrc.slice(playerSrc.indexOf('fireBeam(stage) {'), playerSrc.indexOf('get chargeStage()'));
+      return /this\.momx = 0; this\.momy = 0;/.test(body) && /beam\?\.fire\(this, stage\)/.test(body) &&
+             body.indexOf('this.momx = 0') < body.indexOf('beam?.fire');
+    })());
+  check('a charge slows you but does not stop you, which the beam does',
+    P.CHARGE_WALK > 0 && P.CHARGE_WALK < 0.5);
+
+  /* ---- the coil cooks and has to be waited out ---------------------- */
+  check('the lance has its own heat, not the minigun\'s',
+    /this\.lanceHeat = 0;/.test(playerSrc) && P.LANCE_HEAT_UP > 0 && P.LANCE_HEAT_DOWN > P.LANCE_HEAT_UP);
+  check('and a cooking lance refuses the trigger until it has cooled to a mark',
+    P.LANCE_HOT > P.LANCE_COOL_AT &&
+    /if \(WEAPONS\[w\]\.charge && \(this\.lanceHot \|\| this\.beamTics > 0\)\) return false;/.test(playerSrc));
+  check('a stage-three discharge is most of the coil\'s heat',
+    P.BEAM_TICS[2] / P.LANCE_HEAT_UP > 0.7 && P.BEAM_TICS[2] / P.LANCE_HEAT_UP <= 1);
+  check('and venting costs heat too, so a charge you throw away is not free',
+    P.VENT_HEAT > 0 && P.VENT_HEAT < 1);
+  check('infinite ammo cools it, or the switch would do nothing to this weapon',
+    /this\.lanceHeat = 0; this\.lanceHot = false;/.test(playerSrc));
+
+  /* ---- the line, and what it takes down ----------------------------- */
+  check('the beam is a line through the map and not a shot that stops at a wall',
+    B.BEAM_RANGE > 6000 && !/rayHitWall|trace\(/.test(beamSrc));
+  check('the fire system owns the walk, because it owns the grid',
+    /damageLine\(from, angle, slope, range, radius, amount\)/.test(fs.readFileSync('js/fire.js', 'utf8')) &&
+    /g\.fire\?\.damageLine\(this\.from, this\.angle, this\.slope, BEAM_RANGE, r,/.test(beamSrc));
+  check('and it walks in the line\'s own frame, so a pitched shot is through the upper storeys',
+    /const bz = oz \+ slope \* s;/.test(fs.readFileSync('js/fire.js', 'utf8')) &&
+    /for \(let lv = 0; lv < this\.levels; lv\+\+\)/.test(fs.readFileSync('js/fire.js', 'utf8')));
+  /* AND IT MARCHES THE LINE RATHER THAN SCANNING ITS BOX. The blast's
+     walk takes the rectangle that bounds the shape; for a segment eight
+     thousand units long laid diagonally that rectangle is the whole
+     town — a quarter of a million cells to find the two thousand under
+     the beam, twelve times a second. Marching is about eight thousand
+     points and does not care which way the shot is pointing. */
+  check('the line is marched at half a cell rather than scanned over its bounding box',
+    (() => {
+      const f = fs.readFileSync('js/fire.js', 'utf8');
+      const body = f.slice(f.indexOf('damageLine(from, angle'), f.indexOf('/** Will the fire travel here'));
+      return /const step = CELL \* 0\.5;/.test(body) &&
+             /for \(let s = 0; s <= range; s \+= step\)/.test(body) &&
+             /for \(let t = -radius; t <= radius; t \+= step\)/.test(body) &&
+             !/cellX\(Math\.min/.test(body);
+    })());
+  check('the structural pass is slower than the tic, with the bite multiplied to match',
+    B.PASS_EVERY > 1 && /BEAM_STRUCTURE\[this\.stage - 1\] \* PASS_EVERY/.test(beamSrc));
+  check('bodies are done every tic, because that is what the player watches',
+    /this\._bodies\(player, r\);/.test(beamSrc) && !/PASS_EVERY[\s\S]{0,80}_bodies/.test(beamSrc));
+  check('and it sets fire to what it does not finish, in the store and in the wood',
+    /g\.fire\?\.ignite\(/.test(beamSrc) && /g\.forest\?\.ignite\(/.test(beamSrc));
+  check('but only where the column is near the ground, or one shot up a street burns the town',
+    /if \(bz > 400 \+ r\) continue;/.test(beamSrc));
+
+  /* ---- and the picture it makes ------------------------------------- */
+  check('the column is a tube and not a view-facing quad, because the eye is at one end of it',
+    /SIDES/.test(beamSrc) && B.SIDES >= 8 && B.SEGS >= 16 &&
+    !/across both the streak and the line to the eye/.test(beamSrc));
+  /* THE INNERMOST SHELL MUST NOT BE A FRESNEL, and this is the check
+     that says why: the player is looking straight down the bore, so
+     every surface of the tube is edge-on at once, so a Fresnel shell is
+     brightest in a RING and darkest in the middle. Three of those
+     nested is a bullseye, which is what the first screenshot was. */
+  check('four nested shells, the innermost lit flat and the outermost at its silhouette',
+    /const SHELLS = \[/.test(beamSrc) &&
+    /float lit = vRim < 0\.5 \? flat_ : \(vRim < 1\.5 \? mild : shell\);/.test(beamSrc) &&
+    /float flat_ = 1\.0;/.test(beamSrc));
+  check('with rings travelling out of the muzzle, so the column has a direction',
+    B.RINGS > 0 && B.RING_SPEED > 0);
+  /* AND THE COLUMN LAGS THE BARREL, which is the only reason it is ever
+     seen as a column rather than as a disc: a beam fired along your own
+     line of sight is seen end-on, always, and what puts it across the
+     frame is that it does not turn as fast as you do. */
+  check('the column chases the barrel rather than following it',
+    B.LAG > 0.1 && B.LAG < 1 &&
+    /const k = 1 - Math\.exp\(-1 \/ \(TICRATE \* LAG\)\);/.test(beamSrc) &&
+    /this\.angle \+= d \* k;/.test(beamSrc));
+  check('and it takes the short way round, so crossing the wrap does not sweep the town',
+    /while \(d > Math\.PI\) d -= Math\.PI \* 2;/.test(beamSrc));
+  check('but the first tic plants it where the barrel is',
+    /this\._aim\(player, true\);/.test(beamSrc) && /_aim\(player, snap = false\)/.test(beamSrc));
+  check('and what it cuts is the drawn column and not the crosshair',
+    /const ux = Math\.cos\(this\.angle\), uy = Math\.sin\(this\.angle\);/.test(beamSrc) &&
+    /g\.fire\?\.damageLine\(this\.from, this\.angle, this\.slope/.test(beamSrc));
+  /* AND THE NEAR END IS CLOSED. A tube is hollow, and the front is the
+     only end the player ever sees: without a cap you look past the near
+     opening, down the inside and THROUGH to the world beyond, and the
+     middle of the column is a dim disc of whatever is behind it. */
+  check('the two inner shells are capped, and they are the two lit flat',
+    B.CAPS === 2 && B.CAP_SEG >= 1 &&
+    /idx\.push\(capBase \+ c, ring \+ k, ring \+ k \+ 1\);/.test(beamSrc) &&
+    /const verts = bands \* \(SIDES \+ 1\) \+ CAPS;/.test(beamSrc));
+  check('it is one draw call, additive, and writes no depth',
+    (beamSrc.match(/new THREE\.Mesh\(/g) || []).length === 1 &&
+    /blending: THREE\.AdditiveBlending/.test(beamSrc) && /depthWrite: false/.test(beamSrc));
+
+  /* ---- the shake, the particles and the light ----------------------- */
+  check('the beam shakes the eye and not the player, so it does not walk your aim off',
+    /const shake = this\.beam \? this\.beam\.shake : 0;/.test(fs.readFileSync('js/game.js', 'utf8')) &&
+    /yaw   \+= k \* \(0\.022/.test(fs.readFileSync('js/game.js', 'utf8')));
+  check('and the shake settles from a jolt to a hum, so the beam can still be aimed',
+    B.SHAKE_PEAK > B.SHAKE_HUM && B.SHAKE_HUM > 0 && B.SHAKE_SETTLE > 0);
+  check('particles are thrown across the column rather than along its centre line',
+    B.SAMPLES >= 12 && /Math\.sqrt\(Math\.random\(\)\) \* r/.test(beamSrc));
+  check('the world has a second light and it is a LINE, not a point',
+    /uniform vec3  beamPos;/.test(matSrc) && /uniform vec3  beamDir;/.test(matSrc) &&
+    /float along = clamp\(dot\(rel, beamDir\), 0\.0, beamLen\);/.test(matSrc));
+  check('lit differentially, off the surface\'s own place rather than off the frame',
+    /float n = fract\(sin\(dot\(floor\(world \* 0\.017\)/.test(matSrc) &&
+    /float flick = 0\.62 \+ 0\.38 \* sin\(beamSeed/.test(matSrc));
+  check('and it outlives the column, on the axis the column was on',
+    B.AFTERGLOW > 1 && /this\.glow = Math\.max\(0, this\.glow - dt \/ AFTERGLOW\);/.test(beamSrc) &&
+    /the light is NOT stopped/.test(beamSrc));
+  check('the light reaches much further than the column is wide',
+    B.LIGHT_RANGE.every((v, i) => v > B.BEAM_RADIUS[i] * 5));
+
+  /* ---- the screen on the back of the gun ---------------------------- */
+  check('the lance is the only gun with a screen and a lens, and the file names both',
+    w3.GUNS.LANCE.display.material === 'dynamic_display_surface_mat' &&
+    w3.GUNS.LANCE.optics.material === 'optics_mat' &&
+    Object.values(w3.GUNS).filter(d => d.display).length === 1);
+  check('the screen is fed by a second camera at the eye, not by a painted picture',
+    /this\.camera = new THREE\.PerspectiveCamera/.test(scopeSrc) &&
+    /r\.render\(scene, c\);/.test(scopeSrc) &&
+    /c\.fov = Math\.max\(1\.2, worldCamera\.fov \/ this\.magnification \* this\.viewScale\);/.test(scopeSrc));
+  check('drawn before the pipeline takes the render target away',
+    mainSrc.indexOf('scope.render(scene, camera)') < mainSrc.indexOf('pipeline.render(scene, camera, overlays)'));
+  check('and at most every other frame, since it is a whole second scene render',
+    S.EVERY >= 2 && /if \(this\.frames % this\.every\) return false;/.test(scopeSrc));
+  check('and never at all with the lance out of your hands',
+    /if \(!this\.renderer \|\| !this\.held\) return false;/.test(scopeSrc));
+  check('the panel\'s picture is laid out on its own box, measured off the geometry',
+    /setPanelBox\(min, size\)/.test(scopeSrc) &&
+    /this\.scope\.setPanelBox\(lo, \[hi\[0\] - lo\[0\], hi\[1\] - lo\[1\]\]\)/.test(fs.readFileSync('js/weapon3d.js', 'utf8')));
+  check('and u is flipped, because the model is turned half a circle about y',
+    /vec2 uv = vec2\(1\.0 - \(vL\.x - box\.x\) \* box\.z, \(vL\.y - box\.y\) \* box\.w\);/.test(scopeSrc));
+  check('no smoothstep on that screen runs its edges backwards, which GLSL leaves undefined',
+    !/smoothstep\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,/.test(scopeSrc) ||
+    [...scopeSrc.matchAll(/smoothstep\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,/g)].every(m => +m[1] < +m[2]));
+  check('everything on the dial is inside the bezel, which is the bug the first cut had',
+    (() => {
+      const body = scopeSrc.slice(scopeSrc.indexOf('_draw({'), scopeSrc.indexOf('setStages('));
+      const outs = [...body.matchAll(/N \* (0\.\d+)/g)].map(m => +m[1]);
+      return outs.length > 4 && outs.every(v => v <= 0.88);
+    })());
+  check('the zoom steps and the view narrows with them, but not by the same amount',
+    S.ZOOMS.length === S.VIEW_ZOOM.length && S.ZOOMS[0] === 1 && S.VIEW_ZOOM[0] === 1 &&
+    S.ZOOMS[S.ZOOMS.length - 1] >= 8 && S.VIEW_ZOOM[S.VIEW_ZOOM.length - 1] > 0.5);
+  check('and the look slows by exactly what the view narrowed by',
+    /input\.zoomScale = lance \? scope\.viewScale : 1;/.test(mainSrc) &&
+    /this\.look = \{ x: lx \* zs, y: ly \* zs \};/.test(fs.readFileSync('js/input.js', 'utf8')));
+  check('the screen shares nothing with the palette, being a screen and not a painting',
+    !/palette\.js/.test((scopeSrc.match(/^import .*$/gm) || []).join('\n')));
+  /* AND THE STATIC IS ON THE PICTURE AND NOT ON THE GAUGES: the feed
+     comes down a wire from a sensor and the gauges are drawn by the gun
+     on the gun, so noise over the charge ring is noise on the one part
+     of the screen that cannot have any — at the moment it matters most. */
+  check('the static degrades the feed and the gauges go over it',
+    scopeSrc.indexOf('col += (n - 0.5) * noise') < scopeSrc.indexOf('vec4 g = texture2D(panel, uv);'));
+  check('and the dial redraws only on what it draws',
+    /const key = \[this\.held \? 1 : 0/.test(scopeSrc) && !/this\.range/.test(scopeSrc));
+
+  /* ---- and its voice ------------------------------------------------ */
+  {
+    const A = await import('../js/audio.js');
+    const want = ['lance_charge_start', 'lance_charge_loop', 'lance_charge_full',
+                  'lance_prefire', 'lance_fire_a', 'lance_fire_b'];
+    note('the lance\'s voice', want.map(k => k.replace('lance_', '')).join(', '));
+    check('all six recordings are registered and all six files are there',
+      want.every(k => A.SAMPLES[k] && fs.existsSync(A.SAMPLES[k])) &&
+      want.every(k => A.SAMPLE_GAIN[k] > 0));
+    check('and every one of them is reachable by a name the game asks for',
+      want.every(k => Object.values(A.SAMPLE_FOR).includes(k)));
+    check('the charge loop is the only one made periodic, because it is the only one that loops',
+      Object.keys(A.SAMPLE_LOOP).join() === 'lance_charge_loop' && A.SAMPLE_LOOP.lance_charge_loop > 0.1);
+    check('and it is made periodic by baking the join into the buffer, not by fading on playback',
+      /_loopify\(buf, xfade\)/.test(fs.readFileSync('js/audio.js', 'utf8')) &&
+      /dst\[i\] = src\[i\] \* head \+ src\[n \+ i\] \* tail;/.test(fs.readFileSync('js/audio.js', 'utf8')));
+    check('a sample can be pitched and faded, which is what a charge needs',
+      /rate\(v, over = 0\.06\)/.test(fs.readFileSync('js/audio.js', 'utf8')) &&
+      /fade\(to, over = 0\.5\)/.test(fs.readFileSync('js/audio.js', 'utf8')));
+    check('the held charge sound is judged after the tic, so every way of ending one stops it',
+      /lanceVoice\(\) \{/.test(playerSrc) && /this\.lanceVoice\(\);/.test(playerSrc));
+    check('and dying with a charge in your hands stops it too',
+      /this\.chargeLoop\?\.stop\(\); this\.chargeLoop = null;/.test(playerSrc));
+    check('the discharge is three recordings at once, since two of them are one shot in layers',
+      /snd\?\.sample\('lanceprefire'/.test(playerSrc) &&
+      /snd\?\.sample\('lancefire'/.test(playerSrc) && /snd\?\.sample\('lancefire2'/.test(playerSrc));
+    check('and a charge that is thrown away fizzles rather than stopping',
+      /h\.rate\(CHARGE_PITCH\[0\] \* 0\.55, 1\.1\); h\.release\(1\.2\);/.test(playerSrc));
+  }
+
+  /* ---- and it is on a key and a slot -------------------------------- */
+  {
+    const inputSrc = fs.readFileSync('js/input.js', 'utf8');
+    check('the lance is the fifth slot and there is a key for it',
+      P.WEAPONS.LANCE.slot === 5 && /Digit5: 'weapon5'/.test(inputSrc) &&
+      /if \(this\.pressed\('weapon5'\)\) this\.weaponSlot = 5;/.test(inputSrc));
+    check('and the zoom is a press on the right button, a key and the pad',
+      /KeyZ: 'zoom'/.test(inputSrc) && /this\.mouseRightPulse/.test(inputSrc) &&
+      /padEdge\(1\)/.test(inputSrc));
+    check('the player owns it, so it can actually be reached',
+      /LANCE: true/.test(playerSrc));
+  }
+}
 
 /* ---------- the wiring ---------- */
 /* ---------- THE READOUT, AND WHICH SIDE OF THE FILTER IT IS ON ----------
@@ -7696,7 +8012,11 @@ section('the minigun, the jump and the van');
   const d = pl.WEAPONS.MINIGUN;
   check('the minigun is the fourth weapon, a volley off a belt, and issued',
     !!d && d.slot === 4 && d.volley === true && d.ammo === 'rounds' && d.autofire === true &&
-    pl.WEAPONS.MOLOTOV.slot === 5 && new (class extends pl.Player { constructor() { super({ level: level, sectorAt: () => null }, 0, 0, 0); } })().owned.MINIGUN === true);
+    /* AND THE MOLOTOV MOVED DOWN ONE to make room for the lance, which
+       is the fifth: the molotov is still switched off and still built,
+       and its slot is still one past the last thing you can hold. */
+    pl.WEAPONS.LANCE.slot === 5 && pl.WEAPONS.MOLOTOV.slot === 6 &&
+    new (class extends pl.Player { constructor() { super({ level: level, sectorAt: () => null }, 0, 0, 0); } })().owned.MINIGUN === true);
   note('the belt', `${pl.BELT} rounds at ${pl.BELT_PER_TIC} a tic: ${(pl.BELT / pl.BELT_PER_TIC / 35).toFixed(0)} seconds, ` +
     `back in ${(pl.BELT * pl.BELT_REGEN_EVERY / 35).toFixed(0)}; ${d.rounds} a tic of ${d.damage()}-ish`);
   check('absurdly destructive: over a hundred rounds a second, each more than a shopper',
@@ -7832,7 +8152,8 @@ section('the minigun, the jump and the van');
       M.fit > w3.GUN_LENGTH && M.out > 1 && json.materials.some(m => m.name === M.heat.material));
     const gunSrc = fs.readFileSync('js/weapon3d.js', 'utf8');
     check('the heat is drawn from the muzzle back, on the one material, banded like the light',
-      /uniform float heat;/.test(gunSrc) && /heatMaterial\.uniforms\.heat\.value = player\.heat/.test(gunSrc) &&
+      /uniform float heat;/.test(gunSrc) &&
+      /heatMaterial\.uniforms\.heat\.value = player\[G\.def\.heat\?\.from \|\| 'heat'\]/.test(gunSrc) &&
       /floor\(h \* 8\.0 \+ 0\.5\) \/ 8\.0/.test(gunSrc));
     check('and the barrels turn at the player\'s spin', /G\.spin\.rotation\.z = G\.spinAngle/.test(gunSrc));
     check('and no disc across the muzzle any more, at the user\'s request: the tracers say it is firing',
@@ -7853,8 +8174,10 @@ section('the minigun, the jump and the van');
     check('the synthesised sound is off, for now, by one switch, and the ambience with it',
       au.MUTED === true && /if \(MUTED\) return;/.test(auSrc) && /if \(MUTED \|\| !this\.ctx \|\| this\._amb\) return;/.test(auSrc));
     /* --- the minigun's recordings, which the switch does not touch --- */
-    check('the minigun has three recordings and all three files are there',
-      Object.keys(au.SAMPLES).length === 3 && Object.values(au.SAMPLES).every(u => fs.existsSync(u)));
+    check('the minigun has three recordings, the lance six, and all nine files are there',
+      Object.keys(au.SAMPLES).filter(k => k.startsWith('minigun_')).length === 3 &&
+      Object.keys(au.SAMPLES).filter(k => k.startsWith('lance_')).length === 6 &&
+      Object.keys(au.SAMPLES).length === 9 && Object.values(au.SAMPLES).every(u => fs.existsSync(u)));
     check('named for the spin-up, the loop and the wind-down',
       au.SAMPLE_FOR.spinup === 'minigun_start' && au.SAMPLE_FOR.minigunloop === 'minigun_fire' && au.SAMPLE_FOR.spindown === 'minigun_stop');
     check('and a sample plays whatever the switch says', auSrc.indexOf('if (SAMPLE_FOR[name])') < auSrc.indexOf('if (MUTED) return;'));

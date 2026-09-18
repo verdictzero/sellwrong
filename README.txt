@@ -139,7 +139,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         2245 checks, no install and no browser
+  the smoke test         2321 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -4392,6 +4392,374 @@ DEBUG: FIRE HAZE, in the pause menu with the other two, on by default,
 remembered.
 
 
+THE POSITRON SNIPER LANCE
+-------------------------
+
+THE FIFTH WEAPON, at the user's request, and the first one in this game
+that is not a trigger you pull. It is a trigger you HOLD.
+
+Vaportrash's WZBR-1 Positron Sniper Lance, brought in as it stands and
+stripped by tools/prep-model.mjs from 8.7 megabytes to 4.4 — the normal
+map, the metal-rough map, four sets of UVs and a tangent for a normal
+map that is no longer there. Slot 5, or the wheel, or SWAP. Two and a
+half metres of gun, half again the length of anything else in the rack,
+held further out than anything else for a reason that is not vanity: the
+back of it is where the SCREEN is.
+
+THE MODEL CARRIES ITS OWN ANSWERS, the way the minigun did, and not as
+marker spheres this time but as NAMED MESHES. Four meshes on three
+materials:
+
+  wzbr_mat                     seventy thousand vertices of receiver and
+                               barrel on one painted 1024-square sheet
+  optics_2 / optics_mat        a fifty-millimetre lens up front, painted
+                               flat green
+  dynamic_display_surface_1 /  a panel eighty millimetres across on the
+  dynamic_display_surface_mat  rear deck, facing straight back at
+                               whoever is holding it, painted flat
+                               near-black
+
+Nobody names a node `dynamic_display_surface_1` by accident. The whole
+of js/scope.js is the answer to that name.
+
+
+THE TRIGGER IS A DURATION
+-------------------------
+
+Three seconds is a stage, five is two, seven is three. It fires on the
+RELEASE, at whatever stage was reached, which is the whole shape of the
+weapon: a charge that fired itself the moment it was full would take the
+decision away, and firing on release means the player picks — letting go
+at four seconds is a choice to take stage one now rather than stage two
+in a moment. Under three seconds nothing happens at all; the cell is not
+spent and the coil fizzles down. That is how a charge is cancelled.
+
+AND AT THE TOP THERE IS A CLOCK. Three seconds of grace at the third
+mark, long enough to pick a street and not long enough to walk down it,
+and then the coil VENTS: the charge goes, the shot does not happen, the
+cell is untouched, and the gun is left warm for having been asked to
+hold it. A trigger held through a vent does not start another charge —
+you have to let go and press again.
+
+WHILE IT WINDS you keep a third of a walk and cannot run. That is not in
+the user's ask and it is the number that makes the three stages mean
+something: a seven-second charge you can sprint through is a trigger you
+hold all the time. WHILE THE BEAM IS OUT you cannot move at all, which
+is, and the momentum is spent at the moment of firing rather than
+ignored for the next five seconds, so you stop where you fired from
+rather than sliding to a halt under a beam that is already lit. You can
+still SWEEP, at a fifth of the rate: leaning a column of light across a
+street is the whole reason to draw one, and five seconds at that rate is
+one row of shopfronts rather than all four sides of the junction.
+
+AND IT COOKS. A stage-three shot is five seconds of beam and takes the
+coil to five sixths of everything it has; over that it will not take the
+trigger again until it is back under a third, which is fourteen seconds
+of cooling. So the answer to "can I fire again" is usually "walk
+somewhere first". The cell holds four and fills itself one every
+twenty-five seconds, which is the slowest magazine in the game and
+should be: a full cell is four lines drawn through the town.
+
+
+THE BEAM
+--------
+
+IT IS NOT A LASER. A laser is a line you draw to a hit point and it
+stops at the first thing it touches. This is a COLUMN two to eight
+metres across drawn from the muzzle to the far side of the map — eight
+thousand two hundred units, which crosses the town and keeps going —
+and it does not stop at anything, because nothing it touches is still
+there afterwards. There is no hit point. The whole segment is the hit.
+
+Every tic, for the three to five seconds it is out, it does four things:
+
+  the bodies      everything soft inside the column, every tic, for
+                  enough that there is no survivable stage
+  the buildings   integrity off every region the column passes through,
+                  on a slower clock
+  the fire        heat and accelerant the whole length, store grid and
+                  woodland both, so what the beam did not finish burns
+  the picture     sixteen sample points a tic, moved along the line each
+                  tic and scattered ACROSS the column rather than along
+                  its axis, so five seconds lays a continuous stem of
+                  fire up the whole length
+
+THE BUILDINGS ARE ON A SLOWER CLOCK THAN THE BODIES and it is worth
+saying why. Taking a region down is a walk over the fire grid, and a
+stage-three column is eight metres across and a hundred and sixty long:
+the box that bounds it is a good part of the town. Doing that
+thirty-five times a second for five seconds is a hundred and seventy-five
+sweeps of a grid to answer a question whose answer changes about ten
+times. Every third tic with the bite multiplied by three is the same
+building coming down for a third of the arithmetic. Bodies are a flat
+loop over the actor list and cost nothing, so they run every tic, where
+the player can see them.
+
+THE WALK ITSELF LIVES IN js/fire.js, next to the blast's, because the
+grid belongs to the fire: FireSystem.damageLine is the third way to
+bring a building down and the first one that is a LINE. It walks in the
+line's own frame — how far along the ground track a cell lies, and how
+far to the side of it — which is what lets it answer the question a
+circle never has to: how HIGH the beam is over that cell. A shot fired
+level from the eye is through ground floors for its whole length; one
+fired up the road at ten degrees is through the bedrooms by the end of
+the street and over the roofs after that. And it takes EVERY STOREY the
+column touches, not the one it is aimed at, because at the widest stage
+the column is taller than a storey is.
+
+
+AND IT IS A TUBE
+----------------
+
+The obvious way to draw a beam is the way js/tracers.js draws a round: a
+quad spread sideways along the axis that is across both the line and the
+line to the eye, so it faces you however you stand. That is right for a
+tracer and catastrophically wrong for this one, because of WHO IS
+LOOKING. A tracer is something you watch go past. A beam is something
+you are FIRING, which means the eye is at one end of it looking along
+it — and a view-facing quad seen exactly end-on is a line one pixel
+wide. The most important beam in the game would be invisible to the only
+person who ever sees it.
+
+So it is real geometry: a tube of twelve sides and twenty-eight rings,
+rebuilt every frame around the axis the barrel is on THAT FRAME. Looking
+down a tube shows you the inside of a tube, which is exactly the shot —
+a ring of light receding to a point — and looking across one shows you a
+column.
+
+THREE OF THEM, NESTED, because a column of light is not one colour: a
+white core lit through its whole face, a yellow-white body, and a halo
+in the lance's own lens green lit only at its SILHOUETTE. Fresnel
+against the view direction is the entire difference between a rod and a
+glow and it is two lines of shader. With rings travelling out of the
+muzzle, because a column with nothing moving along it has no speed and
+no direction, and five seconds of a static glowing pipe reads as a prop.
+All of it additive, none of it writing depth, one draw call.
+
+THE NECK IS IN WORLD UNITS AND NOT IN A FRACTION, and the first cut of
+it was not. It flared the column over the first five per cent of its
+length — four hundred units, which sounded reasonable — and the first
+screenshot of a stage-three discharge was a white rectangle with a gun
+in the corner of it. The column is born at the muzzle, about forty-six
+units in front of the player; at the third stage it is a hundred and
+thirty units in radius. Forty-six is less than a hundred and thirty. The
+player was standing INSIDE the first section of their own beam, looking
+at the inside of a double-sided additive tube from a few centimetres
+away. It opens out over six hundred units of real distance now and is
+not drawn at all over the first three hundred; what covers the join is
+the muzzle bloom, which is particles and was going to be there anyway,
+because a beam leaves a gun in a ball of light.
+
+
+WHAT IT DOES TO THE PICTURE
+---------------------------
+
+THE SCREEN SHAKES, at the user's request, and it is the one thing in
+this game that moves the eye while the player is standing still. Off the
+wall clock and not the tic — a shake is something the PICTURE does, and
+at a tic it would step thirty-five times a second whatever the frame
+rate is, which is a judder rather than a shudder. Four sines at rates
+that do not divide into each other, so it never repeats inside the five
+seconds a discharge lasts. Everything in the first half second and a hum
+for the rest: a discharge you cannot aim through for five seconds wastes
+its own best feature. It is added to the EYE and not to the player, so
+it never walks your aim off the street you picked.
+
+AND THE WORLD HAS A SECOND LIGHT NOW, which the README has said for a
+year it does not need. It did not, for fire: a burning aisle is one glow
+because you never see two fires as two sources. It is not true of this.
+A point light at the muzzle would put a bright spot on the wall behind
+you and leave the street the beam is crossing dark, which is backwards.
+So the second light is a SEGMENT — a start, a direction, a length and a
+radius — and every fragment measures its distance to the nearest point
+on the LINE. A person standing beside the column a hundred metres away
+is lit as hard as the wall behind the muzzle, because they are as near
+the light.
+
+IT IS DIFFERENTIAL AND RANDOMISED, at the user's request, and that is
+the part that makes it read as a discharge rather than as a lamp: the
+flicker's rate AND its phase are hashed off the fragment's own world
+position, so two objects either side of the column flicker differently
+and neither of them flickers with the frame. What you get is a street
+where every surface is being lit by the same thing and none of them
+agrees about it.
+
+AND IT OUTLIVES THE BEAM. The axis is left exactly where the last tic of
+the column was and the intensity falls off over a second and a half, so
+the street stays lit by a thing that has already gone — the after-image
+of the shot.
+
+IT WAS ALL FOUR TIMES TOO BRIGHT TO BEGIN WITH. The column, the wash on
+the readout, the bloom and the light were each bright enough on their
+own, and together they were a white rectangle. The column is the one
+that should be blinding. A street lit past white has stopped being a
+street.
+
+
+THE SCREEN ON THE BACK OF THE GUN
+---------------------------------
+
+js/scope.js. What is on it is the WORLD, live, through a second camera
+at the player's own eye with a narrow field of view — a camera-to-texture
+feed and not a painted picture — with round gauges over it and a reticle
+in the middle. It is a sniper scope that happens to be a monitor, which
+is what a lance with a flat panel where the optics should be IS.
+
+THE FEED IS ITS OWN RENDER, because a zoomed picture is a DIFFERENT
+picture and not a crop: twelve times the magnification is twelve times
+fewer degrees across the same texels, and there is no way to get that
+out of a frame drawn at seventy-two except by drawing it again. So there
+is a second perspective camera parked at the world camera's position
+with the world camera's rotation and a field of view divided by the
+magnification, and one more render of THE SAME SCENE into a
+256-square target.
+
+The same scene is the whole trick. Nothing is duplicated and nothing is
+kept in sync: the crowd, the fire, the town and the sky are whatever the
+frame already made them. Everything the game culls — the portal flood,
+the distance cuts in Actor.render, the geometry LOD — was computed from
+the same standpoint the scope is looking from, so a narrower camera at
+that point can only ever want a SUBSET of what is already there. There
+is no case where the scope wants something the frame threw away.
+
+It is small and slow on purpose: 256 texels square, at most every other
+frame, and never at all with the lance out of your hands. A screen
+eighty millimetres across on a gun held at arm's length is forty chunky
+pixels once the lo-fi pass has had it, and a feed that updates thirty
+times a second on it is indistinguishable from one that updates sixty.
+
+THE UVs ARE NOT THE FILE'S. The panel's own live in a twenty-six
+thousandth of the sheet — 0.495 to 0.521 across, 0.704 to 0.722 up —
+because in the original it is one flat dark patch of an atlas and needs
+no more; mapping a screen through them would sample one texel. So the
+screen makes its own out of the mesh's LOCAL POSITION, which it can
+because the panel is planar: all thirteen of its vertices sit at
+z = -0.1694, so x and y across its own bounding box ARE the two axes of
+the picture. The box is measured off the geometry the file shipped
+rather than off a number written in the game, so a re-export that moves
+the panel moves the picture with it. And u is FLIPPED, because every
+model is turned half a circle about y so its barrel points away from the
+eye, and a half turn about y sends model +x to view -x: un-flipped, the
+scope feed is a mirror. It was, the first time, and a checkerboard with
+a red border said so.
+
+THE GAUGES ARE FOUR THINGS, and that is a rewrite. The panel is forty
+chunky pixels across, and the first cut had two arc gauges with their
+own labels, a third round dial, a range readout and a four-rung ladder
+on the reticle. At forty pixels all of it was one green smear. What is
+there now:
+
+  the outer ring   the charge, three quarters of a turn, thick enough to
+                   read as a bar, with the three stage marks cut THROUGH
+                   it in the background colour — a line drawn over a lit
+                   arc at this size is a lit arc
+  the inner ring   the heat, concentric inside it and going the same
+                   way, so the two are one instrument and not two
+  four pips        the cell, because it holds four and four dots are
+                   legible at a size an arc is not
+  the reticle      a cross with a gap, and a box round the middle that
+                   blinks while the beam is out
+
+and one character, the stage. Everything is inside 0.86 of the panel,
+because outside that is the bezel and the bezel is black — which was the
+bug: the charge ring, the biggest thing on the screen and the one the
+whole weapon is about, was drawn at 0.44 with a rim of its own on top,
+inside the part that had already been faded out. The gauge was not on
+the gauge.
+
+The whole thing is drawn in the lens's own green — the model says the
+optics are (0.344, 0.800, 0.000) and the monitor is that, because a
+screen that does not match its own glass is two parts from two guns —
+with scan lines, a two per cent barrel bow, a slow roll, and static that
+climbs with the heat. It imports nothing from js/palette.js: it is a
+screen and not a painting, and the earth box must not mute it.
+
+THE ZOOM is a press — the right mouse button, Z or C, or B on a pad —
+and steps 1x, 4x, 12x. It does two things: the gun's screen magnifies by
+that, and the MAIN view narrows by a fifth and then a third. Not the
+same numbers, deliberately: magnifying the whole screen twelve times is
+a game you cannot play, so the actual magnification stays on the gun's
+screen where the user asked for it and the picture only narrows enough
+that holding a scope feels like bracing. The look sensitivity drops by
+exactly the factor the view narrowed by, because a narrowed field of
+view with unchanged sensitivity is a mouse that has become twice as
+twitchy at the moment you were trying to be careful.
+
+
+AND ITS VOICE
+-------------
+
+Six recordings, the user's own, and between them they are the whole
+voice of the weapon — the first one in this game that is recorded rather
+than synthesised end to end:
+
+  lance_charge_start   the moment the trigger goes down
+  lance_charge_loop    two seconds of coil, held round and round
+  lance_charge_full    the stage-three whine, which takes over the
+                       moment the third mark is passed and is the sound
+                       of a gun that has stopped asking
+  lance_prefire        the transient the instant the trigger comes UP
+  lance_fire_a / _b    and the discharge, in two layers, played together
+                       because it was mixed as two
+
+A .WAV DOES NOT LOOP, and the user heard it. `src.loop = true` sends the
+playhead from the last sample straight back to the first, and unless the
+file was cut on a zero crossing with matching phase on both sides —
+which no recording of a real coil ever is — that jump is a step in the
+waveform, which is a click, once every two seconds, for the whole seven
+seconds the trigger is down.
+
+The ordinary fix is to play two copies half a period apart and crossfade
+between them for ever. It works, and it is the wrong fix HERE, for one
+reason: this loop is PITCH-RAMPED. A playback rate that climbs from 0.72
+to 1.45 is a loop period that shrinks by a third over seven seconds, and
+a crossfade scheduled against a period that is moving has to be
+rescheduled continuously — any drift puts the fade somewhere other than
+over the seam, which is a click again, at a moment you cannot predict.
+
+So the join is baked into the SAMPLES instead, once, when the file
+decodes. A buffer of length L becomes one of length L - X: the middle is
+copied through, and the first X samples are the head mixed with the TAIL
+that was cut off, equal power, the tail fading out as the head fades in.
+Position 0 of the loop IS sample n of the original, which is the sample
+that followed n-1, which is the last sample of the loop. The join is
+exact, and it is exact at ANY playback rate, so the pitch can do
+whatever it likes. Equal power rather than a straight line because the
+two sides are different parts of the same continuous noise and so are
+uncorrelated: summed linearly their energy dips in the middle of the
+fade, which is audible as a breath.
+
+ALL OF IT RISES TOGETHER, at the user's request. One number —
+Player.chargePitch, the charge as a fraction, mapped to 0.72..1.45 — is
+read by every charge sound, so the start, the loop and the stage-three
+whine are one accelerating sound rather than three sounds that happen in
+a row. There is no formant correction and none is wanted: what a coil
+winding up actually does is get faster and higher together. The
+discharge picks up where the charge left off — the transient goes off at
+the pitch the coil had reached — and the two layers of the shot go the
+other way, a bigger stage being LOWER and longer, because that is what
+more of something sounds like.
+
+AND A CHARGE THAT IS NEVER FIRED FIZZLES. The same coil, played once
+rather than round and round, from wherever the pitch had got to and
+sliding down below where it started while it fades. A separate recording
+would be a second voice arriving at the moment the first one stopped.
+It is the same call for both ways of ending a charge without a shot — a
+trigger that came up under the first mark, and one that stayed down past
+the hold — because they are the same event.
+
+The stage-three whine is RELEASED and not stopped, which is the
+difference between a sound ending and a sound being cut: it is eleven
+seconds long and is only ever heard for the three the hold allows, so
+whatever happens next wants its tail under it rather than silence. The
+two-second loop is stopped, because a loop has no tail to keep. And the
+whole thing is judged from the state AFTER the tic rather than switched
+at the moment something happens, so every way of ending a charge — the
+trigger coming up, the shot going off, the weapon being swapped, dying
+with it in your hands — stops the loop through one line, and none of
+them has to remember to.
+
+
 THE READOUT CAME OFF THE PICTURE
 --------------------------------
 
@@ -6317,7 +6685,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-2245 checks. Every one of them earns its place by having caught something
+2321 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

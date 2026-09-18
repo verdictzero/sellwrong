@@ -185,6 +185,93 @@ export const SPIN_DOWN = 28;
 export const HEAT_UP = 4 * TICRATE;
 export const HEAT_DOWN = 7 * TICRATE;
 
+/* ---------------------------------------------------------------------
+   THE POSITRON LANCE, and it is a different KIND of trigger
+
+   Every other weapon in this game answers the trigger going down. This
+   one answers it coming UP, and what it does depends on how long you
+   held it: three seconds is a stage, five is two, seven is three, and
+   anything under three is a gun that vents and does nothing. That is
+   the user's specification and every number below is one of those
+   three or a consequence of them.
+
+   WHY A RELEASE AND NOT A TIMER. A charge that fires itself the moment
+   it is full takes the decision away: you would hold the trigger, look
+   away, and the shot would happen. Firing on release means the player
+   picks the stage — a quick two-second tap is deliberately nothing, and
+   letting go at four seconds is a choice to take stage one now rather
+   than stage two in a moment. It also means the gun can be CANCELLED,
+   which a seven-second commitment has to be able to be.
+
+   CHARGE_STAGES is in seconds because that is the unit the user asked
+   in; everything downstream multiplies by TICRATE exactly once, here.
+
+   THE BEAM THEN LASTS THREE, FOUR OR FIVE SECONDS by stage — the user
+   asked for three to five — and for the whole of it the player is
+   nailed to the floor. See move(): a discharge of this size is braced,
+   not carried.
+
+   AND IT COOKS. A stage-three shot is five seconds of beam and takes
+   the coil to five sixths of everything it has; a lance over
+   LANCE_HOT will not begin a charge again until it is back under
+   LANCE_COOL_AT, which is the same two-number latch the tanks use (see
+   REFIRE_AT) said about temperature instead of volume. Fourteen seconds
+   from glowing to cold, so the answer to "can I fire again" is usually
+   "walk somewhere first".
+
+   THE CELL holds four and fills itself one every twenty-five seconds,
+   which is the slowest magazine in the game and should be: a full cell
+   is four lines drawn through the town.
+   ------------------------------------------------------------------- */
+export const CHARGE_STAGES = [3, 5, 7];                       // seconds held
+export const CHARGE_MAX = CHARGE_STAGES[CHARGE_STAGES.length - 1] * TICRATE;
+export const BEAM_SECONDS = [3, 4, 5];                        // by stage, as asked
+export const BEAM_TICS = BEAM_SECONDS.map(s => Math.round(s * TICRATE));
+export const CELLS = 4;
+export const CELL_REGEN_EVERY = 25 * TICRATE;
+export const LANCE_HEAT_UP = 6 * TICRATE;                     // beam tics from cold to cooking
+export const LANCE_HEAT_DOWN = 14 * TICRATE;                  // and back
+export const LANCE_HOT = 0.85;                                // at this it stops taking the trigger
+export const LANCE_COOL_AT = 0.35;                            // and will not again until here
+/* HOW MUCH OF YOUR SPEED YOU KEEP WHILE THE COIL IS WINDING. Not zero —
+   the user asked for the freeze on the FIRING and not on the charge —
+   but not one either: a seven-second charge you can sprint through is a
+   trigger you hold all the time, and the three stages stop meaning
+   anything. A third of a walk is enough to take cover with and not
+   enough to chase anybody. */
+export const CHARGE_WALK = 0.35;
+
+/* HOW LONG YOU MAY STAND AT FULL CHARGE BEFORE IT LETS GO BY ITSELF.
+
+   A charge with no top to it is a charge you hold while you look for a
+   target, and the seven seconds stop being a commitment. Three seconds
+   of grace at the third mark — long enough to pick a street, not long
+   enough to walk down it — and then the coil VENTS: the charge goes,
+   the shot does not happen, the cell is not spent, and the gun is left
+   warm and sulking for having been asked to hold it.
+
+   It is also where the sound the user asked for lives: a charge that is
+   never fired fizzles out rather than stopping, pitch sliding down and
+   away, which is the one thing a released trigger and a vent have in
+   common and the reason they are the same call. See ventCharge. */
+export const CHARGE_HOLD = 3 * TICRATE;
+/* and what venting costs: a third of the heat a shot would have made,
+   because the coil was at full and the energy went somewhere */
+export const VENT_HEAT = 0.30;
+
+/* THE PITCH THE CHARGE RIDES, as playback rates for the recordings —
+   see Audio.sample. Every charge clip is on this one curve, so the
+   start, the loop and the stage-three whine are one accelerating sound
+   rather than three sounds that happen in a row. 0.72 is a coil that
+   has just been asked; 1.45 is one that is finished asking. */
+export const CHARGE_PITCH = [0.72, 1.45];
+/* AND HOW FAST YOU CAN SWEEP WHILE IT IS OUT. The feet are nailed down;
+   the barrel is not, because a column of light you can lean across a
+   street is the whole reason to draw one, and a beam you cannot aim
+   once it is lit is a beam you fire at a wall. Slow enough that it is a
+   sweep and not a look. */
+export const BEAM_TURN = 0.22;
+
 /* THE PLAYER CAN JUMP NOW, at the user's request, which is the end of
    the NO GRAVITY, NO JUMPING line below and is done the way a Doom port
    does it: a vertical momentum, a gravity that takes a unit a tic off
@@ -305,8 +392,33 @@ export const WEAPONS = {
        recording, started and stopped in weaponTic — see gunLoop */
     sound: null,
   },
+  /* THE POSITRON SNIPER LANCE. `charge` is the whole of what makes it a
+     different kind of trigger to hold — see CHARGE_STAGES above and
+     lanceTic below, which is the only firing path in this file that
+     does not run on fireIndex, because a charge is not an animation.
+     Billed one cell a shot whatever the stage: what the stages buy is
+     how wide the line is and how long it stays, not how many you get.
+     The beam itself, and everything it deletes, is js/beam.js's; the
+     screen on the back of the gun is js/scope.js's. */
+  LANCE: {
+    slot: 5, name: 'POSITRON LANCE', sprite: 'FLMG',
+    ready: 'A', fire: ['B', 'C'], fireTics: [4, 4],
+    ammo: 'cells', ammoPerShot: 1,
+    charge: true,
+    /* THE TRIGGER IS NOT AUTOMATIC and must not be: holding it is the
+       charge, so a weapon that re-fired on a held trigger would fire on
+       the way to its own next shot. */
+    damage: () => 0,
+    /* SIX RECORDINGS, the user's own, and between them they are the
+       whole voice of the weapon — see SAMPLES in js/audio.js and
+       lanceVoice below, which is the only thing that plays them.
+       `sound` is not one of them: the discharge is two layers played
+       together and so cannot be a single name, so it is null here and
+       fireBeam says what it means. */
+    sound: null,
+  },
   MOLOTOV: {
-    slot: 5, name: 'MOLOTOV', sprite: 'MOLG',
+    slot: 6, name: 'MOLOTOV', sprite: 'MOLG',
     ready: 'A', fire: ['B', 'B', 'C', 'C'], fireTics: [6, 6, 8, 12],
     throwAt: 2,
     ammo: 'bottles', ammoPerShot: 1,
@@ -342,8 +454,8 @@ export class Player {
     this.shootable = true;
     this.monster = false;
 
-    this.ammo = { fuel: TANK, co2: BOTTLE, bores: BORES, rounds: BELT, bottles: 0 };
-    this.maxAmmo = { fuel: TANK, co2: BOTTLE, bores: BORES, rounds: BELT, bottles: 12 };
+    this.ammo = { fuel: TANK, co2: BOTTLE, bores: BORES, rounds: BELT, cells: CELLS, bottles: 0 };
+    this.maxAmmo = { fuel: TANK, co2: BOTTLE, bores: BORES, rounds: BELT, cells: CELLS, bottles: 12 };
     /* THE LATCH. True from the moment the tank runs out until it is back
        to REFIRE_AT of full, and the only thing that stops the flamer
        firing while there is fuel in it. */
@@ -363,6 +475,32 @@ export class Player {
     this.beltDry = false;
     this.spin = 0;
     this.heat = 0;
+    /* THE LANCE'S FOUR NUMBERS, and they are the only weapon state in
+       this file that more than one other module reads: the gun's screen
+       draws the first two (js/scope.js), the gun's body glows with the
+       third (js/weapon3d.js), and the beam system lives off the fourth
+       (js/beam.js). All four are STATES and not animations, so a pause
+       holds them where they are.
+
+         charge     tics of trigger held, 0..CHARGE_MAX
+         lanceHeat  0..1 of a coil that should have stopped
+         lanceHot   the latch: over LANCE_HOT and waiting to get under
+                    LANCE_COOL_AT
+         beamTics   tics of beam still out, and beamStage which one */
+    this.charge = 0;
+    this.lanceHeat = 0;
+    this.lanceHot = false;
+    this.beamTics = 0;
+    this.beamStage = 0;
+    this.cellTick = 0;
+    this.cellDry = false;
+    /* the held charge sound and which of the two it is — see lanceVoice */
+    this.chargeLoop = null;
+    this._chargeVoice = null;
+    /* tics spent standing at full charge, and whether the coil has
+       already let go on this press of the trigger — see ventCharge */
+    this.holdTics = 0;
+    this.vented = false;
     /* the held firing sound, while rounds are leaving — see weaponTic */
     this.gunLoop = null;
     /* whether the trigger has already clicked on this press of it */
@@ -375,10 +513,10 @@ export class Player {
        It is not a heal: it stops you being hurt from the moment it goes
        on, so turned on at forty health you stay at forty for ever. */
     this.invincible = false;
-    /* FOUR WEAPONS. The molotov is built and tested and stays switched
-       off; the boxcutter is gone; the bore is the third and the minigun
-       the fourth — see the note above WEAPONS. */
-    this.owned = { FLAMER: true, EXTINGUISHER: true, BORE: true, MINIGUN: true };
+    /* FIVE WEAPONS. The molotov is built and tested and stays switched
+       off; the boxcutter is gone; the bore is the third, the minigun
+       the fourth and the lance the fifth — see the note above WEAPONS. */
+    this.owned = { FLAMER: true, EXTINGUISHER: true, BORE: true, MINIGUN: true, LANCE: true };
     this.weapon = 'FLAMER';
     this.pendingWeapon = null;
 
@@ -422,17 +560,36 @@ export class Player {
   }
 
   turn(input) {
-    this.angle -= input.look.x;
+    /* A SWEEP AND NOT A LOOK, while the beam is out. The feet are nailed
+       down (see move) and the barrel is not, because leaning a column of
+       light across a street is the whole reason to draw one — but at a
+       fifth of the rate, so what you can do with five seconds is take
+       out one row of shopfronts rather than spin on the spot and take
+       out all four sides of the junction. */
+    const rate = this.beamTics > 0 ? BEAM_TURN : 1;
+    this.angle -= input.look.x * rate;
     this.angle = angleNorm(this.angle);
-    this.pitch = clamp(this.pitch - input.look.y, -MAX_PITCH, MAX_PITCH);
+    this.pitch = clamp(this.pitch - input.look.y * rate, -MAX_PITCH, MAX_PITCH);
     this.lookRate += (input.look.x - this.lookRate) * 0.3;
     this.pitchRate += (input.look.y - this.pitchRate) * 0.3;
   }
 
   move(input) {
-    const run = input.run;
-    const fwd = (run ? RUN_FWD : WALK_FWD) * input.move.y;
-    const side = (run ? RUN_SIDE : WALK_SIDE) * input.move.x;
+    /* THE LANCE DECIDES WHETHER YOU ARE WALKING AT ALL, which is the
+       one place in this file where a weapon reaches into the legs.
+
+       While the beam is out, nothing: no push, and the momentum is
+       already gone (fireBeam spends it), so five seconds of discharge is
+       five seconds standing exactly where you fired from. That is the
+       user's ask and it is also the whole shape of the weapon — a line
+       drawn through a town is a thing you commit to a position for.
+
+       While the coil is winding, a third of a walk. See CHARGE_WALK. */
+    const braced = this.beamTics > 0;
+    const grip = braced ? 0 : this.charge > 0 ? CHARGE_WALK : 1;
+    const run = input.run && !braced && this.charge === 0;
+    const fwd = (run ? RUN_FWD : WALK_FWD) * input.move.y * grip;
+    const side = (run ? RUN_SIDE : WALK_SIDE) * input.move.x * grip;
 
     const c = Math.cos(this.angle), s = Math.sin(this.angle);
     this.momx += c * fwd + s * side;
@@ -492,7 +649,7 @@ export class Player {
        everything else: a jump is a push off it, a drop deeper than a
        step is a fall, and both run on the same gravity until the floor
        is under you again. See GRAVITY and JUMP_VEL. */
-    if (this.onGround && input.jump) {
+    if (this.onGround && input.jump && !braced) {
       this.momz = JUMP_VEL;
       this.onGround = false;
     }
@@ -589,6 +746,13 @@ export class Player {
        trigger is down, the barrels are winding, and nothing comes out
        for a third of a second — see SPIN_UP and spinTic */
     if (WEAPONS[w].volley && this.spin < 1) return false;
+    /* AND A LANCE THAT IS COOKING WILL NOT TAKE THE TRIGGER. The same
+       two-number latch the tanks use, said about temperature: over
+       LANCE_HOT it refuses, and goes on refusing until it is back under
+       LANCE_COOL_AT. Nothing may begin a charge in between, which is
+       what makes the seventh second of a charge worth something — you
+       do not get another one for a while. */
+    if (WEAPONS[w].charge && (this.lanceHot || this.beamTics > 0)) return false;
     return true;
   }
 
@@ -644,7 +808,8 @@ export class Player {
      weapon that has neither is never refused. */
   latched(w) {
     const d = WEAPONS[w];
-    return d.ammo === 'co2' ? this.co2Dry : d.ammo === 'fuel' ? this.dry : d.ammo === 'rounds' ? this.beltDry : false;
+    return d.ammo === 'co2' ? this.co2Dry : d.ammo === 'fuel' ? this.dry
+         : d.ammo === 'rounds' ? this.beltDry : d.ammo === 'cells' ? this.cellDry : false;
   }
 
   selectSlot(n) {
@@ -671,9 +836,53 @@ export class Player {
     const on = this.firing && !!this.def.volley;
     if (on && !this.gunLoop) this.gunLoop = this.game.sound?.loop('minigunloop', this) || null;
     else if (!on && this.gunLoop) { this.gunLoop.stop(); this.gunLoop = null; }
+    this.lanceVoice();
+  }
+
+  /** THE LANCE'S HELD SOUND, and which of the two it is.
+
+   *  A charging coil is a sound that runs for as long as the trigger is
+   *  down, so it is a loop and not a shot — the same bargain the
+   *  minigun's firing makes above. What is different is that there are
+   *  TWO of them and the gun changes its mind halfway: the loop while
+   *  it is filling, and the stage-three whine from the moment the third
+   *  mark is passed, which is the sound of a weapon that has stopped
+   *  asking. Held rather than fired once, so standing at full charge
+   *  deciding whether to let go is a sound and not a silence.
+   *
+   *  Judged from the state AFTER the tic rather than switched at the
+   *  moment something happens, so every way of ending a charge — the
+   *  trigger coming up, the shot going off, the weapon being swapped,
+   *  dying with it in your hands — stops the loop through this one
+   *  line, and none of them has to remember to. */
+  lanceVoice() {
+    const winding = !!this.def.charge && this.charge > 0 && this.beamTics === 0 && !this.dead;
+    const want = !winding ? null : this.chargeStage >= CHARGE_STAGES.length ? 'lancecharge3' : 'lancecharge';
+    if (want !== this._chargeVoice) {
+      /* THE STAGE-THREE WHINE IS RELEASED AND NOT STOPPED, which is the
+         difference between a sound ending and a sound being cut. It is
+         eleven seconds long and is only ever heard for the three the
+         hold allows, so whatever happens next — the shot, the vent —
+         wants its tail under it rather than silence. The two-second
+         loop is stopped, because a loop has no tail to keep. */
+      if (this._chargeVoice === 'lancecharge3') this.chargeLoop?.release(0.8);
+      else this.chargeLoop?.stop();
+      this.chargeLoop = want ? (this.game.sound?.loop(want, this, this.chargePitch) || null) : null;
+      this._chargeVoice = want;
+    }
+    /* and the pitch rides the charge, every tic. setTargetAtTime under
+       this, so thirty-five calls a second are a chase and not a stair. */
+    if (this.chargeLoop && winding) this.chargeLoop.rate(this.chargePitch, 0.08);
   }
 
   _weaponTic(input) {
+    /* A CHARGED WEAPON DOES NOT RUN ON fireIndex. Every other weapon in
+       this file is a little state machine walking a list of sprite
+       frames, and the question it asks each tic is "which frame". The
+       lance's question is "how long has the trigger been down", which
+       has nothing to do with frames, so it gets its own tic and the one
+       below never sees it. */
+    if (this.def.charge) { this.lanceTic(input); return; }
     if (this.firing) {
       const d = this.def;
       /* a stream pours every tic the trigger is down, not once a frame */
@@ -734,6 +943,165 @@ export class Player {
     this.game.noise(this, d.autofire ? 900 : 700);
   }
 
+  /* ------------------------------------------------------------------
+     THE LANCE, which is three states and not a list of frames
+
+       out      the beam is live: it counts down, the coil cooks, and
+                nothing else can happen until it stops
+       winding  the trigger is down and the charge is climbing
+       idle     everything else, which is where a release is noticed
+
+     The order matters. The beam is checked first because a weapon that
+     could start charging while its own beam was out would be a weapon
+     you could hold the trigger through, and the seven seconds would
+     overlap the five.
+     ------------------------------------------------------------------ */
+  lanceTic(input) {
+    const d = this.def;
+
+    /* ---- out -------------------------------------------------------- */
+    if (this.beamTics > 0) {
+      this.beamTics--;
+      /* `firing` is what the gun's muzzle bloom and the view kick read,
+         so it is true for exactly as long as the beam is */
+      this.fireIndex = this.beamTics > 0 ? 1 : -1;
+      this.lanceHeat = clamp(this.lanceHeat + 1 / LANCE_HEAT_UP, 0, 1);
+      if (this.lanceHeat >= LANCE_HOT) this.lanceHot = true;
+      this.game.beam?.tic(this);
+      if (this.beamTics === 0) { this.beamStage = 0; this.game.beam?.stop(); }
+      return;
+    }
+
+    /* ---- cooling, whatever else is going on ------------------------- */
+    this.fireIndex = -1;
+    this.lanceHeat = clamp(this.lanceHeat - 1 / LANCE_HEAT_DOWN, 0, 1);
+    if (this.lanceHot && this.lanceHeat <= LANCE_COOL_AT) this.lanceHot = false;
+
+    /* ---- winding ---------------------------------------------------- */
+    const can = this.armed(this.weapon);
+    /* A TRIGGER HELD THROUGH A VENT DOES NOT START ANOTHER CHARGE. The
+       coil let go; the finger did not; and a gun that began winding up
+       again in the same instant would be a gun with no top to it after
+       all. It takes releasing and pressing again. */
+    if (!input.attack) this.vented = false;
+    if (input.attack && can && !this.vented) {
+      if (this.charge === 0) {
+        this.holdTics = 0;
+        this.game.sound?.play('lancestart', this);
+      }
+      this.charge = Math.min(CHARGE_MAX, this.charge + 1);
+      /* AND AT THE TOP THERE IS A CLOCK. See CHARGE_HOLD. */
+      if (this.charge >= CHARGE_MAX && ++this.holdTics > CHARGE_HOLD) this.ventCharge();
+      return;
+    }
+
+    /* ---- the trigger came up ---------------------------------------- */
+    if (this.charge > 0) {
+      const stage = this.chargeStage;
+      /* UNDER THREE SECONDS IS A VENT AND NOT A SHOT: the cell is not
+         spent, nothing leaves the muzzle, and the coil fizzles down. A
+         tap is how you cancel a charge you have changed your mind
+         about. */
+      if (stage > 0) { this.charge = 0; this.fireBeam(stage); }
+      else this.ventCharge();
+      return;
+    }
+
+    /* only swap weapons when the coil is idle, never mid-charge */
+    if (this.pendingWeapon) { this.weapon = this.pendingWeapon; this.pendingWeapon = null; }
+  }
+
+  /** One cell, one line drawn through the map. The stage decides how
+   *  wide and for how long; js/beam.js decides everything else. */
+  fireBeam(stage) {
+    const d = this.def;
+    if (d.ammo) this.ammo[d.ammo] = Math.max(0, this.ammo[d.ammo] - (d.ammoPerShot ?? 1));
+    if (d.ammo && this.ammo[d.ammo] <= 0) this.cellDry = true;
+    this.shotsFired++;
+    this.beamStage = stage;
+    this.beamTics = BEAM_TICS[stage - 1];
+    this.fireIndex = 1;
+    /* BRACED. The momentum goes now rather than being ignored by move()
+       for the next five seconds, so you stop where you are standing
+       instead of sliding to a halt under a beam that is already out. */
+    this.momx = 0; this.momy = 0;
+    /* THE DISCHARGE IS THREE RECORDINGS AT ONCE: the transient the
+       moment the trigger comes up, and then the two layers of the shot
+       itself, which were mixed as two and are played as two. The charge
+       loop is stopped by lanceVoice on the next tic, because the charge
+       is zero by then and that is what it reads. */
+    const snd = this.game.sound;
+    /* AND THE DISCHARGE PICKS UP WHERE THE CHARGE LEFT OFF. The
+       transient goes off at the pitch the coil had reached, so a stage
+       one release sounds like the smaller thing it is and a stage three
+       carries the whole climb into the shot; the two layers of the shot
+       itself go the other way, a bigger stage being LOWER and longer,
+       because that is what more of something sounds like. */
+    const p = CHARGE_PITCH[0] + (CHARGE_PITCH[1] - CHARGE_PITCH[0]) * (stage / CHARGE_STAGES.length);
+    snd?.sample('lanceprefire', this, { rate: p });
+    const boom = 1.14 - 0.13 * stage;
+    snd?.sample('lancefire', this, { rate: boom });
+    snd?.sample('lancefire2', this, { rate: boom });
+    this.game.beam?.fire(this, stage);
+    /* AND THE WHOLE TOWN HEARD IT. Two and a half thousand units, which
+       is further than anything else in the game wakes: a positron
+       discharge is not a noise you keep to one aisle. */
+    this.game.noise(this, 2400);
+  }
+
+  /** A CHARGE THAT NEVER BECAME A SHOT, which happens two ways and ends
+   *  the same way both times: the trigger came up under the first mark,
+   *  or it stayed down past CHARGE_HOLD at the top. Nothing is spent —
+   *  the cell is untouched — and what is left is some heat and a noise
+   *  going away.
+   *
+   *  THE FIZZLE IS THE CHARGE LOOP ITSELF, played once rather than round
+   *  and round, from wherever the pitch had got to and sliding down
+   *  below where it started while it fades. It is the same coil, so it
+   *  is the same instrument; a separate recording would be a second
+   *  voice arriving at the moment the first one stopped. */
+  ventCharge() {
+    const pitch = this.chargePitch;
+    this.charge = 0;
+    this.holdTics = 0;
+    this.vented = true;
+    this.lanceHeat = clamp(this.lanceHeat + VENT_HEAT, 0, 1);
+    if (this.lanceHeat >= LANCE_HOT) this.lanceHot = true;
+    const h = this.game.sound?.sample('lancecharge', this, { rate: pitch });
+    if (h) { h.rate(CHARGE_PITCH[0] * 0.55, 1.1); h.release(1.2); }
+    else this.game.sound?.play('noammo', this);
+  }
+
+  /** Where on the pitch curve the coil currently is — see CHARGE_PITCH.
+   *  One number, read by every charge sound, which is what makes them
+   *  one sound. */
+  get chargePitch() {
+    const t = this.chargeFraction;
+    return CHARGE_PITCH[0] + (CHARGE_PITCH[1] - CHARGE_PITCH[0]) * t;
+  }
+
+  /** Which of the three stages the charge has reached, 0 for none. While
+   *  the beam is out it is the stage that fired, so the gun's screen
+   *  keeps saying what it is doing. */
+  get chargeStage() {
+    if (this.beamTics > 0) return this.beamStage;
+    let n = 0;
+    for (const sec of CHARGE_STAGES) if (this.charge >= sec * TICRATE) n++;
+    return n;
+  }
+
+  /** How far round the dial the charge has come, 0..1. */
+  get chargeFraction() {
+    if (this.beamTics > 0) return 1;
+    return CHARGE_MAX > 0 ? this.charge / CHARGE_MAX : 0;
+  }
+
+  /** Where the three stage marks fall on that dial — what js/scope.js
+   *  draws the ticks at, so the dial and the weapon cannot disagree. */
+  get stageMarks() {
+    return CHARGE_STAGES.map(sec => (sec * TICRATE) / CHARGE_MAX);
+  }
+
   /** The flamer: one tic of stream out of the nozzle. Where the nozzle
    *  is on screen is the gun's business (js/weapon3d.js), and where the
    *  flame goes after that is js/flame.js's. */
@@ -780,14 +1148,23 @@ export class Player {
        in the game has to know the mode exists. */
     if (this.debug) {
       for (const kind of Object.keys(this.maxAmmo)) this.ammo[kind] = this.maxAmmo[kind];
-      this.dry = false; this.co2Dry = false; this.beltDry = false;
-      this.regenTick = 0; this.co2Tick = 0; this.beltTick = 0;
+      this.dry = false; this.co2Dry = false; this.beltDry = false; this.cellDry = false;
+      this.regenTick = 0; this.co2Tick = 0; this.beltTick = 0; this.cellTick = 0;
+      /* AND THE COIL IS COLD. Infinite ammo on a weapon whose real
+         limit is temperature has to say something about temperature or
+         the switch does nothing to it. */
+      this.lanceHeat = 0; this.lanceHot = false;
       return;
     }
     this._refill('fuel', REGEN_EVERY, REFIRE_AT, 'regenTick', 'dry');
     this._refill('co2', CO2_REGEN_EVERY, CO2_REFIRE_AT, 'co2Tick', 'co2Dry');
     this._refill('bores', BORE_REGEN_EVERY, 0, 'boreTick', 'boreDry');
     this._refill('rounds', BELT_REGEN_EVERY, BELT_REFIRE_AT, 'beltTick', 'beltDry');
+    /* and the lance's cell, the slowest of the lot: one back every
+       twenty-five seconds, and the latch comes off the moment there is
+       one in it — unlike the tanks, because a cell is a count of shots
+       and not a volume, so "enough for a share of one" means nothing */
+    this._refill('cells', CELL_REGEN_EVERY, 1 / CELLS, 'cellTick', 'cellDry');
   }
 
   /** One tank, one tic. Both fill on the same terms and differ only in
@@ -905,6 +1282,16 @@ export class Player {
     this.health = 0;
     this.armour2 = 0; this.armour1 = 0;
     this.deathViewTarget = this.z + 8;
+    /* EVERY HELD SOUND STOPS. tic() returns into deathTic from here on,
+       so neither weaponTic nor lanceVoice will run again and neither
+       loop would ever be told — a coil charging over a corpse, for the
+       rest of the level. */
+    this.gunLoop?.stop(); this.gunLoop = null;
+    this.chargeLoop?.stop(); this.chargeLoop = null;
+    this._chargeVoice = null;
+    this.charge = 0;
+    this.beamTics = 0;
+    this.game.beam?.stop();
     this.game.sound?.play('playerDie', this);
     this.game.onPlayerDied();
   }
