@@ -139,7 +139,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         2051 checks, no install and no browser
+  the smoke test         2102 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -4650,6 +4650,111 @@ on every tread but the one you got on by and the one you got off by,
 and then the stairs were taken out altogether at the user's request —
 see AND THERE ARE NO STAIRS ANY MORE above.
 
+AND THEN THE SCHOOL WAS DONE AGAIN, at the user's request: taller
+ceilings, thinner lockers, better desks, more in the gym, an auditorium,
+and detail everywhere else. Six things, and the first of them paid for
+half of the rest.
+
+A SCHOOL IS NOT A HOUSE AND ITS STOREY IS NOT A HOUSE'S. The town's
+STOREY is 96 of clear over 16 of deck, which is a living room, and every
+room in the school was built against it — so the corridor had the ceiling
+of a hallway and the gym, which is two of them stacked, was 224. It has
+its own now: 128 of clear and 144 to the floor above, and the gym is 288.
+
+What made that a small change rather than a large one is that the
+building is written against B.eaves and two numbers. Hand `building()`
+the eaves it should have and every column, every window band, every
+course of trim and the roof over all of it follows. The windows grew with
+the rooms: 64 tall in a 96 room is a window, and in a 128 room it is a
+porthole, so they are 112 now — most of the wall between the sill and the
+ceiling, which is what a school window is. And every classroom got four
+light fittings instead of one, because light falls off with distance and
+the ceiling had just moved thirty-two units further from the floor.
+
+A LOCKER IS TWELVE INCHES BY SIXTY. One repeat of LOCKERS is two of
+them, and nothing had ever declared a size — so the repeat was 64 by 64
+and a locker came out 32 wide and 64 tall. One to two is a kitchen
+cupboard. Declared at 24 to the repeat, a door is twelve by sixty-four,
+which is one to five, and a bank of them down a corridor is a bank of
+them rather than a row of doors. The picture is still painted 64 across
+and is therefore SQUEEZED nearly three to one on the wall, which is why
+everything in it that has to read is horizontal: the vents, the number
+plate, the seams. Anything drawn as a narrow upright would not have
+survived.
+
+A DESK IS A DESK AND A CHAIR. It was one raised block 32 by 24 wearing a
+laminate top, which from the door is a run of lab benches. It is three
+raised floors in a row now — the top you write on at 30, the seat behind
+it at 18, the back of the chair at 42 — and the silhouette is the whole
+of it. There is a teacher's desk in the corner by the board as well,
+turned to the room, which is where the one in every classroom in America
+is.
+
+AND THEY ARE TURNED THE RIGHT WAY, which they were not. The blackboard
+is let into the WEST wall of each room, so a child at a desk looks west;
+the old layout put four desks across the room in three rows down it,
+which faces them ALONG the board rather than at it. They are in ranks
+running back from the board and files running across it now, and the
+chair of every one of them is on the east side of its own top. The suite
+holds exactly that: every chair stands east of its own desk.
+
+THE GYM GETS WHAT A GYM HAS. A backboard at each end of the court with
+the ring and the net painted on it, braced back to the wall; a scoreboard
+with HOME and GUEST and four amber digits; Swedish wall bars; and the
+only three good years the school ever had, hanging off the trusses as
+pennants. None of it is in anybody's way — the boards and the pennants
+are at twice head height, and the bars and the scoreboard stand on the
+PADDING, which is a raised floor 32 above a MAX_STEP of 24 and therefore
+a place nobody can be.
+
+AND THERE IS AN AUDITORIUM, which is a WING and not a room.
+
+The plan was full: a corridor with six classrooms and an office hung off
+it, and twelve hundred units of gym at the east end. There is nowhere
+inside the box to put a hall you can seat four hundred in, and the only
+place a school of this age ever puts one is out the back. So it is a
+thousand by six hundred and sixty-four standing out of the back of the
+gym, with its own shell, its own roof, its own doors off the yard, and
+the back yard cut into four pieces round it.
+
+WHAT AN AUDITORIUM IS, in this engine, is a RAKE. The floor steps DOWN
+from the doors at the back to the orchestra at the front — five banks,
+twelve units apart, which is half a stride, so you walk down it without
+noticing you are walking down it. Every bank is a carpeted tread with a
+raised strip of seats standing on it, split by a centre aisle and two
+side aisles, which is the plan of every hall of this kind ever drawn.
+
+At the bottom is the stage, raised forty-eight and boarded, with a
+curtain leg standing floor to ceiling each side of the opening. And over
+it the PROSCENIUM, which is the one thing in this whole map that is an
+UPPER band: everything else here hangs off a floor, and a proscenium
+hangs off the ceiling — so it is a region with a low ceiling, and the
+band above it is drawn by the disagreement rule out of that storey's
+upperTex.
+
+The outside of it was a brick box, which is the same hundred feet of
+unbroken wall the terraces had, and it gets the same three answers:
+something upright every so often, something horizontal at the floor line,
+something at the top where the wall stops. Here they are free boxes
+rather than rectangles of ground — a pilaster every 160 down both long
+sides, a string course, a cornice, and the louvres a hall with four
+hundred people in it and no windows has to breathe through. Ten proud
+and no more, which is the rule every box at head height in this town
+keeps.
+
+AND WHAT A SCHOOL HAS ON ITS WALLS: the case by the door with everything
+it has ever won in it, cork boards with notices nobody has read, two
+drinking fountains, a radiator under every classroom window, and a clock
+over every door so the hour is the same everywhere, which in a school it
+never is. Every one of them is flat against something you could not have
+walked through anyway and under ten units proud of it.
+
+Sixteen new textures for all of it, and two repaints. LOCKERS is above.
+DESKTOP was a blank sheet of laminate with one line on it, which at the
+size a desk is actually drawn is a blank sheet; it has the pencil groove
+now, the pencil in it, the hardwood lip, the ring off a bottle and
+everything that has ever been done to a school desk with a compass point.
+
 THE CHURCH gets the same treatment and one thing the school cannot have.
 A water table, a BUTTRESS in the middle of every gap between two
 lancets and one on each back corner — two stages, sixteen proud to the
@@ -5776,7 +5881,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-2051 checks. Every one of them earns its place by having caught something
+2102 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

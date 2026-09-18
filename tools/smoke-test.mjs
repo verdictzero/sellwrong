@@ -8645,7 +8645,11 @@ section('the town');
   const hall = level.sectors.find(s => s.name === 'C3 corridor' && s.storey === 0 && s.above !== null);
   if (check('the school has a corridor with a corridor over it', !!hall)) {
     const hx = (hall.bbox[0] + hall.bbox[2]) / 2, hy = (hall.bbox[1] + hall.bbox[3]) / 2;
-    const ground = level.spanAt(hx, hy, hall.floor + 4), first = level.spanAt(hx, hy, hall.floor + T.STOREY + 4);
+    /* THE SCHOOL'S STOREY IS NOT THE TOWN'S any more — it is taller, at
+       the user's request — so the height of the floor above is asked of
+       the column rather than of the constant the houses use. */
+    const SCH_STOREY = level.sectors[hall.above].floor - hall.floor;
+    const ground = level.spanAt(hx, hy, hall.floor + 4), first = level.spanAt(hx, hy, hall.floor + SCH_STOREY + 4);
     check('standing in it you are on the ground floor', ground === hall);
     check('and a storey up you are on the floor above', first && first.storey === 1 && first.colBase === hall.index);
     check('and sectorAt still answers with the ground one', level.sectorAt(hx, hy) === hall);
@@ -9153,7 +9157,16 @@ section('the town');
        one that is LOWER THAN A STEP, which is the wheel stop and is a
        different bargain: see below. */
     const FLAT = ['PORCHPST', 'DOWNPIPE', 'CORNRBRD', 'PILASTER', 'METERBOX', 'ROOFLADR', 'SHUTRAIL',
-                  'SHOPFRAM', 'DOORFRAM', 'IMPULSE'];
+                  'SHOPFRAM', 'DOORFRAM', 'IMPULSE',
+                  /* and what a school hangs on a wall: the boards and the
+                     fountains in the corridor, the radiators under the
+                     classroom windows, the town's own brick pilaster, and
+                     the gym's wall bars — which stand on the padding, and
+                     the padding turns out to be reachable by climbing the
+                     bleachers and stepping along the north wall. A wall bar
+                     IS a thing bolted flat to a wall, so it makes the same
+                     bargain a downpipe does. */
+                  'TROPHY', 'NOTICEBD', 'RADIATOR', 'FOUNTAIN', 'PILASTR', 'WALLBARS'];
     const STEPPABLE = ['WHEELSTP'];
     const low = props.filter(q => inTheWay(q) && ![...FLAT, ...STEPPABLE].includes(q.tex));
     note('free boxes up where nobody can stand',
@@ -9792,6 +9805,113 @@ section('the town');
        is named one and the word is in the middle of it */
     check('and no stair anywhere in the town, at the user\'s request',
       named(/\bstair/).length === 0, named(/\bstair/).slice(0, 3).map(s => s.name).join(', '));
+
+    /* ===============================================================
+       THE SCHOOL, SECOND PASS, at the user's request: taller ceilings,
+       thinner lockers, desks that are desks, more in the gym, an
+       auditorium, and detail everywhere else.
+       =============================================================== */
+    {
+      const cor = named(/^C3 corridor$/).filter(s => s.storey === 0)[0];
+      const up = cor && level.sectors[cor.above];
+      /* A SCHOOL IS NOT A HOUSE. The town's storey is 96 of clear over
+         16 of deck, which is a living room; a corridor and a classroom
+         in an American school of this decade are ten to twelve feet and
+         a gym is twenty-four. */
+      note('the school\'s storey', cor ? `${cor.ceil - cor.floor} of clear, ${up ? up.floor - cor.floor : '?'} to the floor above` : 'no corridor');
+      check('the school has a taller storey than the houses round it',
+        !!cor && cor.ceil - cor.floor > T.CLEAR + 16 && !!up && up.floor - cor.floor > T.STOREY + 16,
+        cor ? `${cor.ceil - cor.floor} against ${T.CLEAR}` : '');
+      const gymSec = named(/^C3 gym$/)[0];
+      check('and the gym is two of them in one span',
+        !!gymSec && !!up && gymSec.ceil - gymSec.floor === 2 * (up.floor - cor.floor),
+        gymSec ? `${gymSec.ceil - gymSec.floor} of clear` : '');
+
+      /* A LOCKER IS TWELVE INCHES BY SIXTY. One repeat of LOCKERS is two
+         of them, and with no declared size that repeat was 64 by 64 —
+         a locker 32 wide and 64 tall, which is a kitchen cupboard. */
+      const lk = tex.TEXTURE_SIZES.LOCKERS;
+      check('a locker is far taller than it is wide',
+        !!lk && lk.h / (lk.w / 2) >= 4, lk ? `${lk.w / 2} by ${lk.h}` : 'undeclared');
+
+      /* A DESK IS A DESK AND A CHAIR, and it faces the blackboard. */
+      const desks = named(/^C3 classroom S1 desk$/);
+      const seats = named(/^C3 classroom S1 chair$/);
+      const backs = named(/^C3 classroom S1 chair back$/);
+      note('one classroom', `${desks.length / 2} desks, ${seats.length / 2} chairs, ${backs.length / 2} backs, ${named(/^C3 classroom S1 teacher's desk$/).length / 2} teacher's desk`);
+      check('every desk in a classroom has a chair and the back of one behind it',
+        desks.length === 24 && seats.length === 24 && backs.length === 24,
+        `${desks.length} / ${seats.length} / ${backs.length}`);
+      check('and a teacher\'s desk at the front of the room',
+        named(/^C3 classroom S1 teacher's desk$/).length === 2);
+      /* THE CHAIR IS EAST OF ITS OWN DESK, which is the whole of "they
+         face the blackboard": the board is let into the WEST wall, so a
+         child at a desk looks west and their chair is behind them. The
+         desks used to be four across and three deep, which faces the
+         room along the board rather than at it. */
+      const board = named(/^C3 classroom S1 blackboard$/)[0];
+      check('and the blackboard is in the wall they are all turned to',
+        !!board && desks.every(d => d.bbox[0] > board.bbox[2]));
+      const ground0 = desks.filter(d => d.storey === 0);
+      check('every chair stands east of its own desk, which is what facing the board means',
+        ground0.every(d => seats.some(c => c.storey === 0 &&
+          Math.abs(c.bbox[1] - d.bbox[1]) < 1 && Math.abs(c.bbox[0] - d.bbox[2]) < 1)),
+        `${ground0.length} desks`);
+      check('and the desk top is higher than the seat and lower than the back',
+        ground0[0].floor > seats[0].floor && ground0[0].floor < backs[0].floor,
+        `${seats[0].floor} seat, ${ground0[0].floor} desk, ${backs[0].floor} back`);
+
+      /* THE GYM HAS WHAT A GYM HAS */
+      const gp = (level.props || []).filter(q => q.x0 > -400 && q.x0 < 1400 && q.y0 > -12700 && q.y0 < -11900);
+      const ofTex = t => (level.props || []).filter(q => q.tex === t);
+      note('the gym, fitted out', `${ofTex('BACKBORD').length} boards, ${ofTex('PENNANT').length} pennants, ${ofTex('WALLBARS').length} bars`);
+      check('a backboard at each end of the court, over head height',
+        ofTex('BACKBORD').length === 2 && ofTex('BACKBORD').every(q => q.z0 > 57 + 32),
+        `${ofTex('BACKBORD').length}`);
+      check('and a scoreboard, wall bars and the only three good years the school ever had',
+        ofTex('SCOREBRD').length === 1 && ofTex('WALLBARS').length === 3 && ofTex('PENNANT').length === 9);
+      void gp;
+
+      /* THE AUDITORIUM, which is a WING and not a room */
+      const aud = named(/^C3 auditorium$/), aisle = named(/^C3 auditorium aisle$/);
+      const aseat = named(/^C3 auditorium seats$/), stage = named(/^C3 stage$/);
+      note('the auditorium', `${aud.length + aisle.length} floor regions, ${aseat.length} banks of seats, ${named(/^C3 curtain$/).length} curtain legs`);
+      check('there is an auditorium, with a stage and a curtain each side of it',
+        stage.length === 1 && named(/^C3 curtain$/).length === 2 && named(/^C3 proscenium$/).length === 1);
+      check('and it seats them in banks, ten of them, five deep a side',
+        aseat.length === 10, `${aseat.length}`);
+      /* THE RAKE IS A RAKE: the floor steps DOWN toward the stage, and
+         every step is under half a stride so you walk it without
+         noticing. A rake you have to jump down is a flight of stairs. */
+      const floors = [...aud, ...aisle].map(s => s.floor);
+      const lo = Math.min(...floors), hi = Math.max(...floors);
+      const steps = [...new Set(floors)].sort((a, b) => a - b);
+      check('the floor of it rakes down toward the stage in steps you can walk',
+        hi - lo >= 48 && steps.every((f, i) => i === 0 || f - steps[i - 1] <= UB.MAX_STEP),
+        `${steps.length} levels, ${lo} to ${hi}`);
+      check('and the stage is above the lowest of them, not below it',
+        stage[0].floor > lo, `${stage[0].floor} against ${lo}`);
+      /* THE PROSCENIUM HANGS FROM THE CEILING, which is the one thing
+         in this map that is an UPPER band and not a lower one. */
+      const pros = named(/^C3 proscenium$/)[0];
+      check('the proscenium is a header hung from the ceiling',
+        pros.ceil < stage[0].ceil && pros.upperTex === 'PROSCEN',
+        `${pros.ceil} against ${stage[0].ceil}`);
+      check('and there are two ways into it off the yard',
+        named(/^C3 auditorium door$/).length === 2);
+      check('the curtain reaches the ceiling, which is what a leg does',
+        named(/^C3 curtain$/).every(s => s.floor === s.ceil && s.lowerTex === 'CURTAIN'));
+
+      /* AND WHAT A SCHOOL HAS ON ITS WALLS */
+      note('on the walls', `${ofTex('NOTICEBD').length} boards, ${ofTex('SCHCLOCK').length} clocks, ${ofTex('RADIATOR').length} radiators, ${ofTex('FOUNTAIN').length} fountains`);
+      check('a trophy case, boards, fountains, radiators and a clock over every door',
+        ofTex('TROPHY').length === 1 && ofTex('NOTICEBD').length >= 8 &&
+        ofTex('FOUNTAIN').length === 2 && ofTex('RADIATOR').length === 12 &&
+        ofTex('SCHCLOCK').length >= 8);
+      check('and every one of them is flat against a wall and under ten proud',
+        [...ofTex('TROPHY'), ...ofTex('NOTICEBD'), ...ofTex('FOUNTAIN'), ...ofTex('RADIATOR')]
+          .every(q => Math.min(q.x1 - q.x0, q.y1 - q.y0) <= 10));
+    }
 
     /* THE CHURCH: a water table, buttresses in two stages, a louvred
        belfry, a cornice the spire springs off. */

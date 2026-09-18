@@ -1485,6 +1485,25 @@ export function buildTown(rm, mb, opts = {}) {
      air the two storeys share, which is what the fire climbs.
      ================================================================= */
   function school(bx, by, tag) {
+    /* A SCHOOL IS NOT A HOUSE AND ITS STOREY IS NOT A HOUSE'S, at the
+       user's request. The town's STOREY is 96 of clear and 16 of deck,
+       which is a living room; an American school built in this decade
+       has classrooms and corridors at ten to twelve feet and a gym at
+       twenty-four. Everything in here used the house number, so the
+       corridor had the ceiling of a hallway and the gym was two
+       hallways stacked.
+
+       So the school has its own, and it is the whole of the change:
+       pass `eaves` to building() and every column, every window band,
+       every course of trim and the roof over all of it follows, because
+       each of them is written against B.eaves or against the two
+       numbers below. The gym goes from 224 of clear to 288. */
+    const SCH_CLEAR = 128, SCH_STOREY = SCH_CLEAR + 16;
+    /* and the windows grow with the room. A school window is most of
+       the wall between the sill and the ceiling — 64 in a 128 room is a
+       porthole, which is what these looked like the moment the ceiling
+       went up. */
+    const WIN_TALL = 112;
     const [x0, x1] = bx, [y0, y1] = by;
     const W = BLOCK - 2 * 128, D = 976;
     const sx0 = x0 + 128, sy0 = y0 + (y1 - y0 - D) / 2;
@@ -1492,21 +1511,26 @@ export function buildTown(rm, mb, opts = {}) {
     const F = frame(sx0, sy0, 'S');
     const K = frame(sx0, sy0 + D, 'N');
     const B = building(tag, F, W, D, 2, { wall: 'SCHOOLBR', gable: 'SCHOOLBR', roof: 'ROOFSEAM' },
-                       { base: FOUND, winBase: FOUND, sill: 24, litChance: 0.45, jamb: 'SCHOOLBR' });
+                       { base: FOUND, winBase: FOUND, sill: 24, litChance: 0.45, jamb: 'SCHOOLBR',
+                         /* building() works the eaves out of the town's STOREY; this one
+                            is taller, so it is handed the answer instead */
+                         eaves: FOUND + 2 * SCH_STOREY });
     const Bz = FOUND;                                    // the floor
     /* `I` lays a rect by its distance IN from the front face, which is
-       how a floor plan is written */
+       how a floor plan is written; `IB` is the same box for a free box,
+       which needs where a thing is and not a sector at it */
     const I = (u0, d0, u1, d1, props) => F.add(u0, -d1, u1, -d0, props);
+    const IB = (u0, d0, u1, d1) => F.box(u0, -d1, u1, -d0);
 
     const room = (fuel, extra = {}) => ({
       light: 0.30, ambient: 0.30, ceilTex: 'CEILTILE', wallTex: 'PLASTER',
       upperTex: 'PLASTER', lowerTex: 'SKIRTING', fuel, ...extra,
     });
     const two = (floorTex, fuel, name, extra = {}) => col(B,
-      [{ floor: Bz, ceil: Bz + CLEAR, name }, { floor: Bz + STOREY, ceil: Bz + STOREY + CLEAR, name: `${name} upstairs` }],
+      [{ floor: Bz, ceil: Bz + SCH_CLEAR, name }, { floor: Bz + SCH_STOREY, ceil: Bz + SCH_STOREY + SCH_CLEAR, name: `${name} upstairs` }],
       room(fuel, { floorTex, ...extra }));
     const door2 = name => col(B,
-      [{ floor: Bz, ceil: Bz + 80 }, { floor: Bz + STOREY, ceil: Bz + STOREY + 80 }],
+      [{ floor: Bz, ceil: Bz + 80 }, { floor: Bz + SCH_STOREY, ceil: Bz + SCH_STOREY + 80 }],
       room(TOWN_FUEL.hallway, { floorTex: 'KITCHTIL', name }));
 
     /* the walls down the two short sides, which have no windows */
@@ -1535,7 +1559,7 @@ export function buildTown(rm, mb, opts = {}) {
        through, broken at every door. */
     I(24, 440, 1576, 536, two('KITCHTIL', TOWN_FUEL.hallway, `${tag} corridor`, { lowerTex: 'SKIRTING' }));
     const lockers = (u0, u1, d0) => (u1 > u0) && I(u0, d0, u1, d0 + 16, col(B,
-      [{ floor: Bz + 64, ceil: Bz + CLEAR }, { floor: Bz + STOREY + 64, ceil: Bz + STOREY + CLEAR }],
+      [{ floor: Bz + 64, ceil: Bz + SCH_CLEAR }, { floor: Bz + SCH_STOREY + 64, ceil: Bz + SCH_STOREY + SCH_CLEAR }],
       room(TOWN_FUEL.hallway, { floorTex: 'PLASTER', lowerTex: 'LOCKERS', name: `${tag} lockers` })));
     const strip = (u0, u1, d0) => (u1 > u0) && I(u0, d0, u1, d0 + 16, two('KITCHTIL', TOWN_FUEL.hallway, `${tag} corridor`));
     /* the south side: open where the stair and the passage are */
@@ -1543,36 +1567,91 @@ export function buildTown(rm, mb, opts = {}) {
     /* the north side: the office door, then the classrooms */
     lockers(24, 136, 536); strip(136, 200, 536); lockers(200, 344, 536);
 
-    /* SIX CLASSROOMS, three a side, each with its desks in rows, its
-       blackboard let into the west wall, and three windows in the
-       outside wall you can see in through. */
-    const CW = 400, CD = 384;
+    /* =================================================================
+       SIX CLASSROOMS, three a side, and every one of them faces its
+       blackboard — which is the thing they did not do.
+
+       A DESK IS A DESK AND A CHAIR, at the user's request. It was one
+       raised block 32 by 24 wearing a laminate top, which from the door
+       is a run of lab benches. It is three raised floors in a row now:
+       the top you write on at 30, the seat behind it at 18, and the
+       back of the chair at 42 — a silhouette rather than a slab, and
+       every one of them is a rectangle, which is all this engine has.
+
+       AND THEY ARE TURNED THE RIGHT WAY. The blackboard is let into the
+       WEST wall of each room, so a child at a desk looks west; the old
+       layout put four desks across the room in three rows down it,
+       which faces them along the board rather than at it. So the desks
+       are in RANKS running back from the board and FILES running across
+       — four ranks, three files, twelve desks, and the chair of every
+       one of them is on the east side of its own top.
+
+       And a TEACHER'S DESK in the corner by the board, turned to the
+       room, which is where the one in every classroom in America is. */
+    const CW = 400;
+    /* one desk unit, west to east: the top, the seat, the back. */
+    const D_TOP = 28, D_SEAT = 18, D_BACK = 6;
+    const UNIT = D_TOP + D_SEAT + D_BACK;              // 52
+    const RANKS = [40, 128, 216, 304];                 // and 44 of aisle between
+    const FILES = [104, 184, 264], FILE_D = 20;
+    const DESK_Z = 30, SEAT_Z = 18, BACK_Z = 42, TEACH_Z = 32;
     const classroom = (u0, d0, d1, k, side) => {
       const name = `${tag} classroom ${side}${k + 1}`;
-      const desks = [56, 144, 232, 320], rows = [96, 192, 288];
-      const cls = (a, b, c, e) => I(u0 + a, d0 + (side === 'S' ? b : (d1 - d0) - e), u0 + c, d0 + (side === 'S' ? e : (d1 - d0) - b),
-        two('FLOORBRD', TOWN_FUEL.class, name));
       const depth = d1 - d0;
-      /* the floor, in strips between the rows of desks */
-      let dd = 0;
-      for (const r of rows) { cls(0, dd, CW, r); dd = r + 24; }
-      cls(0, dd, CW, depth);
-      for (const r of rows) {
+      /* local (u, d) to a rect. `d` is measured from the CORRIDOR side
+         of the room, so the same plan serves both sides of the
+         building and the desks on the north side are not back to
+         front. */
+      const at = (a, b, c, e) => [u0 + a, d0 + (side === 'S' ? b : depth - e),
+                                 u0 + c, d0 + (side === 'S' ? e : depth - b)];
+      const cls = (a, b, c, e) => (c > a && e > b) &&
+        I(...at(a, b, c, e), two('FLOORBRD', TOWN_FUEL.class, name));
+      /* a piece of furniture: a raised floor, its top and its side */
+      const furn = (a, b, c, e, up, top, low, what) => I(...at(a, b, c, e), col(B,
+        [{ floor: Bz + up, ceil: Bz + SCH_CLEAR }, { floor: Bz + SCH_STOREY + up, ceil: Bz + SCH_STOREY + SCH_CLEAR }],
+        room(TOWN_FUEL.class, { floorTex: top, lowerTex: low, name: `${name} ${what}` })));
+
+      /* THE FRONT OF THE ROOM, with the teacher's desk in it */
+      const T_D0 = 26, T_D1 = 74, T_U0 = 28, T_U1 = 144;
+      cls(0, 0, CW, T_D0);
+      cls(0, T_D0, T_U0, T_D1);
+      furn(T_U0, T_D0, T_U1, T_D1, TEACH_Z, 'DESKTOP', 'TEACHDSK', "teacher's desk");
+      cls(T_U1, T_D0, CW, T_D1);
+      cls(0, T_D1, CW, FILES[0]);
+
+      /* AND THE FILES OF DESKS, with the floor between them */
+      let dd = FILES[0];
+      for (const r of FILES) {
+        cls(0, dd, CW, r);
         let uu = 0;
-        for (const dx of desks) {
-          cls(uu, r, dx, r + 24);
-          I(u0 + dx, d0 + (side === 'S' ? r : depth - r - 24), u0 + dx + 32, d0 + (side === 'S' ? r + 24 : depth - r), col(B,
-            [{ floor: Bz + 24, ceil: Bz + CLEAR }, { floor: Bz + STOREY + 24, ceil: Bz + STOREY + CLEAR }],
-            room(TOWN_FUEL.class, { floorTex: 'DESKTOP', lowerTex: 'DESKFRNT', name: `${name} desk` })));
-          uu = dx + 32;
+        for (const a of RANKS) {
+          cls(uu, r, a, r + FILE_D);
+          furn(a, r, a + D_TOP, r + FILE_D, DESK_Z, 'DESKTOP', 'DESKFRNT', 'desk');
+          furn(a + D_TOP, r, a + D_TOP + D_SEAT, r + FILE_D, SEAT_Z, 'CHAIRSIT', 'CHAIRLEG', 'chair');
+          furn(a + D_TOP + D_SEAT, r, a + UNIT, r + FILE_D, BACK_Z, 'CHAIRBAK', 'CHAIRBAK', 'chair back');
+          uu = a + UNIT;
         }
-        cls(uu, r, CW, r + 24);
+        cls(uu, r, CW, r + FILE_D);
+        dd = r + FILE_D;
       }
-      /* the blackboard, let eight units into the west wall */
+      cls(0, dd, CW, depth);
+
+      /* the blackboard, let eight units into the west wall, and taller
+         than it was because the room is */
       I(u0 - 8, d0 + 64, u0, d0 + 320, col(B,
-        [{ floor: Bz + 32, ceil: Bz + 96, wallTex: 'BLACKBRD' }, { floor: Bz + STOREY + 32, ceil: Bz + STOREY + 96, wallTex: 'BLACKBRD' }],
+        [{ floor: Bz + 34, ceil: Bz + 110, wallTex: 'BLACKBRD' }, { floor: Bz + SCH_STOREY + 34, ceil: Bz + SCH_STOREY + 110, wallTex: 'BLACKBRD' }],
         room(0, { floorTex: 'PLASTER', name: `${name} blackboard` })));
-      fitting(...F.at(u0 + CW / 2, -(d0 + depth / 2)));
+      /* FOUR FITTINGS AND NOT ONE. A single lamp in the middle of a
+         room 400 by 384 was dim when the ceiling was 96 and is a
+         candle at 128 — the light falls off with the distance and the
+         ceiling just moved thirty-two units further away. */
+      for (const fu of [u0 + CW / 4, u0 + 3 * CW / 4])
+        for (const fd of [d0 + depth / 4, d0 + 3 * depth / 4]) fitting(...F.at(fu, -fd));
+      /* AND A RADIATOR UNDER THE WINDOWS, which is the one piece of a
+         classroom that is always there and never drawn. Eight proud of
+         the outside wall, which is the wall the windows are in. */
+      const rd = side === 'S' ? d0 : d1 - 8;
+      for (const ru of [u0 + 56, u0 + 248]) prop(IB(ru, rd, ru + 96, rd + 8), Bz + 2, Bz + 36, 'RADIATOR', { light: 0.46 });
     };
     for (let k = 0; k < 3; k++) {
       const u0 = 344 + 416 * k;
@@ -1597,6 +1676,36 @@ export function buildTown(rm, mb, opts = {}) {
     I(136, 552, 200, 568, door2(`${tag} office door`));
     fitting(...F.at(176, -760)); fitting(...F.at(176, -200));
 
+    /* ---- AND WHAT A SCHOOL HAS ON ITS WALLS -----------------------
+       At the user's request. Every one of these is flat against
+       something you could not have walked through anyway and under ten
+       units proud of it, which is the bargain every free box at head
+       height in this town makes — see the rule in js/mapgeo.js.
+
+       They are also the difference between a corridor and a corridor
+       somebody works in: the case by the door with what the school has
+       ever won in it, a board with notices nobody has read, a fountain,
+       and a clock over every classroom door so the hour is the same
+       everywhere, which in a school it never is. */
+    /* the trophy case, on the lobby's west wall where you meet it */
+    prop(IB(24, 120, 30, 216), Bz + 28, Bz + 104, 'TROPHY', { light: 0.86 });
+    prop(IB(24, 236, 30, 332), Bz + 34, Bz + 90, 'NOTICEBD', { light: 0.54 });
+    /* boards down the corridor, over the lockers */
+    for (const nu of [40, 420, 900, 1380]) {
+      prop(IB(nu, 552, nu + 96, 558), Bz + 68, Bz + 124, 'NOTICEBD', { light: 0.44 });
+      prop(IB(nu + 200, 418, nu + 296, 424), Bz + 68, Bz + 124, 'NOTICEBD', { light: 0.44 });
+    }
+    /* two fountains, on the piece of wall between the office door and
+       the first classroom */
+    for (const fu of [212, 1500]) prop(IB(fu, 546, fu + 26, 552), Bz + 18, Bz + 50, 'FOUNTAIN', { light: 0.50 });
+    /* a clock over every classroom door, and over the front door */
+    for (let k = 0; k < 3; k++) {
+      const u0 = 344 + 416 * k;
+      prop(IB(u0 + 187, 424, u0 + 213, 430), Bz + 92, Bz + 118, 'SCHCLOCK', { light: 0.66 });
+      prop(IB(u0 + (k < 2 ? 187 : 43), 546, u0 + (k < 2 ? 213 : 69), 552), Bz + 92, Bz + 118, 'SCHCLOCK', { light: 0.66 });
+    }
+    prop(IB(163, 424, 189, 430), Bz + 92, Bz + 118, 'SCHCLOCK', { light: 0.66 });
+
     /* THE GYM: two storeys tall in one span, and the whole argument for
        the column over a fixed stack of floors. */
     /* WHAT IS IN IT, because a room two storeys tall and a hundred and
@@ -1608,11 +1717,11 @@ export function buildTown(rm, mb, opts = {}) {
        is where the assembly is. Every one of them is a raised floor or
        a band, which is every trick this map has. */
     const gymRoom = (n, extra = {}) => room(TOWN_FUEL.gym, { floorTex: 'GYMFLOOR', ceilTex: 'PLASTER', light: 0.34, ambient: 0.34, name: `${tag} ${n}`, ...extra });
-    const court = n => col(B, [{ floor: Bz, ceil: Bz + 2 * STOREY }], gymRoom(n));
-    const raised = (n, up, low) => col(B, [{ floor: Bz + up, ceil: Bz + 2 * STOREY }], gymRoom(n, { lowerTex: low, floorTex: 'BLEACHER' }));
-    const pad = n => col(B, [{ floor: Bz + 64, ceil: Bz + 2 * STOREY }], gymRoom(n, { lowerTex: 'GYMPAD', floorTex: 'PLASTER' }));
-    const truss = n => col(B, [{ floor: Bz, ceil: Bz + 2 * STOREY - 56 },
-                               { floor: Bz + 2 * STOREY - 24, ceil: Bz + 2 * STOREY }],
+    const court = n => col(B, [{ floor: Bz, ceil: Bz + 2 * SCH_STOREY }], gymRoom(n));
+    const raised = (n, up, low) => col(B, [{ floor: Bz + up, ceil: Bz + 2 * SCH_STOREY }], gymRoom(n, { lowerTex: low, floorTex: 'BLEACHER' }));
+    const pad = n => col(B, [{ floor: Bz + 64, ceil: Bz + 2 * SCH_STOREY }], gymRoom(n, { lowerTex: 'GYMPAD', floorTex: 'PLASTER' }));
+    const truss = n => col(B, [{ floor: Bz, ceil: Bz + 2 * SCH_STOREY - 56 },
+                               { floor: Bz + 2 * SCH_STOREY - 24, ceil: Bz + 2 * SCH_STOREY }],
       gymRoom(n, { lowerTex: 'GYMTRUSS', ceilTex: 'GYMTRUSS', floorTex: 'GYMTRUSS' }));
     I(1592, 24, 2792, 32, pad('gym padding'));
     I(1592, 944, 2792, 952, pad('gym padding'));
@@ -1627,7 +1736,37 @@ export function buildTown(rm, mb, opts = {}) {
       for (const [h, mk] of BANDS) { I(1600, d, 2632, d + h, mk(mk === court ? 'gym' : mk === truss ? 'gym truss' : 'gym bleachers')); d += h; }
     }
     for (const [gu, gd] of [[1700, 500], [2300, 500], [2700, 200], [2700, 760]]) fitting(...F.at(gu, -gd));
-    I(1576, 456, 1592, 520, col(B, [{ floor: Bz, ceil: Bz + CLEAR }], room(TOWN_FUEL.hallway, { floorTex: 'KITCHTIL', name: `${tag} gym doors` })));
+
+    /* ---- WHAT HANGS ON THE WALLS OF IT ---------------------------
+       At the user's request, and all of it is a free box, because a
+       backboard is the one thing in a gym that cannot be a floor.
+       None of it is in anybody's way: the boards and the pennants are
+       twice head height, and the bars and the scoreboard stand on the
+       PADDING, which is a raised floor 32 above a MAX_STEP of 24 and
+       therefore a place nobody can be. */
+    const GCEIL = Bz + 2 * SCH_STOREY;
+    /* a backboard at each end of the court, over the key */
+    for (const bu of [1676, 2550]) {
+      prop(IB(bu, 440, bu + 6, 536), Bz + 120, Bz + 180, 'BACKBORD', { light: 0.62 });
+      /* and the brace that carries it back to the wall, stopping AT the
+         board rather than through it — two boxes that share a face
+         plane and a volume are two coplanar quads facing the same way,
+         which is the shimmer the user found at the checkout */
+      const wall = bu < 2000 ? 1600 : 2632;
+      const [g0, g1] = bu < 2000 ? [wall, bu] : [bu + 6, wall];
+      prop(IB(g0, 482, g1, 494), Bz + 168, Bz + 178, 'GYMTRUSS', { light: 0.34 });
+    }
+    /* the scoreboard, high on the wall over the south padding */
+    prop(IB(2040, 25, 2168, 31), Bz + 196, Bz + 276, 'SCOREBRD', { light: 1.05 });
+    /* wall bars along the same wall, standing on the padding */
+    for (const wu of [1680, 1800, 1920]) prop(IB(wu, 24, wu + 80, 32), Bz + 64, Bz + 192, 'WALLBARS', { light: 0.40 });
+    /* the pennants off the trusses, which is where a school hangs the
+       only three good years it ever had */
+    for (const td of [200, 392, 584]) for (const pu of [1830, 2100, 2370])
+      prop(IB(pu, td + 6, pu + 72, td + 12), Bz + 152, Bz + 200, 'PENNANT', { light: 0.46 });
+    /* and the clock, over the doors you come in by */
+    prop(IB(1592, 470, 1598, 496), Bz + 190, Bz + 216, 'SCHCLOCK', { light: 0.70 });
+    I(1576, 456, 1592, 520, col(B, [{ floor: Bz, ceil: Bz + SCH_CLEAR }], room(TOWN_FUEL.hallway, { floorTex: 'KITCHTIL', name: `${tag} gym doors` })));
     for (const [gu, gd] of [[1892, 260], [2492, 260], [1892, 716], [2492, 716]]) fitting(...F.at(gu, -gd));
     for (let u = 152; u < 1576; u += 256) fitting(...F.at(u, -488));
 
@@ -1638,11 +1777,11 @@ export function buildTown(rm, mb, opts = {}) {
        once the lines exist. See `glass` and js/maps/sellwrong.js. */
     const win = (Fx, u0, k0, k1, name) => {
       const outer = Fx.add(u0, -NICHE, u0 + WIN_W, 0, col(B,
-        Array.from({ length: k1 - k0 + 1 }, (_, i) => ({ floor: FOUND + (k0 + i) * STOREY + 24, ceil: FOUND + (k0 + i) * STOREY + 88, name: `${name} ${k0 + i}` })),
+        Array.from({ length: k1 - k0 + 1 }, (_, i) => ({ floor: FOUND + (k0 + i) * SCH_STOREY + 24, ceil: FOUND + (k0 + i) * SCH_STOREY + WIN_TALL, name: `${name} ${k0 + i}` })),
         { ...recess, floorTex: 'SILLWOOD', ceilTex: 'SILLWOOD', wallTex: 'SCHOOLBR', lowerTex: 'SCHOOLBR', upperTex: 'SCHOOLBR' }));
       const lit = R() < B.litChance;
       const inner = Fx.add(u0, -ZONE, u0 + WIN_W, -NICHE, col(B,
-        Array.from({ length: k1 - k0 + 1 }, (_, i) => ({ floor: FOUND + (k0 + i) * STOREY + 24, ceil: FOUND + (k0 + i) * STOREY + 88, name: `${name} ${k0 + i} inside` })),
+        Array.from({ length: k1 - k0 + 1 }, (_, i) => ({ floor: FOUND + (k0 + i) * SCH_STOREY + 24, ceil: FOUND + (k0 + i) * SCH_STOREY + WIN_TALL, name: `${name} ${k0 + i} inside` })),
         { ...recess, light: lit ? 0.9 : 0.3, ambient: lit ? 0.9 : 0.3, floorTex: 'SILLWOOD', ceilTex: 'PLASTER', wallTex: 'PLASTER', lowerTex: 'PLASTER', upperTex: 'PLASTER' }));
       out.glass.push({ inner, outer, tex: lit ? 'SCHWINLT' : 'SCHWINDK' });
       out.windows += k1 - k0 + 1;
@@ -1682,7 +1821,7 @@ export function buildTown(rm, mb, opts = {}) {
             F.add(lu0, -ZONE, lu1, 0, { storeys: [
               { floor: B.base + DOOR_H, ceil: B.base + DOOR_H, lowerTex: 'SCHDOOR', upperTex: B.wall,
                 wallTex: 'SCHDOOR', floorTex: 'NONE', ceilTex: 'NONE', name: `${tag} door leaf` }, topOf(B)] });
-          F.add(DOOR0 + 24, -ZONE, DOOR1 - 24, 0, wayCol(B, CLEAR, room(TOWN_FUEL.hallway, { floorTex: 'KITCHTIL', light: 0.5, ambient: 0.5 }), `${tag} front door`));
+          F.add(DOOR0 + 24, -ZONE, DOOR1 - 24, 0, wayCol(B, SCH_CLEAR, room(TOWN_FUEL.hallway, { floorTex: 'KITCHTIL', light: 0.5, ambient: 0.5 }), `${tag} front door`));
           out.doors++;
           ops.push({ u0: DOOR0, u1: DOOR1 });
           continue;
@@ -1719,7 +1858,7 @@ export function buildTown(rm, mb, opts = {}) {
        of it. The front door used to be a hole in a flat wall, and from
        the lawn it read as a black wedge — which is the thing the user
        drew a ring round. */
-    const SBASE = 16, STRING = FOUND + STOREY;           // how far the trim stands out, and the first floor
+    const SBASE = 16, STRING = FOUND + SCH_STOREY;           // how far the trim stands out, and the first floor
     const trimProps = () => open(`${tag} trim`, {
       floor: FOUND / 2, ceil: B.top, floorTex: 'CONCRETE', light: 0.30, ambient: 0.30,
       lowerTex: 'WATERTBL', upperTex: B.gable, wallTex: B.wall, fuel: 0 });
@@ -1762,8 +1901,8 @@ export function buildTown(rm, mb, opts = {}) {
           floor: FOUND, ceil: B.top, floorTex: 'KITCHTIL', light: 0.46, ambient: 0.46,
           lowerTex: 'SCHOOLBR', upperTex: B.gable, wallTex: 'SCHDOOR', fuel: 0 }),
         storeys: [
-          { floor: FOUND, ceil: FOUND + CLEAR, name: `${tag} entrance` },
-          { floor: FOUND + CLEAR + 32, ceil: FOUND + CLEAR + 32, lowerTex: 'DATESTON', name: `${tag} date stone` },
+          { floor: FOUND, ceil: FOUND + SCH_CLEAR, name: `${tag} entrance` },
+          { floor: FOUND + SCH_CLEAR + 32, ceil: FOUND + SCH_CLEAR + 32, lowerTex: 'DATESTON', name: `${tag} date stone` },
           { floor: B.eaves, ceil: B.eaves, ceilTex: 'SKY', lowerTex: 'SCHOOLBR', upperTex: 'NONE' }] });
       F.add(BAY0, BAY_OUT, BAY1, BAY_OUT + PLINTH, stoopProps(B));
       F.add(BAY0, BAY_OUT + PLINTH, BAY1, BAY_OUT + SBASE, trim());
@@ -1785,9 +1924,196 @@ export function buildTown(rm, mb, opts = {}) {
     railedS(BAY1, W + 128);
     F.add(-SBASE, 0, 0, SBASE, lawn(`${tag} yard`));
     F.add(W, 0, W + SBASE, SBASE, lawn(`${tag} yard`));
-    /* and the back, which has the same courses and no door */
+    /* and the back, which has the same courses and no door — and the
+       yard behind it is in four pieces now, because the auditorium
+       stands in the middle of it */
     const BY = (y1 - y0) - FY - D;
-    K.add(-128, SBASE, W + 128, BY, lawn(`${tag} back yard`));
+    const AU0 = 1704, AW = 1000, AD = 664;       // the wing: where, how wide, how deep
+    K.add(-128, SBASE, AU0 - SBASE, BY, lawn(`${tag} back yard`));
+    K.add(AU0 + AW + SBASE, SBASE, W + 128, BY, lawn(`${tag} back yard`));
+    K.add(AU0 - SBASE, SBASE + AD + SBASE, AU0 + AW + SBASE, BY, lawn(`${tag} back yard`));
+
+    /* =================================================================
+       THE AUDITORIUM, at the user's request, and it is a WING rather
+       than a room: a thousand by six hundred and sixty-four standing
+       out of the back of the school behind the gym, with its own shell,
+       its own roof and its own doors off the yard.
+
+       WHY A WING. The plan was full. The academic end is a corridor
+       with six classrooms and an office hung off it and the east end is
+       twelve hundred units of gym; there is no room inside the box for
+       a hall you can put four hundred children in, and the only place
+       a school of this age ever puts one is out the back. It also
+       settles what the thing looks like from the street, which is the
+       other half of the question: a long low block behind a long low
+       block, one ridge behind the other.
+
+       WHAT AN AUDITORIUM IS, in this engine, is a RAKE. The floor steps
+       DOWN from the doors at the back to the orchestra at the front —
+       five banks, twelve units apart, which is half a step, so you walk
+       down it without noticing you are walking down it. Every bank is a
+       carpeted tread with a raised strip of seats standing on it, split
+       by a centre aisle and two side aisles, which is the plan of every
+       hall of this kind ever drawn.
+
+       And at the bottom, the STAGE: raised forty-eight, boarded, with a
+       curtain leg standing floor to ceiling each side of the opening
+       and the proscenium header hanging over it — which is an UPPER
+       band, because the header hangs from the ceiling and everything
+       else in this map hangs off a floor.
+       ================================================================= */
+    {
+      const AY0 = D + SBASE;                     // it starts at the trim strip
+      const AF = frame(sx0 + AU0, sy0 + AY0, 'S');
+      const A = building(`${tag} auditorium`, AF, AW, AD, 1,
+        { wall: 'SCHOOLBR', gable: 'SCHOOLBR', roof: 'ROOFSEAM' },
+        { base: FOUND, jamb: 'SCHOOLBR', litChance: 0, rise: 112,
+          eaves: FOUND + 2 * SCH_STOREY });
+      /* `J` is `I` for the wing: a rect by its distance IN from the
+         face that touches the school, which is how the plan reads */
+      const J = (a0, b0, a1, b1, props) => AF.add(a0, -b1, a1, -b0, props);
+      const JB = (a0, b0, a1, b1) => AF.box(a0, -b1, a1, -b0);
+      const AZ = Bz, ACEIL = AZ + 2 * SCH_STOREY;
+      /* A HALL THIS BIG NEEDS THE LIGHT OF A HALL. 0.26 is a classroom
+         at the far end of a corridor, and in a room a thousand by six
+         hundred with a ceiling at 288 it came out as a cave with a red
+         floor: the seats were bands, the proscenium was not there and
+         the curtain was a dark patch. */
+      const hall = (n, extra = {}) => room(TOWN_FUEL.gym, {
+        light: 0.60, ambient: 0.60, ceilTex: 'PLASTER', wallTex: 'PLASTER',
+        upperTex: 'PLASTER', lowerTex: 'WAINSCOT', floorTex: 'CARPETDM',
+        name: `${tag} ${n}`, ...extra });
+      const one = (n, up, extra = {}) => col(A, [{ floor: AZ + up, ceil: ACEIL }], hall(n, extra));
+
+      /* ---- the shell, and the two ways in off the yard ------------- */
+      const asolid = (a0, b0, a1, b1) => (a1 > a0 && b1 > b0) &&
+        J(a0, b0, a1, b1, { storeys: [topOf(A)] });
+      const DOOR_B0 = 40, DOOR_B1 = 112;         // where the doors are, at the back
+      asolid(0, 0, ZONE, DOOR_B0);
+      J(0, DOOR_B0, ZONE, DOOR_B1, wayCol(A, 96, hall('auditorium door', { floorTex: 'KITCHTIL', light: 0.46, ambient: 0.46 }), `${tag} auditorium door`));
+      out.doors++;
+      asolid(0, DOOR_B1, ZONE, AD);
+      asolid(AW - ZONE, 0, AW, DOOR_B0);
+      J(AW - ZONE, DOOR_B0, AW, DOOR_B1, wayCol(A, 96, hall('auditorium door', { floorTex: 'KITCHTIL', light: 0.46, ambient: 0.46 }), `${tag} auditorium door`));
+      out.doors++;
+      asolid(AW - ZONE, DOOR_B1, AW, AD);
+      asolid(ZONE, 0, AW - ZONE, ZONE);
+      asolid(ZONE, AD - ZONE, AW - ZONE, AD);
+
+      /* ---- the rake ----------------------------------------------- */
+      const A_U0 = ZONE, A_U1 = AW - ZONE;       // 24 .. 976
+      const AISLE = 56, MID = 60;
+      const BLK = (A_U1 - A_U0 - 2 * AISLE - MID) / 2;             // 390 a side
+      const SEAT_L0 = A_U0 + AISLE, SEAT_L1 = SEAT_L0 + BLK;
+      const SEAT_R0 = SEAT_L1 + MID, SEAT_R1 = SEAT_R0 + BLK;
+      const BANK_D = 64, SEAT_D = 28, STEP = 12, SEAT_UP = 16;
+      const BANKS = 5;
+      const B0 = ZONE + 64;                       // the rear cross-aisle ends here
+      const TOP = BANKS * STEP;                   // 60, how high the back of the hall is
+      /* the cross-aisle you come in on, at the top of the rake */
+      J(A_U0, ZONE, A_U1, B0, one('auditorium', TOP, { floorTex: 'KITCHTIL' }));
+      for (let i = 0; i < BANKS; i++) {
+        const b = B0 + i * BANK_D, up = TOP - i * STEP;
+        /* the row of seats, and the aisles either side of and between them */
+        J(A_U0, b, SEAT_L0, b + SEAT_D, one('auditorium aisle', up));
+        J(SEAT_L0, b, SEAT_L1, b + SEAT_D, col(A, [{ floor: AZ + up + SEAT_UP, ceil: ACEIL }],
+          hall('auditorium seats', { floorTex: 'AUDSEAT', lowerTex: 'PEWFRONT' })));
+        J(SEAT_L1, b, SEAT_R0, b + SEAT_D, one('auditorium aisle', up));
+        J(SEAT_R0, b, SEAT_R1, b + SEAT_D, col(A, [{ floor: AZ + up + SEAT_UP, ceil: ACEIL }],
+          hall('auditorium seats', { floorTex: 'AUDSEAT', lowerTex: 'PEWFRONT' })));
+        J(SEAT_R1, b, A_U1, b + SEAT_D, one('auditorium aisle', up));
+        /* and the legroom in front of them, which is the tread */
+        J(A_U0, b + SEAT_D, A_U1, b + BANK_D, one('auditorium', up));
+      }
+      /* ---- the orchestra, the proscenium and the stage -------------- */
+      const ORCH = B0 + BANKS * BANK_D;            // 408
+      const PROS = ORCH + 32, STAGE = PROS + 12;
+      J(A_U0, ORCH, A_U1, PROS, one('orchestra', 0));
+      /* THE HEADER IS AN UPPER BAND. Everything else in this map hangs
+         off a floor; a proscenium hangs off the ceiling, so it is a
+         region with a LOW CEILING and the band over it is drawn by the
+         disagreement rule out of this storey's upperTex. */
+      J(A_U0, PROS, A_U1, STAGE, col(A, [{ floor: AZ, ceil: AZ + 168 }],
+        hall('proscenium', { upperTex: 'PROSCEN', ceilTex: 'PROSCEN', floorTex: 'FLOORBRD', light: 0.62, ambient: 0.62 })));
+      /* the curtain legs, floor to ceiling, one each side of the
+         opening: a column with its floor AT its ceiling is a solid
+         thing, and the band below it is the curtain */
+      const LEG = 60;
+      for (const [c0, c1] of [[A_U0, A_U0 + LEG], [A_U1 - LEG, A_U1]])
+        J(c0, STAGE, c1, AD - ZONE, col(A, [{ floor: ACEIL, ceil: ACEIL }],
+          hall('curtain', { lowerTex: 'CURTAIN', upperTex: 'CURTAIN', wallTex: 'CURTAIN', floorTex: 'NONE', ceilTex: 'NONE' })));
+      J(A_U0 + LEG, STAGE, A_U1 - LEG, AD - ZONE, col(A, [{ floor: AZ + 48, ceil: ACEIL }],
+        hall('stage', { floorTex: 'FLOORBRD', lowerTex: 'PEWFRONT', light: 0.58, ambient: 0.58 })));
+
+      /* ---- the ground round it ------------------------------------- */
+      const AK = frame(sx0 + AU0, sy0 + AY0 + AD, 'N');
+      for (const [Fs, len] of [[frame(sx0 + AU0, sy0 + AY0, 'W'), AD],
+                               [frame(sx0 + AU0 + AW, sy0 + AY0, 'E'), AD]]) {
+        Fs.add(0, 0, len, PLINTH, plinthProps(A));
+        Fs.add(0, PLINTH, len, SBASE, lawn(`${tag} auditorium verge`));
+      }
+      /* the back strip runs SBASE past each corner, which is what makes
+         the two side strips meet it rather than stop short of it */
+      AK.add(-SBASE, 0, AW + SBASE, PLINTH, plinthProps(A));
+      AK.add(-SBASE, PLINTH, AW + SBASE, SBASE, lawn(`${tag} auditorium verge`));
+
+      /* ---- AND THE OUTSIDE OF IT, which was a brick box ------------
+         A HUNDRED FEET OF UNBROKEN WALL is the problem the terraces
+         already had, and the answers are the same three: something
+         upright every so often, something horizontal where the floor
+         line would be, and something at the top where the wall stops.
+         Here they are free boxes rather than rectangles of ground,
+         because the wing's verge is one strip a side and cutting it
+         into forty pieces to carry a pilaster buys nothing. Ten proud
+         and no more, which is the rule every box at head height in this
+         town keeps. */
+      const AEAVE = A.eaves;
+      /* PILASTR and not PILASTER: the first is the town's brick pilaster
+         and matches SCHOOLBR, the second is the strip mall's pier —
+         a different building, a different texture, and the suite counts
+         the parade's piers by that name. */
+      /* the uprights, every 160 down both long sides and at the corners */
+      for (let b = 40; b < AD - 40; b += 160) {
+        prop(JB(-10, b, 0, b + 32), FOUND / 2, AEAVE, 'PILASTR', { light: 0.40 });
+        prop(JB(AW, b, AW + 10, b + 32), FOUND / 2, AEAVE, 'PILASTR', { light: 0.40 });
+      }
+      for (const a of [24, AW / 2 - 16, AW - 56])
+        prop(JB(a, AD, a + 32, AD + 10), FOUND / 2, AEAVE, 'PILASTR', { light: 0.40 });
+      /* the string course where the balcony would be, and the cornice
+         where the wall stops — both above head height, both run the
+         whole way round, both eight proud so they read as a shadow */
+      for (const [z0, z1, tex, lit] of [[FOUND + 112, FOUND + 128, 'WATERTBL', 0.44],
+                                        [AEAVE - 24, AEAVE, 'CORNICE', 0.50]]) {
+        prop(JB(-8, 0, 0, AD), z0, z1, tex, { light: lit });
+        prop(JB(AW, 0, AW + 8, AD), z0, z1, tex, { light: lit });
+        prop(JB(-8, AD, AW + 8, AD + 8), z0, z1, tex, { light: lit });
+      }
+      /* AND THE LOUVRES a hall of this kind always has high up, because
+         a room with four hundred people in it and no windows has to
+         breathe somehow */
+      /* set BETWEEN the uprights and not across them: two boxes that
+         share a face plane and a volume shimmer, which is the whole of
+         the rule the checkout taught */
+      for (const b of [90, 250, 410, 570 - 72]) {
+        prop(JB(-6, b, 0, b + 72), FOUND + 150, FOUND + 214, 'GABLEND', { light: 0.30 });
+        prop(JB(AW, b, AW + 6, b + 72), FOUND + 150, FOUND + 214, 'GABLEND', { light: 0.30 });
+      }
+
+      /* ---- and what is in it --------------------------------------- */
+      /* the house lights, in three rows down the ceiling */
+      for (const fu of [180, AW / 2, AW - 180])
+        for (const fb of [ZONE + 90, ZONE + 210, ZONE + 330, ZONE + 430]) fitting(...AF.at(fu, -fb));
+      /* the lamps over the stage, and the two at the doors */
+      for (const su of [AW / 2 - 220, AW / 2, AW / 2 + 220])
+        for (const sb of [STAGE + 50, STAGE + 140]) fitting(...AF.at(su, -sb));
+      fitting(...AF.at(60, -(DOOR_B0 + 36))); fitting(...AF.at(AW - 60, -(DOOR_B0 + 36)));
+      /* EXIT over each door, and a clock at the back of the hall */
+      for (const [ex, side] of [[ZONE, 1], [AW - ZONE, -1]])
+        prop(JB(ex, DOOR_B0 + 20, ex + side * 6, DOOR_B0 + 52), AZ + 96, AZ + 120,
+             'EXITSIGN', { light: 1.10 });
+      prop(JB(AW / 2 - 13, ZONE, AW / 2 + 13, ZONE + 6), AZ + TOP + 78, AZ + TOP + 104,
+           'SCHCLOCK', { light: 0.70 });
+    }
     K.add(-SBASE, 0, 0, SBASE, lawn(`${tag} back yard`));
     K.add(W, 0, W + SBASE, SBASE, lawn(`${tag} back yard`));
     /* the two short sides, which have no windows and get the courses

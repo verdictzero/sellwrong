@@ -67,6 +67,21 @@ WHERE IT DEPARTS FROM THE PLAN, and why:
     church has pews, a wainscot, an altar with a cross behind it and
     coloured glass you can see through. The two buildings with an inside
     got the inside.
+  AND THEN THE SCHOOL WAS DONE AGAIN, at the user's request. It has its
+    own STOREY now — 128 of clear and 144 to the floor above, against
+    the town's 96 and 112 — because a school is not a house and every
+    room in it was built to a living room's ceiling; the gym is 288 in
+    one span and the windows grew from 64 to 112 with the rooms. A
+    LOCKER is twelve by sixty-four instead of thirty-two by sixty-four,
+    which is the difference between a locker and a kitchen cupboard. A
+    DESK is a top, a seat and the back of a chair rather than one block,
+    and the ranks of them face the blackboard, which they did not. The
+    GYM has backboards, a scoreboard, wall bars and pennants. And there
+    is an AUDITORIUM: a wing off the back of it, a thousand by six
+    hundred and sixty-four, with a stage, curtain legs, a proscenium
+    header hung from the ceiling and five banks of seats raking down to
+    it in steps you can walk. Sixteen new textures. See THE SCHOOL in
+    README.txt.
   AND THEN THE STAIRS CAME OUT, at the user's request: the school's two
     and the church's switchback, all three of them. The first floor and
     the choir loft are still built, lit and furnished and there is no

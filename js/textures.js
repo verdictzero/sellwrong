@@ -3959,6 +3959,9 @@ export const CHARRABLE = [
   'FRNTDOOR', 'FRNTDOR2', 'FRNTDOR3', 'WINPANEL', 'WINPANED', 'WINSHADE', 'SILLWOOD',
   'CHURCHIN', 'WAINSCOT', 'PEWSEAT', 'PEWFRONT', 'PEWBACK', 'CHANCEL', 'ALTARFRT', 'ALTARTOP',
   'REREDOS', 'WINREVEL', 'SCHWINLT', 'SCHWINDK', 'DESKTOP', 'DESKFRNT', 'PAVERS',
+  'CHAIRSIT', 'CHAIRLEG', 'CHAIRBAK', 'TEACHDSK',
+  'BACKBORD', 'SCOREBRD', 'WALLBARS', 'PENNANT', 'AUDSEAT', 'CURTAIN', 'PROSCEN',
+  'TROPHY', 'NOTICEBD', 'RADIATOR', 'FOUNTAIN', 'SCHCLOCK',
 ];
 
 /** The charred name for a texture, or the texture itself if it has none. */
@@ -4209,6 +4212,10 @@ const SIZES = {
   GYMTRUSS: { w: 64, h: 32 },
   PULPITFR: { w: 64, h: 48 },
   BLEACHER: { w: 64, h: 24 },
+  /* ONE REPEAT IS TWO LOCKERS, and two lockers are twenty-four units of
+     corridor. Undeclared it was 64, which made a locker 32 by 64 — see
+     the note on the texture. */
+  LOCKERS:  { w: 24, h: 64 },
   SCHDOOR:  { w: 64, h: 80 },
   DATESTON: { w: 64, h: 32 },
   /* THE FENCES are declared in WORLD UNITS and one repeat of each is
@@ -4251,6 +4258,29 @@ const SIZES = {
   ALTARFRT: { w: 64, h: 40 },
   REREDOS:  { w: 128, h: 128 },
   DESKFRNT: { w: 64, h: 24, masked: true },
+  /* THE CLASSROOM, each piece at the size of the piece. A desk top is
+     one desk, a seat is one seat, and the chair back is declared at the
+     twenty units you see it across from the side rather than at the six
+     it is thick — the picture reads either way, which is the whole of
+     why it is drawn the way it is. */
+  DESKTOP:  { w: 28, h: 20 },
+  CHAIRSIT: { w: 18, h: 20 },
+  CHAIRLEG: { w: 18, h: 18, masked: true },
+  CHAIRBAK: { w: 20, h: 40, masked: true },
+  TEACHDSK: { w: 116, h: 32 },
+  /* the gym, the auditorium, and what a school has on its walls */
+  BACKBORD: { w: 96, h: 60, masked: true },
+  SCOREBRD: { w: 128, h: 80 },
+  WALLBARS: { w: 80, h: 128, masked: true },
+  PENNANT:  { w: 72, h: 48, masked: true },
+  AUDSEAT:  { w: 88, h: 28 },      // one repeat is four seats
+  CURTAIN:  { w: 60, h: 160 },
+  PROSCEN:  { w: 160, h: 128 },    // one repeat is the whole header
+  TROPHY:   { w: 96, h: 76 },
+  NOTICEBD: { w: 96, h: 56 },
+  RADIATOR: { w: 96, h: 34, masked: true },
+  FOUNTAIN: { w: 26, h: 32, masked: true },
+  SCHCLOCK: { w: 26, h: 26, masked: true },
   GRAVESTN: { w: 24, h: 32 },
   STORBASE: { w: 64, h: 32 },
   BRANDBAND:{ w: 64, h: 96 },   // one repeat is the fascia band
@@ -4992,16 +5022,69 @@ T.STAINGLS = () => {
 };
 
 T.LOCKERS = () => {
-  /* A run of lockers, 64 tall — one repeat is two lockers wide and the
-     whole height of them, so a corridor lower texture is a corridor. */
+  /* A run of lockers, 64 tall, one repeat two lockers wide.
+
+     AND THAT REPEAT IS TWENTY-FOUR UNITS OF CORRIDOR, not sixty-four.
+     Nothing declared a size, so a repeat was 64 by 64 and a locker came
+     out 32 wide and 64 tall — one to two, which is a kitchen cupboard.
+     A school locker is twelve inches by sixty: one to five. At 24 to
+     the repeat each door is twelve units wide against sixty-four tall,
+     which is the shape the user was asking for, and a bank of them down
+     a corridor is a bank of them rather than a row of doors.
+
+     The picture is still painted 64 across, so it is SQUEEZED nearly
+     three to one on the wall — which is why everything that has to read
+     here is horizontal. The vents, the number plate and the seams
+     survive; anything drawn as a narrow upright would not. */
   const p = new Pix(64, 64, 313);
-  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'blue', 0.22);
+  const n = fbm(64, 64, 10, 2, 313);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'blue', 0.17 + n[y * 64 + x] * 0.05);
+  const rng = makeRng(317);
   for (const dx of [0, 32]) {
-    p.frame(dx + 1, 2, 30, 60, 'blue', 0.14);
-    p.box(dx + 3, 4, 26, 56, 'blue', 0.28);
-    for (let y = 8; y < 16; y += 3) p.hline(dx + 8, dx + 24, y, 'blue', 0.12);   // the vents
-    p.box(dx + 24, 30, 3, 6, 'grey', 0.34);                                      // the latch
+    /* the door, set into its frame: lit on the top and left, shadowed
+       on the bottom and right, which is the only thing that says a door
+       is proud of anything */
+    p.box(dx + 2, 3, 28, 58, 'blue', 0.30);
+    p.hline(dx + 2, dx + 29, 3, 'blue', 0.46);
+    p.vline(dx + 2, 3, 60, 'blue', 0.44);
+    p.hline(dx + 2, dx + 29, 60, 'blue', 0.08);
+    p.vline(dx + 29, 4, 60, 'blue', 0.10);
+    /* the piano hinge down the hanging side */
+    p.vline(dx + 3, 4, 59, 'grey', 0.36);
+    for (let y = 6; y < 59; y += 6) p.ink(dx + 3, y, 'grey', 0.52);
+    /* THE VENTS ARE AT THE TOP, which is where they are on a locker and
+       the one feature that survives the squeeze */
+    for (let y = 7; y < 19; y += 3) {
+      p.hline(dx + 8, dx + 25, y, 'blue', 0.07);
+      p.hline(dx + 8, dx + 25, y + 1, 'blue', 0.40);
+    }
+    /* the number plate under them */
+    p.box(dx + 12, 22, 10, 4, 'bone', 0.62);
+    p.hline(dx + 12, dx + 21, 22, 'bone', 0.80);
+    p.hline(dx + 13, dx + 20, 24, 'grey', 0.14);
+    /* the recessed lift handle, two thirds up, and the latch tongue */
+    p.box(dx + 20, 32, 8, 7, 'blue', 0.10);
+    p.box(dx + 21, 33, 6, 4, 'grey', 0.44);
+    p.hline(dx + 21, dx + 26, 33, 'grey', 0.66);
+    p.ink(dx + 24, 40, 'grey', 0.30);
+    /* dents, and the scuff along the bottom where bags go */
+    for (let i = 0; i < 5; i++) {
+      const x = dx + 5 + Math.floor(rng() * 22), y = 26 + Math.floor(rng() * 30);
+      p.hline(x, x + 1 + Math.floor(rng() * 3), y, 'blue', 0.38);
+      p.hline(x, x + 1 + Math.floor(rng() * 3), y + 1, 'blue', 0.10);
+    }
   }
+  /* the seam between the two, the capping over the bank and the kick
+     plinth under it — all three horizontal, all three legible squeezed */
+  p.vline(31, 0, 63, 'blue', 0.06);
+  p.vline(0, 0, 63, 'blue', 0.06);
+  p.hline(0, 63, 0, 'grey', 0.46);
+  p.hline(0, 63, 1, 'blue', 0.34);
+  p.hline(0, 63, 2, 'blue', 0.10);
+  p.box(0, 61, 64, 3, 'grey', 0.14);
+  p.hline(0, 63, 61, 'grey', 0.26);
+  streaks(p, 4, 319, 'rust', 0.22, 0.3);
   p.grime(0.34, 'grey', 0.08, 317);
   return p.snap(0.5);
 };
@@ -6263,14 +6346,37 @@ T.SCHWINLT = () => { const p = new Pix(64, 64, 601); schoolWindow(p, true);  p.g
 T.SCHWINDK = () => { const p = new Pix(64, 64, 613); schoolWindow(p, false); p.grime(0.18, 'grey', 0.05, 617); return p.snap(0.5); };
 
 T.DESKTOP = () => {
-  /* Laminate, with a pencil groove and somebody's initials. */
-  const p = new Pix(64, 64, 619);
-  const n = fbm(64, 64, 10, 2, 619);
-  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'bone', 0.56 + n[y * 64 + x] * 0.05);
-  p.frame(0, 0, 64, 64, 'brown', 0.30);
-  p.hline(4, 59, 10, 'grey', 0.36);
-  crack(p, 40, 40, 8, 'grey', 0.30, 631, 0.2);
-  return p.snap(0.5);
+  /* The top of a desk, from above, and one repeat is one desk: the
+     laminate, the pencil groove along the front edge, the hardwood lip
+     round it, and everything that has ever been done to it with a
+     compass point. It used to be a blank sheet with one line on it,
+     which at the size a desk is drawn is a blank sheet. */
+  const p = new Pix(28, 20, 619);
+  const n = fbm(28, 20, 8, 2, 619);
+  for (let y = 0; y < 20; y++) for (let x = 0; x < 28; x++)
+    p.ink(x, y, 'bone', 0.54 + n[y * 28 + x] * 0.06);
+  /* the hardwood lip, lit on the near edges */
+  p.frame(0, 0, 28, 20, 'brown', 0.26);
+  p.hline(0, 27, 0, 'brown', 0.42);
+  p.vline(0, 0, 19, 'brown', 0.40);
+  /* the pencil groove along the top edge, and a pencil in it */
+  p.hline(2, 25, 3, 'grey', 0.20);
+  p.hline(2, 25, 4, 'bone', 0.70);
+  const rng = makeRng(631);
+  if (rng() < 0.6) { p.hline(8, 17, 3, 'yellow', 0.56); p.ink(18, 3, 'grey', 0.30); }
+  /* scratched initials, ink, and the ring off a bottle */
+  for (let i = 0; i < 9; i++) {
+    const x = 4 + Math.floor(rng() * 20), y = 7 + Math.floor(rng() * 11);
+    const d = rng() < 0.5 ? 1 : -1;
+    for (let k = 0; k < 2 + Math.floor(rng() * 3); k++) p.wash(x + k, y + k * d, 'brown', 0.16, 0.5);
+  }
+  p.wash(19, 13, 'blue', 0.30, 0.5); p.wash(20, 13, 'blue', 0.30, 0.4);
+  for (let a = 0; a < 20; a++) {
+    const x = Math.round(9 + Math.cos(a / 20 * 6.283) * 4), y = Math.round(13 + Math.sin(a / 20 * 6.283) * 3);
+    p.wash(x, y, 'brown', 0.34, 0.28);
+  }
+  p.grime(0.3, 'grey', 0.07, 632);
+  return p.snap(0.45);
 };
 
 T.DESKFRNT = () => {
@@ -6284,6 +6390,444 @@ T.DESKFRNT = () => {
   p.bevel(9, 3, 46, 11, 'brown', 0.40, 'brown', 0.16);
   for (let x = 12; x < 52; x += 8) p.box(x, 5, 5, 6, ['red', 'blue', 'green'][Math.floor(x / 8) % 3], 0.36, 255);   // the books
   return p.snap(0.35);
+};
+
+/* =====================================================================
+   A DESK IS A DESK AND A CHAIR
+
+   The school's desks were one raised block apiece wearing a laminate
+   top and a masked side, which from the door reads as a run of lab
+   benches. A mid-century American classroom desk is a TOP, a SEAT
+   BEHIND IT and a BACK behind that, all turned to face the blackboard —
+   three raised floors in a row, and the silhouette is the whole of it.
+
+   EVERY ONE OF THESE IS DECLARED AT THE SIZE OF ITS OWN PIECE, because
+   the pieces are small: a chair back is six units wide and a picture
+   tiling four times across six units is a pattern, not a chair.
+   ===================================================================== */
+
+T.CHAIRSIT = () => {
+  /* A moulded plywood seat from above: the grain runs across, the front
+     edge is rolled, and the middle is worn paler than the rim by every
+     year of children who have sat on it. */
+  const p = new Pix(36, 40, 660);
+  const n = fbm(36, 40, 8, 2, 660);
+  for (let y = 0; y < 40; y++) for (let x = 0; x < 36; x++)
+    p.ink(x, y, 'brown', 0.40 + n[y * 36 + x] * 0.08);
+  /* the grain, across the seat */
+  const rng = makeRng(661);
+  for (let y = 0; y < 40; y++) { const t = 0.34 + rng() * 0.16;
+    for (let x = 0; x < 36; x++) if (rng() < 0.55) p.wash(x, y, 'brown', t, 0.4); }
+  /* worn in the middle */
+  for (let y = 6; y < 34; y++) for (let x = 5; x < 31; x++) {
+    const d = 1 - Math.hypot((x - 18) / 15, (y - 20) / 16);
+    if (d > 0) p.wash(x, y, 'brown', 0.62, d * 0.4);
+  }
+  /* the rolled front edge and the shadow at the back */
+  p.hline(0, 35, 0, 'brown', 0.20);
+  p.hline(0, 35, 38, 'brown', 0.58);
+  p.hline(0, 35, 39, 'brown', 0.26);
+  p.vline(0, 0, 39, 'brown', 0.52); p.vline(35, 0, 39, 'brown', 0.22);
+  return p.snap(0.45);
+};
+
+T.CHAIRLEG = () => {
+  /* Under a seat: two steel legs and the daylight between them. Masked,
+     so the classroom floor shows through — a chair with a solid box
+     under it is a crate. */
+  const p = new Pix(36, 18, 662, false);
+  p.clear();
+  for (const x of [3, 30]) {
+    p.box(x, 0, 3, 18, 'grey', 0.26, 255);
+    p.vline(x, 0, 17, 'grey', 0.40, 255);
+    p.vline(x + 2, 0, 17, 'grey', 0.12, 255);
+  }
+  /* the stretcher between them, and the apron under the seat */
+  p.box(0, 0, 36, 2, 'brown', 0.22, 255);
+  p.hline(0, 35, 0, 'brown', 0.34, 255);
+  p.box(5, 11, 26, 2, 'grey', 0.24, 255);
+  p.hline(5, 30, 11, 'grey', 0.38, 255);
+  return p.snap(0.3);
+};
+
+T.CHAIRBAK = () => {
+  /* The back of the chair, and the legs under it. Six units wide on the
+     chair and twenty from the side, so it is seen BOTH ways and has to
+     read either way — which is why nothing in it happens at one x: the
+     panel runs the width, the slot runs the width, the stretcher runs
+     the width, and any crop of it is still a back over a leg. */
+  const p = new Pix(36, 40, 663);
+  p.clear();
+  /* the legs, bottom half */
+  for (const x of [3, 30]) { p.box(x, 20, 3, 20, 'grey', 0.26, 255); p.vline(x, 20, 39, 'grey', 0.40, 255); }
+  p.box(0, 30, 36, 2, 'grey', 0.22, 255);
+  /* the plywood back panel over them, with the slot every one of these
+     has and a rolled top edge */
+  p.box(0, 0, 36, 22, 'brown', 0.38, 255);
+  const n = fbm(36, 22, 6, 2, 663);
+  for (let y = 0; y < 22; y++) for (let x = 0; x < 36; x++)
+    p.wash(x, y, 'brown', 0.34 + n[y * 36 + x] * 0.18, 0.5);
+  p.hline(0, 35, 0, 'brown', 0.62);
+  p.hline(0, 35, 1, 'brown', 0.48);
+  p.hline(0, 35, 21, 'brown', 0.16);
+  p.box(6, 8, 24, 3, 'brown', 0.14, 255);
+  p.hline(6, 29, 11, 'brown', 0.52, 255);
+  return p.snap(0.35);
+};
+
+T.TEACHDSK = () => {
+  /* The front of the teacher's desk: a pedestal of three drawers with
+     pulls, a knee hole, and the modesty panel across it. Thirty-two
+     tall, which is what the desk is. */
+  const p = new Pix(64, 32, 664);
+  const n = fbm(64, 32, 8, 2, 664);
+  for (let y = 0; y < 32; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'brown', 0.30 + n[y * 64 + x] * 0.06);
+  p.hline(0, 63, 0, 'brown', 0.52);
+  p.hline(0, 63, 1, 'brown', 0.40);
+  /* the drawer pedestal on the left */
+  p.box(2, 3, 22, 27, 'brown', 0.34);
+  p.frame(2, 3, 22, 27, 'brown', 0.20);
+  for (let i = 0; i < 3; i++) {
+    const y = 4 + i * 9;
+    p.box(4, y, 18, 7, 'brown', 0.38);
+    p.hline(4, 21, y, 'brown', 0.50);
+    p.hline(4, 21, y + 6, 'brown', 0.16);
+    p.box(10, y + 2, 6, 2, 'grey', 0.44);                 // the pull
+    p.hline(10, 15, y + 2, 'grey', 0.62);
+  }
+  /* the knee hole, and the modesty panel across the back of it */
+  p.box(24, 3, 38, 27, 'brown', 0.12);
+  p.box(24, 3, 38, 12, 'brown', 0.26);
+  p.hline(24, 37, 12, 'brown', 0.08);
+  /* and a second pedestal, cropped, so a wider desk still reads */
+  p.box(38, 3, 24, 27, 'brown', 0.34);
+  p.frame(38, 3, 24, 27, 'brown', 0.20);
+  for (let i = 0; i < 3; i++) {
+    const y = 4 + i * 9;
+    p.box(40, y, 18, 7, 'brown', 0.38);
+    p.hline(40, 57, y, 'brown', 0.50);
+    p.hline(40, 57, y + 6, 'brown', 0.16);
+    p.box(46, y + 2, 6, 2, 'grey', 0.44);
+    p.hline(46, 51, y + 2, 'grey', 0.62);
+  }
+  p.box(0, 30, 64, 2, 'grey', 0.14);
+  p.grime(0.3, 'grey', 0.08, 665);
+  return p.snap(0.45);
+};
+
+/* =====================================================================
+   THE GYM, THE AUDITORIUM AND WHAT A SCHOOL HAS ON ITS WALLS
+
+   At the user's request: more in the gym, an auditorium that was not
+   there, and detail everywhere else. All of it is either a free box
+   above head height, a band on a wall, or the top of a raised floor —
+   which between them is every trick this map has.
+   ===================================================================== */
+
+T.BACKBORD = () => {
+  /* A backboard from the front: the fan-shaped board, the painted
+     rectangle, the ring and the net. It hangs above head height on a
+     free box, so this is the only face of it anybody reads. */
+  const p = new Pix(64, 40, 700);
+  p.clear();
+  /* the board: plywood, painted white, with the black border */
+  p.box(6, 0, 52, 30, 'bone', 0.80, 255);
+  p.frame(6, 0, 52, 30, 'grey', 0.16);
+  p.frame(7, 1, 50, 28, 'bone', 0.92);
+  /* the shooter's square */
+  p.frame(21, 10, 22, 15, 'grey', 0.14);
+  p.frame(22, 11, 20, 13, 'grey', 0.10);
+  /* the ring, and the net under it */
+  p.box(22, 29, 20, 2, 'rust', 0.52, 255);
+  p.hline(22, 41, 29, 'rust', 0.70, 255);
+  for (let i = 0; i < 6; i++) {
+    const x = 23 + i * 3;
+    for (let k = 0; k < 7; k++) p.ink(x + Math.round(k * (i < 3 ? 0.4 : -0.4)), 31 + k, 'bone', 0.72 - k * 0.04, 255);
+  }
+  for (let y = 33; y < 38; y += 2) p.hline(25, 38, y, 'bone', 0.58, 255);
+  return p.snap(0.35);
+};
+
+T.SCOREBRD = () => {
+  /* The scoreboard: HOME and GUEST, four amber digits, the period and
+     the clock. Lit past one on the prop, which is what makes the digits
+     read as bulbs and the case as a case. */
+  const p = new Pix(64, 40, 702);
+  p.fill('grey', 0.10);
+  p.bevel(0, 0, 64, 40, 'grey', 0.32, 'grey', 0.04);
+  const digit = (x, y, w, h, t) => {
+    p.box(x, y, w, h, 'yellow', 0.16);
+    p.hline(x, x + w - 1, y, 'yellow', t);
+    p.hline(x, x + w - 1, y + Math.floor(h / 2), 'yellow', t * 0.8);
+    p.hline(x, x + w - 1, y + h - 1, 'yellow', t);
+    p.vline(x, y, y + h - 1, 'yellow', t * 0.9);
+    p.vline(x + w - 1, y, y + h - 1, 'yellow', t * 0.9);
+  };
+  drawText(p, 'HOME', 3, 3, 'bone', 0.72, 1);
+  drawText(p, 'GUEST', 38, 3, 'bone', 0.72, 1);
+  digit(4, 11, 7, 12, 0.90); digit(13, 11, 7, 12, 0.90);
+  digit(40, 11, 7, 12, 0.90); digit(49, 11, 7, 12, 0.90);
+  /* the clock across the middle, and the period box */
+  p.box(22, 11, 16, 12, 'grey', 0.06);
+  digit(23, 12, 6, 10, 0.72); digit(31, 12, 6, 10, 0.72);
+  drawTextCentred(p, 'PERIOD', 32, 27, 'bone', 0.56, 1);
+  digit(29, 33, 6, 6, 0.86);
+  p.frame(0, 0, 64, 40, 'grey', 0.24);
+  return p.snap(0.3);
+};
+
+T.WALLBARS = () => {
+  /* Swedish bars: two uprights and a ladder of dowels. Masked, so the
+     gym wall shows between the rungs — the whole of a wall bar is the
+     gap. */
+  const p = new Pix(40, 64, 704, false);
+  p.clear();
+  for (const x of [1, 35]) {
+    p.box(x, 0, 4, 64, 'brown', 0.36, 255);
+    p.vline(x, 0, 63, 'brown', 0.52, 255);
+    p.vline(x + 3, 0, 63, 'brown', 0.18, 255);
+  }
+  for (let y = 3; y < 64; y += 7) {
+    p.box(5, y, 30, 2, 'brown', 0.44, 255);
+    p.hline(5, 34, y, 'brown', 0.62, 255);
+    p.hline(5, 34, y + 1, 'brown', 0.22, 255);
+  }
+  return p.snap(0.35);
+};
+
+T.PENNANT = () => {
+  /* A championship pennant off a truss: a felt triangle with a year on
+     it, and the tail of the next one. Masked, hanging in the dark. */
+  const p = new Pix(48, 32, 706, false);
+  p.clear();
+  for (let y = 0; y < 26; y++) {
+    const w = Math.round(44 * (1 - y / 30));
+    for (let x = 2; x < 2 + w; x++) p.ink(x, y, y < 3 || y > 22 ? 'blue' : 'blue', 0.24 + (y % 2) * 0.05, 255);
+  }
+  p.box(2, 0, 7, 26, 'yellow', 0.52, 255);
+  for (let y = 0; y < 26; y++) { p.ink(2, y, 'blue', 0.42, 255); }
+  drawText(p, '54', 12, 8, 'yellow', 0.80, 1);
+  drawText(p, '61', 12, 16, 'yellow', 0.66, 1);
+  for (let y = 0; y < 26; y++) {
+    const w = Math.round(44 * (1 - y / 30));
+    p.ink(2 + w, y, 'blue', 0.10, 255);
+  }
+  return p.snap(0.3);
+};
+
+T.AUDSEAT = () => {
+  /* Four theatre seats from above: the backs, the gap between the
+     standards, and the arm between each pair. One repeat is four
+     seats, which is what stops a block of them being wallpaper. */
+  const p = new Pix(64, 28, 708);
+  p.fill('grey', 0.12);
+  for (let i = 0; i < 4; i++) {
+    const x = i * 16;
+    /* the back, seen from above and behind: upholstery with a roll.
+       PAINTED WELL UP THE RED RAMP, because a hall is a dim room and a
+       seat at the bottom of the ramp in a dim room is a dark patch —
+       the first cut had the backs at 0.24 and a bank of them read as
+       one red floor with lines on it. */
+    p.box(x + 2, 2, 12, 14, 'red', 0.40);
+    p.hline(x + 2, x + 13, 2, 'red', 0.60);
+    p.hline(x + 2, x + 13, 3, 'red', 0.50);
+    p.hline(x + 2, x + 13, 15, 'red', 0.18);
+    for (let y = 5; y < 15; y += 3) p.hline(x + 3, x + 12, y, 'red', 0.30);
+    /* the seat pan, tipped up, darker */
+    p.box(x + 3, 17, 10, 8, 'red', 0.26);
+    p.hline(x + 3, x + 12, 17, 'red', 0.46);
+    /* the cast standard between them */
+    p.box(x + 14, 2, 3, 23, 'grey', 0.30);
+    p.vline(x + 14, 2, 24, 'grey', 0.50);
+  }
+  p.hline(0, 63, 0, 'grey', 0.08);
+  p.hline(0, 63, 26, 'grey', 0.20);
+  p.hline(0, 63, 27, 'grey', 0.06);
+  p.grime(0.3, 'grey', 0.08, 709);
+  return p.snap(0.45);
+};
+
+T.CURTAIN = () => {
+  /* The house curtain: heavy red velvet in folds. What makes velvet
+     velvet is that the highlight is on the SIDE of a fold and not on
+     its crest, and that the colour goes darker as it goes brighter —
+     so the lit edge of a fold is nearly bone and the body of it is
+     nearly black. */
+  const p = new Pix(48, 64, 710);
+  const rng = makeRng(711);
+  const folds = [];
+  for (let i = 0; i < 6; i++) folds.push(3 + i * 8 + Math.floor(rng() * 3));
+  for (let x = 0; x < 48; x++) {
+    /* distance to the nearest fold crest, wrapped */
+    let d = 99;
+    for (const c of folds) d = Math.min(d, Math.abs(((x - c + 72) % 48) - 24) === 24 ? 99 : Math.abs(x - c), Math.abs(x - c + 48), Math.abs(x - c - 48));
+    const t = d < 1 ? 0.46 : d < 2 ? 0.34 : d < 4 ? 0.22 : 0.13;
+    for (let y = 0; y < 64; y++) p.ink(x, y, 'red', t);
+  }
+  /* the vertical nap, and the swag of the hem */
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 48; x++)
+    if ((x * 7 + y * 3) % 11 === 0) p.wash(x, y, 'red', 0.30, 0.25);
+  p.box(0, 0, 48, 3, 'red', 0.08);
+  p.hline(0, 47, 3, 'red', 0.40);
+  for (let x = 0; x < 48; x++) {
+    const h = 60 + Math.round(Math.sin(x / 48 * 6.283 * 3) * 2);
+    for (let y = h; y < 64; y++) p.ink(x, y, 'red', 0.07);
+    p.ink(x, h, 'red', 0.30);
+  }
+  return p.snap(0.45);
+};
+
+T.PROSCEN = () => {
+  /* The proscenium header: plaster, a moulded band top and bottom, and
+     the cove the house lights sit in. One repeat is the whole depth of
+     it, so the mouldings happen once. */
+  const p = new Pix(64, 64, 712);
+  const n = fbm(64, 64, 8, 2, 712);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'bone', 0.40 + n[y * 64 + x] * 0.06);
+  /* the moulding at the top, three courses of it */
+  for (const [y, h, t] of [[0, 3, 0.62], [4, 2, 0.30], [7, 4, 0.52]]) {
+    p.box(0, y, 64, h, 'bone', t);
+    p.hline(0, 63, y, 'bone', Math.min(1, t + 0.20));
+    p.hline(0, 63, y + h - 1, 'bone', Math.max(0, t - 0.22));
+  }
+  /* the cove, with the light in it washing up the plaster */
+  p.box(0, 13, 64, 5, 'bone', 0.16);
+  p.hline(0, 63, 13, 'bone', 0.08);
+  p.hline(0, 63, 17, 'yellow', 0.66);
+  for (let y = 18; y < 34; y++) for (let x = 0; x < 64; x++)
+    p.wash(x, y, 'yellow', 0.60, (1 - (y - 18) / 16) * 0.22);
+  /* the panelled face under it */
+  for (let x = 4; x < 64; x += 20) {
+    p.frame(x, 22, 16, 34, 'bone', 0.30);
+    p.hline(x, x + 15, 22, 'bone', 0.54);
+    p.vline(x, 22, 55, 'bone', 0.52);
+  }
+  p.box(0, 58, 64, 4, 'bone', 0.54);
+  p.hline(0, 63, 58, 'bone', 0.72);
+  p.hline(0, 63, 62, 'bone', 0.18);
+  return p.snap(0.45);
+};
+
+T.TROPHY = () => {
+  /* The trophy case in the lobby: glass, three shelves, and what is on
+     them. Lit, because the one in every school is. */
+  const p = new Pix(64, 64, 714);
+  p.fill('grey', 0.08);
+  p.box(3, 3, 58, 58, 'brown', 0.16);
+  const rng = makeRng(715);
+  for (let sh = 0; sh < 3; sh++) {
+    const y = 8 + sh * 18;
+    /* the shelf itself */
+    p.box(4, y + 14, 56, 2, 'brown', 0.34);
+    p.hline(4, 59, y + 14, 'brown', 0.52);
+    /* cups and plaques on it */
+    let x = 6;
+    while (x < 56) {
+      const w = 4 + Math.floor(rng() * 5), h = 6 + Math.floor(rng() * 8);
+      const k = rng() < 0.6 ? 'yellow' : 'grey';
+      p.box(x, y + 14 - h, w, h, k, 0.34 + rng() * 0.2);
+      p.vline(x, y + 14 - h, y + 13, k, 0.62);
+      p.box(x - 1, y + 12, w + 2, 2, 'brown', 0.26);
+      x += w + 3 + Math.floor(rng() * 4);
+    }
+  }
+  /* the glass: two raked highlights and the mullion between the doors */
+  for (let y = 3; y < 61; y++) for (let x = 3; x < 61; x++) {
+    if ((x + y * 2) % 41 < 3) p.wash(x, y, 'bone', 0.86, 0.18);
+  }
+  p.vline(32, 3, 60, 'grey', 0.30);
+  p.frame(2, 2, 60, 60, 'brown', 0.38);
+  p.frame(0, 0, 64, 64, 'brown', 0.22);
+  return p.snap(0.4);
+};
+
+T.NOTICEBD = () => {
+  /* A cork board with things pinned to it, most of them crooked. */
+  const p = new Pix(64, 48, 716);
+  const n = fbm(64, 48, 10, 3, 716);
+  for (let y = 0; y < 48; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'rust', 0.22 + n[y * 64 + x] * 0.10);
+  speckle(64, 48, 300, 717, (x, y, a, b) => p.wash(x, y, 'rust', a < 0.5 ? 0.14 : 0.34, 0.3 + b * 0.3));
+  const rng = makeRng(718);
+  for (let i = 0; i < 7; i++) {
+    const w = 9 + Math.floor(rng() * 9), h = 10 + Math.floor(rng() * 9);
+    const x = 2 + Math.floor(rng() * (60 - w)), y = 2 + Math.floor(rng() * (44 - h));
+    p.box(x, y, w, h, 'bone', 0.66 + rng() * 0.2);
+    p.hline(x, x + w - 1, y, 'bone', 0.90);
+    p.vline(x + w - 1, y, y + h - 1, 'grey', 0.18);
+    for (let r = 2; r < h - 1; r += 2) p.hline(x + 1, x + w - 2, y + r, 'grey', 0.22);
+    p.ink(x + Math.floor(w / 2), y + 1, ['red', 'yellow', 'green', 'blue'][Math.floor(rng() * 4)], 0.60);
+  }
+  p.frame(0, 0, 64, 48, 'brown', 0.30);
+  p.frame(1, 1, 62, 46, 'brown', 0.44);
+  return p.snap(0.45);
+};
+
+T.RADIATOR = () => {
+  /* A cast iron radiator under a window: columns, the top rail, the
+     valve at one end. One repeat is eight columns. */
+  const p = new Pix(64, 32, 720);
+  p.clear();
+  for (let i = 0; i < 8; i++) {
+    const x = 1 + i * 8;
+    p.box(x, 2, 6, 27, 'bone', 0.34, 255);
+    p.vline(x, 2, 28, 'bone', 0.52, 255);
+    p.vline(x + 5, 2, 28, 'grey', 0.14, 255);
+    p.box(x + 2, 6, 2, 19, 'bone', 0.22, 255);
+  }
+  p.box(0, 0, 64, 3, 'bone', 0.46, 255);
+  p.hline(0, 63, 0, 'bone', 0.66, 255);
+  p.box(0, 29, 64, 3, 'bone', 0.20, 255);
+  p.box(58, 20, 5, 7, 'grey', 0.40, 255);        // the valve
+  p.hline(58, 62, 20, 'grey', 0.60, 255);
+  streaks(p, 3, 721, 'rust', 0.24, 0.3);
+  return p.snap(0.4);
+};
+
+T.FOUNTAIN = () => {
+  /* A drinking fountain: the stainless bowl, the bubbler, the push bar
+     and the trap under it. Twenty-four wide and thirty tall, which is
+     what one is. */
+  const p = new Pix(24, 30, 722, false);
+  p.clear();
+  p.box(1, 0, 22, 12, 'grey', 0.44, 255);
+  p.hline(1, 22, 0, 'grey', 0.68, 255);
+  p.hline(1, 22, 11, 'grey', 0.16, 255);
+  /* the bowl, pressed into it */
+  p.box(4, 2, 16, 8, 'grey', 0.26, 255);
+  p.frame(4, 2, 16, 8, 'grey', 0.14, 255);
+  p.box(6, 4, 12, 4, 'grey', 0.34, 255);
+  p.box(10, 1, 4, 3, 'grey', 0.56, 255);        // the bubbler
+  p.box(3, 9, 6, 2, 'grey', 0.58, 255);         // the push bar
+  /* the trap and the supply under it */
+  p.box(9, 12, 6, 8, 'grey', 0.30, 255);
+  p.vline(9, 12, 19, 'grey', 0.46, 255);
+  p.box(10, 20, 4, 10, 'grey', 0.22, 255);
+  return p.snap(0.35);
+};
+
+T.SCHCLOCK = () => {
+  /* The clock over a classroom door, in its wire guard. */
+  const p = new Pix(24, 24, 724, false);
+  p.clear();
+  p.disc(12, 12, 11.4, 'grey', 0.34);
+  p.disc(12, 12, 10, 'bone', 0.80);
+  p.disc(12, 12, 9, 'bone', 0.88);
+  for (let i = 0; i < 12; i++) {
+    const a = i / 12 * 6.2832;
+    p.ink(Math.round(12 + Math.cos(a) * 7.5), Math.round(12 + Math.sin(a) * 7.5), 'grey', 0.10);
+  }
+  p.line(12, 12, 12, 6, 'grey', 0.06);
+  p.line(12, 12, 17, 14, 'grey', 0.06);
+  p.ink(12, 12, 'grey', 0.20);
+  /* the guard */
+  for (let i = 0; i < 4; i++) {
+    const a = i / 4 * 6.2832 + 0.4;
+    p.line(12, 12, Math.round(12 + Math.cos(a) * 11), Math.round(12 + Math.sin(a) * 11), 'grey', 0.30);
+  }
+  return p.snap(0.3);
 };
 
 /* ---------- the cemetery ---------- */
