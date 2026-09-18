@@ -373,8 +373,23 @@ export function buildLevelGeometry(level, bank) {
     /* AND THE BOXES: the chimney over the ridge, the porch over the
        stoop, the cornice at the top of a wall. Shell, with the roofs,
        because a chimney is most of what a house is from three streets
-       away. */
-    for (const r of blockProps.get(k) || []) boxGeometry(set, r);
+       away.
+
+       UNLESS THE MAP SAYS OTHERWISE. A chimney belongs in the shell; a
+       tin of beans on a conveyor does not. The checkstands put about
+       four hundred small boxes inside the supermarket — the tills, the
+       racks, the shopping on the belts — and the rule at the top of
+       this function is that the group is a question about the SURFACE,
+       so furniture in a room goes in with the room and drops out when
+       the room does.
+
+       Measured, it changes nothing today: the interior distance is
+       taken from a block's NEAR CORNER, so you have to be most of two
+       blocks clear of the supermarket before its inside is dropped at
+       all, and by then the whole shop has gone with it. It is the right
+       group rather than a saving, and it is the group that will be
+       asked if that distance is ever tightened. */
+    for (const r of blockProps.get(k) || []) boxGeometry(r.inner ? inner : set, r);
     for (const t of blockLamps.get(k) || []) lampGeometry(set, level, t);
     shellG.add(set.toGroup(bank));
     if (inner.map.size) innerG.add(inner.toGroup(bank));

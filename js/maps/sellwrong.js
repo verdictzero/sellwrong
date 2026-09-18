@@ -20,7 +20,7 @@
              ├─┬─┬─┬─┬─┬─┬─┬──┬──┬──┬══════════┬──┬──┬──┬─┬─┬─┬─┬─┬─┬─┤
      y     0 │ │ │ │ │ │ │ │V │W │C ║ SELLWRONG║K │P │V │ │ │ │ │ │ │ │
              │ seven unnamed │  │  ║ front end ║  │  │  │ seven more   │
-     y   400 │ │ │ │ │ │ │ │ │  │  ║ twelve    ║  │  │  │ │ │ │ │ │ │ │
+     y   520 │ │ │ │ │ │ │ │ │  │  ║ twelve    ║  │  │  │ │ │ │ │ │ │ │
              └─┴─┴─┴─┴─┴─┴─┴─┴──┴──╢ runs,     ╟──┴──┴──┴─┴─┴─┴─┴─┴─┴─┘
      y  2620 ──────────────────────╢ butchery  ╟
      y  2776 ══════════════════════╬═══ STAFF ═╬
@@ -107,13 +107,31 @@ const aisleX = k => colX(k) + GOND_W + AISLE_W / 2;
 const WEST_WALK = 340;               // ANCHOR_X0..340 is fixture, 340..GX0 is aisle
 const EAST_DEPT = 3840;              // GX1..3840 is aisle, 3840..ANCHOR_X1 is chill
 
+/* The front end, south to north: the mat inside the doors, the band the
+   checkstands stand in, and the cross-aisle behind them.
+
+   THE BAND IS 260 DEEP BECAUSE THAT IS WHAT A CHECKSTAND IS. It used to
+   be 140, which is a shop counter — a slab you hand things over — and a
+   slab is what it looked like. A belted checkstand is a long machine:
+   you unload at one end, the belt carries it past a scanner in the
+   middle, and it is bagged at the other. Laid out at 140 there is room
+   for the scanner and nothing either side of it, and the thing the user
+   asked for — a conveyor with the shopping piling up down it — has
+   nowhere to happen.
+
+   The eighty units come off the FIRST RUN of gondola rather than off the
+   mat or the cross-aisle, both of which are already as thin as they can
+   be. Run one is 600 deep now against 680 for the others, which is what
+   the front run of a supermarket usually is: it is the run nearest the
+   tills and the one that loses floor to them. */
+const Y_MAT = 0, Y_TILL = 120, Y_TILLEND = 380, Y_FRONTX = 520;
+
 /* the runs, north from the front */
 const ROWS = [
-  { y0: 400,  y1: 1080 },
+  { y0: Y_FRONTX, y1: 1080 },
   { y0: 1220, y1: 1900 },
   { y0: 2040, y1: 2620 },
 ];
-const Y_MAT = 0, Y_TILL = 120, Y_TILLEND = 260, Y_FRONTX = 400;
 const Y_BACKX = 2620, Y_BACKXEND = 2760;
 const BOH_Y0 = Y_BACKXEND + WALL, BOH_Y1 = ANCHOR_Y1;
 
@@ -279,6 +297,12 @@ const SIGN_STEP = 6;                        // how deep each strip is
 export const CEIL_SHOP = 352, CEIL_BOH = 416, CEIL_UNIT = 240;
 export const H_GONDOLA = 80;      // taller than you: an aisle is a canyon
 export const H_FIXTURE = 40;      // below eye level: the front stays open
+/* THE BELT, and it is up here with the others because a texture is
+   declared at the height of the fixture it skins — see BELTSIDE in
+   TEXTURE_SIZES, and the check that holds the two together. Two below
+   the deck, so the deck edge round it reads as a lip, and 26 above the
+   floor against a MAX_STEP of 24 so there is no way onto it. */
+export const H_BELT = 38;
 
 /* THE DOORS. Doom's door is 128 tall — two and a bit of you — and so
    is this one; it was 210, three and three quarters of you, and read
@@ -530,6 +554,20 @@ const LOT_PLAN = [
    lights every time. */
 const FUEL = {
   none: 0, footway: 120, walk: 55, front: 62, corridor: 62,
+  /* A CHECKSTAND IS NOT A PATCH OF FLOOR. `front` is what the open part
+     of the front end holds — lino, a mat, some litter — and the tills
+     were on it because a till was one raised rectangle and raised
+     rectangles are furniture nobody had asked to burn.
+
+     What one is made of is laminate on chipboard, a rubber belt, a
+     plastic rack with forty bars of chocolate and a magazine on it, a
+     bundle of carrier bags and whatever the last customer has not paid
+     for yet. That is between an aisle and a produce bin, not between a
+     floor and a corridor — and it matters, because the shop's own steel
+     is brought down by how long there is fire AT a region, so a front
+     end that burns out in twenty seconds leaves eight checkstands
+     standing in a building that has otherwise come down. */
+  checkout: 210,
   gondola: 300, produce: 150, bakery: 210, chill: 90, deli: 120,
   stock: 340, dock: 190, office: 200,
   unit: 240, kitchen: 330,
@@ -1242,15 +1280,302 @@ export function buildSellWrong(opts = {}) {
   const mat = rm.add(ANCHOR_X0, Y_MAT, ANCHOR_X1, Y_TILL,
     shop('entrance mat', 0.34, FUEL.front, { floorTex: 'LINOWORN' }));
 
-  /* eight tills across the front, and the lanes between them */
+  /* =================================================================
+     A CHECKSTAND
+
+     Eight of these across the front, and this is the thing the player
+     now starts standing inside, so it is worth saying what one is.
+
+     IT WAS A SLAB. One rectangle, 180 by 140, raised to bench height
+     and wearing one texture called CHECKOUT on all six sides of it. As
+     a piece of shop furniture that is defensible — you cannot walk
+     through it, you can shoot over it, it reads as a till from the
+     doors — and as a place to STAND it is nothing at all: there is no
+     behind, because a slab has no behind.
+
+     A real belted checkstand is a machine with a direction. You join it
+     at the back, unload onto a belt, walk forward beside your shopping
+     while the belt takes it to a scanner, pay at the scanner, and
+     collect it bagged at the front. The cashier is not beside you, they
+     are ACROSS it, standing in a slot cut into the far side with their
+     back to the next lane. So four things have to be true of the
+     geometry before any of it can be dressed:
+
+       the thing has a LONG AXIS and it is the way the customer walks
+       the surfaces along it are DIFFERENT SURFACES — belt, then glass,
+         then stainless — and at different heights
+       there is a WELL in the middle of the far side that is shop floor,
+         open behind and shut in front, that one person fits in
+       and it is TWO of them back to back, which is why there is a lane
+         either side and one well between: a cashier serves the lane
+         they face, and the next cashier along faces the other way.
+
+     THE WELL IS THE WHOLE POINT and it is also the only part with a
+     rule attached. It is 60 wide against a player 32 across, open to
+     the front cross-aisle at the back so you can walk into it, and shut
+     at the customer end by the nose — the end cap that ties the two
+     runs together. Leave the nose off and the well is a shortcut from
+     the shop floor to the mat that goes round the tills, which is the
+     one thing a front end exists to prevent.
+
+     NOTHING HERE IS CLIMBABLE, and that is load-bearing rather than
+     tidy. Every surface on the stand is at least 26 above the floor
+     against a MAX_STEP of 24, so the shopping piled on the belt can be
+     free boxes — see THE SHOPPING below — instead of two hundred
+     sectors. Drop the belt two units to 36 and you can climb onto it,
+     and the first thing you do is walk through somebody's groceries.
+     ================================================================= */
+  const RUN_W = 60;                       // one counter run, each side
+  const WELL_W = TILL_W - RUN_W * 2;      // 60, and the cashier is in it
+  /* the bands along it, from the doors inward */
+  const CS_NOSE = Y_TILL + 24;            // 144 — the end cap, both runs
+  const CS_BAG = CS_NOSE + 80;            // 224 — bagging deck ends here
+  const CS_SCAN = CS_BAG + 48;            // 272 — scanner bed ends here
+  /* and the belt is the rest of it, CS_SCAN..Y_TILLEND, 108 long */
+  /* TWO HEIGHTS AND NOT THREE. The belt and the scale plate are the
+     same height, because they are the same surface as far as the
+     shopping is concerned — the belt delivers ONTO the plate and a step
+     between them would be a step everything falls off.
+
+     The first cut had the plate recessed to 34, on the reasoning that a
+     scale sits down in the counter, which it does. What that bought was
+     a 22-unit step from the lane floor against a MAX_STEP of 24: you
+     could climb onto the scale plate, from there onto the belt, and
+     from there walk through somebody's shopping, because free boxes do
+     not collide. Everything on a checkstand is 26 above the floor now
+     and the recess is painted into SCANBED where it belongs. */
+  const H_SCAN = H_BELT;                  // the scale plate, flush with it
+  const RAIL_W = 5, RAIL_H = 8;           // the guards down the belt
+  const CS_LIGHT = 0.42;                  // what the front end throws
+
+  /* WHICH ONE IS YOURS. The middle of the eight, because the well of it
+     is 30 units off the centre line of the entrance doors — so the shot
+     out of your own lane is down the length of the front end with the
+     doors at the end of it. */
+  const MY_TILL = 4;
+  const tillX = k => GX0 + k * TILL_PITCH;
+  /* The lane a checkstand's west run serves: the gap between it and the
+     one before, or the west end of the front for the first. One queue
+     per till goes down this, and the cashier faces it. */
+  const laneX = k => k === 0 ? (ANCHOR_X0 + GX0) / 2 : tillX(k) - (TILL_PITCH - TILL_W) / 2;
+  const MY_LANE = laneX(MY_TILL);
+  const MY_WELL = tillX(MY_TILL) + RUN_W + WELL_W / 2;
+  /* where the person being served stands, and where the cashier does */
+  const CS_SERVE = (CS_BAG + CS_SCAN) / 2;
+
+  /* THE SHOPPING. Free boxes, for the reason free boxes exist: a sector
+     engine has one floor per x,y, so a tin standing on a box of cereal
+     is two sectors that overlap and cannot both be there. A box has no
+     such trouble and costs six faces.
+
+     What a free box cannot do is stop you, which is exactly why the
+     stand is unclimbable: the only way to reach any of this is to be
+     standing on the belt, and you cannot get onto the belt.
+
+     Nine kinds, and the mix matters more than any one of them — a pile
+     of one carton repeated is a pallet, not a shop. Two printed
+     cartons, a tray of tins, two bags (one of them long, which is the
+     bread), a small carton, and two open boxes of produce wearing the
+     tops the produce bins already wear. */
+  const GROCERIES = [
+    { w: 15, d: 10, h: 23, tex: 'GROCBOX', top: 'GROCTOP' },    // cereal, on end
+    { w: 18, d: 13, h: 15, tex: 'GROCBOX2', top: 'GROCTOP' },
+    { w: 14, d: 11, h: 11, tex: 'GROCCAN', top: 'GROCCAN' },    // a tray of tins
+    { w: 17, d: 13, h: 14, tex: 'GROCBAG', top: 'GROCBAG' },
+    { w: 23, d: 10, h: 9, tex: 'GROCBAG', top: 'GROCBAG' },     // the bread
+    { w: 10, d: 8, h: 14, tex: 'GROCBOX2', top: 'GROCTOP' },
+    /* the two open trays wear GROCTOP on their sides, which is the same
+       brown board its flaps are, rather than CARDBOX — CARDBOX is a
+       STACK of cases 64 units across and a fifth of one stretched over
+       an 18-unit tray is a smear of cardboard with no box in it */
+    { w: 18, d: 14, h: 9, tex: 'GROCTOP', top: 'PRODAPPL' },    // open, apples
+    { w: 18, d: 14, h: 9, tex: 'GROCTOP', top: 'PRODGREN' },    // open, greens
+    { w: 13, d: 12, h: 18, tex: 'GROCBOX', top: 'GROCTOP' },
+  ];
+
+  /* the map's own `prop`, kept under another name so the checkstand's
+     can shadow it without losing it */
+  const outerProp = prop;
+
+  /**
+   * One run of counter: the half of a checkstand that faces one lane.
+   * `lane` is -1 if the queue is to the west of it and +1 if east, which
+   * is the only thing that differs between the two halves of a stand —
+   * everything is mirrored about the well.
+   */
+  const checkoutRun = (k, x0, x1, lane, busy) => {
+    const outer = lane < 0 ? x0 : x1;          // the face the customer is at
+    const inner = lane < 0 ? x1 : x0;          // the face the cashier is at
+    const mid = (x0 + x1) / 2;
+    /* EVERY BOX ON A CHECKSTAND IS INTERIOR. A free box normally goes
+       in a block's SHELL, with the roofs and the chimneys, because that
+       is what a building is from three streets away. None of this is:
+       it is furniture in a room, and it belongs in the group that drops
+       out when the room does. See boxGeometry's caller in js/mapgeo.js
+       — including the note on how little that is worth today. */
+    const prop = (a, b, c, d, z0, z1, tex, extra = {}) =>
+      outerProp(a, b, c, d, z0, z1, tex, { inner: true, ...extra });
+    const till = (name, extra) => shop(name, 0.32, FUEL.checkout, extra);
+    /* a strip `d` deep taken off one of the two faces, as [lo, hi] */
+    const strip = (from, d) => from === outer
+      ? (lane < 0 ? [outer, outer + d] : [outer - d, outer])
+      : (lane < 0 ? [inner - d, inner] : [inner, inner + d]);
+
+    /* --- the three surfaces, and they are three different heights --- */
+    rm.add(x0, CS_NOSE, x1, CS_BAG, till('bagging', {
+      floor: H_FIXTURE, floorTex: 'BAGDECK', lowerTex: 'CHECKOUT',
+      floorAnchor: [x0, CS_BAG],
+    }));
+    rm.add(x0, CS_BAG, x1, CS_SCAN, till('scanner', {
+      floor: H_SCAN, floorTex: 'SCANBED', lowerTex: 'CHECKOUT',
+      floorAnchor: [x0, CS_SCAN],
+    }));
+    rm.add(x0, CS_SCAN, x1, Y_TILLEND, till('belt', {
+      floor: H_BELT, floorTex: 'BELTRUB', lowerTex: 'BELTSIDE',
+      floorAnchor: [x0, Y_TILLEND],
+    }));
+
+    /* --- what stands on it ------------------------------------------
+       The guards down both sides of the belt and the plate at the end
+       of it, which is the thing the shopping piles up against and the
+       reason a pile can be drawn at all. */
+    const rail = (a, b, c, d, z0, z1, light = CS_LIGHT) =>
+      prop(a, b, c, d, z0, z1, 'TILLRAIL', { topTex: 'TILLRAIL', light });
+    rail(x0, CS_SCAN, x0 + RAIL_W, Y_TILLEND, H_BELT, H_BELT + RAIL_H);
+    rail(x1 - RAIL_W, CS_SCAN, x1, Y_TILLEND, H_BELT, H_BELT + RAIL_H);
+    rail(x0, CS_SCAN, x1, CS_SCAN + 7, H_BELT, H_BELT + 13, CS_LIGHT + 0.06);
+    rail(x0, Y_TILLEND - 9, x1, Y_TILLEND, H_BELT, H_BELT + 11, CS_LIGHT - 0.04);
+
+    /* THE REGISTER SITS BESIDE THE SCANNER, NOT ON IT, and the reason is
+       the shot you get when you spawn. The cashier's line of sight west
+       across the scale plate is the customer; a terminal in the middle
+       of it is a terminal with a hat on. It goes on the deck at the
+       bagging end, on the cashier's side — which is also where it is in
+       a shop, because you scan with one hand and key with the other.
+
+       AND IT IS THE SIZE OF A TERMINAL. The first cut was 34 by 28 by
+       38, which is a filing cabinet with a screen on it, and the two of
+       them — one per run, either side of the well — made the place you
+       spawn a corridor between two arcade machines. The scale that
+       settles it is the counter: a counter top is 36 inches and this
+       one is 28 units above the floor, so a unit is about an inch and a
+       third, and a till is 22 by 16 by 24. Everything else on the stand
+       is measured against the same number. */
+    const [r0, r1] = strip(inner, 16);
+    prop(r0, CS_BAG - 32, r1, CS_BAG - 10, H_FIXTURE, H_FIXTURE + 24,
+      'REGISTER', { topTex: 'TILLTOP', light: CS_LIGHT + 0.14 });
+    /* and the card reader on its post, on the customer's side of it */
+    const [p0, p1] = strip(outer, 12);
+    rail(p0 + 4, CS_BAG - 19, p1 - 4, CS_BAG - 15, H_FIXTURE, H_FIXTURE + 11);
+    prop(p0, CS_BAG - 22, p1, CS_BAG - 12, H_FIXTURE + 11, H_FIXTURE + 23,
+      'PINPAD', { topTex: 'PINPAD', light: CS_LIGHT + 0.2 });
+
+    /* the bag rack over the bagging deck, on the side that bags */
+    const [b0, b1] = strip(inner, 10);
+    prop(b0, CS_NOSE + 10, b1, CS_BAG - 40, H_FIXTURE, H_FIXTURE + 26,
+      'BAGRACK', { topTex: 'TILLRAIL', light: CS_LIGHT });
+
+    /* THE MAGAZINE RACK, which is the front panel of a checkstand and
+       not a separate fixture. It stands 8 proud of the face into the
+       lane, which is the town's rule for a free box that comes down to
+       head height — a downpipe's worth, against a lane 220 wide. */
+    const [m0, m1] = strip(outer, -8);
+    prop(Math.min(m0, m1), CS_NOSE + 8, Math.max(m0, m1), CS_SCAN - 8,
+      FLOOR_WALK, H_FIXTURE, 'IMPULSE', { light: CS_LIGHT - 0.04 });
+
+    /* the lane light, hung out over the lane where you can read it from
+       the back of the shop */
+    const lx = outer + lane * 26;
+    prop(lx - 26, CS_BAG + 6, lx + 26, CS_BAG + 17, CEIL_SHOP - 80, CEIL_SHOP - 38,
+      'LANENUM', { botTex: 'TILLRAIL', light: 1.15, botLight: 0.5 });
+    rail(lx - 4, CS_BAG + 9, lx + 4, CS_BAG + 14, CEIL_SHOP - 38, CEIL_SHOP, 0.3);
+
+    /* --- and the shopping, piling up down the belt ------------------
+       Walked from the end plate backwards with a gap that OPENS as it
+       goes: tight where the belt has run everything up against the
+       stop, loose at the far end where the next person is still
+       unloading. Which is what a belt in use looks like, and it falls
+       out of one number rather than being arranged.
+
+       Deterministic from the lane's own seed, so two builds of this map
+       put the same tin in the same place and a screenshot is a
+       screenshot of something. */
+    let seed = 1009 + k * 37 + (lane < 0 ? 0 : 19);
+    const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    /* IT IS A PILE AND NOT A LINE, which took two goes to get right. A
+       belt is 60 wide and a tin is fourteen, so three of them stand
+       abreast on it — and the first cut put one item per row down the
+       middle, which is a row of parcels on a conveyor at an airport,
+       not a shop. So it is laid in ROWS: three abreast where the belt
+       has run everything up against the stop, thinning to one at the
+       far end where the next person is still unloading, and something
+       stacked on top now and then, which is what stops a pile reading
+       as a row of boxes on a shelf. */
+    /* HOW FULL IS ONE NUMBER, and it has to be the SPACING and not a
+       count of items, because a belt is 108 long and fills up. Asking
+       for twenty-six pieces on a belt with room for thirteen gets you
+       thirteen, which is what every other lane already had — and then
+       "your belt is the busiest in the shop" is not true however big
+       the number is. So `busy` is 0..1 and it opens or closes the gaps:
+       a full lane stays three abreast to the far end, an empty one is
+       one item every forty units. */
+    const clear = RUN_W - RAIL_W * 2 - 4;
+    const span = Y_TILLEND - CS_SCAN;
+    let y = CS_SCAN + 8, put = 0;
+    while (y < Y_TILLEND - 14) {
+      const far = (y - CS_SCAN) / span;
+      const across = Math.max(1, Math.min(3,
+        Math.round(0.9 + busy * 2.2 - far * (2.2 - busy * 1.3) + (rnd() - 0.5))));
+      let x = mid - clear / 2, deep = 0;
+      for (let c = 0; c < across; c++) {
+        const it = GROCERIES[Math.floor(rnd() * GROCERIES.length)];
+        if (x + it.w > mid + clear / 2) break;
+        prop(x, y, x + it.w, y + it.d, H_BELT, H_BELT + it.h, it.tex,
+          { topTex: it.top, light: CS_LIGHT - 0.02 });
+        put++; deep = Math.max(deep, it.d);
+        if (far < 0.5 && it.h < 17 && rnd() < 0.5) {
+          const on = GROCERIES[Math.floor(rnd() * GROCERIES.length)];
+          prop(x + 1, y + 1, x + Math.min(it.w, on.w) + 1, y + Math.min(it.d, on.d) + 1,
+            H_BELT + it.h, H_BELT + it.h + on.h, on.tex,
+            { topTex: on.top, light: CS_LIGHT + 0.03 });
+          put++;
+        }
+        x += it.w + 1 + rnd() * 3;
+      }
+      y += Math.max(deep, 8) + 1 + (1 - busy) * 12 + far * far * (40 - busy * 34);
+    }
+    /* and the bags that came off the other end of it, standing on the
+       deck where the customer picks them up */
+    const [g0, g1] = strip(outer, 23);
+    for (let i = 0; i < Math.round(busy * 3); i++) {
+      const gy = CS_NOSE + 9 + i * 18;
+      prop(Math.min(g0, g1) + 3, gy, Math.max(g0, g1) - 3, gy + 13,
+        H_FIXTURE, H_FIXTURE + 14 + (i % 2) * 4, 'GROCBAG',
+        { topTex: 'GROCBAG', light: CS_LIGHT });
+    }
+  };
+
+  /* eight checkstands across the front, and the lanes between them */
   {
     let cur = ANCHOR_X0;
     for (let k = 0; k < NTILL; k++) {
-      const a = GX0 + k * TILL_PITCH, b = a + TILL_W;
+      const a = tillX(k), b = a + TILL_W;
       if (a > cur) rm.add(cur, Y_TILL, a, Y_TILLEND, shop('checkout lane', 0.30, FUEL.front));
-      rm.add(a, Y_TILL, b, Y_TILLEND, shop('checkout', 0.28, FUEL.front, {
-        floor: H_FIXTURE, floorTex: 'CHECKOUT', lowerTex: 'CHECKOUT',
+      /* the nose: one rect across both runs, which is what shuts the
+         well at the customer end */
+      rm.add(a, Y_TILL, b, CS_NOSE, shop('checkout nose', 0.32, FUEL.checkout, {
+        floor: H_FIXTURE, floorTex: 'TILLTOP', lowerTex: 'CHECKOUT',
       }));
+      /* the well, open to the cross-aisle behind and shut in front */
+      rm.add(a + RUN_W, CS_NOSE, b - RUN_W, Y_TILLEND,
+        shop(k === MY_TILL ? 'your checkout' : 'checkout well', 0.36, FUEL.front));
+      /* how full the two belts are, nought to one. A front end where
+         every lane is equally loaded is eight copies of one lane; yours
+         is always the full one, because it is the one you look down. */
+      const load = (side) => k === MY_TILL && side < 0 ? 1
+        : 0.06 + ((Math.imul(k * 2 + (side < 0 ? 0 : 1) + 1, 2654435761) >>> 28) % 12) / 19;
+      checkoutRun(k, a, a + RUN_W, -1, load(-1));
+      checkoutRun(k, b - RUN_W, b, +1, load(+1));
       cur = b;
     }
     rm.add(cur, Y_TILL, ANCHOR_X1, Y_TILLEND, shop('checkout lane', 0.30, FUEL.front));
@@ -2125,8 +2450,24 @@ export function buildSellWrong(opts = {}) {
      THINGS
      ================================================================= */
 
-  /* the player, out at the mouth of the car park, looking at the store */
-  mb.thing('START', 1240, LOT_Y0 + 200, Math.PI / 2);
+  /* THE PLAYER IS THE CASHIER, at the user's request, and starts on the
+     clock: in the well of the middle checkstand, facing west across the
+     scale plate at whoever is next.
+
+     It used to be the mouth of the car park looking at the store, which
+     is the establishing shot and says "this is a supermarket". This
+     says something the establishing shot cannot, which is that it is
+     YOUR supermarket and you are at work in it: a belt with somebody's
+     shopping running up it on your left, a register at your elbow, a
+     queue out past the lane light, and a shop behind you that you can
+     see the whole length of because you are standing at the front of
+     it. You still get the establishing shot — it is thirty seconds'
+     walk and you have to walk out past the queue to take it.
+
+     Facing WEST rather than at the doors, because the one thing a
+     cashier looks at is the customer, and the customer is across the
+     belt. Half a turn either way is the length of the front end. */
+  mb.thing('START', MY_WELL, CS_SERVE, Math.PI);
 
   /* --- where the cars go ---------------------------------------------
      Not things, and no longer drawn. There WERE placeholder cars here —
@@ -2207,7 +2548,14 @@ export function buildSellWrong(opts = {}) {
   for (const x of [ENT_A0 - 70, ENT_B0 + ENTRY_W + 70]) mb.thing('BOLLARD', x, -116, 0);
   for (let i = 0; i < 7; i++) mb.thing('TROLLEY', ENT_B0 + 300 + i * 26, -70 + (i % 2) * 16, 0.4 * i);
   for (let i = 0; i < 5; i++) mb.thing('TROLLEY', ENT_A0 - 400 + i * 24, -60 - (i % 3) * 14, 0.3 * i);
-  for (const [x, yy] of [[900, 300], [2600, 1500], [3500, 2300], [1700, 900], [400, 2400]])
+  /* Abandoned in the aisles. Both of the first two moved when the
+     checkout band was deepened: 900,300 is inside a checkstand now, and
+     1700,900 turned out to have been inside gondola column four since
+     the runs were laid — a trolley in a shelf, which nothing had ever
+     asked about because nothing walks there. Every one of these is an
+     aisle centre or a cross-aisle now, which is where an abandoned
+     trolley can actually be. */
+  for (const [x, yy] of [[900, 450], [2600, 1500], [3500, 2300], [aisleX(4), 900], [400, 2400]])
     mb.thing('TROLLEY', x, yy, 1.2);
 
   /* --- THERE WERE FORTY-TWO FUEL CANS HERE and they are gone ---------
@@ -2428,20 +2776,43 @@ export function buildSellWrong(opts = {}) {
 
     /* THE QUEUES GO IN FIRST, because they are the only people here who
        cannot be put somewhere else. Every other group is offered a
-       region and asked to find room in it; a queue is eight fixed lines
-       of five, and if the front cross-aisle has already filled up over
-       the top of them the queue is what loses. They are also the one
-       arrangement in the game that says "these are people" before you
-       have looked at any of them: five deep, one behind the other, all
-       facing the same way, one per till lane. The x values are AISLE
-       CENTRES — a queue is the only thing in the shop long enough to
-       reach past the front cross-aisle and into the runs, so it has to
-       stand where the runs have a gap. */
-    for (let q = 0; q < NTILL; q++) {
-      const k = Math.round(q * (NCOL - 2) / (NTILL - 1));    // 0 1 3 4 6 7 9 10
-      for (let i = 0; i < CROWD; i++)
-        someone(() => [aisleX(k) + (rnd() - 0.5) * 20,
-                       Y_TILLEND + 70 + i * 62], Math.PI / 2);
+       region and asked to find room in it; a queue is a fixed line, and
+       if the front cross-aisle has already filled up over the top of it
+       the queue is what loses. They are also the one arrangement in the
+       game that says "these are people" before you have looked at any
+       of them: one behind the other, all facing the same way, one line
+       per lane.
+
+       THEY STAND IN THE LANE NOW, and they face the till. Both of those
+       were wrong and neither showed until the player was put at a till
+       to look at them. They were laid on the AISLE centres — which land
+       in the gaps between the runs, not the gaps between the
+       checkstands, and the two grids do not line up — and they began at
+       the far side of the front cross-aisle, so eight lines of people
+       stood in the open behind the tills queueing for nothing. And
+       every one of them was turned to `PI/2`, which is north: a queue
+       with its back to the till.
+
+       So: down the lane the checkstand's west run serves, from the
+       person being served at the scale plate northward, and facing
+       south — except the one at the front, who has turned to face the
+       cashier, which is the whole tell that this is a queue and not a
+       column of people. What will not fit in the lane by the time it
+       reaches the cross-aisle spills sideways into it, which is where
+       an overflowing queue goes in a real shop. */
+    const LANE_STEP = 58;
+    /* HOW LONG A QUEUE CAN BE IS A PROPERTY OF THE LANE, not a number
+       typed here. It starts at the scale plate and has run out of lane
+       by the time it reaches the runs, so it is however many fit in
+       between — five, at 58 apart, which is a queue you cannot see the
+       end of from the back of it and is what the front end has room
+       for. Ask for eight and three of them stand in the gondolas. */
+    const QLEN = Math.min(CROWD, 1 + Math.floor((Y_FRONTX - 40 - CS_SERVE) / LANE_STEP));
+    for (let k = 0; k < NTILL; k++) {
+      const x = laneX(k);
+      for (let i = 0; i < QLEN; i++)
+        someone(() => [x + (rnd() - 0.5) * 24, CS_SERVE + i * LANE_STEP],
+          i === 0 ? 0 : -Math.PI / 2);                       // the front one turns
     }
 
     /* DOWN THE AISLES, thinner across the front where you come in and
@@ -2531,6 +2902,16 @@ export function buildSellWrong(opts = {}) {
 
   const level = mb.build();
   level.slideDoors = slide;
+  /* WHERE THE GAME USED TO START YOU, and still the one place to stand
+     and see the whole thing: out at the mouth of the car park, half a
+     lot back from the doors, with the parade filling the screen and the
+     town behind you. The player starts at a checkstand now, which is a
+     better opening and a worse vantage point, so this stays on the
+     level as the place it always was. Fixtures that want a player in
+     the open — the responders driving to you, a round into a wall, a
+     jet of flame with somewhere to land — ask for it by name rather
+     than assuming the spawn is a field. */
+  level.viewpoint = { x: 1240, y: LOT_Y0 + 200, angle: Math.PI / 2 };
   /* THE ROOFS, which belong to no sector: a sector engine cannot slope a
      ceiling, so a pitched roof is geometry over a footprint. See
      roofGeometry in js/mapgeo.js. */

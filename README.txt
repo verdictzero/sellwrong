@@ -139,7 +139,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         1997 checks, no install and no browser
+  the smoke test         2050 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -156,9 +156,18 @@ container pull and about a second of work.
 WHAT YOU DO
 -----------
 
-You start at the mouth of the car park at night, across the road from it. The
-parade is in front of you, the automatic doors open when you get near them,
-and the night crew are still inside.
+YOU START ON THE CLOCK, at the user's request: in the well of the middle
+checkstand, at night, facing west across the scale plate at whoever is
+next. There is somebody's shopping coming up the belt on your left, a
+register at your elbow, a queue of five out past the lane light, and a
+shop behind you that you can see the whole length of because you are
+standing at the front of it.
+
+It used to be the mouth of the car park, across the road, which is the
+establishing shot: this is a supermarket. The till says the thing the
+establishing shot cannot, which is that it is YOUR supermarket and you
+are at work in it. You still get the other one — it is thirty seconds'
+walk and you have to go out past the queue to take it.
 
 There is no goal. Burn what you like — the store, the wood behind it,
 both — and see what the night brings down the road. The sixty-per-cent
@@ -1445,6 +1454,146 @@ both have something to burn and neither has a roof to lose: a region that
 was already open to the sky is not a candidate, however well it burns.
 That is read once at build time, because gutting sets a region's ceiling
 to sky and asking later would mean nothing could ever fall twice.
+
+
+THE PLAYER IS THE CASHIER
+-------------------------
+
+At the user's request, and it turned the front end from eight shapes you
+walk past into eight machines you can stand inside.
+
+A TILL USED TO BE A SLAB. One rectangle, 180 by 140, raised to bench
+height and wearing one texture called CHECKOUT on all six sides of it. As
+shop furniture that is defensible — you cannot walk through it, you can
+shoot over it, it reads as a till from the doors — and as a PLACE TO
+STAND it is nothing at all, because a slab has no behind.
+
+A belted checkstand is a machine with a direction. You join it at the
+back, unload onto a belt, walk forward beside your shopping while the
+belt takes it to a scanner, pay at the scanner and collect it bagged at
+the front. The cashier is not beside you, they are ACROSS it, standing
+in a slot cut into the far side with their back to the next lane. Four
+things follow, and they are the whole build:
+
+  IT HAS A LONG AXIS and it is the way the customer walks. Which is why
+  the band the tills stand in went from 140 deep to 260 — laid out at
+  140 there is room for the scanner and nothing either side of it, and a
+  conveyor with the shopping piling up down it has nowhere to happen.
+  The eighty units come off the first run of gondola, which is now 600
+  deep against 680 for the other two. That is what the front run of a
+  supermarket usually is: the one nearest the tills, and the one that
+  loses floor to them.
+
+  THE SURFACES ALONG IT ARE DIFFERENT SURFACES. A rubber belt 108 long,
+  a scale plate with the scanner glass in it, a stainless bagging deck,
+  and a nose across the end. Four regions, two heights, five textures.
+
+  THERE IS A WELL IN THE MIDDLE OF THE FAR SIDE that is shop floor, 60
+  wide against a player 32 across, open to the cross-aisle behind so you
+  can walk into it and shut at the customer end by the nose. Leave the
+  nose off and the well is a way round the tills from the shop floor to
+  the mat, which is the one thing a front end exists to prevent.
+
+  AND IT IS TWO OF THEM BACK TO BACK, which is why there is a lane
+  either side and one well between: a cashier serves the lane they face,
+  and the next cashier along faces the other way. Eight stands, sixteen
+  runs of counter, nine lanes.
+
+NOTHING ON ONE IS CLIMBABLE, and that is load-bearing rather than tidy.
+Every surface is 26 above the floor against a MAX_STEP of 24, so the
+shopping piled on the belts can be free boxes — which do not collide —
+instead of two hundred sectors. The first cut had the scale plate
+recessed to 34, on the perfectly good reasoning that a scale sits down
+in the counter. What that bought was a 22-unit step: you could climb
+onto the plate, from there onto the belt, and from there walk through
+somebody's groceries. The plate is flush with the belt now, which is
+also what it is in a shop — the belt delivers ONTO it — and the recess
+is painted into the texture where it belongs.
+
+WHAT IS ON IT. A register on the cashier's side at the bagging end, a
+card reader on a post on the customer's side of the same band, a bag
+rack over the bagging deck, guards down both sides of the belt and the
+plate at the end of it that the shopping runs up against, a magazine
+rack on the front panel facing the queue, and a lit OPEN sign hung out
+over the lane where you can read it from the back of the shop. About
+four hundred free boxes altogether, and every one of them declares
+itself INTERIOR — a chimney belongs in a block's shell, a tin of beans
+on a conveyor does not.
+
+THE SIZE OF ALL OF IT COMES OFF ONE NUMBER. A counter top is 36 inches
+and this one is 28 units above the floor, so a unit is about an inch and
+a third: a till is 22 by 16 by 24, a card reader is 12 square, a cereal
+box is 15 by 10 by 23. The first cut had the register at 34 by 28 by 38,
+which is a filing cabinet with a screen on it, and two of them — one per
+run, either side of the well — made the place you spawn a corridor
+between two arcade machines.
+
+THE SHOPPING IS A PILE AND NOT A LINE, which took two goes. A belt is 60
+wide and a tin is 14, so three of them stand abreast on it; the first
+cut put one item per row down the middle, which is a row of parcels on a
+conveyor at an airport. It is laid in rows now — three abreast where the
+belt has run everything up against the stop, thinning to one at the far
+end where the next person is still unloading, with something stacked on
+top now and then, which is what stops a pile reading as a row of boxes
+on a shelf. Deterministic from the lane's own seed, so two builds put
+the same tin in the same place and a screenshot is a screenshot of
+something. Your own belt is the busiest in the shop, because it is the
+one you are looking down.
+
+AND THE PICTURES ARE SIZED TO THE BOXES, not to a tiling grid, which is
+the difference between packaging and wallpaper. The nearest carton to
+where you spawn is forty units away and fills a good part of the screen;
+a pattern that tiles twice across a cereal box is a cereal box nobody
+ever printed. So a carton front is one whole carton front, and the
+narrow side of the same box shows the left two thirds of it — which is
+the one artefact here, and which reads as printed board rather than as a
+mistake.
+
+THE QUEUES WERE WRONG IN THREE WAYS and none of it showed until there
+was a player at a till to look at them. They were laid on the AISLE
+centres, which are the gaps between the gondola runs and not the gaps
+between the checkstands — two grids that do not line up. They began at
+the far side of the front cross-aisle, so eight lines of people stood in
+the open BEHIND the tills queueing for nothing. And every one of them
+was turned to north, which is a queue with its back to the till. They
+stand in the lanes now, from the person being served at the scale plate
+northward, facing the doors — except the one at the front, who has
+turned to face the cashier, which is the whole tell that this is a queue
+and not a column of people. Five deep, which is what the lane holds: the
+length is worked out from the geometry rather than typed, so asking for
+eight does not put three of them in the gondolas.
+
+TWO THINGS IT TURNED UP. A trolley had been standing inside gondola
+column four since the runs were laid, which nothing had ever asked about
+because nothing walks there. And the check that says a shop burnt end to
+end comes down was counting the FURNITURE as the shop: a gondola is a
+raised fixture inside the building and has always mostly stood — six of
+twenty-three, the day that check was written — because a fixture is
+small, holds its own fuel, and the frame over one is cooked mostly by
+whatever is alight beside it. That was invisible while the shop was
+nearly all floor by count, and stopped being invisible the moment the
+front end became eight checkstands instead of eight slabs: forty-eight
+new fixture regions, every one behaving exactly as the gondolas already
+did, and a ratio that fell under a half without one thing having changed
+about the building or the fire. The floor is counted as the shop now and
+the fixtures are noted beside it: 52 of 67 of the floor comes down, and
+16 of 85 of the furniture.
+
+AND HALF A DOZEN FIXTURES HAD BEEN LIVING OFF THE SPAWN POINT. A jet of
+flame needs somewhere to land; a round needs a wall four thousand units
+away to put a hole in; a target has to be brought out "in front of the
+player" with nothing between the two of them; the responders' six
+seconds is measured to wherever you happen to be. None of them said so
+— they used the player where it stood, and the player stood in a field.
+Moving it into a crowd thirty units from a counter broke all of them at
+once, and none of them because anything they are about had changed. The
+old spawn is kept on the level as `viewpoint`, which is what it always
+was, and those checks ask for it by name.
+
+It costs twenty draw calls, everywhere in the level, which is what
+sixteen new textures in the block the supermarket is in costs: 271 to
+291 standing in the car park, 600 to 620 on the footway, 195 to 216 in
+an aisle.
 
 
 THE ONE IDEA
@@ -5590,7 +5739,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-1997 checks. Every one of them earns its place by having caught something
+2050 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

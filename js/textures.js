@@ -1108,21 +1108,554 @@ T.DELICASE = () => {
   return p.snap(0.4);
 };
 
+/* =====================================================================
+   THE CHECKSTAND
+
+   Eight of these across the front of the shop and the player now spends
+   the first thirty seconds of the game standing inside one, which is a
+   different job from being a shape you walk past. See A CHECKSTAND in
+   js/maps/sellwrong.js for the plan; these are the skins on it.
+
+   EVERY ONE OF THEM IS PEGGED AT THE TOP. A lower band — the step
+   between the shop floor and a raised fixture — hangs its texture from
+   the TOP of the step downward (see pegOf in js/mapgeo.js), so row zero
+   of these is the counter edge and the floor line is `h` minus twelve
+   rows further down. Which means the rows nobody ever sees are the
+   BOTTOM ones, and the detail that matters goes at the top: the
+   bullnose, the bumper, the belt trim. It also means the same texture
+   skins a six-unit sliver between two decks of slightly different
+   height, out of its own top six rows, and comes out as a counter edge
+   for free.
+   ===================================================================== */
+
 T.CHECKOUT = () => {
-  /* The side of a till bank: laminate panel, a rubber bumper rail, the
-     belt just visible over the top. */
-  const p = new Pix(64, 64, 86);
-  const n = fbm(64, 64, 10, 2, 86);
-  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
-    p.ink(x, y, 'bone', 0.52 + n[y * 64 + x] * 0.08);
-  for (let y = 0; y < 8; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'grey', 0.14);   // the belt
-  p.hline(0, 63, 8, 'grey', 0.44);
-  for (let y = 30; y < 36; y++) for (let x = 0; x < 64; x++) p.ink(x, y, 'red', 0.36);  // bumper
-  p.hline(0, 63, 30, 'red', 0.58);
-  p.hline(0, 63, 35, 'red', 0.16);
-  for (const vx of [0, 32]) p.vline(vx, 9, 63, 'bone', 0.34);
-  p.grime(0.5, 'grey', 0.1, 22);
+  /* The side of a checkstand: a laminate panel with a bullnose edge, a
+     rubber bumper where the trolleys hit it, and a toe recess. 40 tall
+     because that is H_FIXTURE, and the top 28 rows of it are the part
+     above the floor. */
+  const p = new Pix(64, 40, 86);
+  const n = fbm(64, 40, 10, 2, 86);
+  for (let y = 0; y < 40; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'bone', 0.50 + n[y * 64 + x] * 0.07);
+  /* the bullnose: dark under a lit lip, and the top six rows are ALSO
+     what skins the step between the scanner bed and the deck */
+  p.hline(0, 63, 0, 'bone', 0.70);
+  p.box(0, 1, 64, 3, 'grey', 0.22);
+  p.hline(0, 63, 4, 'grey', 0.40);
+  /* the panel, with a shallow recess line at the joints */
+  for (const vx of [1, 33]) { p.vline(vx, 5, 27, 'grey', 0.30); p.vline(vx + 1, 5, 27, 'bone', 0.66); }
+  /* the bumper rail, two thirds up, which is what a trolley meets */
+  p.box(0, 8, 64, 5, 'grey', 0.17);
+  p.hline(0, 63, 8, 'grey', 0.46);
+  p.hline(0, 63, 12, 'grey', 0.07);
+  /* scuffs ALONG the bumper, because everything that marks it is moving
+     horizontally when it does */
+  const rng = makeRng(602);
+  for (let i = 0; i < 26; i++) {
+    const y = 9 + Math.floor(rng() * 4), x0 = Math.floor(rng() * 64), len = 3 + Math.floor(rng() * 11);
+    for (let d = 0; d < len; d++) p.wash(x0 + d, y, 'grey', 0.34, 0.4 + rng() * 0.3);
+  }
+  /* the toe recess, and the shadow it throws on the floor */
+  p.box(0, 24, 64, 4, 'grey', 0.11);
+  p.hline(0, 63, 24, 'grey', 0.05);
+  p.box(0, 28, 64, 12, 'grey', 0.08);
+  p.grime(0.45, 'grey', 0.1, 22);
   return p.snap(0.5);
+};
+
+T.BELTSIDE = () => {
+  /* The side of the conveyor unit, which is a different machine from the
+     counter it is bolted to: stainless, ribbed, with the return slot the
+     belt disappears into under the top trim. 38 tall — H_BELT — so the
+     top 26 rows stand above the floor. */
+  const p = new Pix(64, 38, 604);
+  const n = fbm(64, 38, 12, 2, 604);
+  for (let y = 0; y < 38; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'grey', 0.36 + n[y * 64 + x] * 0.07);
+  /* the top trim. Its four rows are also the whole of the sliver between
+     the scanner bed and the belt, so they have to read as an edge on
+     their own. */
+  p.hline(0, 63, 0, 'grey', 0.74);
+  p.hline(0, 63, 1, 'grey', 0.58);
+  p.box(0, 2, 64, 2, 'grey', 0.30);
+  /* the return slot: the dark gap the belt runs back through */
+  p.box(0, 4, 64, 4, 'grey', 0.08);
+  p.hline(0, 63, 4, 'grey', 0.03);
+  p.hline(0, 63, 7, 'grey', 0.46);
+  /* brushed ribs down the housing, lit left and shadowed right */
+  for (let x = 0; x < 64; x += 8) {
+    p.vline(x, 8, 25, 'grey', 0.52);
+    p.vline(x + 1, 8, 25, 'grey', 0.24);
+  }
+  /* the plinth it stands on, and the floor line at row 26 */
+  p.box(0, 21, 64, 5, 'grey', 0.19);
+  p.hline(0, 63, 21, 'grey', 0.44);
+  p.box(0, 26, 64, 12, 'grey', 0.07);
+  streaks(p, 5, 605, 'rust', 0.2, 0.3);
+  p.grime(0.4, 'grey', 0.09, 606);
+  return p.snap(0.5);
+};
+
+T.BELTRUB = () => {
+  /* THE BELT. 60 across, which is the width of a counter run, and 18
+     along, which makes one repeat one cleat — so the cleats are 18 units
+     apart down a belt 108 long and there are exactly six of them.
+     Black rubber is nearly the darkest thing in the shop and would read
+     as a hole if it were flat, so what makes it a belt is the sheen down
+     the middle and the cleat catching the light at its top edge. */
+  const p = new Pix(60, 18, 608);
+  const n = fbm(60, 18, 10, 2, 608);
+  for (let y = 0; y < 18; y++) for (let x = 0; x < 60; x++) {
+    /* brighter along the crown of the belt and falling off to the edges,
+       because a belt on rollers is not flat. It sits at 0.18 and not at
+       the 0.11 a black belt deserves, because the front end is lit at
+       0.32 and a surface painted at the bottom of the grey ramp under a
+       light like that is not a dark thing, it is a hole. */
+    const crown = 1 - Math.abs(x - 29.5) / 30;
+    p.ink(x, y, 'grey', 0.18 + crown * 0.07 + n[y * 60 + x] * 0.05);
+  }
+  /* the cleat: a shadow under a lit ridge, and it has to carry the
+     picture on its own — it is the only thing in here that says the
+     surface is moving */
+  p.hline(0, 59, 0, 'grey', 0.42);
+  p.hline(0, 59, 1, 'grey', 0.08);
+  p.hline(0, 59, 2, 'grey', 0.14);
+  /* and the tracking lines a worn belt develops */
+  const rng = makeRng(609);
+  for (const lx of [14, 45]) for (let y = 3; y < 18; y++) if (rng() < 0.7) p.wash(lx, y, 'grey', 0.10, 0.5);
+  /* the dark edges, where the belt runs under the guards */
+  for (let x = 0; x < 3; x++) for (let y = 0; y < 18; y++) {
+    p.wash(x, y, 'grey', 0.07, 0.6); p.wash(59 - x, y, 'grey', 0.07, 0.6);
+  }
+  p.grime(0.3, 'bone', 0.1, 610);
+  return p.snap(0.45);
+};
+
+T.SCANBED = () => {
+  /* The scale plate and the scanner glass, 60 by 48, anchored to the
+     run so one repeat is exactly the band. Row zero is the belt side:
+     the shopping comes in at the top of this picture and leaves at the
+     bottom. */
+  const p = new Pix(60, 48, 612);
+  const n = fbm(60, 48, 12, 3, 612);
+  for (let y = 0; y < 48; y++) for (let x = 0; x < 60; x++)
+    p.ink(x, y, 'grey', 0.42 + n[y * 60 + x] * 0.08);
+  /* the stainless lip the belt delivers over */
+  p.box(0, 0, 60, 3, 'grey', 0.62);
+  p.hline(0, 59, 3, 'grey', 0.24);
+  /* the glass: a dark window with the scale plate seam round it */
+  p.box(7, 8, 46, 30, 'grey', 0.09);
+  p.frame(6, 7, 48, 32, 'grey', 0.58);
+  p.frame(7, 8, 46, 30, 'grey', 0.14);
+  /* what makes it GLASS rather than a hole: a raked highlight across it
+     and the red of the laser bounced off the underside */
+  for (let y = 9; y < 37; y++) for (let x = 8; x < 52; x++) {
+    if ((x + y * 2) % 37 < 3) p.wash(x, y, 'grey', 0.72, 0.16);
+    if ((x - y) % 23 === 0) p.wash(x, y, 'red', 0.5, 0.20);
+  }
+  p.hline(10, 49, 22, 'red', 0.42, 255);
+  p.hline(10, 49, 23, 'red', 0.20, 255);
+  /* the weigh plate seam and the four corners it sits on */
+  p.frame(4, 5, 52, 38, 'grey', 0.30);
+  for (const [cx, cy] of [[6, 7], [53, 7], [6, 42], [53, 42]]) p.disc(cx, cy, 1.4, 'grey', 0.66);
+  /* the deck below it, scuffed where everything is dragged across */
+  p.box(0, 42, 60, 6, 'grey', 0.46);
+  const rng = makeRng(613);
+  for (let i = 0; i < 30; i++) {
+    const y = 42 + Math.floor(rng() * 6), x0 = Math.floor(rng() * 60);
+    for (let d = 0; d < 4 + rng() * 9; d++) p.wash(x0 + d, y, 'grey', 0.30, 0.5);
+  }
+  p.grime(0.35, 'grey', 0.08, 614);
+  return p.snap(0.5);
+};
+
+T.BAGDECK = () => {
+  /* The bagging deck, one repeat over the whole band, row zero the
+     scanner end. Brushed stainless with the well pressed into it, and
+     the scratches run ACROSS, the way things are dragged off it.
+
+     PAINTED AT 64 AND DECLARED AT 80. Nothing in this game is painted
+     bigger than 64 pixels — see THE PIXEL BUDGET — and the world size
+     in TEXTURE_SIZES is a separate number: it says how much SHOP one
+     repeat covers, not how many texels are in it. So this is 60 by 64
+     stretched over a band 60 by 80, which on a deck of brushed steel is
+     a stretch nobody can see and on anything with a straight line in it
+     would be the first thing they saw. */
+  const p = new Pix(60, 64, 616);
+  const n = fbm(60, 64, 10, 3, 616);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 60; x++)
+    p.ink(x, y, 'grey', 0.44 + n[y * 60 + x] * 0.09);
+  /* brushing: fine horizontal grain over the whole sheet */
+  const rng = makeRng(617);
+  for (let y = 0; y < 64; y++) {
+    const t = 0.5 + rng() * 0.5;
+    for (let x = 0; x < 60; x++) if (rng() < 0.5) p.wash(x, y, 'grey', y % 2 ? 0.56 : 0.34, 0.10 * t);
+  }
+  /* the lip at the scanner end and the lip at the front */
+  p.box(0, 0, 60, 3, 'grey', 0.64);
+  p.hline(0, 59, 3, 'grey', 0.26);
+  p.box(0, 61, 60, 3, 'grey', 0.60);
+  p.hline(0, 59, 60, 'grey', 0.26);
+  /* the pressed well, which is the only thing that says which way up a
+     sheet of steel is: a shadow on the top-left edge, a highlight on the
+     bottom-right, because that is where the light is */
+  p.frame(8, 10, 44, 46, 'grey', 0.22);
+  p.hline(8, 51, 10, 'grey', 0.18);
+  p.vline(8, 10, 55, 'grey', 0.18);
+  p.hline(9, 52, 56, 'grey', 0.68);
+  p.vline(52, 11, 56, 'grey', 0.68);
+  for (let y = 12; y < 55; y++) for (let x = 10; x < 51; x++) p.wash(x, y, 'grey', 0.40, 0.25);
+  /* and the scratches */
+  for (let i = 0; i < 40; i++) {
+    const y = 5 + Math.floor(rng() * 56), x0 = Math.floor(rng() * 60);
+    const len = 4 + Math.floor(rng() * 20);
+    for (let d = 0; d < len; d++) p.wash(x0 + d, y, 'grey', rng() < 0.4 ? 0.70 : 0.28, 0.35 + rng() * 0.3);
+  }
+  p.grime(0.3, 'grey', 0.07, 618);
+  return p.snap(0.5);
+};
+
+T.TILLTOP = () => {
+  /* The laminate the counter tops are made of, and the lid of anything
+     standing on one. Speckled, because every shop counter in the world
+     is speckled — it is the one pattern that hides what gets spilled on
+     it, which is why it exists. */
+  const p = new Pix(64, 64, 620);
+  const n = fbm(64, 64, 8, 3, 620);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'bone', 0.52 + n[y * 64 + x] * 0.03);
+  /* THE SPECKLE IS A WASH AND NOT AN INK. Inked at full strength it came
+     out as granite confetti — seven hundred hard dots of three different
+     ramps over a pale field, which at the range you stand from a counter
+     is television static. What laminate actually is is a pale sheet with
+     a fleck you have to be close to see, so each dot is a partial wash
+     over the colour that is already there. */
+  speckle(64, 64, 620, 621, (x, y, a, b) => {
+    p.wash(x, y, a < 0.42 ? 'grey' : a < 0.82 ? 'bone' : 'brown',
+      a < 0.42 ? 0.30 : a < 0.82 ? 0.74 : 0.36, 0.20 + b * 0.30);
+  });
+  p.grime(0.22, 'grey', 0.16, 622);
+  return p.snap(0.5);
+};
+
+T.TILLRAIL = () => {
+  /* Stainless tube. 16 by 8, so a rail of any length is a rail and a
+     post of any height is a post: there is nothing in it that happens
+     once. Lit along the top third, dark along the bottom, with a
+     specular dash every repeat. */
+  const p = new Pix(16, 8, 624);
+  for (let y = 0; y < 8; y++) {
+    const t = y === 0 ? 0.60 : y === 1 ? 0.80 : y < 4 ? 0.52 : y < 6 ? 0.36 : 0.20;
+    for (let x = 0; x < 16; x++) p.ink(x, y, 'grey', t);
+  }
+  p.hline(3, 8, 1, 'grey', 0.96);
+  p.hline(11, 13, 2, 'grey', 0.72);
+  p.hline(0, 15, 7, 'grey', 0.12);
+  return p.snap(0.35);
+};
+
+T.REGISTER = () => {
+  /* The terminal: a screen on a body with a keyboard under it, a receipt
+     slot and the cash drawer below that. 34 by 38, which is the long
+     face of the box it goes on. */
+  const p = new Pix(34, 38, 626);
+  const n = fbm(34, 38, 8, 2, 626);
+  for (let y = 0; y < 38; y++) for (let x = 0; x < 34; x++)
+    p.ink(x, y, 'bone', 0.30 + n[y * 34 + x] * 0.05);
+  p.bevel(0, 0, 34, 38, 'bone', 0.52, 'grey', 0.10);
+  /* the screen, which is the only lit thing on it */
+  p.box(4, 3, 26, 14, 'grey', 0.06);
+  p.frame(3, 2, 28, 16, 'grey', 0.18);
+  p.box(5, 4, 24, 12, 'blue', 0.30);
+  for (let y = 4; y < 16; y += 2) p.hline(5, 28, y, 'blue', 0.42);
+  /* two lines of something on it, and a total in the corner */
+  p.hline(7, 20, 6, 'cyan', 0.66); p.hline(7, 17, 8, 'cyan', 0.52);
+  p.hline(7, 22, 10, 'cyan', 0.52); p.box(18, 12, 10, 3, 'cyan', 0.72);
+  /* the receipt slot, and the paper coming out of it */
+  p.box(4, 19, 26, 2, 'grey', 0.08);
+  p.box(6, 21, 12, 2, 'bone', 0.86);
+  /* the keyboard: four rows of keys, lit top-left like everything else */
+  for (let ky = 0; ky < 3; ky++) for (let kx = 0; kx < 7; kx++) {
+    const x = 4 + kx * 4, y = 24 + ky * 4;
+    p.box(x, y, 3, 3, 'bone', 0.44);
+    p.hline(x, x + 2, y, 'bone', 0.66);
+    p.hline(x, x + 2, y + 2, 'grey', 0.14);
+  }
+  p.box(24, 24, 6, 7, 'green', 0.44);            // the big green one
+  p.hline(24, 29, 24, 'green', 0.66);
+  /* the drawer under it */
+  p.box(0, 34, 34, 4, 'bone', 0.22);
+  p.hline(0, 33, 34, 'bone', 0.50);
+  p.box(13, 35, 8, 2, 'grey', 0.46);
+  p.grime(0.3, 'grey', 0.09, 627);
+  return p.snap(0.45);
+};
+
+T.PINPAD = () => {
+  /* The card reader on its post. 18 by 16, the long face of the pad. */
+  const p = new Pix(18, 16, 628);
+  p.fill('bone', 0.26);
+  p.bevel(0, 0, 18, 16, 'bone', 0.46, 'grey', 0.08);
+  p.box(2, 2, 14, 5, 'green', 0.24);             // the little screen
+  p.frame(2, 2, 14, 5, 'grey', 0.14);
+  p.hline(3, 11, 4, 'green', 0.74);
+  p.hline(3, 8, 5, 'green', 0.50);
+  for (let ky = 0; ky < 3; ky++) for (let kx = 0; kx < 3; kx++) {
+    const x = 3 + kx * 4, y = 9 + ky * 2;
+    p.box(x, y, 3, 1, 'bone', 0.52);
+    p.ink(x, y, 'bone', 0.72);
+  }
+  p.box(14, 9, 3, 5, 'green', 0.46);             // enter
+  p.vline(0, 3, 13, 'grey', 0.10);               // the card slot down the side
+  p.vline(1, 3, 13, 'grey', 0.36);
+  return p.snap(0.4);
+};
+
+T.LANENUM = () => {
+  /* The lit sign hung over a lane. 52 by 42, read from the back of the
+     shop, which is the whole job: at that distance a numeral is four
+     pixels and a word is a shape. So it is a chevron and a word, both
+     as big as the box will take, white on a green that is lit past one
+     — see the light on the prop in js/maps/sellwrong.js. */
+  const p = new Pix(52, 42, 630);
+  p.fill('grey', 0.22);
+  p.bevel(0, 0, 52, 42, 'grey', 0.50, 'grey', 0.08);
+  p.box(3, 3, 46, 36, 'green', 0.40);
+  p.frame(3, 3, 46, 36, 'green', 0.20);
+  /* the chevron, pointing down the lane. Solid: two diagonal strokes and
+     a bar across the top was a moustache. */
+  for (let i = 0; i < 13; i++) p.hline(13 + i, 38 - i, 7 + i, 'bone', 0.96);
+  p.hline(13, 38, 6, 'bone', 0.62);
+  drawTextCentred(p, 'OPEN', 26, 25, 'bone', 0.98, 2);
+  drawTextCentred(p, 'OPEN', 26, 26, 'bone', 0.72, 2);
+  /* the tube's own glow, brightest at the middle of the panel */
+  for (let y = 4; y < 38; y++) for (let x = 4; x < 48; x++) {
+    const d = 1 - Math.hypot((x - 26) / 24, (y - 21) / 18);
+    if (d > 0) p.wash(x, y, 'bone', 0.9, d * 0.12);
+  }
+  return p.snap(0.3);
+};
+
+T.BAGRACK = () => {
+  /* The bag rack over the bagging deck: two chrome arms, a bundle of
+     carriers hanging off them and one held open. 36 by 38, the long
+     face of the frame. */
+  const p = new Pix(36, 38, 632);
+  p.clear();
+  /* the frame */
+  for (const x of [3, 32]) { p.vline(x, 2, 37, 'grey', 0.62); p.vline(x + 1, 2, 37, 'grey', 0.26); }
+  p.hline(3, 33, 2, 'grey', 0.70);
+  p.hline(3, 33, 3, 'grey', 0.34);
+  /* the bundle: pale carriers, a hint of blue in the plastic, creased */
+  const rng = makeRng(633);
+  for (let y = 5; y < 33; y++) {
+    const half = 13 - Math.abs(y - 17) * 0.34;
+    for (let x = Math.round(18 - half); x <= Math.round(18 + half); x++) {
+      const crease = ((x * 3 + y * 5) % 11) < 2;
+      p.ink(x, y, 'bone', (crease ? 0.60 : 0.80) + (rng() - 0.5) * 0.08);
+      if ((x + y) % 7 === 0) p.wash(x, y, 'blue', 0.66, 0.18);
+    }
+  }
+  /* the two handles over the arms, and the printed band across it */
+  for (const hx of [8, 27]) { p.vline(hx, 3, 8, 'bone', 0.88); p.vline(hx + 1, 3, 8, 'bone', 0.62); }
+  p.box(8, 16, 20, 4, 'red', 0.46);
+  p.hline(8, 27, 16, 'red', 0.66);
+  /* the one at the front, filled and standing open */
+  p.box(6, 22, 15, 14, 'bone', 0.72);
+  p.frame(6, 22, 15, 14, 'bone', 0.44);
+  p.hline(7, 19, 22, 'bone', 0.92);
+  p.box(9, 25, 9, 3, 'green', 0.46);
+  p.grime(0.3, 'grey', 0.08, 634);
+  return p.snap(0.45);
+};
+
+T.IMPULSE = () => {
+  /* The rack on the front of a checkstand: sweets on the top shelf,
+     magazines below. 56 by 28, which is half the run of it, so the two
+     shelves are at the right height and the merchandise repeats twice
+     along a lane rather than being one long photograph.
+
+     It is the only thing on the stand at knee height and it is 8 proud
+     of the face, so it is also the only thing here anybody walks into. */
+  const p = new Pix(56, 28, 636);
+  p.fill('grey', 0.14);
+  /* the two shelves */
+  p.box(0, 0, 56, 2, 'grey', 0.40);
+  p.hline(0, 55, 0, 'grey', 0.62);
+  p.box(0, 13, 56, 2, 'grey', 0.36);
+  p.hline(0, 55, 13, 'grey', 0.58);
+  /* sweets: narrow bright packets stood on end in rows */
+  const rng = makeRng(637);
+  const SWEET = ['red', 'yellow', 'blue', 'green', 'purple', 'rust'];
+  for (let x = 1; x < 55; x += 4) {
+    const k = SWEET[Math.floor(rng() * SWEET.length)];
+    const t = 0.34 + rng() * 0.32;
+    p.box(x, 2, 3, 11, k, t);
+    p.vline(x, 2, 12, k, Math.min(1, t + 0.22));      // lit left edge
+    p.vline(x + 2, 2, 12, k, Math.max(0, t - 0.18));
+    p.hline(x, x + 2, 2, 'bone', 0.5);                // the top of the packet
+    if (rng() < 0.5) p.hline(x, x + 2, 6 + Math.floor(rng() * 4), 'bone', 0.72);
+  }
+  /* magazines: wider, with a masthead band across the top and a block of
+     cover under it */
+  for (let x = 0; x < 56; x += 14) {
+    const k = SWEET[Math.floor(rng() * SWEET.length)];
+    p.box(x + 1, 15, 12, 13, k, 0.26 + rng() * 0.3);
+    p.box(x + 1, 15, 12, 3, 'bone', 0.80);            // the masthead
+    p.box(x + 3, 20, 8, 5, 'bone', 0.40 + rng() * 0.3);
+    p.hline(x + 2, x + 10, 26, 'bone', 0.62);
+    p.vline(x, 15, 27, 'grey', 0.08);                 // the gap to the next
+  }
+  p.grime(0.35, 'grey', 0.1, 638);
+  return p.snap(0.5);
+};
+
+
+/* =====================================================================
+   THE SHOPPING
+
+   Somebody's groceries, going down a belt. Five textures and nine box
+   sizes between them, which is what a pile has to be built out of: a
+   pile of ONE thing repeated is a pallet, and the eye reads a pallet
+   instantly.
+
+   EACH OF THESE IS DECLARED AT THE SIZE OF THE FACE IT GOES ON, not at
+   a tiling size, and that is the whole difference between packaging and
+   wallpaper. The nearest box to where the player spawns is forty units
+   away and fills a good part of the screen; a pattern that tiles twice
+   across a cereal box is a cereal box nobody ever printed. So a carton
+   front is one repeat of a carton front, and the narrow side of the
+   same box shows the left two thirds of it — which is the one artefact
+   here, and which reads as printed board rather than as a mistake.
+   ===================================================================== */
+
+T.GROCBOX = () => {
+  /* A tall carton: the cereal-shaped one. 22 by 34, its own front. */
+  const p = new Pix(22, 34, 640);
+  p.fill('red', 0.30);
+  const n = fbm(22, 34, 6, 2, 640);
+  for (let y = 0; y < 34; y++) for (let x = 0; x < 22; x++)
+    p.wash(x, y, 'red', 0.46, n[y * 22 + x] * 0.3);
+  /* the band across the top with the name on it */
+  p.box(0, 2, 22, 8, 'yellow', 0.62);
+  p.hline(0, 21, 2, 'yellow', 0.86);
+  p.hline(0, 21, 9, 'rust', 0.34);
+  p.box(2, 4, 18, 2, 'red', 0.24);
+  p.box(4, 7, 11, 1, 'red', 0.20);
+  /* the window: a picture of the thing inside, which on a carton is
+     always a bowl of it lit from the left */
+  p.box(3, 13, 16, 13, 'bone', 0.74);
+  p.frame(3, 13, 16, 13, 'bone', 0.92);
+  p.disc(11, 20, 5.4, 'olive', 0.54);
+  p.disc(9, 18, 3.2, 'yellow', 0.66);
+  speckle(22, 34, 40, 641, (x, y, a, b) => {
+    if (y > 14 && y < 26 && x > 4 && x < 18) p.ink(x, y, a < 0.5 ? 'yellow' : 'rust', 0.4 + b * 0.4);
+  });
+  /* the flash in the corner and the barcode at the foot */
+  p.disc(18, 12, 3, 'green', 0.56);
+  p.box(2, 29, 13, 4, 'bone', 0.86);
+  for (let x = 3; x < 15; x += 2) p.vline(x, 29, 32, 'grey', 0.08);
+  p.bevel(0, 0, 22, 34, 'bone', 0.28, 'grey', 0.14);
+  return p.snap(0.45);
+};
+
+T.GROCBOX2 = () => {
+  /* A squat carton, 26 by 22, and a different printer: blue ground,
+     white panel, a green flash. Nothing it shares with GROCBOX except
+     the light, which comes from the same corner as everything else. */
+  const p = new Pix(26, 22, 643);
+  p.fill('blue', 0.30);
+  const n = fbm(26, 22, 6, 2, 643);
+  for (let y = 0; y < 22; y++) for (let x = 0; x < 26; x++)
+    p.wash(x, y, 'blue', 0.48, n[y * 26 + x] * 0.32);
+  p.box(1, 1, 24, 7, 'bone', 0.86);
+  p.hline(1, 24, 1, 'bone', 0.96);
+  p.box(3, 3, 20, 2, 'blue', 0.26);
+  p.box(3, 6, 13, 1, 'blue', 0.34);
+  p.box(2, 10, 12, 9, 'green', 0.44);
+  p.frame(2, 10, 12, 9, 'green', 0.66);
+  p.disc(8, 14, 3, 'yellow', 0.66);
+  p.box(16, 10, 8, 5, 'red', 0.50);
+  p.hline(16, 23, 10, 'red', 0.70);
+  p.box(16, 17, 8, 3, 'bone', 0.80);
+  for (let x = 17; x < 24; x += 2) p.vline(x, 17, 19, 'grey', 0.08);
+  p.bevel(0, 0, 26, 22, 'bone', 0.30, 'grey', 0.14);
+  return p.snap(0.45);
+};
+
+T.GROCCAN = () => {
+  /* A shrink-wrapped tray of tins, and the one texture here that is
+     right on ALL SIX FACES: a multipack seen from the side is a row of
+     tin ends and seen from above is a row of tin ends. Which is the
+     only reason a box can wear one picture everywhere and get away with
+     it. 20 by 16. */
+  const p = new Pix(20, 16, 645);
+  p.fill('grey', 0.16);
+  const LABEL = ['red', 'red', 'green', 'blue', 'red', 'olive'];
+  for (let r = 0; r < 2; r++) for (let c = 0; c < 3; c++) {
+    const cx = 3.5 + c * 6.5, cy = 4 + r * 8;
+    p.disc(cx, cy, 3.2, 'grey', 0.66);            // the bright rolled rim
+    p.disc(cx, cy, 2.3, 'grey', 0.30);            // the recess inside it
+    p.disc(cx, cy, 1.7, LABEL[r * 3 + c], 0.46);  // the label over the end
+    p.ink(Math.round(cx - 1), Math.round(cy - 1), 'grey', 0.86);
+    p.ink(Math.round(cx + 2), Math.round(cy + 2), 'grey', 0.10);
+  }
+  /* the plastic over it: a raked highlight and a seam */
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 20; x++)
+    if ((x + y * 2) % 17 < 2) p.wash(x, y, 'bone', 0.88, 0.22);
+  p.vline(10, 0, 15, 'bone', 0.66, 255);
+  p.frame(0, 0, 20, 16, 'grey', 0.28);
+  return p.snap(0.45);
+};
+
+T.GROCBAG = () => {
+  /* A bag: crisps, bread, or what the bagging deck is covered in. 24 by
+     20. What makes a bag a bag is that the highlights are CREASES —
+     short, bright, at every angle — and not a gradient. */
+  const p = new Pix(24, 20, 647);
+  p.fill('yellow', 0.40);
+  const n = fbm(24, 20, 5, 3, 647);
+  for (let y = 0; y < 20; y++) for (let x = 0; x < 24; x++)
+    p.ink(x, y, 'yellow', 0.36 + n[y * 24 + x] * 0.24);
+  const rng = makeRng(648);
+  for (let i = 0; i < 26; i++) {
+    const x = Math.floor(rng() * 24), y = Math.floor(rng() * 20);
+    const dx = rng() < 0.5 ? 1 : -1, len = 2 + Math.floor(rng() * 4);
+    for (let d = 0; d < len; d++) p.wash(x + d * dx, y + (rng() < 0.4 ? 1 : 0), 'bone', 0.86, 0.34);
+  }
+  /* the printed panel and the seal at the top */
+  p.box(3, 6, 18, 8, 'red', 0.42);
+  p.hline(3, 20, 6, 'red', 0.62);
+  p.box(5, 8, 14, 3, 'bone', 0.84);
+  p.box(6, 12, 9, 1, 'blue', 0.60);
+  p.box(0, 0, 24, 3, 'red', 0.24);
+  for (let x = 0; x < 24; x += 2) p.vline(x, 0, 2, 'red', 0.46);
+  p.hline(0, 23, 19, 'grey', 0.12);
+  return p.snap(0.45);
+};
+
+T.GROCTOP = () => {
+  /* The lid of a carton: two flaps, the tape down the seam, a corner
+     scuffed. 24 by 16. Nothing on a box top is printed the right way
+     up, which is why this is board and tape and not a repeat of the
+     front. */
+  const p = new Pix(24, 16, 650);
+  const n = fbm(24, 16, 6, 2, 650);
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 24; x++)
+    p.ink(x, y, 'brown', 0.40 + n[y * 24 + x] * 0.14);
+  /* the flaps meeting down the middle, the near one lit */
+  p.hline(0, 23, 7, 'brown', 0.22);
+  p.hline(0, 23, 8, 'brown', 0.62);
+  /* the tape: paler, glossy, over-run at both ends */
+  p.box(0, 6, 24, 4, 'bone', 0.60);
+  p.hline(0, 23, 6, 'bone', 0.82);
+  p.hline(0, 23, 9, 'grey', 0.26);
+  for (let x = 0; x < 24; x += 3) p.wash(x, 7, 'bone', 0.92, 0.3);
+  /* the print that ends up on the top of a carton */
+  p.box(3, 1, 9, 3, 'grey', 0.26);
+  p.box(15, 12, 7, 2, 'grey', 0.22);
+  p.grime(0.4, 'grey', 0.1, 651);
+  return p.snap(0.45);
 };
 
 T.TROLLEY = () => {
@@ -3390,6 +3923,12 @@ export const CHARRABLE = [
   'SHELFSTK', 'SHELFEMP', 'SHELFBAK', 'SHELFEND', 'CHILLER', 'FREEZDOR',
   'PRODAPPL', 'PRODCITR', 'PRODGREN', 'PRODROOT', 'PRODFLOW', 'PRODRIM',
   'DELICASE', 'CHECKOUT', 'CARDBOX', 'PALLET', 'TROLLEY',
+  /* the checkstand and what is on the belt. A front end that burns and
+     comes back with clean stainless and unmarked cartons on it is a
+     front end nothing happened to. */
+  'BELTSIDE', 'BELTRUB', 'SCANBED', 'BAGDECK', 'TILLTOP', 'TILLRAIL',
+  'REGISTER', 'PINPAD', 'LANENUM', 'BAGRACK', 'IMPULSE',
+  'GROCBOX', 'GROCBOX2', 'GROCCAN', 'GROCBAG', 'GROCTOP',
   'LINO', 'LINOWORN', 'CEILTILE', 'CEILFIT', 'CEILDECK', 'WALLPANL', 'TILEWALL',
   'STOCKFLR', 'STOCKWAL', 'DOORSTAF', 'DOORFRAM', 'DOORHEAD', 'DOORSIGN', 'DOCKDOOR', 'HAZARD',
   'CONCRETE', 'EXITDOOR',
@@ -3433,6 +3972,7 @@ const FIXTURES = new Set([
   'SHELFSTK', 'SHELFEMP', 'SHELFBAK', 'SHELFEND', 'CHILLER', 'FREEZDOR',
   'PRODAPPL', 'PRODCITR', 'PRODGREN', 'PRODROOT', 'PRODFLOW', 'PRODRIM',
   'DELICASE', 'CHECKOUT', 'SHELFMIX', 'BAKECASE', 'CARDBOX', 'PALLET',
+  'BELTSIDE', 'BELTRUB', 'SCANBED', 'BAGDECK', 'TILLTOP',
 ]);
 
 /** Every ruin texture there is, for whatever wants to check they exist. */
@@ -3733,6 +4273,44 @@ const SIZES = {
   FREEZDOR: { w: 64, h: 80 },
   CHECKOUT: { w: 64, h: 40 },      // H_FIXTURE
   CHILLER:  { w: 64, h: 40 },
+
+  /* THE CHECKSTAND. Every one of these is the size of the thing it is a
+     picture of, and three of them are the size of a REGION: the belt,
+     the scale plate and the bagging deck are floors of sectors 60 wide,
+     anchored to their own run, so one repeat is exactly the band and
+     there is no second copy of anything cut off at the far edge. The
+     belt is the exception and is deliberate: 18 along makes one repeat
+     one cleat, so a belt 108 long has six of them and always will,
+     whatever the band is changed to. */
+  BELTSIDE: { w: 64, h: 38 },      // H_BELT
+  BELTRUB:  { w: 60, h: 18 },      // RUN_W across, one cleat along
+  SCANBED:  { w: 60, h: 48 },      // RUN_W by the scanner band
+  BAGDECK:  { w: 60, h: 80 },      // RUN_W by the bagging band
+  TILLTOP:  { w: 64, h: 64 },      // laminate, and it tiles like laminate
+  TILLRAIL: { w: 16, h: 8 },       // tube: nothing in it happens once
+  /* THE THINGS THAT STAND ON IT are each declared at the size of the
+     BOX, not at the size of the picture: a terminal is 22 by 24 in the
+     world and 34 by 38 in texels, and declaring the texels would show
+     two thirds of a till on a till. Where the two aspects differ the
+     picture stretches, so they are painted to match. */
+  REGISTER: { w: 22, h: 24 },      // the long face of the terminal
+  PINPAD:   { w: 12, h: 12 },
+  LANENUM:  { w: 52, h: 42 },      // the lit panel, read from the back
+  BAGRACK:  { w: 30, h: 26 },
+  IMPULSE:  { w: 56, h: 28 },      // half the run: the sweets repeat twice
+
+  /* THE SHOPPING, each at the size of the box it mostly goes on, so the
+     front of a carton is one whole front of a carton. See THE SHOPPING
+     in the bakery above for why these are not tiling sizes — and note
+     that they are SMALLER than the pictures, which are painted at the
+     same aspect and a comfortable number of texels. A texture's pixel
+     size and the amount of world one repeat covers are two different
+     numbers and always have been. */
+  GROCBOX:  { w: 15, h: 23 },
+  GROCBOX2: { w: 18, h: 15 },
+  GROCCAN:  { w: 14, h: 11 },
+  GROCBAG:  { w: 17, h: 14 },
+  GROCTOP:  { w: 16, h: 12 },
   /* A bin's top is a FLOOR, so its 64 by 64 is two metres of shop
      rather than the height of a fixture; the crate boards round it are
      two to a repeat, so they land at eight units whatever they are cut

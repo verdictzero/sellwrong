@@ -481,6 +481,41 @@ const MAP = await import('../js/maps/sellwrong.js');
 const { PLAYER_EYE } = await import('../js/util.js');
 const { buildSellWrong } = MAP;
 const level = buildSellWrong();
+
+/* =====================================================================
+   THE PLAYER DOES NOT START IN A FIELD ANY MORE
+
+   For most of this game's life the spawn was the mouth of the car park,
+   and half a dozen fixtures below quietly took advantage of it: a jet of
+   flame needs somewhere to land, a round needs a wall four thousand
+   units away to put a hole in, a target has to be brought out "in front
+   of the player" with nothing between the two of them, and the
+   responders' six seconds is measured to wherever you happen to be.
+   None of them said so. They just used `g.player` where it stood.
+
+   The player is a cashier now — in the well of the middle checkstand,
+   thirty units from a counter, inside a crowd — and every one of those
+   fixtures broke at once, all of them for the same reason and none of
+   them because anything they are about had changed.
+
+   So the assumption is written down instead. `level.viewpoint` is the
+   old spawn, kept on the level as the place it always was, and a
+   fixture that wants open ground asks for it. What is left over is
+   worth having: the five checks below now say out loud that they are
+   about the car park, and if the shop ever changes under them again
+   they will keep meaning the same thing.
+   ===================================================================== */
+function inTheOpen(g) {
+  const v = g.level.viewpoint;
+  const p = g.player;
+  p.x = v.x; p.y = v.y; p.angle = v.angle; p.pitch = 0;
+  p.sector = g.level.sectorAt(p.x, p.y);
+  p.z = p.sector.floor; p.viewZ = p.z + PLAYER_EYE;
+  p.momx = p.momy = p.momz = 0; p.onGround = true;
+  g.blockmap?.moved(p);
+  p.updateSector?.();
+  return p;
+}
 /* THE TOWN IS BUILT THREE TIMES IN THIS FILE and no more: here, in the
    portal flood's section and in the town's own. Everywhere else the map
    is built with { town: false }, which is the map this file built
@@ -650,11 +685,189 @@ const inTown = s => s.bbox[3] <= TOWN_EDGE;
      the fixture happens to end. */
   const declared = { SHELFSTK: MAP.H_GONDOLA, SHELFEMP: MAP.H_GONDOLA, FREEZDOR: MAP.H_GONDOLA,
                      CHECKOUT: MAP.H_FIXTURE, CHILLER: MAP.H_FIXTURE,
-                     DELICASE: MAP.H_FIXTURE };
+                     DELICASE: MAP.H_FIXTURE, BELTSIDE: MAP.H_BELT };
   const mismatched = Object.entries(declared)
     .filter(([n, h]) => (tex.TEXTURE_SIZES[n] || {}).h !== h)
     .map(([n, h]) => `${n} declared ${(tex.TEXTURE_SIZES[n] || {}).h} wants ${h}`);
   check('fixture textures are sized to their fixtures', mismatched.length === 0, mismatched.join(', '));
+
+  /* ===================================================================
+     THE CHECKSTAND, WHICH IS WHERE YOU START
+
+     The front end was eight slabs and is eight machines, and the player
+     spawns standing inside one of them. Every check here is about a
+     claim made in A CHECKSTAND in js/maps/sellwrong.js.
+     =================================================================== */
+  {
+    const { MAX_STEP } = await import('../js/util.js');
+    const named = n => level.sectors.filter(s => s.name === n);
+    const bbox = sec => {
+      const xs = sec.poly.map(p => p[0]), ys = sec.poly.map(p => p[1]);
+      return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+    };
+    const belts = named('belt'), scans = named('scanner'), bags = named('bagging');
+    const noses = named('checkout nose');
+    const wells = level.sectors.filter(s => /^(your checkout|checkout well)$/.test(s.name || ''));
+    const lanes = named('checkout lane');
+    check('eight checkstands across the front, two runs of counter each',
+      noses.length === 8 && wells.length === 8 &&
+      belts.length === 16 && scans.length === 16 && bags.length === 16,
+      `${noses.length} noses, ${wells.length} wells, ${belts.length} belts, ${scans.length} scanners, ${bags.length} bagging`);
+
+    /* A MACHINE WITH A DIRECTION. You join it at the back, unload onto
+       the belt, pay at the scanner and collect at the bagging end — so
+       the four bands have to be in that order down the lane, edge to
+       edge, with nothing between them. Build them in the wrong order
+       and the shopping travels from the till towards the shop. */
+    const runs = belts.map(b => {
+      const bb = bbox(b);
+      const near = list => list.map(bbox).find(o => o.x0 === bb.x0 && o.x1 === bb.x1);
+      return { belt: bb, scan: near(scans), bag: near(bags) };
+    });
+    check('each one runs belt, then scale plate, then bagging, down the lane',
+      runs.every(r => r.scan && r.bag &&
+        r.belt.y0 === r.scan.y1 && r.scan.y0 === r.bag.y1),
+      `${runs.filter(r => !(r.scan && r.bag && r.belt.y0 === r.scan.y1 && r.scan.y0 === r.bag.y1)).length} out of order`);
+    check('and the scale plate is flush with the belt that feeds it, not set down into it',
+      belts.every(b => b.floor === MAP.H_BELT) && scans.every(sc => sc.floor === MAP.H_BELT),
+      `belt ${belts[0].floor}, plate ${scans[0].floor}`);
+
+    /* NOTHING ON ONE IS CLIMBABLE, which is what lets the shopping be
+       free boxes. The first cut had the scale plate recessed to 34 —
+       22 above the floor against a MAX_STEP of 24 — so you could step
+       onto it, from there onto the belt, and walk through somebody's
+       groceries. */
+    const surfaces = [...belts, ...scans, ...bags, ...noses];
+    const lowest = Math.min(...surfaces.map(sec => sec.floor)) - MAP.FLOOR_WALK;
+    check('and nothing on a checkstand can be climbed onto from the lane beside it',
+      lowest > MAX_STEP, `the lowest surface is ${lowest} above the floor against a step of ${MAX_STEP}`);
+
+    /* THE WELL IS SHOP FLOOR, OPEN BEHIND AND SHUT IN FRONT. Leave the
+       nose off and it is a way round the tills from the shop floor to
+       the mat, which is the one thing a front end exists to prevent. */
+    check('the well you stand in is shop floor', wells.every(w => w.floor === MAP.FLOOR_WALK));
+    const xaisle = level.sectors.find(sec => sec.name === 'front cross-aisle');
+    const mat = level.sectors.find(sec => sec.name === 'entrance mat');
+    const touches = (a, b) => level.lines.some(l =>
+      (l.front === a.index && l.back === b.index) || (l.front === b.index && l.back === a.index));
+    check('and it is open to the cross-aisle behind you',
+      wells.every(w => touches(w, xaisle)), `${wells.filter(w => !touches(w, xaisle)).length} sealed in`);
+    check('and shut at the customer end, so the front end cannot be walked round',
+      wells.every(w => !touches(w, mat)), `${wells.filter(w => touches(w, mat)).length} open to the mat`);
+    check('the lanes and the stands fill the band between them with nothing left over',
+      lanes.length === 9 && lanes.concat(noses).map(bbox)
+        .sort((a, b) => a.x0 - b.x0)
+        .every((o, i, all) => i === 0 || o.x0 === all[i - 1].x1),
+      `${lanes.length} lanes`);
+
+    /* --- AND THE PLAYER IS THE CASHIER ------------------------------ */
+    const start = level.things.find(t => t.type === 'START');
+    const mine = level.sectorAt(start.x, start.y);
+    check('the game starts you in one of them, behind the counter',
+      mine && mine.name === 'your checkout', mine && mine.name);
+    /* facing WEST across the belt, which is the one thing a cashier
+       looks at. Half a turn either way is the length of the front end. */
+    check('facing across the counter rather than down the shop',
+      Math.abs(Math.cos(start.angle) + 1) < 1e-6, `angle ${start.angle.toFixed(2)}`);
+    const acrossRun = level.sectorAt(start.x - 50, start.y);
+    const acrossLane = level.sectorAt(start.x - 120, start.y);
+    check('and what is across it is a scale plate and then a lane with people in it',
+      acrossRun && acrossRun.name === 'scanner' && acrossLane && acrossLane.name === 'checkout lane',
+      `${acrossRun && acrossRun.name} then ${acrossLane && acrossLane.name}`);
+    const served = level.things.filter(t => t.type === 'SHOPPER')
+      .filter(t => Math.abs(t.y - start.y) < 30 && start.x - t.x > 60 && start.x - t.x < 260);
+    check('with somebody at the front of it looking back at you',
+      served.length >= 1 && served.some(t => Math.abs(Math.cos(t.angle) - 1) < 1e-6),
+      `${served.length} in reach, angles ${served.map(t => t.angle.toFixed(2)).join(' ')}`);
+
+    /* --- THE QUEUES -------------------------------------------------
+       They stand in the LANES, one behind another, facing the till —
+       and all three of those were wrong until there was a player at a
+       till to look at them. */
+    /* A QUEUE IS NOT "EVERYBODY IN THE LANE". A lane is 220 wide and 260
+       deep and the front-end scatter drops people all over it, so the
+       first cut of this counted 8 8 9 9 9 8 10 9 22 and learned nothing
+       — including a queue of 22 down the one lane that has no queue.
+
+       What a queue IS: people on the lane's CENTRE LINE, starting at
+       the scale plate, at the spacing the map lays them at. Nobody else
+       can be among them, because the crowd keeps 54 apart and the queue
+       steps 58 — there is no room between two of them for a stranger —
+       so the first five off the centre line are the queue and the rest
+       of the lane is the rest of the lane. */
+    const serveY = (bbox(scans[0]).y0 + bbox(scans[0]).y1) / 2;
+    const queues = lanes.map(bbox).map(o => {
+      const cx = (o.x0 + o.x1) / 2;
+      return level.things.filter(t => t.type === 'SHOPPER' &&
+        Math.abs(t.x - cx) <= 14 && t.y >= serveY - 8).sort((a, b) => a.y - b.y).slice(0, 5);
+    });
+    const real = queues.filter(q => q.length === 5 && Math.abs(q[0].y - serveY) < 8);
+    check('a queue down eight of the nine lanes, five deep, starting at the scale plate',
+      real.length === 8, `${queues.map(q => q.length).join(' ')}`);
+    check('and every one of them is a LINE: one behind another, evenly spaced',
+      real.every(q => q.every((t, i) => i === 0 || (t.y - q[i - 1].y > 50 && t.y - q[i - 1].y < 70))),
+      'gaps between 50 and 70');
+    check('the one at the front has turned to face the till and the rest face the doors',
+      real.every(q => Math.abs(Math.cos(q[0].angle) - 1) < 1e-6 &&
+        q.slice(1).every(t => Math.abs(Math.sin(t.angle) + 1) < 1e-6)));
+
+    /* --- AND THE SHOPPING ------------------------------------------- */
+    const props = level.props || [];
+    const GROC = ['GROCBOX', 'GROCBOX2', 'GROCCAN', 'GROCBAG', 'GROCTOP'];
+    const shopping = props.filter(q => GROC.includes(q.tex) && q.z0 >= MAP.H_BELT);
+    check('there is a great deal of shopping on the belts', shopping.length > 90, `${shopping.length} pieces`);
+    const onBelt = shopping.filter(q => q.z0 === MAP.H_BELT);
+    check('and every piece of it is standing on a belt and nothing else',
+      onBelt.every(q => {
+        const sec = level.sectorAt((q.x0 + q.x1) / 2, (q.y0 + q.y1) / 2);
+        return sec && sec.name === 'belt';
+      }), `${onBelt.filter(q => (level.sectorAt((q.x0 + q.x1) / 2, (q.y0 + q.y1) / 2) || {}).name !== 'belt').length} off it`);
+    check('and none of it hangs over the guards down the sides',
+      onBelt.every(q => {
+        const sec = level.sectorAt((q.x0 + q.x1) / 2, (q.y0 + q.y1) / 2);
+        const o = bbox(sec);
+        return q.x0 >= o.x0 && q.x1 <= o.x1;
+      }));
+    /* IT IS A PILE AND NOT A LINE: three abreast where the belt has run
+       everything up against the stop, and something stacked on top. */
+    const stacked = shopping.filter(q => q.z0 > MAP.H_BELT);
+    check('some of it is stacked on the rest, which is what a pile is',
+      stacked.length > 10, `${stacked.length} on top of something`);
+    const perBelt = new Map();
+    for (const q of shopping) {
+      const sec = level.sectorAt((q.x0 + q.x1) / 2, (q.y0 + q.y1) / 2);
+      if (sec && sec.name === 'belt') perBelt.set(sec.index, (perBelt.get(sec.index) || 0) + 1);
+    }
+    const myBelt = level.sectorAt(start.x - 50, start.y + 60);
+    const mineN = perBelt.get(myBelt && myBelt.index) || 0;
+    const counts = [...perBelt.values()].sort((a, b) => b - a);
+    note('shopping, belt by belt', counts.join(' '));
+    check('and your own belt is the busiest one in the shop, because it is the one you look down',
+      myBelt && myBelt.name === 'belt' && mineN >= 14 && mineN === counts[0] && mineN > counts[1],
+      `${mineN} on yours against ${counts[1]} at the next busiest of the sixteen`);
+    /* AND THE OTHERS ARE NOT COPIES OF IT. A front end where every belt
+       holds the same amount is eight copies of one lane; a real one has
+       a heaped belt, a couple with three things on them, and one the
+       customer has just walked away from. The fullest here should be
+       several times the emptiest. */
+    check('and the rest of them are all different amounts of busy',
+      counts[0] > counts[counts.length - 1] * 2.5 && new Set(counts).size >= 5,
+      `${counts[0]} at the fullest, ${counts[counts.length - 1]} at the emptiest, ${new Set(counts).size} distinct`);
+
+    /* THE PICTURES ARE SIZED TO THE BOXES THEY GO ON, which is what
+       makes them packaging rather than wallpaper: a carton front is one
+       whole carton front. Every distinct box size that wears one of
+       these has to be within a repeat of its declared size, or a cereal
+       box shows two thirds of a cereal box. */
+    const over = props.filter(q => GROC.includes(q.tex) || ['REGISTER', 'PINPAD', 'BAGRACK'].includes(q.tex))
+      .filter(q => {
+        const t = tex.TEXTURE_SIZES[q.tex];
+        if (!t) return true;
+        return Math.max(q.x1 - q.x0, q.y1 - q.y0) > t.w * 1.45 || (q.z1 - q.z0) > t.h * 1.45;
+      });
+    check('every picture on the front end is sized to the thing it is a picture of',
+      over.length === 0, over.slice(0, 4).map(q => `${q.tex} ${Math.round(q.x1 - q.x0)}x${Math.round(q.z1 - q.z0)}`).join(', '));
+  }
 
   /* PRODUCE IS BINS, and the whole point of them is the top. A bin
      wearing SHELFBAK is the bug this replaced: gondola steel on the one
@@ -2107,7 +2320,7 @@ section('the flame');
   const hudStub = { message() {}, ticMessages() {}, resize() {}, update() {} };
   const inputStub = { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 }, attack: false, use: false, run: false, sample() {}, sensitivity: 0 };
   const g = new Game({ level, scene: new THREE.Scene(), camera: {}, textures: tex.bakeTextures(), sprites: spr.bakeSprites(), hud: hudStub, audio: null, input: inputStub });
-  const p = g.player;
+  const p = inTheOpen(g);                    // a jet needs somewhere to land
   const o = g.nozzle();
   check('without a model the flame is born low and right of the eye', o.z < p.viewZ && Math.hypot(o.x - p.x, o.y - p.y) > 10);
   for (let k = 0; k < 6; k++) { g.flame.fire(o, p.angle, 0); g.flame.tic(); }
@@ -4214,13 +4427,37 @@ section('bringing it down');
 
   /* --- AND THE FIRE ALONE DOES IT, WHICH IS THE POINT --- */
   {
+    /* THE FURNITURE IS NOT THE SHOP, and the ratio below is about the
+       shop. What "it comes down" means is the BUILDING: the floor you
+       walk on, and whether a fire that goes end to end brings it down
+       or leaves a shell standing.
+
+       A gondola is a raised fixture INSIDE that building and has always
+       mostly stood — six of twenty-three, the day this was written —
+       because a fixture is small, holds its own fuel, and the frame
+       over one is cooked mostly by whatever is alight beside it. That
+       was invisible while the shop was nearly all floor by count. It
+       stopped being invisible when the front end became eight
+       checkstands instead of eight slabs: forty-eight new fixture
+       regions, every one behaving exactly like the gondolas already
+       did, and a ratio under a half without one thing having changed
+       about the building or the fire.
+
+       So the floors are counted as the shop and the fixtures are noted
+       beside them. Taken BEFORE the burn, because a collapse levels a
+       region to its neighbour and a fixture that has come down is at
+       floor height by the time anybody asks. */
+    const FIXTURE = new Set(lv.sectors.filter(s => s.floor > MAP.FLOOR_WALK).map(s => s.index));
     for (let y = 200; y < 3300; y += 200) for (let x = 300; x < 4000; x += 160) g.fire.ignite(x, y, 250, 60);
     for (let t = 0; t < 4200; t++) g.tic();
     const gut = lv.sectors.filter(s => s.gutted).length;
     const col = lv.sectors.filter(s => s.collapsed).length;
     const stand = lv.sectors.filter(s => s.gutted && !s.collapsed);
+    const fgut = lv.sectors.filter(s => s.gutted && !FIXTURE.has(s.index)).length;
+    const fcol = lv.sectors.filter(s => s.collapsed && !FIXTURE.has(s.index)).length;
     note('a shop burnt end to end', `${gut} gutted, ${col} of them down, ${stand.length} still standing`);
-    check('a shop that burns end to end comes down', col > gut * 0.5, `${col} of ${gut}`);
+    note('of which the shop floor itself', `${fcol} of ${fgut} down; the fixtures are ${col - fcol} of ${gut - fgut}`);
+    check('a shop that burns end to end comes down', fcol > fgut * 0.5, `${fcol} of ${fgut}`);
     /* AND NOT ALL OF IT, which is the half that makes it a simulation
        rather than a timer: a bay the fire moved away from stands. */
     check('and the bays the fire moved off are still standing',
@@ -6482,7 +6719,7 @@ section('the van');
         fleet: { texture: {}, def: van }, police: { texture: {}, def: police },
         apc: { texture: {}, def: apc },
       });
-      const fp = fresh.player;
+      const fp = inTheOpen(fresh);          // the case the user complained about
       fp.startFire();
       fresh.tic();
       check('one shot and the convoy is already on the road', fresh.responders.vans.length === S.convoy);
@@ -6850,7 +7087,24 @@ section('the cerebral bore');
   const g = mk();
   const p = g.player;
   p.weapon = 'BORE';
-  const who = g.actors.find(a => a.type === 'SHOPPER' && !a.dead && a.sector && !a.sector.outdoor);
+  /* SOMEBODY WITH TWO HUNDRED UNITS OF THE SAME ROOM WEST OF THEM,
+     which is scaffolding and not an assertion: the sight is what is
+     being asked about, and the only thing the shop has to supply is a
+     clear two hundred to stand in.
+
+     Taking the first shopper in the list and assuming the room was
+     there held until the queues moved into the checkout lanes. The
+     first one now stands in lane zero, 140 off the west wall of the
+     shop — so the spot two hundred west of them is inside the chemist,
+     through a wall, and the sight correctly found nothing.
+
+     SAME SECTOR and not "some walkable sector": a point that is indoors
+     at the same floor height is exactly what the inside of the next
+     tenancy is. The cross-aisles are the one region in the shop that is
+     three thousand units long, so both ends of a two-hundred-unit shot
+     down one are the same room by construction. */
+  const who = g.actors.find(a => a.type === 'SHOPPER' && !a.dead && a.sector &&
+    !a.sector.outdoor && g.level.sectorAt(a.x - 200, a.y) === a.sector);
   /* stand in the aisle, two hundred off somebody, looking at them */
   const stand = (a, back = 200) => {
     p.x = a.x - back; p.y = a.y; p.sector = g.level.sectorAt(p.x, p.y); p.z = p.sector.floor; p.viewZ = p.z + 41;
@@ -7040,7 +7294,7 @@ section('the minigun, the jump and the van');
   /* --- the rounds go where the eye looks, pitch and all ------------- */
   {
     const g2 = mk();
-    const q = g2.player;
+    const q = inTheOpen(g2);               // nothing between you and the target
     const before = g2.actors.length;
     const floor = q.sector.floor;
     /* straight down at your own feet: the shot stops at the lino and
@@ -7072,7 +7326,7 @@ section('the minigun, the jump and the van');
   /* --- the jump ------------------------------------------------------ */
   {
     const g3 = mk();
-    const q = g3.player;
+    const q = inTheOpen(g3);               // and room to come down in
     const floor = q.z;
     check('you start on the ground', q.onGround === true && q.momz === 0);
     q.tic(inp({ jump: true }), 1 / 35);
@@ -7226,7 +7480,7 @@ section('the decals');
     Math.abs(bw.ux * nA.nx + bw.uy * nA.ny) < 1e-9 && bw.vz === 1 && bf.ux === 1 && bf.vy === 1);
   /* --- holes --------------------------------------------------------- */
   const g = mk();
-  const q = g.player;
+  const q = inTheOpen(g);                  // a wall to shoot at and nobody in front of it
   check('the game has decals, headless, with nothing to draw them on', !!g.decals && g.decals.liveCount === 0);
   const wall = g.level.rayHitWall(q.x, q.y, q.eyeZ, q.x + Math.cos(q.angle) * 4000, q.y + Math.sin(q.angle) * 4000, q.eyeZ);
   if (wall) {
@@ -8846,14 +9100,64 @@ section('the town');
        sideways, which is the same bargain Doom made with every pillar
        it drew as a sprite. */
     const PLAYER_TOP = 49 + 8;
-    /* the three that are FLAT AGAINST something — a post on its stoop,
-       a pipe and a board on the face of a wall — and the one that is
-       LOWER THAN A STEP, which is the wheel stop and is a different
-       bargain: see below. */
+    /* WHERE A PLAYER CAN ACTUALLY BE. The question is not whether a box
+       comes down to head height, it is whether it comes down to head
+       height SOMEWHERE SOMEBODY CAN GET TO — and this used to be asked
+       against a floor of zero, which is the car park, because
+       everything that had ever been a free box stood on the ground.
+
+       The checkstands are the first ones that do not: the register, the
+       bag rack, the guards down the belt and every tin of somebody's
+       shopping stand on a counter 26 above the floor against a MAX_STEP
+       of 24, so there is no way to be up there at all. That is the same
+       bargain the porch post makes and a stronger version of it — the
+       post you can walk round, the counter you cannot climb.
+
+       So: flood the level by the game's own passability, take the floor
+       the box actually stands on, and ask whether a player standing on
+       it would have the box inside them. A box on a floor nobody can
+       reach is a box nobody can walk into. */
+    const reach = new Set();
+    {
+      const st = level.things.find(t => t.type === 'START');
+      const from = level.sectorAt(st.x, st.y);
+      const byS = new Map();
+      for (const l of level.lines) for (const si of [l.front, l.back]) {
+        if (si === null) continue;
+        if (!byS.has(si)) byS.set(si, []);
+        byS.get(si).push(l);
+      }
+      const queue = [from.index];
+      reach.add(from.index);
+      while (queue.length) {
+        const si = queue.pop();
+        for (const l of byS.get(si) || []) {
+          const other = l.front === si ? l.back : l.front;
+          if (other === null || reach.has(other)) continue;
+          if (level.lineBlocks(l, level.sectors[si].floor, 56, false)) continue;
+          reach.add(other); queue.push(other);
+        }
+      }
+    }
+    /* the floor under a box, when anybody can be standing on it */
+    const standingFloor = q => {
+      const s2 = level.sectorAt((q.x0 + q.x1) / 2, (q.y0 + q.y1) / 2);
+      return s2 && reach.has(s2.index) ? s2.floor : null;
+    };
+    const inTheWay = q => {
+      const f = standingFloor(q);
+      return f !== null && q.z0 < f + PLAYER_TOP && q.z1 > f;
+    };
+    /* the ones that are FLAT AGAINST something — a post on its stoop, a
+       pipe, a board and a magazine rack on the face of a wall — and the
+       one that is LOWER THAN A STEP, which is the wheel stop and is a
+       different bargain: see below. */
     const FLAT = ['PORCHPST', 'DOWNPIPE', 'CORNRBRD', 'PILASTER', 'METERBOX', 'ROOFLADR', 'SHUTRAIL',
-                  'SHOPFRAM', 'DOORFRAM'];
+                  'SHOPFRAM', 'DOORFRAM', 'IMPULSE'];
     const STEPPABLE = ['WHEELSTP'];
-    const low = props.filter(q => q.z0 < PLAYER_TOP && ![...FLAT, ...STEPPABLE].includes(q.tex));
+    const low = props.filter(q => inTheWay(q) && ![...FLAT, ...STEPPABLE].includes(q.tex));
+    note('free boxes up where nobody can stand',
+      `${props.filter(q => !inTheWay(q) && q.z0 < PLAYER_TOP).length} of them, on counters and belts`);
     check('and nothing but a post, a pipe, a corner board and a wheel stop comes down to head height',
       low.length === 0, low.slice(0, 4).map(q => `${q.tex} at z${Math.round(q.z0)}`).join(', '));
     check('and every one of those is thin enough to be the wall it is on',
@@ -8869,7 +9173,7 @@ section('the town');
        way it stops you at a boxwood hedge. If this ever fails, somebody
        has put a solid object back in as a picture of one. */
     check('and nothing the size of a skip is a free box at all',
-      !props.some(q => q.z0 < PLAYER_TOP && Math.min(q.x1 - q.x0, q.y1 - q.y0) > 24));
+      !props.some(q => inTheWay(q) && Math.min(q.x1 - q.x0, q.y1 - q.y0) > 24));
     /* AND THE FOURTH IS LOWER THAN A STEP. A wheel stop is the first
        free box in this game that is neither above your head nor flat
        against a wall, and it gets away with it for one reason only: it
