@@ -216,6 +216,12 @@ export class TouchControls {
       /* the same tap, for the one weapon that has a scope — see ZOOMS
          in js/scope.js. The input layer clears it. */
       if (kind === 'zoom') t.zoomPulse = true;
+      /* AND THE PAUSE BUTTON, which was in the page and went nowhere:
+         the two bars have been sitting in the corner since the touch
+         controls were built and this branch never had a line for them,
+         so the one way into the menu on a phone did nothing at all. A
+         tap like the others; js/input.js clears it. */
+      if (kind === 'pause') t.pausePulse = true;
       return;
     }
     const x = e.clientX - this.left;

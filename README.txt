@@ -139,7 +139,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         2434 checks, no install and no browser
+  the smoke test         2443 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -333,6 +333,26 @@ latched — reads the tank, and the refill runs once a tic upstream of all
 of them. So the spending still happens exactly as it always did and is
 simply undone before anybody looks, and not one line anywhere else in
 the game knows the mode exists.
+
+WHAT IT SAYS ABOUT THE LANCE IS THE LATCH AND NOT THE TEMPERATURE, and
+getting that wrong cost the weapon its best feature for a release. The
+positron lance is limited by heat rather than by a tank (see THE
+POSITRON SNIPER LANCE), so the switch has to say SOMETHING about heat or
+it does nothing to it — and the first cut said the coil was cold,
+setting lanceHeat to zero here. This branch runs once a tic with the
+switch ON BY DEFAULT, so the number the chassis glow is drawn from was
+wiped before it ever reached a frame: the gun never glowed in an
+ordinary game at all, and the user reported it as the shader not
+working. The shader was fine.
+
+The glow is not a fuel gauge. Since the overcharge it is a readout of
+how close the player is to dying, drawn on the part of the gun they are
+looking at, and the overcharge kills you with this switch on — blowUp
+ignores the invincible mode on purpose. Turning off the one warning
+that is in the middle of the picture, on the grounds of infinite AMMO,
+was backwards. What the switch clears now is lanceHot, the latch that
+refuses the trigger; armed() reads the latch and nothing reads the
+temperature but the shader, so the two come apart cleanly.
 
 
 AND THE OTHER END OF IT
@@ -856,6 +876,27 @@ that sampled the pause key, so nothing could ever unpause, and on the
 desktop Escape drops the pointer lock and the browser swallows the key
 anyway. Now a lost pointer lock is a pause, the menu releases the mouse
 so it can be pointed at, and a hidden tab pauses too.
+
+AND START OPENS IT, at the user's request, which it did not. Pausing was
+Escape or P and nothing else — so a player on a pad had no way into the
+menu at all, and the button that had been sitting in the corner of the
+page for a player on a phone since these controls were built was wired
+to nothing on the way in. .tb-pause was in index.html, styled, mirrored
+for the left-handed layout, and js/touch.js simply had no branch for its
+kind: tapping it did nothing. Both now raise the one flag Game.update
+reads, on both sides of the pause.
+
+BOTH OF THE PAD'S MIDDLE BUTTONS, not just the one: nine is Start in the
+standard mapping and eight is Select — Options and Share, Menu and View,
+plus and minus — and which of the two a player reaches for is a matter
+of what console they grew up with. Neither does anything else here.
+
+AND EVERY PAD EDGE IS NOW TAKEN BEFORE THE OR, which two of them were
+not. padEdge has a side effect — it records what the button was doing
+this frame — so an || that short-circuits past it leaves that record a
+frame stale and swallows the NEXT press off the pad. Pressing Z while
+resting a thumb on B was enough to do it, and jumping had the same
+shape. Sampled into a local first, every time.
 
 
 THE PARADE
@@ -7249,7 +7290,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-2434 checks. Every one of them earns its place by having caught something
+2443 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

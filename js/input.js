@@ -75,7 +75,8 @@ export class Input {
     this.invertY = false;
     this.touch = {
       move: { x: 0, y: 0 }, look: { x: 0, y: 0 },
-      attack: false, use: false, usePulse: false, jumpPulse: false, zoomPulse: false, run: false, weapon: 0,
+      attack: false, use: false, usePulse: false, jumpPulse: false, zoomPulse: false,
+      pausePulse: false, run: false, weapon: 0,
     };
     /* WHETHER A PAD IS IN CHARGE, which is a different question from
        which MODE the game is in: a phone with a controller paired is
@@ -243,7 +244,11 @@ export class Input {
     this.run = this.down('run') || this.touch.run || btn(10) || btn(11);
     /* JUMP is a press, not a hold: one jump per press of the key, the
        trigger or the button, so holding it down is not a pogo stick */
-    this.jump = this.pressed('jump') || this.touch.jumpPulse || padEdge(6);
+    /* the pad edge first, for the reason given at the zoom below: an ||
+       that short-circuits past padEdge leaves its record a frame stale
+       and swallows the next press off the pad */
+    const padJump = padEdge(6);
+    this.jump = this.pressed('jump') || this.touch.jumpPulse || padJump;
     this.touch.jumpPulse = false;
 
     this.weaponSlot = 0;
@@ -268,12 +273,37 @@ export class Input {
     }
 
     /* THE SCOPE STEPS ON A PRESS: the right button, Z or C, the pad's B.
-       One edge per press, whichever of the four it came from. */
-    this.zoomPressed = this.pressed('zoom') || this.mouseRightPulse || this.touch.zoomPulse || padEdge(1);
+       One edge per press, whichever of the four it came from.
+
+       THE PAD EDGE IS TAKEN FIRST AND NOT LAST, because padEdge has a
+       side effect — it records what the button was doing this frame —
+       and an || that short-circuits past it leaves that record a frame
+       stale, so the next press off the pad is swallowed. Pressing Z
+       while resting a thumb on B was enough to do it. */
+    const padZoom = padEdge(1);
+    this.zoomPressed = this.pressed('zoom') || this.mouseRightPulse || this.touch.zoomPulse || padZoom;
     this.mouseRightPulse = false;
     this.touch.zoomPulse = false;
 
-    this.pausePressed = this.pressed('pause');
+    /* AND THE PAUSE MENU OPENS ON START, at the user's request, which it
+       did not: pausing was Escape or P and nothing else, so a player on
+       a pad had no way into the menu at all and the button already
+       sitting in the page for a player on a phone — .tb-pause, in
+       index.html since the touch controls were built — was wired to
+       nothing on the way in. Both go through the one flag the game
+       reads, and it is read on both sides of the pause: see Game.update,
+       which keeps sampling while stopped, because a pause that stops
+       listening for the pause button is a door with no handle on the
+       inside.
+
+       BOTH OF THE PAD'S MIDDLE BUTTONS, not just the one. Nine is Start
+       in the standard mapping and eight is Select — Options and Share,
+       Menu and View, +/- — and which of the two a player reaches for is
+       a matter of what console they grew up with. Neither does anything
+       else in this game. */
+    const padStart = padEdge(9), padSelect = padEdge(8);
+    this.pausePressed = this.pressed('pause') || this.touch.pausePulse || padStart || padSelect;
+    this.touch.pausePulse = false;
     this.mapPressed = this.pressed('map');
 
     this.prev = new Set(this.keys);

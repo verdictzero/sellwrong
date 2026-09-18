@@ -1423,10 +1423,25 @@ export class Player {
       for (const kind of Object.keys(this.maxAmmo)) this.ammo[kind] = this.maxAmmo[kind];
       this.dry = false; this.co2Dry = false; this.beltDry = false; this.cellDry = false;
       this.regenTick = 0; this.co2Tick = 0; this.beltTick = 0; this.cellTick = 0;
-      /* AND THE COIL IS COLD. Infinite ammo on a weapon whose real
-         limit is temperature has to say something about temperature or
-         the switch does nothing to it. */
-      this.lanceHeat = 0; this.lanceHot = false;
+      /* AND THE COIL'S LATCH IS OFF. Infinite ammo on a weapon whose
+         real limit is temperature has to say something about
+         temperature or the switch does nothing to it — but what it says
+         is that the gun will always TAKE THE TRIGGER, which is the
+         latch, and not that the metal is cold.
+
+         Zeroing lanceHeat here as well was the first cut, and it turned
+         the chassis glow off in every ordinary game: this branch runs
+         once a tic with the switch on by default, so the number the
+         shader reads was being wiped before it ever reached a frame and
+         the gun never glowed at all. The glow is not a fuel gauge any
+         more — since the overcharge it is a readout of how close the
+         player is to dying, drawn on the part of the gun they are
+         looking at, and the overcharge kills you with this switch on
+         (see blowUp). Turning off the one warning that is in the middle
+         of the picture, on the grounds of infinite AMMO, was backwards.
+         armed() reads the latch and nothing reads the temperature but
+         the shader, so the two come apart cleanly. */
+      this.lanceHot = false;
       return;
     }
     this._refill('fuel', REGEN_EVERY, REFIRE_AT, 'regenTick', 'dry');

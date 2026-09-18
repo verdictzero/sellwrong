@@ -2268,6 +2268,44 @@ section('touch');
   check('half a push forward is a walk, straight ahead', half.x === 0 && half.y > 0.45 && half.y < 0.55, `y ${half.y.toFixed(2)}`);
   const full = t.stickVector(0, -R, R);
   check('the rim is a full run', Math.abs(full.y - 1) < 1e-9 && full.mag === 1);
+
+  /* ---- AND THE WAY INTO THE PAUSE MENU ------------------------------
+     At the user's request, and it was two separate nothings. The pause
+     button has been in index.html since the touch controls were built —
+     two bars in the top corner, styled, positioned, mirrored for the
+     left-handed layout — and js/touch.js had no branch for its kind, so
+     tapping it did nothing at all. And a player on a pad had no way in
+     either: pausing was Escape or P and nothing else. Both now go
+     through the one flag Game.update reads on both sides of the pause.
+     --------------------------------------------------------------------- */
+  {
+    const fsT = await import('node:fs');
+    const html = fsT.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+    const touchSrc = fsT.readFileSync('js/touch.js', 'utf8');
+    const inputSrc = fsT.readFileSync('js/input.js', 'utf8');
+    const gameSrc = fsT.readFileSync('js/game.js', 'utf8');
+    const cssSrc = fsT.readFileSync('css/style.css', 'utf8');
+    check('the pause button is in the page, and it is one of the touch buttons',
+      /class="tb tb-pause" data-btn="pause"/.test(html) && /\.tb-pause \{/.test(cssSrc));
+    check('and tapping it now says so, which it did not',
+      /if \(kind === 'pause'\) t\.pausePulse = true;/.test(touchSrc) &&
+      /pausePulse: false/.test(inputSrc));
+    check('the pad opens it too, on either of its middle buttons',
+      /const padStart = padEdge\(9\), padSelect = padEdge\(8\);/.test(inputSrc) &&
+      /this\.pausePressed = this\.pressed\('pause'\) \|\| this\.touch\.pausePulse \|\| padStart \|\| padSelect;/.test(inputSrc));
+    check('the pulse is cleared where it is read, like the other taps',
+      /this\.touch\.pausePulse = false;/.test(inputSrc));
+    /* THE PAD EDGE IS TAKEN BEFORE THE ||, which the zoom step did not
+       do: padEdge records what the button was doing this frame, so an
+       || that short-circuits past it leaves that record a frame stale
+       and swallows the next press off the pad. */
+    check('and every pad edge is sampled before the or, not inside it',
+      /const padZoom = padEdge\(1\);/.test(inputSrc) &&
+      !/\|\| padEdge\(/.test(inputSrc));
+    check('and the game listens for it on both sides of the pause',
+      /if \(this\.input\.pausePressed\) this\.setPaused\(false\);/.test(gameSrc) &&
+      /if \(this\.input\.pausePressed && this\.state === 'play'\) this\.setPaused\(true\);/.test(gameSrc));
+  }
   const past = t.stickVector(0, -3 * R, R);
   check('past the rim is still exactly one', past.mag === 1 && Math.abs(past.y - 1) < 1e-9);
   const diag = t.stickVector(R, R, R);
@@ -4827,8 +4865,15 @@ section('the lance');
     P.BEAM_TICS[2] / P.LANCE_HEAT_UP > 0.7 && P.BEAM_TICS[2] / P.LANCE_HEAT_UP <= 1);
   check('and venting costs heat too, so a charge you throw away is not free',
     P.VENT_HEAT > 0 && P.VENT_HEAT < 1);
-  check('infinite ammo cools it, or the switch would do nothing to this weapon',
-    /this\.lanceHeat = 0; this\.lanceHot = false;/.test(playerSrc));
+  /* INFINITE AMMO TAKES THE LATCH OFF AND LEAVES THE METAL ALONE. It
+     zeroed the temperature as well for one release, which turned the
+     chassis glow off in every ordinary game — the switch is on by
+     default and its branch runs once a tic, so the number the shader
+     reads never reached a frame. See the note in fuelTic; the check
+     with teeth is in 'the overcharged discharge'. */
+  check('infinite ammo takes the latch off, and does not pretend the coil is cold',
+    /this\.lanceHot = false;/.test(playerSrc) &&
+    !/this\.lanceHeat = 0; this\.lanceHot = false;/.test(playerSrc));
 
   /* ---- the line, and what it takes down ----------------------------- */
   check('the beam is a line through the map and not a shot that stops at a wall',
@@ -5468,6 +5513,42 @@ section('the overcharged discharge');
     /this\.momz = BLAST_LIFT;/.test(playerSrc));
   check('and the death camera follows the body rather than the spot it left',
     /const wx = this\.x/.test(playerSrc) || /lv\.rayHitWall\(this\.x, this\.y/.test(playerSrc));
+
+  /* ---- AND THE GLOW SURVIVES THE DEBUG SWITCH ---------------------- */
+  /* DEBUG: INFINITE AMMO is ON by default, its branch runs once a tic,
+     and for one release it set lanceHeat to zero in passing — so the
+     chassis glow the user asked for was wiped before it reached a frame
+     and the gun never glowed in an ordinary game at all. The user
+     reported it as the shader not working. The shader was fine.
+
+     What the switch is allowed to say about a weapon limited by heat is
+     that the gun will always TAKE THE TRIGGER, which is the latch; it
+     is not allowed to say the metal is cold, because since the
+     overcharge the temperature is a readout of how close the player is
+     to dying and the overcharge kills you with this switch on. */
+  {
+    const p = Object.create(P.Player.prototype);
+    p.weapon = 'LANCE';
+    p.debug = true;
+    p.ammo = { cells: 1 }; p.maxAmmo = { cells: 4 };
+    p.dry = p.co2Dry = p.beltDry = p.cellDry = false;
+    p.regenTick = p.co2Tick = p.beltTick = p.cellTick = 0;
+    p.lanceHeat = 0.77; p.lanceHot = true;
+    p.fuelTic();
+    note('the coil under DEBUG: INFINITE AMMO',
+      `heat ${p.lanceHeat}, latch ${p.lanceHot}, cells ${p.ammo.cells} of ${p.maxAmmo.cells}`);
+    check('infinite ammo drops the latch but leaves the metal as hot as it is',
+      p.lanceHeat === 0.77 && p.lanceHot === false && p.ammo.cells === 4);
+    check('and nothing in that branch touches the number the glow is drawn from',
+      !/this\.lanceHeat = 0;/.test(playerSrc.slice(playerSrc.indexOf('  fuelTic() {'),
+                                                   playerSrc.indexOf('/** One tank, one tic.'))));
+    /* and the gate really is the latch and not the temperature, which is
+       what lets the two come apart */
+    check('what refuses the trigger is the latch, and only the latch',
+      /if \(WEAPONS\[w\]\.charge && \(this\.lanceHot \|\| this\.beamTics > 0\)\) return false;/.test(playerSrc) &&
+      !/armed[\s\S]{0,600}?lanceHeat/.test(playerSrc.slice(playerSrc.indexOf('  armed(w) {'),
+                                                            playerSrc.indexOf('  armed(w) {') + 900)));
+  }
 
   /* ---- and every warning says CAPACITOR ---------------------------- */
   note('what the gun shouts on the way down',
