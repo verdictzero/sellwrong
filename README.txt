@@ -139,7 +139,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         2321 checks, no install and no browser
+  the smoke test         2357 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -4760,6 +4760,213 @@ with it in your hands — stops the loop through one line, and none of
 them has to remember to.
 
 
+A HOLE BLOWN THROUGH A WALL
+---------------------------
+
+At the user's request: "any structure in the path of the beam has a hole
+blown through it, the hole will then decay into debris and burning".
+
+
+IT IS NOT A DECAL
+-----------------
+
+The game already has a decal system and a very big scorch on a wall
+would have been half an hour's work. It would also have been a PICTURE
+of a hole: you could not see through it, shoot through it or walk
+through it — and the first thing anybody does after firing a
+two-hundred-unit column of plasma through the front of a house is walk
+into the house through the front of it. A hole that is only a picture is
+a lie that is found out immediately.
+
+So it is geometry. A wall in this game is a LINE (js/level.js) drawn as
+a quad spanning its length at some interval of height, and a hole is the
+statement that a RECTANGLE of that quad is no longer there. js/breach.js
+is that statement and the arithmetic of it.
+
+THE COORDINATES ARE (t, z): how far along the line as a FRACTION of its
+length, and world height. The first of those because js/mapgeo.js's
+addQuad already took exactly that as `span` — it was put in so the wall
+under a gable could be drawn in the two pieces either side of the ridge,
+with the brick still reading as one length across both, and a hole is
+that same idea asked in two axes. The second because every other height
+in the engine is world units and a hole has to be comparable with a
+floor, a ceiling and a player's eye.
+
+
+PUNCHING MERGES RATHER THAN APPENDS
+-----------------------------------
+
+The beam is out for three to five seconds and punches on its structural
+clock, which is a dozen times a second: a wall the column sits on would
+collect sixty rectangles, all of them nearly the same rectangle. So a
+punch that OVERLAPS what is already gone grows that hole to the union
+instead of adding to the list — cheaper, and truer, because a wall does
+not get two holes where one beam crossed it, it gets a bigger hole.
+Eighty punches at the same place are one hole; forty punches in forty
+places are four, because the list is capped and past the cap a new punch
+grows the NEAREST hole rather than being dropped. A wall that has been
+shot at all day ends up with a few large holes rather than a hundred
+small ones, which is what a wall that has been shot at all day looks
+like.
+
+And growing one hole can bring it into contact with another, so there is
+a second pass: two holes that touch are one hole. Without it a wall
+crossed twice keeps two rectangles sharing an edge, and the grid below
+then cuts a zero-width column between them.
+
+
+THE SPLIT IS A GRID, WHICH IS THE WHOLE TRICK
+---------------------------------------------
+
+"Draw this rectangle except for those rectangles" is an awkward problem
+right up until you stop trying to be clever about it. Take every hole
+edge that falls inside the wall, cut the wall along all of them in both
+axes, and you have a grid of cells each of which is ENTIRELY inside a
+hole or entirely outside one. Test each cell's middle, keep the
+survivors, merge each row of survivors back into runs.
+
+It is exact, and it is checked as exact: the pieces plus the holes come
+to the wall's area to the last decimal place, for one hole and for two.
+A wall with one small hole in it is twelve quads; a wall crossed by a
+column taller than itself is four — two strips of brick either side and
+two of scorch.
+
+
+THE EDGE IS CHARRED AND THE REST OF THE WALL IS NOT
+---------------------------------------------------
+
+The first cut charred every surviving piece of a breached band, on the
+argument that brick which now ends at a hole ends at a burnt edge. It
+does — but a piece can be forty metres of shopfront whose far end has
+never been near the beam, and charring all of it because the near end
+was is a building that goes black because somebody shot a window.
+
+So there is a second set of cut lines a rim's width outside each hole,
+and a cell TOUCHING a hole is its edge and is burnt while a cell beyond
+that is not. A row merges only while the answer stays the same. What
+comes out is a scorched border about a foot wide round the opening and
+clean brick past it.
+
+The rim is measured in WORLD UNITS in both axes, which is the point,
+because one of the two axes is a fraction: a rim written as a fraction
+of the line is thirty-five centimetres on a shopfront and four on a
+garden wall.
+
+
+AND THE HOLE IS REAL FOR EVERYTHING, NOT JUST THE RENDERER
+----------------------------------------------------------
+
+  walking   Level.lineBlocks asks whether the mover's own span at the
+            crossing is inside a hole, across their WHOLE WIDTH and not
+            just under their middle — a body is a circle, and a hole
+            narrower than the body is a hole you walk into. Three
+            samples, the middle and both shoulders.
+  shooting  Level.rayHitWall passes through, so a round follows the beam
+  seeing    Level.sightBlocked passes through, so a shopper on the far
+            side of a breached wall is in view and knows you are there
+
+WHAT A HOLE DOES NOT EXCUSE is a floor or a ceiling. The other refusals
+in lineBlocks — too low, too high, too far — are about the two REGIONS'
+own heights at the crossing, and a hole in the brick between them says
+nothing about either. Blowing the front off a house does not lower the
+landing behind it, and a breach that excused "too low" would let you
+walk through the gap over a door and out into the air above the hall.
+
+
+FINDING THE WALLS
+-----------------
+
+Level.rayHitWall is the obvious tool and is wrong twice over: it returns
+the FIRST wall and stops, and the whole point of this weapon is that it
+does not stop. So the column's segment is marched through the blockmap
+instead — a small box every 128 units, deduplicated — and every line
+that actually crosses it is punched. A shot across the town opens ninety
+walls in two milliseconds, which is fast enough to do a dozen times a
+second for five seconds.
+
+HOW WIDE THE HOLE IS is not the column's diameter. A cylinder of radius
+R crossing a plane at an angle cuts a chord of 2R/sin(angle), so a beam
+that grazes a wall at ten degrees cuts a hole six times its own width —
+which is right, and is also why it is capped at three and a half: at one
+degree the chord is the whole street, and a shot fired ALONG a terrace
+should not delete the terrace. A column exactly parallel to a wall never
+meets its plane and is skipped.
+
+AND ONLY WALLS. A two-sided line between two patches of street draws
+nothing and is not a structure; giving it a breach list would put one
+more property read into the collision, the bullet ray and the sight line
+for every query for ever, in exchange for a hole in nothing.
+
+
+AND THEN IT DECAYS
+------------------
+
+A fresh breach is a clean cut through brick. Over three seconds it does
+three things:
+
+  it crumbles   the opening grows in three discrete jumps — discrete
+                because every change to a hole rebuilds the block it is
+                drawn in, and a smooth grow is a rebuild every frame
+  it sheds      debris falls out of the widening edge and the dust of it
+                hangs at the foot
+  it burns      the fire grid is lit at the hole, so the opening goes on
+                burning by itself and the region round it chars on the
+                fire's own clock
+
+AND IT TAKES A BITE OUT OF ITS OWN EDGE, which is what stops it being a
+rectangle. A hole that only grows stays a rectangle however far it
+grows, and a rectangle is a window. So each crumble also cuts a small
+step into one SIDE of the opening at a height that is not the middle —
+sideways always and never up or down, because the column is usually
+taller than the wall it crosses and a chip above the hole lands in the
+sky. The sides are where the brick still is.
+
+The clock stops after three seconds. A hole that grew for ever would eat
+the building, and the building coming down is a different question with
+its own answer — see FireSystem.damageLine, which takes integrity off
+whole REGIONS. The two are not the same thing and are not meant to be: a
+beam through the front of a house leaves a hole in the front of the
+house long before the house comes down, and usually instead of it.
+
+
+BUT A WALL THAT IS GONE WAS HOLDING SOMETHING UP
+------------------------------------------------
+
+For a while those two questions were not connected at all, and it
+showed. A beam raked along a terrace took the ground floor out of the
+whole row and left the upper storeys and the roofs hanging in the air
+over nothing, because no cell of the column had been near enough to the
+middle of any of those regions to spend their integrity — the regions
+were fine, and only their walls had gone.
+
+So taking a wall out now costs the regions it belonged to, in proportion
+to how much of it went. A graze that opens a tenth of a shopfront is a
+hole in a shopfront. A column that takes a whole wall takes most of a
+region's integrity with it, and a shot THROUGH a building is two walls,
+which is a building coming down. Along one is a hole.
+
+Once per wall, on the first punch, because cut() runs a dozen times a
+second for the length of a discharge and a bite per pass would flatten
+the town.
+
+
+THE REBUILD IS BY LINE AND NOT BY REGION
+----------------------------------------
+
+Game.markBreached exists beside _markDirty for one reason: a region is
+drawn in the block its middle lands in and a line is drawn in the block
+its MIDPOINT lands in, and the two are not always the same block — see
+the note in js/mapgeo.js about the wood owning the supermarket's flank.
+Marking the region would rebuild a block that does not contain the wall.
+
+And the FIRST punch of a burst sets the clock, not each of them. A beam
+punches a dozen times a second and a rebuild scheduled afresh by each of
+them is a rebuild every tic for five seconds; once the rebuild has run
+the flag clears and the next punch starts a new wait, so the holes
+appear in steps of about a third of a second for as long as the column
+is out — which is to say, while you watch.
+
+
 THE READOUT CAME OFF THE PICTURE
 --------------------------------
 
@@ -6685,7 +6892,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-2321 checks. Every one of them earns its place by having caught something
+2357 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

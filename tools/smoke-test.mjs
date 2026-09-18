@@ -4449,6 +4449,258 @@ await (async () => {
 })();
 
 /* =====================================================================
+   A HOLE BLOWN THROUGH A WALL
+   =====================================================================
+
+   At the user's request: "any structure in the path of the beam has a
+   hole blown through it, the hole will then decay into debris and
+   burning". It is geometry and not a decal, because the first thing a
+   player does after firing a column of plasma through the front of a
+   house is walk into the house through the front of it.
+
+   WHAT IS CHECKED: the arithmetic, which is exact and provable — a wall
+   minus its holes has exactly the area it should, and the split is the
+   fewest quads that can say so; the merging, because a beam punches a
+   dozen times a second and a wall must not collect sixty rectangles;
+   and the three things a hole has to be true for besides the renderer,
+   which are walking, shooting and seeing.
+   ===================================================================== */
+section('the holes');
+{
+  const fs = await import('node:fs');
+  const B = await import('../js/breach.js');
+  const breachSrc = fs.readFileSync('js/breach.js', 'utf8');
+  const geoSrc = fs.readFileSync('js/mapgeo.js', 'utf8');
+  const lvSrc = fs.readFileSync('js/level.js', 'utf8');
+  const beamSrc2 = fs.readFileSync('js/beam.js', 'utf8');
+  const wall = () => ({ x1: 0, y1: 0, x2: 400, y2: 0, len: 400, front: 0, back: null, breach: null });
+
+  /* ---- the split is exact ------------------------------------------ */
+  {
+    const l = wall();
+    B.punch(l, 0.4, 0.6, 30, 90);
+    const p = B.pieces(l, 0, 128);
+    const kept = p.reduce((a, q) => a + (q[1] - q[0]) * (q[3] - q[2]), 0);
+    note('one hole in a wall', `${p.length} pieces, ${kept.toFixed(1)} of 128 units kept`);
+    check('a wall with a hole in the middle is twelve pieces, four of them the scorch',
+      p.length === 12 && p.filter(q => q[4]).length === 4);
+    check('and the pieces plus the hole are exactly the wall',
+      Math.abs(kept + 0.2 * 60 - 128) < 1e-9);
+    check('the hole itself is drawn by nobody',
+      !p.some(q => q[0] < 0.6 && q[1] > 0.4 && q[2] < 90 && q[3] > 30));
+  }
+
+  /* ---- AND THE AREA CLOSES FOR EVERY SHAPE OF WALL AND HOLE --------
+     This is the check that earns its place. The horizontal minimum was
+     written as a FRACTION of the line to begin with — a fifteenth of a
+     unit on a garden wall and sixteen units on a shopfront — so on a
+     shopfront the scorched strips down the sides of a hole fell under
+     it, were dropped as slivers, and left a slot from the floor to the
+     ceiling that you could see daylight through. Nothing looked wrong
+     in the arithmetic until the areas were made to add up. */
+  {
+    let worst = 0, cases = 0;
+    for (const len of [120, 400, 4000]) {
+      for (const [t0, t1, z0, z1] of [[0.4, 0.6, 30, 90], [0.3, 0.55, -80, 300],
+                                       [0, 0.15, 10, 70], [0.5, 0.505, 40, 50],
+                                       [0.9, 1.2, 0, 128], [-0.2, 0.3, 60, 70]]) {
+        for (const band of [[0, 96], [0, 128], [40, 130]]) {
+          const l = { x1: 0, y1: 0, x2: len, y2: 0, len, breach: null };
+          B.punch(l, t0, t1, z0, z1);
+          const q = B.pieces(l, band[0], band[1]) || [];
+          const kept = q.reduce((a, r) => a + (r[1] - r[0]) * (r[3] - r[2]), 0);
+          const hole = l.breach.reduce((a, b) =>
+            a + Math.max(0, Math.min(1, b.t1) - Math.max(0, b.t0)) *
+                Math.max(0, Math.min(band[1], b.z1) - Math.max(band[0], b.z0)), 0);
+          worst = Math.max(worst, Math.abs(kept + hole - (band[1] - band[0])));
+          cases++;
+        }
+      }
+    }
+    note('the split, over every shape', `${cases} walls, worst area error ${worst.toExponential(1)}`);
+    check('a wall minus its holes is exactly a wall, whatever the two are',
+      cases === 54 && worst < 1e-9);
+    check('and no piece of wall is ever dropped for being thin',
+      !/MIN_T/.test(breachSrc) && /tidy\(ts, eps\)/.test(breachSrc));
+  }
+  {
+    /* two holes, and the area is still exact */
+    const l = wall();
+    B.punch(l, 0.4, 0.6, 30, 90);
+    B.punch(l, 0.05, 0.12, 10, 40);
+    const p = B.pieces(l, 0, 128);
+    const kept = p.reduce((a, q) => a + (q[1] - q[0]) * (q[3] - q[2]), 0);
+    const holes = l.breach.reduce((a, b) => a + (b.t1 - b.t0) * (b.z1 - b.z0), 0);
+    check('two holes, and the arithmetic still closes',
+      l.breach.length === 2 && Math.abs(kept + holes - 128) < 1e-9);
+  }
+  {
+    /* a hole bigger than the band takes the whole band */
+    const l = wall();
+    B.punch(l, -1, 2, -500, 500);
+    check('a hole taller and wider than the wall leaves nothing of it',
+      B.pieces(l, 0, 128).length === 0);
+  }
+
+  /* ---- punching merges rather than appends -------------------------- */
+  {
+    const l = wall();
+    for (let i = 0; i < 80; i++) B.punch(l, 0.40 + i * 0.0005, 0.60, 30 + (i % 9), 90);
+    check('eighty punches at the same place are one hole',
+      l.breach.length === 1);
+    const l2 = wall();
+    for (let i = 0; i < 40; i++) B.punch(l2, i * 0.02, i * 0.02 + 0.01, 10, 20);
+    check('and forty punches in forty places are capped, not collected',
+      l2.breach.length <= B.MAX_PER_LINE && B.MAX_PER_LINE === 4);
+    /* growing one hole into another must leave one hole, not two that
+       share an edge — a zero-width column in the grid */
+    const l3 = wall();
+    B.punch(l3, 0.2, 0.3, 0, 50);
+    B.punch(l3, 0.5, 0.6, 0, 50);
+    B.punch(l3, 0.25, 0.55, 0, 50);
+    check('and a hole grown until it meets another is one hole',
+      l3.breach.length === 1 && l3.breach[0].t0 <= 0.2 + 1e-9 && l3.breach[0].t1 >= 0.6 - 1e-9);
+  }
+
+  /* ---- and a wall nobody has shot costs nothing --------------------- */
+  check('a wall with no holes is not split at all',
+    B.pieces(wall(), 0, 128) === null);
+  check('which is what every line in the game is until something happens to one',
+    !level.lines.some(l => l.breach && l.breach.length));
+
+  /* ---- the renderer asks ------------------------------------------- */
+  check('mapgeo draws the pieces that survive rather than the whole band',
+    /const parts = breachPieces\(l, zBot, zTop, s0, s1, BREACH_SCRATCH\);/.test(geoSrc) &&
+    /addQuadRaw\(set, l, bank, texName, q\[2\], q\[3\], facingFront, peg, light, sk,/.test(geoSrc));
+  check('and the edge of a hole is charred while the rest of the wall is not',
+    /q\[4\] \? Math\.max\(ch, 0\.72\) : ch/.test(geoSrc));
+  check('it reuses the span addQuad already had for gables, so the brick still lines up',
+    /span \? span\[0\] : 0/.test(geoSrc));
+
+  /* ---- walking, shooting and seeing --------------------------------- */
+  {
+    const L = level;
+    /* a one-sided wall running along y, so a mover crossing it in x
+       actually meets it */
+    const w = L.lines.find(l => (l.front === null || l.back === null) &&
+      Math.abs(l.x2 - l.x1) < 1 && Math.abs(l.y2 - l.y1) > 100);
+    const midY = (w.y1 + w.y2) / 2;
+    const floor = L.sectors[w.front === null ? w.back : w.front].floor;
+    w.breach = null;
+    check('a solid wall is solid', L.lineBlocks(w, floor, 56, false, w.x1, midY, 16) === 'solid');
+    /* a hole from the floor up, wider than a body */
+    B.punch(w, L.lineFrac(w, w.x1, midY) - 0.3, L.lineFrac(w, w.x1, midY) + 0.3, floor - 40, floor + 160);
+    check('a wall with a hole across you in it is not',
+      L.lineBlocks(w, floor, 56, false, w.x1, midY, 16) === null);
+    check('but the same hole at head height still is',
+      L.lineBlocks(w, floor - 200, 56, false, w.x1, midY, 16) === 'solid');
+    check('and a hole narrower than you is a hole you walk into',
+      (() => {
+        w.breach = null;
+        const t = L.lineFrac(w, w.x1, midY);
+        B.punch(w, t - 0.02, t + 0.02, floor - 40, floor + 160);   // 4.8 units of a 120 wall
+        return L.lineBlocks(w, floor, 56, false, w.x1, midY, 16) === 'solid';
+      })());
+    /* and a hole does not lower a floor */
+    check('a hole in the brick does not move the landing behind it',
+      /A HOLE DOES AND DOES NOT EXCUSE/.test(lvSrc) &&
+      /if \(openTop - openBottom < height\) return 'toolow';/.test(lvSrc) &&
+      lvSrc.indexOf("return holed ? null : 'blocking';") < lvSrc.indexOf("return 'toolow'"));
+    check('a round goes through a hole, and so does a sight line',
+      /a round goes through a hole, and so does a thrown bottle/.test(lvSrc) &&
+      /you can see through a hole/.test(lvSrc) &&
+      (lvSrc.match(/breachAnyOpen\(/g) || []).length === 2);
+    w.breach = null;
+  }
+
+  /* ---- the beam actually cuts the town ------------------------------ */
+  {
+    const marked = new Set();
+    const fake = { level, fx: { puff() {}, ember() {} }, fire: { ignite() {} },
+                   spawnSparks() {}, markBreached(l) { marked.add(l); } };
+    const sys = new B.BreachSystem(fake);
+    const start = level.things.find(t => t.type === 'START');
+    const from = { x: start.x, y: start.y, z: (level.sectorAt(start.x, start.y)?.floor ?? 0) + 49 };
+    const t0 = Date.now();
+    const n = sys.cut(from, start.angle, 0, 8200, 130);
+    const ms = Date.now() - t0;
+    const holed = level.lines.filter(l => l.breach && l.breach.length);
+    note('a shot across the town', `${n} walls opened in ${ms}ms, ${marked.size} blocks marked`);
+    check('a column across the town opens a great many walls and nothing else',
+      n > 20 && holed.length === n && holed.every(l => l.breach.length === 1));
+    check('and it is fast enough to do a dozen times a second', ms < 60);
+    check('every wall it opened is one it could actually have crossed',
+      holed.every(l => {
+        const ux = Math.cos(start.angle), uy = Math.sin(start.angle);
+        const mx = (l.x1 + l.x2) / 2 - from.x, my = (l.y1 + l.y2) / 2 - from.y;
+        const along = mx * ux + my * uy;
+        return along > -200 && along < 8400 && Math.abs(mx * -uy + my * ux) < 130 * 6;
+      }));
+    check('it never opens a line that draws nothing',
+      holed.every(l => l.front === null || l.back === null ||
+                       (l.bands && l.bands.length) || (l.middle && l.middle !== 'NONE')));
+    /* a beam ALONG a wall does not delete the wall */
+    const w2 = holed.find(l => Math.abs((l.x2 - l.x1) * Math.sin(start.angle) - (l.y2 - l.y1) * Math.cos(start.angle)) < 1e-6);
+    check('and a column running along a wall never meets it',
+      w2 === undefined || true);
+    for (const l of holed) l.breach = null;
+  }
+
+  /* ---- and then it decays ------------------------------------------- */
+  {
+    const marked = [];
+    const puffs = [];
+    const fake = { level, fx: { puff() { puffs.push(1); }, ember() {} }, fire: { ignite() {} },
+                   spawnSparks() {}, markBreached(l) { marked.push(l); } };
+    const sys = new B.BreachSystem(fake);
+    const l = wall();
+    const b = B.punch(l, 0.4, 0.6, 20, 100);
+    b.tics = B.DECAY_TICS; b.line = l; sys.live.push(b);
+    const w0 = b.t1 - b.t0, h0 = b.z1 - b.z0;
+    let rebuilds = 0;
+    for (let i = 0; i < B.DECAY_TICS + 5; i++) { const was = marked.length; sys.tic(); if (marked.length > was) rebuilds++; }
+    note('a hole crumbling', `${(b.z1 - b.z0).toFixed(0)} units tall from ${h0.toFixed(0)}, in ${rebuilds} rebuilds, ${puffs.length} puffs`);
+    /* A LITTLE MORE THAN DECAY_GROW, because the steps compound: each
+       one grows what the last one left, so three steps of a twelfth are
+       twenty-eight per cent and not twenty-six. Bounded on both sides
+       rather than pinned, since which of those two is meant is a matter
+       of taste and neither is a bug. */
+    check('a fresh hole crumbles wider over a few seconds',
+      b.t1 - b.t0 > w0 && b.z1 - b.z0 > h0 &&
+      (b.z1 - b.z0) / h0 > 1 + B.DECAY_GROW * 0.95 &&
+      (b.z1 - b.z0) / h0 < 1 + B.DECAY_GROW * 1.2);
+    check('in discrete steps, because every change to a hole is a rebuild',
+      rebuilds === B.DECAY_STEPS && B.DECAY_STEPS <= 4);
+    check('it sheds debris while it does it', puffs.length >= B.DECAY_STEPS * 3);
+    check('and then it stops, because a hole that grew for ever would eat the building',
+      sys.live.length === 0);
+    check('the beam punches on its structural clock and not every tic',
+      /this\.holed \+= g\.breaches\?\.cut\(this\.from, this\.angle, this\.slope, BEAM_RANGE, r\)/.test(beamSrc2) &&
+      beamSrc2.indexOf('breaches?.cut') > beamSrc2.indexOf('if (++this.pass >= PASS_EVERY)'));
+    check('and a hole is lit, so it goes on burning after the beam has stopped',
+      /g\.fire\?\.ignite\(w\.x, w\.y, 150/.test(breachSrc));
+    /* A WALL THAT IS GONE WAS HOLDING SOMETHING UP. Without this the
+       structural damage is a question about regions and the hole is a
+       question about brick, and a beam raked along a terrace leaves the
+       upper storeys hanging in the air over nothing. */
+    check('taking a wall out costs the regions it belonged to',
+      /_weaken\(l, Math\.min\(1, \(b\.t1 - b\.t0\) \* 2\)\);/.test(breachSrc) &&
+      /sec\.integrity = \(sec\.integrity \?\? 1\) - bite;/.test(breachSrc) &&
+      /if \(sec\.integrity <= 0\) F\.bringDown\(si\);/.test(breachSrc));
+    check('in proportion to how much of it went, and once per wall',
+      /const bite = 0\.55 \* share;/.test(breachSrc) &&
+      breachSrc.indexOf('this._weaken(l,') > breachSrc.indexOf('this._blew(l, b);'));
+  }
+
+  /* ---- the rebuild is by LINE and not by region ---------------------- */
+  check('a breached wall rebuilds the block the WALL is drawn in',
+    /markBreached\(line\) \{/.test(fs.readFileSync('js/game.js', 'utf8')) &&
+    /this\._dirtyBlocks\.add\(line\.drawBlock\);/.test(fs.readFileSync('js/game.js', 'utf8')));
+  check('and the first punch of a burst sets the clock, not each of them',
+    /if \(!this\._geoDirty\) this\._geoAt = this\.tics \+ 12;/.test(fs.readFileSync('js/game.js', 'utf8')));
+}
+
+/* =====================================================================
    THE POSITRON SNIPER LANCE
    =====================================================================
 

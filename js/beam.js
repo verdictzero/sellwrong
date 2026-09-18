@@ -342,6 +342,7 @@ export class BeamSystem {
     this.pass = 0;              // the structural clock
     this.shots = 0;             // how many have been fired, for the tests
     this.downed = 0;            // regions brought down by the one in progress
+    this.holed = 0;             // and walls it has punched a hole through
     this.killed = 0;
     /* where the column is THIS tic — recomputed every tic from the
        player, because the barrel moves while the feet do not */
@@ -379,6 +380,7 @@ export class BeamSystem {
     this.pass = 0;
     this.shots++;
     this.downed = 0;
+    this.holed = 0;
     this.killed = 0;
     this._aim(player, true);
     /* THE MUZZLE GOES FIRST. A column that simply appears has no
@@ -447,6 +449,13 @@ export class BeamSystem {
       this.pass = 0;
       this.downed += g.fire?.damageLine(this.from, this.angle, this.slope, BEAM_RANGE, r,
                                         BEAM_STRUCTURE[this.stage - 1] * PASS_EVERY) || 0;
+      /* AND A HOLE THROUGH EVERY WALL IT CROSSES, at the user's
+         request. Integrity is a question about whether a REGION is
+         still standing; this is a question about the brick itself, and
+         they are not the same question — a beam through the front of a
+         house leaves a hole in the front of the house long before the
+         house comes down, and usually instead of it. See js/breach.js. */
+      this.holed += g.breaches?.cut(this.from, this.angle, this.slope, BEAM_RANGE, r) || 0;
     }
 
     /* ---- 3. what it sets alight ------------------------------------- */

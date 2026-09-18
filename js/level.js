@@ -40,6 +40,7 @@
    ===================================================================== */
 
 import { pointInPoly, polyArea2, closestOnSeg, segIntersect, dist2, MAX_STEP, angleNorm, pseudoAngle, PSEUDO_PI } from './util.js';
+import { openAt as breachOpen, anyOpenAt as breachAnyOpen } from './breach.js';
 
 /* Vertices that land within this of each other are the same vertex. Map
    coordinates are integers in practice, so this only ever catches float
@@ -878,9 +879,53 @@ export class Level {
 
      Returns null if you may pass, otherwise the reason.
      ------------------------------------------------------------------ */
-  lineBlocks(line, fromZ, height, isMonster, atX = null, atY = null) {
-    if (line.back === null || line.front === null) return 'solid';
-    if (line.blocking) return 'blocking';
+  /** How far along a line a point lies, as a fraction of its length —
+   *  which is the coordinate a hole in it is measured in. See
+   *  js/breach.js. Clamped, so a point past either end reads as that
+   *  end rather than as somewhere off the wall. */
+  lineFrac(line, x, y) {
+    const dx = line.x2 - line.x1, dy = line.y2 - line.y1;
+    const d2 = dx * dx + dy * dy;
+    if (d2 <= 0) return 0;
+    const t = ((x - line.x1) * dx + (y - line.y1) * dy) / d2;
+    return t < 0 ? 0 : t > 1 ? 1 : t;
+  }
+
+  /** Is this line open at the mover, because something took a piece out
+   *  of it? ACROSS THEIR WHOLE WIDTH and not just under their middle: a
+   *  body is a circle, and a hole narrower than the body is a hole you
+   *  walk into. Three samples, the middle and both shoulders. */
+  _holedFor(line, fromZ, height, atX, atY, radius) {
+    const px = atX === null ? (line.x1 + line.x2) / 2 : atX;
+    const py = atY === null ? (line.y1 + line.y2) / 2 : atY;
+    const t = this.lineFrac(line, px, py);
+    const half = radius > 0 && line.len > 0 ? radius / line.len : 0;
+    const top = fromZ + height;
+    if (!breachOpen(line, t, fromZ, top)) return false;
+    if (!half) return true;
+    return breachOpen(line, Math.max(0, t - half), fromZ, top) &&
+           breachOpen(line, Math.min(1, t + half), fromZ, top);
+  }
+
+  /** WHAT A HOLE DOES AND DOES NOT EXCUSE.
+   *
+   *  A wall with a piece blown out of it is not a wall, and that is the
+   *  whole reason the hole is geometry and not a decal — see the top of
+   *  js/breach.js. So a breach across the mover's height turns 'solid'
+   *  and 'blocking' into a way through.
+   *
+   *  IT DOES NOT MOVE A FLOOR OR A CEILING. The other three refusals
+   *  below — too low, too high, too far — are about the two REGIONS'
+   *  own heights at the crossing, and a hole in the brick between them
+   *  says nothing about either. Blowing the front off a house does not
+   *  lower the landing behind it, and a breach that excused 'toolow'
+   *  would let you walk through the gap over a door and out into the
+   *  air above the hall. */
+  lineBlocks(line, fromZ, height, isMonster, atX = null, atY = null, radius = 0) {
+    const holed = line.breach && line.breach.length
+      ? this._holedFor(line, fromZ, height, atX, atY, radius) : false;
+    if (line.back === null || line.front === null) return holed ? null : 'solid';
+    if (line.blocking) return holed ? null : 'blocking';
     if (isMonster && line.blockMonsters) return 'blockmonsters';
     /* THE OPENING IS BETWEEN THE TWO SPANS AT THE MOVER'S OWN HEIGHT,
        which is the same arithmetic as before with spanIn in front of it.
@@ -971,7 +1016,7 @@ export class Level {
         touching = dist2(px, py, tx, ty) < r2;
       }
       if (!touching) continue;
-      if (this.lineBlocks(l, z, height, isMonster, tx, ty)) return false;
+      if (this.lineBlocks(l, z, height, isMonster, tx, ty, radius)) return false;
     }
     return true;
   }
@@ -996,9 +1041,12 @@ export class Level {
       const l = lines[i];
       const t = segIntersect(ax, ay, bx, by, l.x1, l.y1, l.x2, l.y2);
       if (t < 0) continue;
-      if (l.front === null || l.back === null || l.blockSight) return true;
       const z = az + (bz - az) * t;
       const hx = ax + (bx - ax) * t, hy = ay + (by - ay) * t;
+      /* and you can see through a hole, which is most of what a hole is
+         for: a shopper on the far side of a breached wall is in view */
+      if (l.breach && l.breach.length && breachAnyOpen(l, this.lineFrac(l, hx, hy), z)) continue;
+      if (l.front === null || l.back === null || l.blockSight) return true;
       const fs = this.spanIn(this.sectors[l.front], z, hx, hy);
       const bs = this.spanIn(this.sectors[l.back], z, hx, hy);
       const openTop = Math.min(this.ceilAt(fs, hx, hy), this.ceilAt(bs, hx, hy));
@@ -1020,6 +1068,12 @@ export class Level {
       const l = lines[i];
       const t = segIntersect(ax, ay, bx, by, l.x1, l.y1, l.x2, l.y2);
       if (t < 0 || t >= bestT) continue;
+      /* a round goes through a hole, and so does a thrown bottle */
+      if (l.breach && l.breach.length) {
+        const hz = az + (bz - az) * t;
+        const px = ax + (bx - ax) * t, py = ay + (by - ay) * t;
+        if (breachAnyOpen(l, this.lineFrac(l, px, py), hz)) continue;
+      }
       let solid = (l.front === null || l.back === null || l.blocking);
       if (!solid) {
         const z = az + (bz - az) * t;

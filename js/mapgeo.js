@@ -34,6 +34,7 @@
 import * as THREE from 'three';
 import { createWallMaterial } from './material.js';
 import { roofFraming } from './ruin.js';
+import { pieces as breachPieces } from './breach.js';
 import { STREET_LAMP } from './textures.js';
 
 /* A batch collects triangles for one texture and hands back a mesh. */
@@ -1175,7 +1176,56 @@ export function charOf(s) { return s ? (s.gutted ? 1 : s.charred ? 0.55 : 0) : 0
  * the flat case the moment both of its ends agree, which for every wall
  * built before there were roofs they do.
  */
+/* ---------------------------------------------------------------------
+   A WALL WITH A HOLE IN IT IS SEVERAL WALLS
+
+   addQuad already knew how to draw PART of a line — `span`, which was
+   put in so that the wall under a gable could be drawn in the two
+   pieces either side of the ridge, with the texture still reading as
+   one length of brick across both. A hole is that same idea in two
+   axes, and it needs nothing new from this file except the decision to
+   ask.
+
+   So this is the wrapper: if the line has anything missing (see
+   js/breach.js), draw the pieces that survive instead of the whole
+   band, each with its own span and its own height, and the u it wears
+   still runs from the line's own start — so a hole punched through the
+   middle of a shopfront leaves the brick either side of it lined up
+   with the brick above and below.
+
+   ONLY FLAT BANDS. A band with a sloped end is an interval that changes
+   along the line, and cutting a rectangle out of a trapezoid is a
+   different piece of arithmetic for the sake of the gables and the
+   roof soffits — which are the highest surfaces in the game and the
+   ones a beam is least often pointed at. A sloped band takes the hit
+   and stays whole; everything at head height does not slope.
+
+   AND A WALL THAT HAS NOT BEEN SHOT COSTS ONE PROPERTY READ. breachPieces
+   returns null the moment it finds no list, which is every line in the
+   game until something happens to one. */
+const BREACH_SCRATCH = [];
 function addQuad(set, l, bank, texName, zBot, zTop, facingFront, peg, light, sk = 0, ch = 0, span = null) {
+  if (l.breach && l.breach.length && !Array.isArray(zBot) && !Array.isArray(zTop)) {
+    const s0 = span ? span[0] : 0, s1 = span ? span[1] : 1;
+    const parts = breachPieces(l, zBot, zTop, s0, s1, BREACH_SCRATCH);
+    if (parts) {
+      /* THE EDGE OF A HOLE IS CHARRED AND THE REST OF THE WALL IS NOT.
+         Brick that now ends at a hole ends at a burnt edge; brick forty
+         metres along the same shopfront does not. The split says which
+         is which — see the note on the fifth number in breachPieces —
+         and `ch` is what js/material.js darkens a surface by. */
+      for (let i = 0; i < parts.length; i++) {
+        const q = parts[i];
+        addQuadRaw(set, l, bank, texName, q[2], q[3], facingFront, peg, light, sk,
+                   q[4] ? Math.max(ch, 0.72) : ch, [q[0], q[1]]);
+      }
+      return;
+    }
+  }
+  addQuadRaw(set, l, bank, texName, zBot, zTop, facingFront, peg, light, sk, ch, span);
+}
+
+function addQuadRaw(set, l, bank, texName, zBot, zTop, facingFront, peg, light, sk = 0, ch = 0, span = null) {
   const b1 = Array.isArray(zBot) ? zBot[0] : zBot, b2 = Array.isArray(zBot) ? zBot[1] : zBot;
   const t1 = Array.isArray(zTop) ? zTop[0] : zTop, t2 = Array.isArray(zTop) ? zTop[1] : zTop;
   /* nothing at either end is nothing; a wall that is a triangle — the

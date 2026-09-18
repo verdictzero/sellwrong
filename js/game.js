@@ -38,6 +38,7 @@ import { FlameStream } from './flame.js';
 import { Decals, wallNormal, UP, DOWN } from './decals.js';
 import { Tracers } from './tracers.js';
 import { BeamSystem } from './beam.js';
+import { BreachSystem } from './breach.js';
 import { FrostStream } from './frost.js';
 import { Effects, SMOKE_PUFFS } from './effects.js';
 import { Giblets } from './people.js';
@@ -170,6 +171,11 @@ export class Game {
        that is the player's business. See js/beam.js. */
     this.beam = new BeamSystem(this);
     if (fxAtlases) this.beam.attach(scene);
+    /* AND THE HOLES IT LEAVES IN THINGS. A wall with a piece blown out
+       of it is geometry and not a decal — see js/breach.js — so this
+       owns the punching, the crumbling and the debris, and the rebuild
+       goes through markBreached below. */
+    this.breaches = new BreachSystem(this);
     /* where the last hitscan stopped, for a tracer to be drawn to */
     this.lastHit = { x: 0, y: 0, z: 0 };
     if (flameAtlas) this.flame.attach(scene);
@@ -464,6 +470,7 @@ export class Game {
     this.giblets.tic();
     this.decals.tic();
     this.tracers.tic();
+    this.breaches.tic();
     this.applyChar();
     this.ticBurnGrid();
 
@@ -636,6 +643,37 @@ export class Game {
       this._dirtyBlocks = null;
       this.geo.rebuild();
     }
+  }
+
+  /**
+   * A wall has had a piece taken out of it, so the block it is drawn in
+   * has to be built again.
+   *
+   * BY LINE AND NOT BY REGION, which is the whole reason this exists
+   * beside _markDirty. A region is drawn in the block its middle lands
+   * in; a line is drawn in the block its MIDPOINT lands in, and the two
+   * are not always the same block — see the note in js/mapgeo.js about
+   * the wood owning the supermarket's flank. Marking the region would
+   * rebuild a block that does not contain the wall.
+   *
+   * It goes on the same debounced clock as a region that has charred:
+   * a beam is out for five seconds and punches a dozen times a second,
+   * and a hole that appears a third of a second after the shot reaches
+   * the wall is a hole that appeared when the beam hit it.
+   */
+  markBreached(line) {
+    if (!line || !line.drawBlock) return;
+    if (!this._dirtyBlocks) this._dirtyBlocks = new Set();
+    this._dirtyBlocks.add(line.drawBlock);
+    /* THE FIRST PUNCH OF A BURST SETS THE CLOCK AND THE REST DO NOT.
+       A beam punches on its structural pass, a dozen times a second,
+       and a rebuild scheduled afresh by each of them is a rebuild
+       every tic for five seconds. Once the rebuild has run the flag
+       clears and the next punch starts a new wait, so the holes appear
+       in steps of about a third of a second for as long as the column
+       is out. */
+    if (!this._geoDirty) this._geoAt = this.tics + 12;
+    this._geoDirty = true;
   }
 
   /** Note which drawing blocks some regions are in, so the rebuild can
