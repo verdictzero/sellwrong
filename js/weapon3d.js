@@ -112,7 +112,11 @@ export const GUN_LENGTH = 1.4;
      display a material the file paints flat, which is a SCREEN: it gets
              the live feed and the gauges instead of the gun shader —
              see js/scope.js. Only the lance has one
-     optics  and a material that is a LENS, for the same reason */
+     optics  and a material that is a LENS, for the same reason
+     aim     a SECOND hold, for a gun that is raised to the eye rather
+             than carried at the hip: its own pos, rot and out, blended
+             to by Weapon3D.aim. Only the lance has one, because only
+             the lance has something on it worth putting your eye to */
 export const GUNS = {
   /* THE CEREBRAL BORE, the user's third model and the one with nothing
      coming out of the nozzle but a red line: the projectile is the
@@ -284,9 +288,38 @@ export const GUNS = {
     tint: [0.55, 1.35, 0.80],
     cold: true,
     muzzle: { len: 0.46, wid: 0.26, additive: true },
+    /* AND THE HOLD IT COMES TO WHEN YOU PUT YOUR EYE TO IT, at the
+       user's request — see the head of js/scope.js for why the zoom
+       moves the WEAPON rather than the picture. The gun swings up and
+       inboard until the panel on its rear deck is in the middle of the
+       frame and a hand's breadth from the eye, and the turn cancels
+       VIEW's own cant so you are looking at the screen square on rather
+       than across it. `out` pulls it in: the whole gun is nearer,
+       because you have brought it to you.
+
+       THESE FOUR NUMBERS WERE SOLVED, not nudged. With the panel's own
+       corners projected through the weapon camera, both its position
+       and its size on screen go exactly as 1/d, and d is linear in
+       `out` — measured d = 0.330*out - 0.481 over four settings, and
+       the panel's height in clip units is 0.1333/d to four places. So
+       out = 1.80 puts the screen 0.113 from the eye and 1.18 clip units
+       tall, which is 59% of the picture's height and about square: a
+       scope you look INTO, not a postage stamp on a rifle. Position is
+       linear in pos at a fixed out (the push is along the eye ray, so
+       it cannot change d), which makes the centring a two-line solve —
+       9.18 clip units per unit of pos.x, 14.71 per unit of pos.y — and
+       these are its answer, to the pixel. */
+    aim: { pos: [-0.1894, 0.2730, 0], rot: [-0.04, -0.17, 0.05], out: 1.80 },
     display: { material: 'dynamic_display_surface_mat' },
     optics: { material: 'optics_mat', base: [0.34, 0.80, 0.0] },
-    heat: { material: 'wzbr_mat', z: [-0.40, 1.59], from: 'lanceHeat' },
+    /* AND IT COOKS FROM THE MIDDLE OUT, at the user's request, which is
+       the one thing about this glow that is not the minigun's: the coil
+       is behind the grip and the heat spreads from there along the
+       barrel one way and into the stock the other. `mid` is where that
+       is in the model's own units — just behind the receiver — and its
+       presence is what puts GUN_FRAG into its second mode. The span is
+       the whole gun, so at full heat the whole gun is white. */
+    heat: { material: 'wzbr_mat', z: [-1.00, 1.62], mid: -0.16, from: 'lanceHeat' },
   },
 };
 
@@ -350,6 +383,8 @@ uniform vec3  pilotPos;
 uniform float dim;
 uniform float heat;
 uniform vec2  heatZ;
+uniform float heatMid;
+uniform float heatMode;
 varying vec2 vUv;
 varying vec3 vN;
 varying vec3 vP;
@@ -372,7 +407,24 @@ void main() {
      the same kind of picture as the rest of the gun. */
   if (heat > 0.001) {
     float along = clamp((vL.z - heatZ.x) / max(heatZ.y - heatZ.x, 1e-4), 0.0, 1.0);
-    float h = heat * smoothstep(0.0, 0.9, along * 0.7 + heat * 0.3);
+    /* TWO WAYS OF BEING HOT, and the difference is where the energy is.
+
+       A minigun heats at the MUZZLE, because that is where the rounds
+       are going off, and the glow creeps back down the barrels from
+       there — which is heatMode 0, and the ramp for it is "along".
+
+       A positron lance heats in the MIDDLE, because the coil is in the
+       middle, and the glow spreads out from it toward both the muzzle
+       and the stock — heatMode 1, at the user's request. "reach" is one
+       at the coil and falls away in both directions, so at a low heat
+       only the body of the gun is dull red and at a high one the whole
+       thing is white, which is a gun about to go off in your hands. */
+    float reach = along;
+    if (heatMode > 0.5) {
+      float half_ = max(max(heatMid - heatZ.x, heatZ.y - heatMid), 1e-4);
+      reach = 1.0 - clamp(abs(vL.z - heatMid) / half_, 0.0, 1.0);
+    }
+    float h = heat * smoothstep(0.0, 0.9, reach * 0.7 + heat * 0.3);
     h = floor(h * 8.0 + 0.5) / 8.0;
     vec3 hot = h < 0.5 ? mix(vec3(0.42, 0.02, 0.0), vec3(1.0, 0.36, 0.05), h * 2.0)
                        : mix(vec3(1.0, 0.36, 0.05), vec3(1.0, 0.92, 0.62), (h - 0.5) * 2.0);
@@ -454,6 +506,10 @@ export class Weapon3D {
    *  in this game lives in js/main.js. */
   constructor({ aspect = 1.6, scope = null } = {}) {
     this.scope = scope;
+    /* HOW FAR THE GUN IS TO THE SHOULDER, 0 at the hip and 1 with your
+       eye on the glass. Chased rather than set, so raising the weapon
+       is a movement and not a cut — see update(). */
+    this.aim = 0;
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(VIEW.fov, aspect, 0.02, 12);
     this.guns = {};                  // name -> what load() built
@@ -532,6 +588,7 @@ export class Weapon3D {
             map: { value: maps.map }, glow: { value: 0 }, glowPos: { value: new THREE.Vector3() },
             pilot: { value: 0.35 }, pilotPos: { value: new THREE.Vector3() }, dim: { value: 1 },
             heat: { value: 0 }, heatZ: { value: new THREE.Vector2(0, 1) },
+            heatMid: { value: 0 }, heatMode: { value: 0 },
           },
           vertexShader: GUN_VERT, fragmentShader: GUN_FRAG,
           side: mdef?.doubleSided ? THREE.DoubleSide : THREE.FrontSide, toneMapped: false, fog: false,
@@ -595,7 +652,14 @@ export class Weapon3D {
          the one the heat goes into — see GUN_FRAG */
       if (def.heat && o.material.name === def.heat.material) heatMaterial = o.material;
     });
-    if (heatMaterial) heatMaterial.uniforms.heatZ.value.fromArray(def.heat.z);
+    if (heatMaterial) {
+      heatMaterial.uniforms.heatZ.value.fromArray(def.heat.z);
+      /* WHERE THE HOT SPOT IS and which way the glow spreads from it —
+         see GUN_FRAG. A gun with no `mid` heats from its muzzle back,
+         which is every gun in this game but one. */
+      heatMaterial.uniforms.heatMode.value = def.heat.mid === undefined ? 0 : 1;
+      heatMaterial.uniforms.heatMid.value = def.heat.mid ?? 0;
+    }
 
     /* --- AND WHERE THE SCREEN IS ON ITS OWN MESH --------------------
        Measured off the geometry the file shipped and not off a number
@@ -683,19 +747,39 @@ export class Weapon3D {
     const jx = firing ? (Math.random() - 0.5) * 0.006 : 0;
     const jy = firing ? (Math.random() - 0.5) * 0.005 : 0;
 
+    /* THE GUN IS RAISED, OR IT IS NOT, OR IT IS SOMEWHERE BETWEEN.
+       js/scope.js says where it should be (see AIM_AT) and this chases
+       it, so putting your eye to the scope is a movement of the weapon
+       over about a third of a second rather than a cut. A gun with no
+       second hold — every gun but the lance — never leaves zero and
+       none of the blending below does anything. */
+    const wantAim = (G.def.aim && this.scope) ? this.scope.aim : 0;
+    this.aim += (wantAim - this.aim) * (1 - Math.pow(0.0015, dt));
+    const a = G.def.aim ? this.aim : 0;
+    const mix = (hip, aimed) => hip + (aimed - hip) * a;
+
     /* `out` is a push straight back along the view — z alone, kick and
        all — see the note on the bore in GUNS for why not the whole
        vector */
     /* and `pos` is a gun's own offset on the shared hold — a heavy gun
        carried in both hands sits nearer the middle than a hose does */
     const off = G.def.pos || [0, 0, 0];
-    g.position.set(VIEW.pos[0] + off[0] + bobX + jx, VIEW.pos[1] + off[1] - bobY + jy,
-                   (VIEW.pos[2] + off[2] + this.kick * 0.025) * (G.def.out ?? 1));
+    const aoff = G.def.aim?.pos || off;
+    const out = mix(G.def.out ?? 1, G.def.aim?.out ?? G.def.out ?? 1);
+    /* AND THE BOB AND THE SWAY GO AWAY WITH IT. A weapon at your
+       shoulder does not swing about: what the hip hold reads as life,
+       the aimed one reads as a shake you cannot sight through. */
+    const steady = 1 - a * 0.88;
+    g.position.set(VIEW.pos[0] + mix(off[0], aoff[0]) + (bobX + jx) * steady,
+                   VIEW.pos[1] + mix(off[1], aoff[1]) - bobY * steady + jy * steady,
+                   (VIEW.pos[2] + mix(off[2], aoff[2]) + this.kick * 0.025) * out);
     /* and `rot` is a gun's own turn on the shared one — pitch, yaw,
        roll — for a gun held square rather than angled in from a corner */
     const rot = G.def.rot || [0, 0, 0];
-    g.rotation.set(VIEW.pitch + rot[0] + this.sway.y, VIEW.yaw + rot[1] + this.sway.x,
-                   VIEW.roll + rot[2] + this.sway.x * 0.4, 'YXZ');
+    const arot = G.def.aim?.rot || rot;
+    g.rotation.set(VIEW.pitch + mix(rot[0], arot[0]) + this.sway.y * steady,
+                   VIEW.yaw + mix(rot[1], arot[1]) + this.sway.x * steady,
+                   VIEW.roll + mix(rot[2], arot[2]) + this.sway.x * 0.4 * steady, 'YXZ');
     g.updateMatrixWorld(true);
 
     /* the pilot, flickering, on its anchor */

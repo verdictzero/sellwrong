@@ -1277,6 +1277,16 @@ export class Game {
   render(now = 0) {
     const p = this.player;
     let yaw = p.angle, pitch = p.pitch, ex = p.x, ey = p.y, ez = p.viewZ;
+    /* THE ONE DEATH THE CAMERA LEAVES THE BODY FOR, which is the lance
+       going off in your hands — see Player.deathCamTic, which owns
+       every number in it. Taken before the idle sway and the shake so
+       that neither applies: a held shot of what you just did is held. */
+    const outside = p.dead && p.deathCam && p.deathCam.x !== undefined;
+    if (outside) {
+      const c = p.deathCam;
+      ex = c.x; ey = c.y; ez = c.z;
+      yaw = c.lookYaw; pitch = c.lookPitch;
+    }
     if (this.idle) {
       /* THE TITLE. Nothing moves — the world is not being stepped — but
          the eye does, a little, the way a person standing still is never
@@ -1305,7 +1315,7 @@ export class Game {
        It is added to the eye and NOT to the player: p.angle is
        untouched, so the shake does not walk your aim off the street you
        picked. See js/beam.js for how hard it is shaking. */
-    const shake = this.beam ? this.beam.shake : 0;
+    const shake = outside ? 0 : (this.beam ? this.beam.shake : 0);
     if (shake > 0.001) {
       const t = now * 0.001;
       const k = shake * shake;

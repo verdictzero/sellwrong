@@ -139,7 +139,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         2357 checks, no install and no browser
+  the smoke test         2404 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -4427,19 +4427,33 @@ THE TRIGGER IS A DURATION
 -------------------------
 
 Three seconds is a stage, five is two, seven is three. It fires on the
-RELEASE, at whatever stage was reached, which is the whole shape of the
-weapon: a charge that fired itself the moment it was full would take the
-decision away, and firing on release means the player picks — letting go
-at four seconds is a choice to take stage one now rather than stage two
-in a moment. Under three seconds nothing happens at all; the cell is not
-spent and the coil fizzles down. That is how a charge is cancelled.
+RELEASE, and — at the user's request — ONLY FROM THE THIRD MARK. Let go
+at four seconds and nothing leaves the muzzle: the cell is not spent,
+the coil fizzles down, and you have cancelled a charge. That is the only
+way to cancel one, and it is the only thing letting go early does.
 
-AND AT THE TOP THERE IS A CLOCK. Three seconds of grace at the third
-mark, long enough to pick a street and not long enough to walk down it,
-and then the coil VENTS: the charge goes, the shot does not happen, the
-cell is untouched, and the gun is left warm for having been asked to
-hold it. A trigger held through a vent does not start another charge —
-you have to let go and press again.
+THIS IS A DIFFERENT WEAPON FROM THE ONE THE FIRST CUT SHIPPED. Firing at
+whatever stage was reached made the stages a menu — three seconds for a
+small shot, seven for a big one, and a player in a hurry never waits.
+Firing only at red makes them a COUNTDOWN. There is one shot this gun
+takes and it costs you seven seconds of standing still at a third of a
+walk with a light on the end of your barrel that every shopper in the
+street can see. The dial has to go round before anything happens, which
+is why the dial is on the gun. FIRE_AT in js/player.js is the whole
+rule, and it is CHARGE_STAGES.length rather than a 3 typed in, so a
+fourth stage would move the bar with it.
+
+AND AT THE TOP THERE IS NO LONGER A CLOCK. The first cut gave three
+seconds of grace at the third mark and then vented the coil for you:
+the charge went, the shot did not happen, and you got your finger back.
+That safety is gone. Hold it at red and the coil KEEPS the charge, and
+keeping it is what kills you — see the overcharge, below. A gun that
+saves you from yourself after forty seconds and a gun that explodes
+after forty seconds are different guns, and the user asked for the
+second one.
+
+A trigger held through a vent still does not start another charge — you
+have to let go and press again.
 
 WHILE IT WINDS you keep a third of a walk and cannot run. That is not in
 the user's ask and it is the number that makes the three stages mean
@@ -4459,6 +4473,105 @@ of cooling. So the answer to "can I fire again" is usually "walk
 somewhere first". The cell holds four and fills itself one every
 twenty-five seconds, which is the slowest magazine in the game and
 should be: a full cell is four lines drawn through the town.
+
+
+THE CHASSIS COOKS FROM THE MIDDLE OUT
+-------------------------------------
+
+At the user's request, and it is the minigun's heat glow with one thing
+changed. The minigun heats at the MUZZLE, because that is where the
+rounds are going off, and the glow creeps back down the barrels from
+there. The lance heats in the MIDDLE, because that is where the coil is,
+and the glow spreads out from it toward the muzzle one way and into the
+stock the other.
+
+One uniform does it. GUN_FRAG already had the muzzle ramp — how far
+along the barrel a fragment is, between the two ends the gun declares —
+and `heat.mid` adds a second: one at the coil, falling to zero in BOTH
+directions, normalised by whichever half of the gun is longer so the far
+end of the long half still reaches zero. A gun whose def has no `mid` is
+in the old mode and nothing about the minigun changed.
+
+WHAT IT IS A READOUT OF is the thing that matters. The glow is not the
+heat from firing — it is the heat from HOLDING, and it is a pure
+function of how long the trigger has been down: a third of everything
+the metal has by the time the dial is red, and all of it at the end of
+the forty seconds of overcharge. So a player who never looks at the
+screen on the gun still sees the gun going white in their hands, and
+that is the game telling them, in the middle of the picture, how close
+they are to dying. It is taken as a MAXIMUM against whatever heat the
+coil already had, so a gun still hot from the last shot does not cool
+down by being asked to charge.
+
+
+FORTY SECONDS OF OVERCHARGE AND IT KILLS YOU
+--------------------------------------------
+
+"if there is 40 seconds of overcharge the gun explodes and you die, epic
+nuclear explosion with 3rd person death cam".
+
+Past the seventh second the charge stops climbing and a second counter
+starts. It runs for forty seconds — OVERCHARGE_TICS — and it is the only
+clock in this game that ends with the player dead by their own hand.
+The gun says so the entire time: the bar across the bottom of its screen
+from the first second, the chassis going from dull red to white, and at
+thirty seconds the game itself puts COIL CRITICAL across the middle of
+the picture, because a player who is looking at neither the screen nor
+the gun is a player about to be very surprised.
+
+THE COUNTER IS ONLY WOUND DOWN BY AN IDLE COIL, and getting that wrong
+was the one real bug in this pass. The reset lived in the cooling block
+that runs every tic before the winding branch, so the counter was zeroed
+and re-incremented every tic and could never reach two: forty seconds of
+overcharge that took forever to arrive. It was the suite's simulated
+hold-from-cold that caught it — the check that says the gun blows up at
+CHARGE_MAX + OVERCHARGE_TICS and not before, which ran the full 1,645
+tics and reported 47.3 seconds with nothing having happened. The reset
+is now conditional on a charge of zero, and the clock is cleared where
+the charge is: on the vent, on the shot, and on the first tic of a new
+wind.
+
+THE BLAST is the biggest single explosion in the game and by some
+distance: nine hundred units of radius, four thousand of damage, seven
+of structural damage over fourteen hundred units — enough to bring down
+whatever region you are standing in and the ones either side — plus
+forty-six fireballs, twenty-six puffs, and two beam cuts at right angles
+through the walls around you, so the hole it leaves is a cross and not a
+circle. And the whole town hears it.
+
+IT IGNORES THE INVINCIBLE SWITCH, deliberately and documented in the
+source. Every other way of dying in this game respects it; this one does
+not, because the overcharge is not damage arriving from outside, it is
+the weapon the player chose to hold ending the run. A debug flag that
+let you stand in the middle of it would make the forty seconds mean
+nothing.
+
+
+AND THE CAMERA LEAVES THE BODY
+------------------------------
+
+Every other death in this game is Doom's: the view sinks to the floor
+and the screen goes red. This one pulls OUT. deathCamTic eases the
+camera back four hundred and thirty units, lifts it two hundred and
+fifty, tips it down and turns it slowly round the body, which is lying
+in the middle of everything the blast just set on fire.
+
+IT DOES NOT GO THROUGH WALLS, which is the ordinary failure of these:
+the camera's own position is traced back from the body with the level's
+wall ray, and if it hits something the camera stops just short of it. So
+dying in a corridor gives you a close third-person shot rather than a
+view of the inside of a brick.
+
+AND THE DEATH VEIL COMES OFF. Red over everything is what dying looks
+like from INSIDE the body, and the hud has done it that way since the
+first week. It is exactly wrong here: the camera is forty feet up
+looking down at somebody else, and a veil at that point is a red filter
+over the one shot the whole death is for. It hid the crater completely
+the first time it was photographed. The veil now belongs to the eyes it
+is drawn for — no camera outside the body, no veil.
+
+Only that one death gets a camera. Everything else sets deathCam to null
+and sinks to the floor as it always did.
 
 
 THE BEAM
@@ -4660,12 +4773,23 @@ there now:
   the reticle      a cross with a gap, and a box round the middle that
                    blinks while the beam is out
 
-and one character, the stage. Everything is inside 0.86 of the panel,
-because outside that is the bezel and the bezel is black — which was the
-bug: the charge ring, the biggest thing on the screen and the one the
-whole weapon is about, was drawn at 0.44 with a rim of its own on top,
-inside the part that had already been faded out. The gauge was not on
-the gauge.
+and one character, the stage — and, once the coil is past the top, a bar
+across the bottom of the panel with the word OVERCHARGE over it, which
+becomes EJECT and takes the whole screen in a red flash for the last ten
+seconds. Everything is inside the bezel, and the bezel is a SQUARE one:
+the glass goes dark past max(|x|, |y|) * 2 > 0.94 off the middle, so
+what matters is the greater of the two axes and not the distance from
+the centre. That was the bug: the charge ring, the biggest thing on the
+screen and the one the whole weapon is about, was drawn at 0.44 with a
+rim of its own on top, inside the part that had already been faded out.
+The gauge was not on the gauge. The first repair for it counted the
+`N * 0.xx` numbers in the source and compared them against a threshold
+typed into the suite, which went stale the moment the warning bar
+arrived — a Y COORDINATE of 0.905 and a RADIUS of 0.905 are not the same
+distance from the middle. The suite now DRAWS the dial into a context
+that records where the ink went and measures the extent the way the
+shader measures it: 0.907 of 0.94 at the widest, which is the warning
+bar, with the two deliberate full-panel fills exempt.
 
 The whole thing is drawn in the lens's own green — the model says the
 optics are (0.344, 0.800, 0.000) and the monitor is that, because a
@@ -4674,16 +4798,43 @@ with scan lines, a two per cent barrel bow, a slow roll, and static that
 climbs with the heat. It imports nothing from js/palette.js: it is a
 screen and not a painting, and the earth box must not mute it.
 
-THE ZOOM is a press — the right mouse button, Z or C, or B on a pad —
-and steps 1x, 4x, 12x. It does two things: the gun's screen magnifies by
-that, and the MAIN view narrows by a fifth and then a third. Not the
-same numbers, deliberately: magnifying the whole screen twelve times is
-a game you cannot play, so the actual magnification stays on the gun's
-screen where the user asked for it and the picture only narrows enough
-that holding a scope feels like bracing. The look sensitivity drops by
-exactly the factor the view narrowed by, because a narrowed field of
-view with unchanged sensitivity is a mouse that has become twice as
-twitchy at the moment you were trying to be careful.
+THE ZOOM IS NOT A ZOOM. It is a press — the right mouse button, Z or C,
+or B on a pad — and what it does, at the user's request, is BRING THE
+GUN TO YOUR EYE. The first cut magnified: 1x, 4x, 12x on the panel with
+the main view narrowing to match, and twelve times on a forty-pixel
+screen is a smear. "Less zoom and more just looking through the gun
+scope" was the note, and it is the better weapon — you are not operating
+a telescope, you are putting your face against the back of a rifle.
+
+So the weapon MOVES. GUNS.LANCE carries a second hold beside its first
+one — `aim: {pos, rot, out}` — and pressing zoom blends the gun from one
+to the other: up, inboard, and pulled in until the panel on its rear
+deck is a hand's breadth from the eye and square in the middle of the
+frame. The turn cancels VIEW's own cant, so you are looking AT the
+screen rather than across it. Bob and sway damp to an eighth on the way
+in, because a screen that close magnifies every wobble in the hold.
+
+THOSE FOUR NUMBERS WERE SOLVED AND NOT NUDGED. With the panel's own
+corners projected through the weapon camera, both its position and its
+size on screen go exactly as 1/d, and d is linear in `out` — measured
+d = 0.330*out - 0.481 over four settings, and the panel's height in clip
+units is 0.1333/d to four places. So out = 1.80 puts the screen 0.113
+from the eye and 1.18 clip units tall, which is 59% of the picture's
+height and about square. Position is linear in pos at a fixed out (the
+push is along the eye ray, so it cannot change d), which makes centring
+a two-line solve: 9.18 clip units per unit of pos.x, 14.71 per unit of
+pos.y. pw/place.mjs is the probe that measured it.
+
+THE STEPS ARE THREE and the gun comes up in two of them: hip, then 82%
+of the way in at 2.1x, then all the way in at 3.4x. A rifle scope, not a
+telescope. The MAIN view still narrows with them — by a tenth and then a
+sixth — which is much less than the panel magnifies, and the difference
+is the point: the actual magnification is on the gun's screen where the
+user asked for it, and the picture only narrows enough that holding a
+scope feels like bracing. The look sensitivity drops by exactly the
+factor the view narrowed by, because a narrowed field of view with
+unchanged sensitivity is a mouse that has become twice as twitchy at the
+moment you were trying to be careful.
 
 
 AND ITS VOICE
@@ -4927,6 +5078,104 @@ its own answer — see FireSystem.damageLine, which takes integrity off
 whole REGIONS. The two are not the same thing and are not meant to be: a
 beam through the front of a house leaves a hole in the front of the
 house long before the house comes down, and usually instead of it.
+
+
+A TUNNEL OF DEBRIS ROUND THE HOLE
+---------------------------------
+
+At the user's request: "build a debris tunnel around the hole ... that'll
+make it look really convincing like the lance just like tore through the
+structure".
+
+A rectangle cut out of a wall is a rectangle cut out of a wall. What it
+is missing is THICKNESS — a real wall is a foot of brick and a hole
+through it has an inside, and the reason a cut-out quad looks like a cut
+-out quad is that its edge is a line with nothing behind it. So the edge
+gets geometry: js/ruin.js's breachDebris hangs a ring of chunks round
+every opening, standing out of the wall on BOTH faces, which is what
+makes it a tunnel rather than a wreath.
+
+THE PERIMETER IS WALKED AS ONE LOOP and a chunk's place on it is one
+number from zero to one. That is worth more than it sounds: the corners
+then look after themselves, and the density stays even on a hole that is
+much wider than it is high — which every hole this weapon makes is,
+because a beam raked across a shopfront takes out a band. Up to sixty-
+four chunks depending on the perimeter, six per hundred units of edge,
+at sizes from four units to thirteen.
+
+THOSE THREE NUMBERS ARE A PHOTOGRAPH'S WORTH OF CORRECTION. The first
+cut put two and a half chunks per hundred units at sizes up to
+twenty-two, standing twenty-six units off the wall, and what a picture
+of it showed was not a tunnel: it was half a dozen slabs the size of
+garage doors hanging in the air a foot away from a house. A wall in this
+engine has no thickness of its own for debris to be continuous with, so
+anything standing that far off it is plainly floating. More of them,
+smaller, and hugging the brick — and the ring reads as the wall's own
+edge coming apart, which is what it is.
+
+AND THE RING IS CLAMPED TO THE WALL. A hole is a rectangle in (t, z) and
+nothing ever made one stop at the top of the brick: a two-hundred-unit
+column fired at head height through a single-storey house punches from
+under the floor to well over the eaves. js/mapgeo.js only ever DREW the
+part inside the wall band, so nobody had noticed — but a ring walked
+round the whole rectangle put a third of itself in the sky above the
+roof, which the same photograph showed. The caller passes the storeys
+that are still standing, floor and ceiling in pairs, and the ring is cut
+to whichever of them the hole mostly took.
+
+THE SAME LIST OUTLIVES THE WALL, which is the other half of that rule. A
+region that collapses stops drawing its brick — its floor meets its
+ceiling and the quad has no height — but it keeps every rectangle ever
+punched out of it. Debris hung off that list without asking is a ring of
+masonry in mid-air over a pile of rubble, and a beam fired down a street
+brings houses down behind it, so this was not hypothetical. A hole with
+no standing storey left is not dressed at all.
+
+WHICH STOREYS THOSE ARE HAS TO BE THE WALL'S OWN ANSWER and not the
+sectors either side of it. The first attempt took floor and ceiling off
+both columns, which for a house front means the room inside AND THE
+STREET OUTSIDE — and the street's ceiling is the sky a few thousand
+units up, so the band with the most overlap was always the open air and
+nothing was ever clamped. A two-sided line already carries the intervals
+it draws brick in: l.bands, the uppers and lowers, which is how a
+shopfront gets three bands of masonry with two ribbons of glass between
+them. Those are the bands. One-sided walls, which have no such list, are
+the whole storey.
+
+AND A KERB IS NOT A WALL. Most of the lines in a street are twelve-unit
+risers at the edge of the road and thirty-two-unit steps up to a
+forecourt, and a beam cuts every line it crosses. A hole punched through
+a kerb is invisible and always was; a ring of debris hung off one is
+broken masonry lying along the gutter for the length of the block, which
+is exactly what the next photograph showed. Twenty-four units — about
+knee height — is the shortest piece of wall with anything to tear
+through.
+
+EACH CHUNK IS AN ORIENTED BOX and not an axis-aligned one, which is the
+only new geometry in the file: every other builder in js/ruin.js makes
+boxes square to the world, and these have to lie square to the WALL — a
+chunk of a wall that runs north-east does not point north. Five faces
+from three vectors: along the line, out of it, and up. The sixth is
+inside the wall and nobody sees it.
+
+THEY HANG INWARD. Each is pulled between a tenth and a half of the way
+toward the middle of the opening, because what is left round a bored
+hole hangs INTO it — a clean ring standing off the rim reads as a
+picture frame. And they alternate sides down the loop, so from either
+face you see stubs coming at you and, through the gap, the far side's
+stubs going away.
+
+The lighting is the region's own, jittered a third either way, and the
+chunks are RUBBLE in the same batch set as everything else the ruin
+builder makes, so a hole costs no extra draw call: a wall with a hole in
+it is one hole's worth more geometry in a batch that was being rebuilt
+anyway. Measured: twelve chunks and sixty quads for a single opening,
+eighteen for two.
+
+AND IT IS ALREADY ON FIRE, because breach punching calls fire.ignite at
+the hole's own place as it cuts, so the burning that the user asked for
+next to this is the game's existing fire finding a new edge to sit on
+rather than a second system pretending to be one.
 
 
 BUT A WALL THAT IS GONE WAS HOLDING SOMETHING UP
@@ -6892,7 +7141,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-2357 checks. Every one of them earns its place by having caught something
+2404 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

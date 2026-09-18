@@ -378,3 +378,174 @@ export function rubbleHeap(set, s) {
   }
   return drawn;
 }
+
+/* =====================================================================
+   AND A TUNNEL OF DEBRIS ROUND A HOLE
+   =====================================================================
+
+   At the user's request. js/breach.js takes a rectangle out of a wall
+   and the wall is then a wall with a rectangle missing — which is
+   exactly what it is, and reads as a wall with a rectangle missing. A
+   sheet of card with a shape cut out of it. What the lance actually did
+   was BORE through a structure, and a bored hole has a thickness: the
+   edge of it is broken material, some of it fallen inward, some of it
+   thrown out the far side, all of it still smoking.
+
+   So every breach gets a ring of chunks round its perimeter, standing
+   proud of the wall on BOTH sides along the line the beam took. Seen
+   from in front it is a ragged burnt lip. Seen from an angle it is a
+   short tunnel. Walk through it and the chunks pass either side of you,
+   which is the whole point: a wall in this engine has no thickness and
+   this is how it gets one, for the eighty units either side of a hole
+   where anybody is going to be looking closely.
+
+   IT IS BUILT WITH THE WALL IT BELONGS TO. rebuildBlock walks the lines
+   of a block and calls this for any that have holes, so the debris
+   lands in the same BatchSet as the brick around it — one more draw
+   call for a whole street's worth of it, and it rebuilds and disappears
+   in step with the hole as that hole crumbles wider.
+
+   ORIENTED, NOT AXIS-ALIGNED. The other two builders in this file put
+   down boxes squared to the map, because a joist in a supermarket is
+   squared to the map. A wall is at whatever angle the town laid it, so
+   a chunk broken off one is at that angle too, and the box below is
+   built from three arbitrary vectors rather than from six numbers.
+   ===================================================================== */
+
+/* HOW FAR OUT OF THE WALL THE DEBRIS REACHES, in units, at the widest
+   part of the ring. This was twenty-six and it was much too far: what a
+   photograph of it showed was not a tunnel but a cloud of slabs hanging
+   in the air a foot off a house, because the wall they are broken off
+   has no thickness of its own for them to be continuous with. Thirteen
+   hugs it, and the ring reads as the wall's own edge coming apart. */
+const TUNNEL_OUT = 13;
+/* AND HOW MANY CHUNKS PER HUNDRED UNITS OF PERIMETER, which went the
+   other way for the same reason: two and a half fist-sized pieces per
+   hundred units is a wall with six boulders round the hole in it, and
+   at those sizes each one reads as an object rather than as rubble. Six
+   small ones per hundred units is masonry. The two numbers are a pair —
+   more of them and smaller — and changing one without the other gives
+   you either a beaded curtain or a landslide. */
+const TUNNEL_PER_100 = 6.0;
+const TUNNEL_MAX = 64;
+/* AND THE SHORTEST PIECE OF WALL WORTH TEARING, in units. A beam cuts
+   every line it crosses and most of the lines in a street are KERBS: a
+   twelve-unit riser at the edge of the road, a thirty-two-unit step up
+   to a forecourt. A hole punched in one of those is invisible, which is
+   fine — but a ring of debris hung off it is a row of broken masonry
+   lying along the gutter for the whole length of the block, which is
+   what a photograph down a shot-up street showed. Twenty-four units is
+   about knee height: under that there is nothing to tear through. */
+const TUNNEL_MIN_BAND = 24;
+
+/** An oriented box: a centre, three half-vectors, five faces. The
+ *  underside is dropped for the same reason box() drops it — nothing in
+ *  this game gets under a piece of rubble. */
+function chunk(b, cx, cy, cz, ux, uy, vx, vy, hu, hv, hz, light, char) {
+  /* the four corners of the footprint, in map coordinates */
+  const px = [ux * hu + vx * hv, ux * hu - vx * hv, -ux * hu - vx * hv, -ux * hu + vx * hv];
+  const py = [uy * hu + vy * hv, uy * hu - vy * hv, -uy * hu - vy * hv, -uy * hu + vy * hv];
+  const z0 = cz - hz, z1 = cz + hz;
+  /* map x stays x, map y becomes the renderer's minus z, up is y */
+  const P = (i, z) => [cx + px[i], z, -(cy + py[i])];
+  const uLen = hu * 2 / TEX, vLen = hv * 2 / TEX, hLen = hz * 2 / TEX;
+  const face = (i, j, u) => b.quad([P(i, z1), P(j, z1), P(j, z0), P(i, z0)],
+    [[u, hLen], [0, hLen], [0, 0], [u, 0]], light, 0, char);
+  face(0, 1, vLen); face(1, 2, uLen); face(2, 3, vLen); face(3, 0, uLen);
+  b.quad([P(3, z1), P(2, z1), P(1, z1), P(0, z1)],
+    [[0, vLen], [uLen, vLen], [uLen, 0], [0, 0]], light, 0, char);
+}
+
+/**
+ * The debris round every hole in one wall.
+ *
+ * @param set   the block's BatchSet
+ * @param l     the line, whose `breach` list this reads
+ * @param light what the wall around it is lit to
+ */
+export function breachDebris(set, l, light = 0.5, bands = null) {
+  const list = l.breach;
+  if (!list || !list.length) return 0;
+  const len = l.len || Math.hypot(l.x2 - l.x1, l.y2 - l.y1);
+  if (len <= 0) return 0;
+  /* along the wall, and out of it */
+  const ux = (l.x2 - l.x1) / len, uy = (l.y2 - l.y1) / len;
+  const nx = -uy, ny = ux;
+  const b = set.get('RUBBLE');
+  const lit = Math.min(1, Math.max(0.22, light * 0.9));
+  let drawn = 0;
+
+  for (let k = 0; k < list.length; k++) {
+    const h = list[k];
+    const w = (h.t1 - h.t0) * len;
+    if (w < 8 || h.z1 - h.z0 < 8) continue;
+    /* AND A HOLE IN A WALL THAT HAS COME DOWN IS A HOLE IN NOTHING. The
+       breach list outlives the wall: a region that collapses stops
+       drawing its brick (its floor meets its ceiling and the quad has
+       no height) but keeps every rectangle ever punched out of it, and
+       a rim of debris drawn off that list is then a ring of masonry
+       hanging in the air over a pile of rubble. The caller passes the
+       z ranges that are still STANDING — floor and ceiling in pairs,
+       collapsed storeys left out — and a hole that overlaps none of
+       them is not dressed. */
+    let z0 = h.z0, z1 = h.z1;
+    if (bands) {
+      /* AND IT IS CLAMPED TO THE WALL, not just tested against it. A
+         hole is a rectangle in (t, z) and nothing ever made it stop at
+         the top of the brick: a two-hundred-unit column fired at head
+         height through a one-storey house punches from below the floor
+         to well above the eaves, and js/mapgeo.js draws only the part
+         of that inside the wall band while this walked the WHOLE
+         rectangle's perimeter — which put a third of the ring in the
+         sky over the roof. The band with the most overlap wins, because
+         a hole spanning two storeys is dressed round the one it mostly
+         took. */
+      let best = -1, lo = 0, hi = 0;
+      for (let j = 0; j < bands.length; j += 2) {
+        const a = Math.max(h.z0, bands[j]), b2 = Math.min(h.z1, bands[j + 1]);
+        if (b2 - a > best) { best = b2 - a; lo = a; hi = b2; }
+      }
+      if (best < TUNNEL_MIN_BAND) continue;
+      z0 = lo; z1 = hi;
+    }
+    const tall = z1 - z0;
+    if (tall < TUNNEL_MIN_BAND) continue;
+    /* THE PERIMETER, walked as one loop. A chunk's place on it is one
+       number from 0 to 1 and the corners look after themselves, which
+       is what keeps the density even on a hole that is much wider than
+       it is high — and every hole this weapon makes is. */
+    const peri = 2 * (w + tall);
+    const n = Math.min(TUNNEL_MAX, Math.max(6, Math.round(peri / 100 * TUNNEL_PER_100)));
+    const seed = (l.x1 * 7 + l.y1 * 13 + k * 97) | 0;
+    for (let i = 0; i < n; i++) {
+      const r1 = hash(seed + i * 3, 0x1f35), r2 = hash(seed + i * 3, 0x77c1);
+      const r3 = hash(seed + i * 3, 0x2a9d), r4 = hash(seed + i * 3, 0x5e13);
+      /* where on the perimeter, jittered off it so the ring is ragged */
+      let s = ((i + r1 * 0.85) / n) * peri;
+      let t, z;
+      if (s < w) { t = h.t0 + (s / w) * (h.t1 - h.t0); z = z0; }
+      else if (s < w + tall) { t = h.t1; z = z0 + (s - w); }
+      else if (s < 2 * w + tall) { t = h.t1 - ((s - w - tall) / w) * (h.t1 - h.t0); z = z1; }
+      else { t = h.t0; z = z1 - (s - 2 * w - tall); }
+      /* pulled a little INTO the opening, because what is left round a
+         bored hole hangs into it — a clean ring standing off the rim
+         reads as a picture frame */
+      const midT = (h.t0 + h.t1) / 2, midZ = (z0 + z1) / 2;
+      const pull = 0.05 + r2 * 0.22;
+      t += (midT - t) * pull;
+      z += (midZ - z) * pull;
+      const x = l.x1 + (l.x2 - l.x1) * t, y = l.y1 + (l.y2 - l.y1) * t;
+      /* and out of the wall, one side or the other — which is what
+         makes it a tunnel rather than a wreath */
+      const side = (i & 1) ? 1 : -1;
+      const out = TUNNEL_OUT * (0.30 + r3 * 0.85) * side;
+      const size = 4 + r4 * 9;
+      chunk(b, x + nx * out * 0.5, y + ny * out * 0.5, z,
+            ux, uy, nx, ny,
+            size * (0.5 + r1 * 0.7), Math.abs(out) * 0.62 + 2, size * (0.45 + r2 * 0.7),
+            lit * (0.72 + r3 * 0.34), 1);
+      drawn++;
+    }
+  }
+  return drawn;
+}

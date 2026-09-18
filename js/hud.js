@@ -523,7 +523,18 @@ export class Hud {
       tintA = Math.max(tintA, 0.20 * Math.max(0, 1 - age * 6) + 0.045);
       tintC = 0xbdffd2;
     }
-    if (p.dead) tintA = Math.max(tintA, 0.35);
+    /* AND THE DEATH VEIL IS A FIRST-PERSON EFFECT. Red over everything
+       is what dying looks like from inside the body: you are on the
+       floor, the blood is in your eyes, and Doom has done it that way
+       since 1993. It is exactly wrong for the death the lance gives
+       you — the camera has LEFT the body and is forty feet up looking
+       down at it (see deathCamTic in js/player.js), and a veil at that
+       point is not the player's eyes filling with blood, it is a red
+       filter over a shot of somebody else. It also happened to hide the
+       one thing the whole death is for. So the veil belongs to the eyes
+       it is drawn for: no camera outside the body, no veil. */
+    const watching = p.deathCam && p.deathCam.x !== undefined;
+    if (p.dead && !watching) tintA = Math.max(tintA, 0.35);
     this.tintMesh.material.opacity = tintA;
     this.tintMesh.material.color.setHex(tintC);
     this.tintMesh.scale.set(W, H, 1);

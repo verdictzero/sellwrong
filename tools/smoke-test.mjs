@@ -3576,7 +3576,7 @@ section('the cold');
     check('and all three say how far out they are held, the two streams at about three',
       B.out === 1.33 && w3.GUNS.FLAMER.out === 3.0 && E.out === 2.8);
     check('and farther off is a push straight back along the view, z alone, not the whole position scaled',
-      /\(VIEW\.pos\[2\] \+ off\[2\] \+ this\.kick \* 0\.025\) \* \(G\.def\.out \?\? 1\)/.test(gunSrc) &&
+      /\(VIEW\.pos\[2\] \+ mix\(off\[2\], aoff\[2\]\) \+ this\.kick \* 0\.025\) \* out\)/.test(gunSrc) &&
       !/multiplyScalar\(G\.def\.out/.test(gunSrc));
     /* HOW FAR A GUN IS DRAWN IS NOT HOW FAR ITS FIRE STARTS. The world
        takes the nozzle as a RAY out of the eye, and the point on it was
@@ -4784,10 +4784,17 @@ section('the lance');
   check('a charged weapon never runs the frame-list firing path',
     /if \(this\.def\.charge\) \{ this\.lanceTic\(input\); return; \}/.test(playerSrc));
   check('a tap under the first mark vents rather than firing, and spends nothing',
-    /if \(stage > 0\) \{ this\.charge = 0; this\.fireBeam\(stage\); \}\s*\n\s*else this\.ventCharge\(\);/.test(playerSrc));
-  check('and a charge held at the top vents itself after three seconds',
-    P.CHARGE_HOLD === 3 * TICRATE &&
-    /if \(this\.charge >= CHARGE_MAX && \+\+this\.holdTics > CHARGE_HOLD\) this\.ventCharge\(\);/.test(playerSrc));
+    /if \(stage >= FIRE_AT\) \{ this\.charge = 0; this\.overcharge = 0; this\.fireBeam\(stage\); \}\s*\n\s*else this\.ventCharge\(\);/.test(playerSrc));
+  /* AND A CHARGE HELD AT THE TOP NO LONGER VENTS ITSELF. It did, for
+     three seconds, in the first cut: the coil let go on its own and you
+     got your finger back. At the user's request the gun now keeps it,
+     and keeping it is what kills you — see the overcharge below. The
+     old self-vent is gone entirely rather than made longer, because a
+     gun that saves you from yourself after forty seconds and a gun that
+     explodes after forty seconds are different guns. */
+  check('and a charge held at the top is kept, not vented — there is no self-vent left',
+    !/CHARGE_HOLD/.test(playerSrc) && !/holdTics/.test(playerSrc) &&
+    /if \(this\.charge >= CHARGE_MAX\) \{/.test(playerSrc));
   check('a trigger held through a vent does not start another charge',
     /if \(!input\.attack\) this\.vented = false;/.test(playerSrc) &&
     /input\.attack && can && !this\.vented/.test(playerSrc));
@@ -4900,7 +4907,7 @@ section('the lance');
 
   /* ---- the shake, the particles and the light ----------------------- */
   check('the beam shakes the eye and not the player, so it does not walk your aim off',
-    /const shake = this\.beam \? this\.beam\.shake : 0;/.test(fs.readFileSync('js/game.js', 'utf8')) &&
+    /const shake = outside \? 0 : \(this\.beam \? this\.beam\.shake : 0\);/.test(fs.readFileSync('js/game.js', 'utf8')) &&
     /yaw   \+= k \* \(0\.022/.test(fs.readFileSync('js/game.js', 'utf8')));
   check('and the shake settles from a jolt to a hum, so the beam can still be aimed',
     B.SHAKE_PEAK > B.SHAKE_HUM && B.SHAKE_HUM > 0 && B.SHAKE_SETTLE > 0);
@@ -4941,15 +4948,68 @@ section('the lance');
   check('no smoothstep on that screen runs its edges backwards, which GLSL leaves undefined',
     !/smoothstep\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,/.test(scopeSrc) ||
     [...scopeSrc.matchAll(/smoothstep\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,/g)].every(m => +m[1] < +m[2]));
-  check('everything on the dial is inside the bezel, which is the bug the first cut had',
-    (() => {
-      const body = scopeSrc.slice(scopeSrc.indexOf('_draw({'), scopeSrc.indexOf('setStages('));
-      const outs = [...body.matchAll(/N \* (0\.\d+)/g)].map(m => +m[1]);
-      return outs.length > 4 && outs.every(v => v <= 0.88);
-    })());
+  /* EVERYTHING ON THE DIAL IS INSIDE THE BEZEL, which is the bug the
+     first cut had: the charge ring was drawn out in the tenth of the
+     panel the bezel fades to black, so the gauge the weapon is about
+     was not on the gauge. The first repair for this check counted the
+     `N * 0.xx` literals in the source and asked that none exceeded a
+     number typed here — which went stale the moment a warning bar was
+     added at the bottom of the panel, because a Y COORDINATE of 0.905
+     and a RADIUS of 0.905 are not the same distance from the middle.
+     So the dial is DRAWN instead, into a context that records where
+     the ink went, and the extent is measured the way the shader
+     measures it: r = max(|x|, |y|) * 2 off the centre, a square bezel
+     and not a round one. Full-panel fills are exempt and only those —
+     the clear, and the flash in the last quarter of the overcharge —
+     because covering the whole screen is what they are for. */
+  {
+    const bezel = +(scopeSrc.match(/smoothstep\((0\.\d+), 1\.02, r\)/) || [, 0])[1];
+    const N = 256;
+    let lo = 0.5, hi = 0.5, lw = 1, whole = 0, ops = 0;
+    const saw = (x, y, pad = 0) => {
+      const u = x / N, v = y / N, e = (pad + lw / 2) / N;
+      lo = Math.min(lo, u - e, v - e); hi = Math.max(hi, u + e, v + e); ops++;
+    };
+    const rect = (x, y, w, h) => {
+      if (w * h >= N * N * 0.95) { whole++; return; }
+      saw(x, y); saw(x + w, y + h);
+    };
+    const ctx = {
+      set lineWidth(v) { lw = v; }, get lineWidth() { return lw; },
+      font: '', textAlign: '', textBaseline: '', lineCap: '', strokeStyle: '', fillStyle: '',
+      globalCompositeOperation: '', globalAlpha: 1,
+      save() {}, restore() {}, beginPath() {}, closePath() {}, stroke() {}, fill() {},
+      moveTo(x, y) { saw(x, y); }, lineTo(x, y) { saw(x, y); },
+      arc(x, y, r, a0, a1) { saw(x, y, r); },
+      fillRect: rect, strokeRect: rect, clearRect: rect,
+      fillText(t, x, y) { const px = +(String(this.font).match(/(\d+)px/) || [, 12])[1];
+                          saw(x - t.length * px * 0.4, y - px * 0.6);
+                          saw(x + t.length * px * 0.4, y + px * 0.6); },
+      measureText(t) { return { width: t.length * 8 }; },
+    };
+    const sc = Object.create(S.Scope.prototype);
+    sc.canvas = { width: N, height: N }; sc.held = true; sc.ctx = ctx; sc.stageMarks = [3 / 7, 5 / 7, 1]; sc.zoomIndex = 2; sc.panelTexture = { needsUpdate: false };
+    /* the worst case for extent is everything lit at once */
+    sc._draw({ charge: 1, heat: 1, stage: 3, cell: 4, firing: true, over: 0.9, tics: 4 });
+    const r = Math.max(Math.abs(0.5 - lo), Math.abs(hi - 0.5)) * 2;
+    note('how far the dial reaches, and where the glass goes dark',
+      `${r.toFixed(3)} of ${bezel}, over ${ops} marks and ${whole} full-panel fills`);
+    check('everything on the dial is inside the bezel, which is the bug the first cut had',
+      bezel > 0.5 && ops > 20 && whole >= 2 && r <= bezel);
+  }
+  /* THE ZOOM STEPS, AND THEY ARE MODEST ONES. They were 1x/4x/8x for a
+     draft and the user asked for less zoom and more looking through the
+     scope: the point of putting your eye to this gun is that you are
+     LOOKING THROUGH IT, and a magnification that turns the picture into
+     a smear of pixels is the opposite of that. A rifle scope, not a
+     telescope. The view narrows too, but by much less, which is what
+     stops the feed and the world disagreeing about what is in front of
+     you. */
   check('the zoom steps and the view narrows with them, but not by the same amount',
     S.ZOOMS.length === S.VIEW_ZOOM.length && S.ZOOMS[0] === 1 && S.VIEW_ZOOM[0] === 1 &&
-    S.ZOOMS[S.ZOOMS.length - 1] >= 8 && S.VIEW_ZOOM[S.VIEW_ZOOM.length - 1] > 0.5);
+    S.ZOOMS.every((v, i) => i === 0 || v > S.ZOOMS[i - 1]) &&
+    S.ZOOMS[S.ZOOMS.length - 1] >= 2 && S.ZOOMS[S.ZOOMS.length - 1] <= 5 &&
+    S.VIEW_ZOOM[S.VIEW_ZOOM.length - 1] > 0.5 && S.VIEW_ZOOM[S.VIEW_ZOOM.length - 1] < 1);
   check('and the look slows by exactly what the view narrowed by',
     /input\.zoomScale = lance \? scope\.viewScale : 1;/.test(mainSrc) &&
     /this\.look = \{ x: lx \* zs, y: ly \* zs \};/.test(fs.readFileSync('js/input.js', 'utf8')));
@@ -5005,6 +5065,269 @@ section('the lance');
       /padEdge\(1\)/.test(inputSrc));
     check('the player owns it, so it can actually be reached',
       /LANCE: true/.test(playerSrc));
+  }
+}
+
+/* =====================================================================
+   THE LANCE, SECOND PASS
+   =====================================================================
+
+   Five things the user asked for after firing it for a while: it must
+   reach RED before it will fire at all; the chassis cooks from the
+   middle out while it charges, on the minigun's glow; forty seconds of
+   holding it past red and it kills you, with the camera leaving the
+   body to watch; the zoom stops being a zoom and becomes putting your
+   eye to the scope; and every hole gets a tunnel of debris round it.
+   ===================================================================== */
+section('the lance, second pass');
+{
+  const fs = await import('node:fs');
+  const P = await import('../js/player.js');
+  const S = await import('../js/scope.js');
+  const R = await import('../js/ruin.js');
+  const w3 = await import('../js/weapon3d.js');
+  const playerSrc = fs.readFileSync('js/player.js', 'utf8');
+  const gunSrc2 = fs.readFileSync('js/weapon3d.js', 'utf8');
+  const scopeSrc2 = fs.readFileSync('js/scope.js', 'utf8');
+  const gameSrc2 = fs.readFileSync('js/game.js', 'utf8');
+  const TICRATE = 35;
+  const mkP = () => {
+    const p = Object.create(P.Player.prototype);
+    p.charge = 0; p.overcharge = 0; p.beamTics = 0; p.beamStage = 0;
+    p.lanceHeat = 0; p.lanceHot = false; p.dead = false;
+    return p;
+  };
+
+  /* ---- RED OR NOTHING ----------------------------------------------- */
+  note('what it takes to fire', `stage ${P.FIRE_AT} of ${P.CHARGE_STAGES.length}, which is ` +
+    `${P.CHARGE_STAGES[P.FIRE_AT - 1]}s held`);
+  check('the trigger only gives you the last stage, which is the red one',
+    P.FIRE_AT === P.CHARGE_STAGES.length && P.FIRE_AT === 3);
+  check('and anything short of it vents instead of firing',
+    /if \(stage >= FIRE_AT\) \{ this\.charge = 0; this\.overcharge = 0; this\.fireBeam\(stage\); \}\s*\n\s*else this\.ventCharge\(\);/.test(playerSrc));
+  check('the stages themselves are untouched, so the smaller shots are one number away',
+    P.CHARGE_STAGES.join() === '3,5,7' && P.BEAM_TICS.length === 3);
+  {
+    /* the dial goes red at exactly the stage the trigger wants */
+    const p = mkP();
+    p.charge = P.CHARGE_STAGES[P.FIRE_AT - 1] * TICRATE;
+    check('and the charge reaches that stage at exactly the second it says',
+      p.chargeStage === P.FIRE_AT);
+    p.charge -= 1;
+    check('and not one tic sooner', p.chargeStage === P.FIRE_AT - 1);
+  }
+
+  /* ---- THE CHASSIS COOKS FROM THE MIDDLE OUT ------------------------- */
+  check('the gun shader has a second heat gradient and the lance is what uses it',
+    /float reach = along;/.test(gunSrc2) && /if \(heatMode > 0\.5\) \{/.test(gunSrc2) &&
+    /reach = 1\.0 - clamp\(abs\(vL\.z - heatMid\) \/ half_, 0\.0, 1\.0\);/.test(gunSrc2));
+  check('and the mode is picked by whether the gun says where its hot spot is',
+    /heatMaterial\.uniforms\.heatMode\.value = def\.heat\.mid === undefined \? 0 : 1;/.test(gunSrc2));
+  check('the minigun still heats from the muzzle back and the lance from its coil out',
+    w3.GUNS.MINIGUN.heat.mid === undefined && typeof w3.GUNS.LANCE.heat.mid === 'number' &&
+    w3.GUNS.LANCE.heat.mid > w3.GUNS.LANCE.heat.z[0] && w3.GUNS.LANCE.heat.mid < w3.GUNS.LANCE.heat.z[1]);
+  check('and the hot spot is in the body of the gun and not out along the barrel',
+    w3.GUNS.LANCE.heat.mid < 0.2);
+  {
+    /* charging heats it, on its own, without firing anything */
+    const p = mkP();
+    p.charge = P.CHARGE_MAX; p.overcharge = 0;
+    p.coilTic();
+    const atRed = p.lanceHeat;
+    p.overcharge = P.OVERCHARGE_TICS;
+    p.coilTic();
+    note('the coil while you hold it', `red is ${(atRed * 100) | 0}% hot, the end of the overcharge is ${(p.lanceHeat * 100) | 0}%`);
+    check('a full charge alone makes the gun glow, without a shot being fired',
+      Math.abs(atRed - P.CHARGE_HEAT) < 1e-9 && atRed > 0.2 && atRed < 0.5);
+    check('and the end of the overcharge is all the heat there is',
+      Math.abs(p.lanceHeat - 1) < 1e-9);
+    check('holding the trigger can never COOL a lance',
+      (() => { const q = mkP(); q.lanceHeat = 0.9; q.charge = 1; q.coilTic(); return q.lanceHeat === 0.9; })());
+  }
+
+  /* ---- FORTY SECONDS AND IT KILLS YOU -------------------------------- */
+  note('the overcharge', `${P.OVERCHARGE_TICS / TICRATE}s past red`);
+  check('forty seconds of overcharge, as asked', P.OVERCHARGE_TICS === 40 * TICRATE);
+  check('and at the end of it the coil lets go rather than venting',
+    /if \(\+\+this\.overcharge >= OVERCHARGE_TICS\) \{ this\.blowUp\(\); return; \}/.test(playerSrc) &&
+    !/CHARGE_HOLD/.test(playerSrc));
+  check('the blast is the biggest in the game and takes the street with it',
+    /radius: 900, damage: 4000/.test(playerSrc) && /structure: 7, structureRadius: 1400/.test(playerSrc));
+  check('and it holes the walls round it the way the beam does',
+    (playerSrc.match(/g\.breaches\?\.cut\(/g) || []).length === 2);
+  check('it kills you, and it is the one thing that ignores the invincible switch',
+    /this\.health = 0;/.test(playerSrc) &&
+    /IT IGNORES THE INVINCIBLE SWITCH/.test(playerSrc) &&
+    playerSrc.indexOf('blowUp() {') < playerSrc.indexOf('if (!this.dead) { this.deathCam'));
+  check('the screen on the gun says so for all forty seconds',
+    /const over = p \? \(p\.overFraction \|\| 0\) : 0;/.test(scopeSrc2) &&
+    /label\(ctx, over > 0\.75 \? 'EJECT' : 'OVERCHARGE'/.test(scopeSrc2));
+  check('and the game itself shouts once, three quarters of the way in',
+    /this\.game\.setBigMessage\?\.\('COIL CRITICAL'/.test(playerSrc));
+  {
+    /* it does not go off early, and it does go off */
+    const fired = [];
+    const p = mkP();
+    p.weapon = 'LANCE';
+    p.game = { sound: { play() {}, loop() { return null; } }, setBigMessage() {},
+               beam: { fire() {}, stop() {}, tic() {} }, breaches: { cut() {} },
+               fx: { fireball() {}, puff() {}, wash() {} },
+               explode() { fired.push('boom'); }, spawnSparks() {}, noise() {}, onPlayerDied() {},
+               level: { sectors: [] } };
+    p.ammo = { cells: 4 }; p.maxAmmo = { cells: 4 };
+    p.sector = { storey: 0 }; p.x = 0; p.y = 0; p.z = 0; p.angle = 0;
+    p.momx = 0; p.momy = 0; p.shotsFired = 0; p.fireIndex = -1; p.cellDry = false;
+    p.chargeLoop = null; p._chargeVoice = null; p.vented = false;
+    const input = { attack: true };
+    let tics = 0;
+    while (!p.dead && tics < P.CHARGE_MAX + P.OVERCHARGE_TICS + 10) { p.lanceTic(input); tics++; }
+    note('held down from cold', `${(tics / TICRATE).toFixed(1)}s to the explosion`);
+    check('holding the trigger from cold blows up after the charge and the overcharge and not before',
+      p.dead && fired.length === 1 &&
+      Math.abs(tics - (P.CHARGE_MAX + P.OVERCHARGE_TICS)) <= 2);
+    check('and it left a death camera behind for the renderer to use',
+      !!p.deathCam && p.deathCam.tics === 0);
+  }
+  /* ---- AND THE CAMERA LEAVES THE BODY -------------------------------- */
+  check('the death camera pulls back, lifts, tips down and turns',
+    P.DEATHCAM_DIST > 200 && P.DEATHCAM_LIFT > 100 &&
+    P.DEATHCAM_PITCH > 0 && P.DEATHCAM_SPIN > 0 && P.DEATHCAM_SPIN < 0.02);
+  check('it does not go through walls, which is the ordinary failure of these',
+    /const hit = lv\.rayHitWall \? lv\.rayHitWall\(this\.x, this\.y, eye, wx, wy, wz\) : null;/.test(playerSrc) &&
+    /const t = hit \? Math\.max\(0\.12, hit\.t - 0\.12\) : 1;/.test(playerSrc));
+  check('and only that one death gets one — every other is Doom\'s sink to the floor',
+    /this\.deathCam = null;/.test(playerSrc) &&
+    /if \(this\.deathCam\) this\.deathCamTic\(\);/.test(playerSrc));
+  check('the renderer takes it before the sway and the shake, so a held shot is held',
+    /const outside = p\.dead && p\.deathCam && p\.deathCam\.x !== undefined;/.test(gameSrc2) &&
+    /const shake = outside \? 0 : /.test(gameSrc2) &&
+    gameSrc2.indexOf('const outside =') < gameSrc2.indexOf('if (this.idle) {'));
+  {
+    /* it actually ends up behind the body and looking at it */
+    const p = mkP();
+    p.x = 1000; p.y = 1000; p.z = 0; p.angle = 0;
+    p.deathCam = { tics: 0, dist: 40, yaw: 0, pitch: 0.18 };
+    p.game = { level: { rayHitWall: () => null } };
+    for (let i = 0; i < 200; i++) p.deathCamTic();
+    const back = Math.hypot(p.deathCam.x - p.x, p.deathCam.y - p.y);
+    note('where the death camera ends up', `${Math.round(back)} units back, ${Math.round(p.deathCam.z - p.z)} up`);
+    check('it ends up a few hundred units out and well above the body',
+      back > 300 && back < 600 && p.deathCam.z - p.z > 180);
+    check('and pointed at it', (() => {
+      const wantYaw = Math.atan2(p.y - p.deathCam.y, p.x - p.deathCam.x);
+      let d = p.deathCam.lookYaw - wantYaw;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      return Math.abs(d) < 1e-6 && p.deathCam.lookPitch < 0;
+    })());
+  }
+
+  /* ---- THE ZOOM IS NOT A ZOOM ---------------------------------------- */
+  note('the scope', `${S.ZOOMS.join('x, ')}x on the panel, view ${S.VIEW_ZOOM.join('/')}, gun ${S.AIM_AT.join('/')} to the eye`);
+  check('the magnification is small now, because the zoom is not what moves',
+    S.ZOOMS.length === 3 && S.ZOOMS[S.ZOOMS.length - 1] < 4 && S.ZOOMS[1] < 2.5);
+  check('and the world behind it hardly narrows',
+    S.VIEW_ZOOM.every(v => v >= 0.8) && S.VIEW_ZOOM[0] === 1);
+  check('what the zoom actually does is raise the weapon to the eye',
+    S.AIM_AT[0] === 0 && S.AIM_AT[S.AIM_AT.length - 1] === 1 &&
+    S.AIM_AT.length === S.ZOOMS.length && /get aim\(\)/.test(scopeSrc2));
+  check('the lance is the only gun with a second hold, having the only thing worth looking at',
+    !!w3.GUNS.LANCE.aim && Object.values(w3.GUNS).filter(d => d.aim).length === 1 &&
+    Array.isArray(w3.GUNS.LANCE.aim.pos) && Array.isArray(w3.GUNS.LANCE.aim.rot));
+  check('and it is a nearer hold than the hip one, since you have brought it to you',
+    w3.GUNS.LANCE.aim.out < w3.GUNS.LANCE.out);
+  check('the gun chases the hold rather than snapping to it',
+    /this\.aim \+= \(wantAim - this\.aim\) \* \(1 - Math\.pow\(0\.0015, dt\)\);/.test(gunSrc2));
+  check('and the bob and the sway go away with it, since a braced weapon does not swing',
+    /const steady = 1 - a \* 0\.88;/.test(gunSrc2));
+  check('a gun with no second hold never leaves the hip, which is every gun but one',
+    /const a = G\.def\.aim \? this\.aim : 0;/.test(gunSrc2));
+
+  /* ---- A TUNNEL OF DEBRIS ROUND EVERY HOLE ---------------------------- */
+  {
+    let quads = 0;
+    const set = { get: () => ({ quad: () => { quads++; } }) };
+    const l = { x1: 0, y1: 0, x2: 400, y2: 0, len: 400,
+                breach: [{ t0: 0.35, t1: 0.65, z0: 10, z1: 130 }] };
+    const n = R.breachDebris(set, l, 0.6);
+    note('the debris round a hole', `${n} chunks, ${quads} quads`);
+    check('a hole gets a ring of broken material round it',
+      n >= 12 && n <= 64 && quads === n * 5);
+    check('five faces a chunk and not six, like the other two builders here',
+      quads / n === 5);
+    check('and a wall with no holes gets nothing at all',
+      R.breachDebris(set, { x1: 0, y1: 0, x2: 1, y2: 0, len: 1 }, 0.5) === 0);
+    /* it stands out of the wall on BOTH sides, which is what makes it a
+       tunnel rather than a wreath */
+    check('it stands out of the wall on both sides, which is the tunnel',
+      /const side = \(i & 1\) \? 1 : -1;/.test(fs.readFileSync('js/ruin.js', 'utf8')));
+    check('the chunks are oriented to the wall and not squared to the map',
+      /function chunk\(b, cx, cy, cz, ux, uy, vx, vy, hu, hv, hz, light, char\)/.test(fs.readFileSync('js/ruin.js', 'utf8')));
+    check('and it is built with the wall it belongs to, so it rebuilds with the hole',
+      /breachDebris\(lineIndoor\(l\) \? inner : set, l, own\.light, BANDS\);/.test(fs.readFileSync('js/mapgeo.js', 'utf8')));
+    /* AND A HOLE IN A WALL THAT HAS COME DOWN IS A HOLE IN NOTHING. The
+       breach list outlives the wall — a collapsed region stops drawing
+       its brick but keeps every rectangle ever punched out of it — so
+       debris hung off that list without asking is a ring of masonry in
+       mid-air over a pile of rubble. Photographed exactly that way the
+       first time a beam was fired down a street and the houses came
+       down behind it. */
+    {
+      let hung = 0;
+      const set2 = { get: () => ({ quad() { hung++; } }) };
+      /* the storey the hole is in is gone; another one is still up */
+      const down = R.breachDebris(set2, l, 0.5, [300, 460]);
+      const up   = R.breachDebris(set2, l, 0.5, [0, 200]);
+      check('a hole in a wall that has come down is not dressed at all',
+        down === 0 && up > 0);
+      /* AND A HOLE THAT OVERRUNS THE WALL IS CLAMPED TO IT, which is
+         the other half of the same rule and was the other half of the
+         same photograph: a two-hundred-unit column fired at head height
+         through a one-storey house punches from under the floor to well
+         over the eaves, mapgeo draws only the part inside the brick,
+         and a ring walked round the whole rectangle put a third of
+         itself in the sky above the roof. */
+      const tallHole = { x1: 0, y1: 0, x2: 900, y2: 0, len: 900,
+                         breach: [{ t0: 0.2, t1: 0.8, z0: -80, z1: 260 }] };
+      let lo = 1e9, hi = -1e9;
+      /* BatchSet.quad takes four [x, height, -y] corners — see the note
+         in js/ruin.js's chunk() about the map's y becoming the
+         renderer's minus z — so the height is the MIDDLE number */
+      const set3 = { get: () => ({ quad(corners) { for (const c of corners) {
+        lo = Math.min(lo, c[1]); hi = Math.max(hi, c[1]); } } }) };
+      R.breachDebris(set3, tallHole, 0.5, [0, 128]);
+      note('a hole taller than the wall it is in', `ring kept to ${lo.toFixed(0)}..${hi.toFixed(0)} of 0..128`);
+      check('and a hole taller than its wall is clamped to the wall, not walked past it',
+        lo > -40 && hi < 168);
+      check('and the caller leaves a collapsed storey out of the bands it passes',
+        /if \(!s \|\| s\.collapsed \|\| s\.ceil <= s\.floor\) continue;/.test(fs.readFileSync('js/mapgeo.js', 'utf8')) &&
+        /if \(!BANDS\.length\) continue;/.test(fs.readFileSync('js/mapgeo.js', 'utf8')));
+      /* AND THE BANDS ARE THE WALL'S OWN, not the sectors either side
+         of it. The sector outside a house is the STREET, whose ceiling
+         is the sky a few thousand units up, so bands taken from the
+         two columns never clamped anything and a photograph from the
+         pavement showed an arc of masonry over the roof. A two-sided
+         line already carries the intervals it draws brick in. */
+      /* AND A KERB IS NOT A WALL. Most of the lines in a street are
+         twelve-unit risers and thirty-two-unit steps; a beam cuts them
+         all, and a ring of debris hung off a hole in one is broken
+         masonry lying along the gutter for the length of the block. */
+      let kerb = 0;
+      const set4 = { get: () => ({ quad() { kerb++; } }) };
+      const low = R.breachDebris(set4, { x1: 0, y1: 0, x2: 900, y2: 0, len: 900,
+        breach: [{ t0: 0.2, t1: 0.8, z0: -52, z1: 172 }] }, 0.5, [0, 12]);
+      check('a kerb is not a wall, and a hole in one is not dressed',
+        low === 0 && kerb === 0);
+      check('a two-sided wall is measured by the bands it draws, not by the air outside it',
+        /if \(l\.bands && l\.bands\.length\) \{/.test(fs.readFileSync('js/mapgeo.js', 'utf8')) &&
+        /BANDS\.push\(bd\.z0, bd\.z1\);/.test(fs.readFileSync('js/mapgeo.js', 'utf8')));
+    }
+    /* two holes on one wall get two rings and the count stays bounded */
+    l.breach.push({ t0: 0.68, t1: 0.74, z0: 40, z1: 90 });
+    quads = 0;
+    const n2 = R.breachDebris(set, l, 0.6);
+    check('two holes get two rings, and a wall shot to pieces stays bounded',
+      n2 > n && n2 <= 64 * 2);
   }
 }
 

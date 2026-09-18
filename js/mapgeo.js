@@ -33,7 +33,7 @@
 
 import * as THREE from 'three';
 import { createWallMaterial } from './material.js';
-import { roofFraming } from './ruin.js';
+import { roofFraming, breachDebris } from './ruin.js';
 import { pieces as breachPieces } from './breach.js';
 import { STREET_LAMP } from './textures.js';
 
@@ -358,6 +358,56 @@ export function buildLevelGeometry(level, bank) {
     const pick = sec => (sec && indoor(sec) ? inner : set);
     for (const s of blockSectors.get(k) || []) addFlats(pick(s), level, s, bank);
     for (const l of blockLines.get(k) || []) addLine(lineIndoor(l) ? inner : set, level, l, bank, pick);
+    /* AND THE DEBRIS ROUND WHATEVER HAS BEEN SHOT THROUGH. A wall in
+       this engine has no thickness, so a hole in one is a rectangle cut
+       out of a sheet of card; the ring of broken material round it is
+       how a hole gets a depth, for the eighty units either side of it
+       where anybody is going to look. Built here so it lands in the
+       same batch as the brick and rebuilds in step with the hole as the
+       hole crumbles wider. See breachDebris in js/ruin.js. */
+    for (const l of blockLines.get(k) || []) {
+      if (!l.breach || !l.breach.length) continue;
+      /* WHERE THIS WALL ACTUALLY HAS BRICK, low and high in pairs, and
+         it has to be the same answer this function just drew.
+
+         TWO-SIDED LINES ALREADY KNOW. l.bands is every interval of z
+         where exactly one of the two columns is open — the uppers and
+         lowers of the loop above — so a shopfront's three bands of
+         masonry with two ribbons of glass between them are five
+         intervals and the ring is hung on the three that are wall.
+
+         ONE-SIDED LINES ARE THE WHOLE STOREY, floor to ceiling, per
+         sector in the column.
+
+         IT IS NOT THE SECTORS EITHER SIDE. That was the first cut and
+         it was wrong in the most visible way available: the sector on
+         the OUTSIDE of a house is the street, whose ceiling is the sky
+         a few thousand units up, so the band with the most overlap was
+         always the open air and the ring was never clamped to anything
+         — a photograph from the pavement showed an arc of masonry
+         floating well above the roof. */
+      let own = null;
+      BANDS.length = 0;
+      if (l.bands && l.bands.length) {
+        for (const bd of l.bands) {
+          if (!bd.tex || bd.tex === 'NONE' || bd.z1 <= bd.z0) continue;
+          if (bd.kind === 'upper' && bd.open.ceilTex === 'SKY' && bd.from.ceilTex === 'SKY') continue;
+          BANDS.push(bd.z0, bd.z1);
+          if (!own) own = bd.open;
+        }
+      } else {
+        for (const col of [l.frontCol, l.backCol]) {
+          for (const si of col || []) {
+            const s = level.sectors[si];
+            if (!s || s.collapsed || s.ceil <= s.floor) continue;
+            BANDS.push(s.floor, s.ceil);
+            if (!own) own = s;
+          }
+        }
+      }
+      if (!BANDS.length) continue;
+      breachDebris(lineIndoor(l) ? inner : set, l, own.light, BANDS);
+    }
     /* AND THE STEEL, over whichever regions have lost their deck. It
        goes in the same BatchSet as everything else, so the whole ruined
        roof of a burnt-out store is one more draw call and not one per
@@ -1204,6 +1254,9 @@ export function charOf(s) { return s ? (s.gutted ? 1 : s.charred ? 0.55 : 0) : 0
    returns null the moment it finds no list, which is every line in the
    game until something happens to one. */
 const BREACH_SCRATCH = [];
+/* and the standing storeys of one wall, floor and ceiling in pairs, which
+   is read once per shot-through line per rebuild — see below */
+const BANDS = [];
 function addQuad(set, l, bank, texName, zBot, zTop, facingFront, peg, light, sk = 0, ch = 0, span = null) {
   if (l.breach && l.breach.length && !Array.isArray(zBot) && !Array.isArray(zTop)) {
     const s0 = span ? span[0] : 0, s1 = span ? span[1] : 1;

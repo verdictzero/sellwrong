@@ -95,20 +95,45 @@ export const PANEL = 256;
    cheapest thing to halve. */
 export const EVERY = 2;
 
-/* WHAT THE ZOOM STEPS ARE, as magnifications of the world's own field of
-   view. One is "what you would see anyway", which is the right thing to
-   come back to; four is a scope; twelve is the far end of the town from
-   the car park, and is why the weapon is called a sniper lance. */
-export const ZOOMS = [1, 4, 12];
+/* ---------------------------------------------------------------------
+   THE ZOOM IS NOT A ZOOM, IT IS PUTTING YOUR EYE TO THE SCOPE
 
-/* AND HOW FAR THE MAIN VIEW COMES IN WITH IT. Not the same numbers, and
-   deliberately: magnifying the whole screen twelve times is a game you
-   cannot play, so the picture narrows by a fifth at the first step and a
-   third at the second — enough that holding the zoom FEELS like bracing,
-   while the actual magnification stays on the gun's screen where the
-   user asked for it. The look sensitivity drops by the same factor, so a
-   zoomed sweep is as fine as the picture is. */
-export const VIEW_ZOOM = [1, 0.80, 0.66];
+   At the user's request, and it is a better idea than the one it
+   replaces. The first version narrowed the world's field of view and
+   magnified the feed on the panel by twelve: what you got was a
+   telescope that happened to be painted on a gun, and the gun itself
+   stayed exactly where it was, down in the corner, while the picture
+   around it changed. Two things were being zoomed and neither of them
+   was the thing the player was looking at.
+
+   What it does now is MOVE THE WEAPON. The lance comes up and back so
+   the screen on its rear deck arrives in front of your eye and fills
+   the middle of the frame — see `aim` in GUNS (js/weapon3d.js), which
+   is a second hold the gun blends to. The world behind it barely
+   narrows. The feed on the panel barely magnifies. The whole of the
+   change is that you have raised the thing and put your face to it,
+   which is what looking through a scope IS.
+
+   SO THE MAGNIFICATIONS ARE SMALL NOW. Two and a bit, and three and a
+   bit: enough that the panel is worth looking at rather than being a
+   window onto what you can already see, and nowhere near the twelve
+   that made it a separate game. The far end of the town is still
+   further off than it was; you just have to walk. */
+export const ZOOMS = [1, 2.1, 3.4];
+
+/* AND THE WORLD BEHIND IT HARDLY MOVES. A tenth and a sixth, where it
+   used to be a fifth and a third — just enough to say that the player
+   has stopped walking and started aiming. The look sensitivity drops by
+   the same factor, which at these numbers is a steadying rather than a
+   slowing. */
+export const VIEW_ZOOM = [1, 0.90, 0.84];
+
+/* HOW FAR THE GUN IS TO THE SHOULDER at each step, 0 at the hip and 1
+   with your eye on the glass. The second step is most of the way and
+   the third is all of it, so the first press brings it up and the
+   second settles it. What that means in metres is the `aim` hold in
+   js/weapon3d.js; this is only how much of it. */
+export const AIM_AT = [0, 0.82, 1];
 
 /* The phosphor. The lens on the front of this model is (0.344, 0.800,
    0.000) in the file's own base colour, and the screen is that. */
@@ -359,6 +384,9 @@ export class Scope {
   }
 
   get magnification() { return ZOOMS[this.zoomIndex] || 1; }
+  /** How far the weapon is raised toward the eye at this step — what
+   *  js/weapon3d.js blends its second hold by. See AIM_AT. */
+  get aim() { return AIM_AT[this.zoomIndex] ?? 0; }
   /** What the WORLD camera's field of view should be multiplied by while
    *  the scope is at this step — see VIEW_ZOOM. */
   get viewScale() { return VIEW_ZOOM[this.zoomIndex] ?? 1; }
@@ -480,6 +508,12 @@ export class Scope {
     const stage = p ? (p.chargeStage || 0) : 0;
     const cell = p ? Math.max(0, Math.min(1, (p.ammo?.cells ?? 0) / (p.maxAmmo?.cells || 1))) : 0;
     const firing = !!(p && p.beamTics > 0);
+    /* AND HOW CLOSE THE COIL IS TO GOING OFF IN YOUR HANDS, which is a
+       number this screen exists to tell you — see OVERCHARGE_TICS in
+       js/player.js. Forty seconds is a very long time to be doing
+       something fatal, and it is only long enough to be fair if the gun
+       is shouting for every one of them. */
+    const over = p ? (p.overFraction || 0) : 0;
     /* THE DIRTY KEY, and everything in it is something that is DRAWN.
        A range readout was on here for a while and went, because four
        characters of it were illegible at forty pixels — and while it
@@ -488,11 +522,12 @@ export class Scope {
        what a screen shows. */
     const key = [this.held ? 1 : 0, Math.round(charge * 120), Math.round(heat * 90), stage,
                  Math.round(cell * 60), this.zoomIndex, firing ? 1 : 0,
-                 firing ? (tics >> 1) & 7 : 0].join('|');
+                 firing ? (tics >> 1) & 7 : 0,
+                 Math.round(over * 80), over > 0 ? (tics >> 2) & 1 : 0].join('|');
     if (key === this._key) return false;
     this._key = key;
     this.draws++;
-    this._draw({ charge, heat, stage, cell, firing, tics });
+    this._draw({ charge, heat, stage, cell, firing, over, tics });
     if (this.panelTexture) this.panelTexture.needsUpdate = true;
     return true;
   }
@@ -526,14 +561,19 @@ export class Scope {
      it is the one thing the player changes by hand and so is the one
      thing they can be expected to go looking for.
 
-     EVERYTHING IS INSIDE 0.86 OF THE PANEL, because outside that is the
-     bezel and the bezel is black — see SCREEN_FRAG. That was the bug
-     the first cut had: the charge ring, the biggest thing on this
-     screen and the one the whole weapon is about, was drawn at 0.44
-     with a rim of its own on top, which is to say inside the part that
-     had already been faded out. The gauge was not on the gauge.
+     EVERYTHING IS INSIDE THE BEZEL, which is a SQUARE one — the glass
+     goes dark at max(|x|, |y|) * 2 > 0.94 off the middle, so what
+     matters is the greater of the two axes and not the distance. The
+     dial reaches 0.907 of that at its widest, which is the warning bar
+     at the bottom. That was the bug the first cut had: the charge ring,
+     the biggest thing on this screen and the one the whole weapon is
+     about, was drawn at 0.44 with a rim of its own on top, which is to
+     say inside the part that had already been faded out. The gauge was
+     not on the gauge. The suite draws this method into a context that
+     records where the ink went and measures it, rather than trusting
+     the number in this paragraph.
      ------------------------------------------------------------------ */
-  _draw({ charge, heat, stage, cell, firing, tics }) {
+  _draw({ charge, heat, stage, cell, firing, over, tics }) {
     const ctx = this.ctx, N = this.canvas.width;
     ctx.clearRect(0, 0, N, N);
     if (!this.held) return;
@@ -598,6 +638,29 @@ export class Scope {
           cx, N * 0.245, N * 0.125, firing ? HOT : stage > 0 ? stageInk : INK_DIM);
     label(ctx, `${ZOOMS[this.zoomIndex]}\u00d7`, cx, N * 0.675, N * 0.078,
           this.zoomIndex ? INK : INK_DIM);
+
+    /* ---- AND THE THING THE SCREEN IS REALLY FOR ----------------------
+       Past the top of the charge the coil is overcharging, and in forty
+       seconds it kills whoever is holding it. So the whole screen takes
+       the warning: a bar across the bottom that fills, a word, and — in
+       the last quarter — the entire panel flashing, because by then
+       nothing subtler has worked. */
+    if (over > 0) {
+      const y = N * 0.905, bw = N * 0.66;
+      ctx.lineCap = 'butt';
+      ctx.lineWidth = N * 0.055;
+      ctx.strokeStyle = 'rgba(70, 20, 12, 0.85)';
+      ctx.beginPath(); ctx.moveTo(cx - bw / 2, y); ctx.lineTo(cx + bw / 2, y); ctx.stroke();
+      ctx.strokeStyle = HOT;
+      ctx.beginPath(); ctx.moveTo(cx - bw / 2, y); ctx.lineTo(cx - bw / 2 + bw * over, y); ctx.stroke();
+      const blink = (tics >> 2) & 1;
+      if (over < 0.75 || blink)
+        label(ctx, over > 0.75 ? 'EJECT' : 'OVERCHARGE', cx, N * 0.79, N * 0.072, HOT);
+      if (over > 0.75 && blink) {
+        ctx.fillStyle = 'rgba(255, 70, 40, 0.28)';
+        ctx.fillRect(0, 0, N, N);
+      }
+    }
   }
 
   /** Where the three stage marks fall on the charge ring, as fractions of
