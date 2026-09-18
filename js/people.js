@@ -580,6 +580,7 @@ export function swayOf(actor, tics) {
 export function crowdNear(game, x, y, radius) {
   const r2 = radius * radius, out = [];
   for (const a of game.actors)
-    if (a.type === 'SHOPPER' && !a.dead && !a.removed && dist2(a.x, a.y, x, y) < r2) out.push(a);
+    if ((a.type === 'SHOPPER' || a.type === 'TOWNIE') && !a.dead && !a.removed &&
+        dist2(a.x, a.y, x, y) < r2) out.push(a);
   return out;
 }

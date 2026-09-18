@@ -419,13 +419,16 @@ export class Responders {
      these. Falls back to the mouth of the lot if the map has no road. */
   arrivalPoints(tier = 0) {
     const lv = this.game.level;
-    /* THE POLICE AND THE FIRE BRIGADE COME FROM A BUILDING, now that
-       there is one to come from. Tier 3 is called "the police" and tier
-       4 "the fire brigade" and both of them used to arrive out of the
-       wood from nowhere, which was the second of TOWN.txt's three
-       reasons for building a town at all. They are four blocks away on
-       A5 with an engine standing in the bay, and the comment that used
-       to be on spawn() said PLACEHOLDER. */
+    /* THE POLICE AND THE FIRE BRIGADE COME FROM SOMEWHERE, now that
+       there is somewhere to come from. Tier 3 is called "the police"
+       and tier 4 "the fire brigade" and both of them used to arrive out
+       of the wood from nowhere, which was the second of TOWN.txt's
+       three reasons for building a town at all. They are four blocks
+       away on A5 — in the yard behind the municipal offices, which is
+       where a town this size keeps its vehicles, and which is what is
+       on that block now that the two lots with a ceiling and no
+       building over them are gone. The comment that used to be on
+       spawn() said PLACEHOLDER. */
     const st = lv.town?.stations;
     if (st) {
       const from = tier === 3 ? st.police : tier === 4 ? st.fire : null;

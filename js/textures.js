@@ -3962,6 +3962,15 @@ export const CHARRABLE = [
   'CHAIRSIT', 'CHAIRLEG', 'CHAIRBAK', 'TEACHDSK',
   'BACKBORD', 'SCOREBRD', 'WALLBARS', 'PENNANT', 'AUDSEAT', 'CURTAIN', 'PROSCEN',
   'TROPHY', 'NOTICEBD', 'RADIATOR', 'FOUNTAIN', 'SCHCLOCK',
+  /* THE OFFICE. Everything in a ground floor burns and burns well — it
+     is carpet tile, fabric partitions, laminate and paper, which is why
+     an office fire is the one every fire service dreads. The precast
+     panel, the granite and the parapet do not: what is left of one of
+     these is a concrete frame with the glass gone out of it. */
+  'OFFWINLT', 'OFFWINDK', 'OFFDOOR', 'TERRAZZO', 'OFFCARP',
+  'RECEPDSK', 'RECEPTOP', 'LIFTDOOR', 'CUBEPANL', 'CUBEDESK', 'FILECAB',
+  'CONFTBL', 'WHITEBRD', 'VENDING', 'BREAKCAB', 'BREAKTOP', 'WATRCOOL',
+  'DIRECTRY', 'COPIER', 'PLANTPOT',
 ];
 
 /** The charred name for a texture, or the texture itself if it has none. */
@@ -4281,6 +4290,40 @@ const SIZES = {
   RADIATOR: { w: 96, h: 34, masked: true },
   FOUNTAIN: { w: 26, h: 32, masked: true },
   SCHCLOCK: { w: 26, h: 26, masked: true },
+  /* THE OFFICE BLOCK. The elevation's four pieces are BANDS and each is
+     declared at the height of the band it skins — the base course is
+     twenty-four, the parapet forty, the pier is thirty-two wide — so
+     none of them is ever drawn at a course and a half. The glazing is
+     declared at the size of ONE BAY OF WINDOW, 128 by 72, which is the
+     hole in the wall it is hung in. */
+  /* ONE REPEAT IS FOUR PANELS, and a panel is 64 units square. Left at
+     the default 64 the joints landed every 32 units — a precast panel
+     forty-one inches across, which reads as tile and not as a building.
+     Two units to the pixel is the stretch that buys it. */
+  OFFPANEL: { w: 128, h: 128 },
+  OFFBASE:  { w: 64, h: 32 },   // one repeat is the base course, which is FOUND
+  OFFPARA:  { w: 64, h: 40 },
+  OFFMULL:  { w: 32, h: 64 },
+  OFFWINLT: { w: 128, h: 72 },
+  OFFWINDK: { w: 128, h: 72 },
+  OFFDOOR:  { w: 48, h: 96 },     // one repeat is one leaf
+  OFFSIGN:  { w: 192, h: 40 },    // one repeat is the whole band
+  /* and what is inside it, each at the size of the piece */
+  RECEPDSK: { w: 64, h: 40 },
+  RECEPTOP: { w: 64, h: 48 },
+  LIFTDOOR: { w: 64, h: 96 },
+  CUBEPANL: { w: 64, h: 44 },
+  CUBEDESK: { w: 56, h: 56 },
+  FILECAB:  { w: 32, h: 48 },
+  CONFTBL:  { w: 64, h: 64 },
+  WHITEBRD: { w: 96, h: 56 },
+  VENDING:  { w: 44, h: 96 },
+  BREAKCAB: { w: 64, h: 32 },
+  BREAKTOP: { w: 64, h: 32 },
+  WATRCOOL: { w: 24, h: 48, masked: true },
+  DIRECTRY: { w: 64, h: 72 },
+  COPIER:   { w: 48, h: 44 },
+  PLANTPOT: { w: 40, h: 56, masked: true },
   GRAVESTN: { w: 24, h: 32 },
   STORBASE: { w: 64, h: 32 },
   BRANDBAND:{ w: 64, h: 96 },   // one repeat is the fascia band
@@ -7222,6 +7265,716 @@ T.DATESTON = () => {
   p.hline(0, 63, 0, 'bone', 0.62); p.hline(0, 63, 31, 'grey', 0.18);
   p.grime(0.24, 'grey', 0.06, 919);
   return p.snap(0.5);
+};
+
+/* ====================================================================
+   THE OFFICE BUILDING
+
+   A speculative suburban office block, which is a kind of building this
+   town did not have and the one kind every American town of this size
+   has two of: four storeys of precast panel and ribbon glazing standing
+   in its own parking lot, with a lobby you can walk into and three
+   floors over it that you cannot.
+
+   ITS ELEVATION IS THREE TEXTURES AND A RHYTHM. A base course of
+   polished granite, a spandrel panel between the windows, a pier
+   between the bays, and a parapet on top hiding a flat roof — and
+   because every one of those is a BAND rather than a tiled wall, each
+   is drawn at the height of the piece of geometry it skins and never at
+   a height and a half. See THE TRIM above; this is the same argument
+   with a different accent.
+   ==================================================================== */
+
+T.OFFPANEL = () => {
+  /* PRECAST CONCRETE, which is not the same grey as poured concrete and
+     is the whole reason this is its own texture: a panel is cast face
+     down in a mould against sand, so it comes out with an even exposed
+     aggregate and a HARD EDGE at every joint, where a poured wall comes
+     out streaked and soft. What says precast is the joint: a shadow
+     line four units wide with a bead of sealant in it, running down
+     every panel and along every floor line. */
+  const p = new Pix(64, 64, 940);
+  aggregate(p, 940, { baseKey: 'grey', baseLo: 0.29, baseHi: 0.34,
+    grades: [{ count: 180, min: 0.4, max: 1.0, key: 'bone', lo: 0.30, hi: 0.36 },
+             { count: 120, min: 0.4, max: 0.9, key: 'grey', lo: 0.23, hi: 0.28 }] });
+  /* the joints: two across and two down, so one repeat is four panels */
+  for (const x of [0, 32]) {
+    p.vline(x, 0, 63, 'grey', 0.14);
+    p.vline(x + 1, 0, 63, 'grey', 0.22);
+    p.vline(x + 2, 0, 63, 'bone', 0.40);
+  }
+  for (const y of [0, 32]) {
+    p.hline(0, 63, y, 'grey', 0.15);
+    p.hline(0, 63, y + 1, 'grey', 0.23);
+    p.hline(0, 63, y + 2, 'bone', 0.42);
+  }
+  /* AND THE WEATHERING, which on a panel runs from the joint and not
+     from nowhere: water gets behind the sealant and comes out under it. */
+  streaks(p, 14, 941, 'grey', 0.20, 0.30);
+  p.grime(0.22, 'grey', 0.05, 942);
+  return p.snap(0.45);
+};
+
+T.OFFBASE = () => {
+  /* The base course: polished granite, which is what the bottom two
+     feet of an office is because that is the part people kick. Flamed
+     at the top edge where it meets the panel and polished below, with
+     the joints between slabs falling on the panel joints. */
+  const p = new Pix(64, 32, 943);
+  aggregate(p, 943, { baseKey: 'grey', baseLo: 0.10, baseHi: 0.14,
+    grades: [{ count: 220, min: 0.4, max: 0.9, key: 'bone', lo: 0.16, hi: 0.24 },
+             { count: 110, min: 0.4, max: 0.8, key: 'purple', lo: 0.09, hi: 0.13 }] });
+  /* the polish: one long raked highlight, which is all a polished stone
+     is in a picture this size */
+  for (let y = 0; y < 32; y++) for (let x = 0; x < 64; x++)
+    if ((x * 2 + y * 5) % 47 < 2) p.wash(x, y, 'bone', 0.52, 0.14);
+  for (const x of [0, 32]) { p.vline(x, 0, 31, 'grey', 0.06); p.vline(x + 1, 0, 31, 'bone', 0.26); }
+  p.hline(0, 63, 0, 'bone', 0.44);          // the flamed top arris
+  p.hline(0, 63, 1, 'grey', 0.22);
+  p.hline(0, 63, 31, 'grey', 0.05);         // and the shadow at the pavement
+  p.grime(0.30, 'grey', 0.05, 944);
+  return p.snap(0.4);
+};
+
+T.OFFPARA = () => {
+  /* THE PARAPET, and one repeat is the whole of it: the cornice bead it
+     springs off, the panel, and the metal coping capping it. Forty
+     units, which is what the band between the eaves and the top of the
+     wall is tall in the map — so the coping lands on the coping and
+     never a third of the way down a second one. */
+  const p = new Pix(64, 40, 945);
+  aggregate(p, 945, { baseKey: 'grey', baseLo: 0.29, baseHi: 0.34,
+    grades: [{ count: 140, min: 0.4, max: 1.0, key: 'bone', lo: 0.30, hi: 0.36 }] });
+  /* the cornice bead at the bottom, standing out of the wall below */
+  p.box(0, 34, 64, 6, 'grey', 0.22);
+  p.hline(0, 63, 34, 'bone', 0.50);
+  p.hline(0, 63, 39, 'grey', 0.10);
+  /* the coping: an aluminium cap with a drip and a joint every panel */
+  p.box(0, 0, 64, 7, 'grey', 0.44);
+  p.hline(0, 63, 0, 'bone', 0.72);
+  p.hline(0, 63, 6, 'grey', 0.14);
+  p.hline(0, 63, 7, 'grey', 0.20);
+  for (const x of [0, 32]) { p.vline(x, 0, 6, 'grey', 0.26); p.vline(x + 1, 0, 6, 'bone', 0.58); }
+  /* and the panel between, with its own joints carried up */
+  for (const x of [0, 32]) {
+    p.vline(x, 8, 33, 'grey', 0.16);
+    p.vline(x + 2, 8, 33, 'bone', 0.40);
+  }
+  streaks(p, 8, 946, 'grey', 0.18, 0.28);
+  p.grime(0.20, 'grey', 0.05, 947);
+  return p.snap(0.45);
+};
+
+T.OFFMULL = () => {
+  /* THE PIER between two bays of glazing: a panel thirty-two wide with
+     a ribbed aluminium cover on the face of it, which is the one piece
+     of an office of this age that is not concrete. One repeat is the
+     pier's width, so the ribs land where ribs go. */
+  const p = new Pix(32, 64, 948);
+  aggregate(p, 948, { baseKey: 'grey', baseLo: 0.28, baseHi: 0.32,
+    grades: [{ count: 70, min: 0.4, max: 0.9, key: 'bone', lo: 0.29, hi: 0.34 }] });
+  /* the cover, inset four each side */
+  p.box(4, 0, 24, 64, 'grey', 0.38);
+  for (let x = 5; x < 28; x += 4) {
+    p.vline(x, 0, 63, 'bone', 0.56);
+    p.vline(x + 1, 0, 63, 'grey', 0.24);
+  }
+  p.vline(3, 0, 63, 'grey', 0.12);          // the shadow down each side
+  p.vline(28, 0, 63, 'grey', 0.12);
+  p.vline(29, 0, 63, 'bone', 0.34);
+  /* the floor line, where the cover is joined */
+  for (const y of [0, 1]) p.hline(4, 27, y, 'grey', y ? 0.44 : 0.18);
+  p.grime(0.22, 'grey', 0.05, 949);
+  return p.snap(0.4);
+};
+
+/* --------------------------------------------------------------------
+   THE GLAZING. Two pictures, lit and dark, and they are the same window
+   with the lights on and off — which is how a block of offices reads at
+   night from four streets away and the only thing that makes one look
+   occupied. One repeat is ONE BAY: 128 across by 72 up, the size of the
+   hole in the map, so a bay is never a bay and a quarter.
+   ------------------------------------------------------------------ */
+const officeGlass = (seed, lit) => {
+  const p = new Pix(64, 36, seed);
+  /* the glass: bronze tinted, which is what every one of these was
+     glazed with, darker at the top where it looks at the sky */
+  for (let y = 0; y < 36; y++) {
+    const t = lit ? 0.46 + (1 - y / 36) * 0.10 : 0.10 + (y / 36) * 0.05;
+    for (let x = 0; x < 64; x++) p.ink(x, y, lit ? 'yellow' : 'brown', t);
+  }
+  const rng = makeRng(seed + 1);
+  if (lit) {
+    /* what is on inside: the ceiling grid glowing across the top third,
+       the top of a partition, and a desk lamp or two */
+    for (let x = 0; x < 64; x += 8) p.box(x + 1, 3, 6, 3, 'bone', 0.86);
+    p.hline(0, 63, 8, 'yellow', 0.62);
+    for (let i = 0; i < 4; i++) {
+      const x = 4 + Math.floor(rng() * 54);
+      p.box(x, 16 + Math.floor(rng() * 8), 8 + Math.floor(rng() * 8), 14, 'grey', 0.30);
+    }
+    p.box(6, 24, 5, 4, 'bone', 0.92);
+    p.box(44, 22, 4, 3, 'cyan', 0.70);
+  } else {
+    /* and what is on the OUTSIDE of a dark one, which is the sky: a
+       band of cloud raked across it, and the building over the road */
+    for (let y = 0; y < 14; y++) for (let x = 0; x < 64; x++)
+      if ((x + y * 3) % 29 < 4) p.wash(x, y, 'bone', 0.36, 0.16);
+    p.box(0, 20, 64, 16, 'brown', 0.07);
+  }
+  /* THE BLINDS, half down on some bays and not on others, which is the
+     detail that stops sixty windows being one window sixty times. */
+  const drop = Math.floor(rng() * 5);
+  if (drop) {
+    const h = 6 + drop * 5;
+    p.box(0, 0, 64, h, 'bone', lit ? 0.52 : 0.24);
+    for (let y = 1; y < h; y += 2) p.hline(0, 63, y, 'grey', lit ? 0.40 : 0.14);
+    p.hline(0, 63, h, 'grey', 0.10);
+  }
+  /* the frame: a head, a sill and the two jambs, and one vertical
+     mullion in the middle because a bay this wide is two lights */
+  p.hline(0, 63, 0, 'grey', 0.40); p.hline(0, 63, 1, 'grey', 0.22);
+  p.hline(0, 63, 34, 'grey', 0.20); p.hline(0, 63, 35, 'grey', 0.46);
+  for (const x of [0, 31, 32, 63]) p.vline(x, 0, 35, 'grey', x === 31 ? 0.20 : 0.36);
+  /* and the reflection of the sun off the pane, which is what makes it
+     read as glass at all */
+  for (let y = 2; y < 34; y++) for (let x = 0; x < 64; x++)
+    if ((x * 3 + y * 7) % 61 < 3) p.wash(x, y, 'bone', lit ? 0.80 : 0.52, 0.12);
+  return p.snap(0.35);
+};
+T.OFFWINLT = () => officeGlass(950, true);
+T.OFFWINDK = () => officeGlass(952, false);
+
+T.OFFDOOR = () => {
+  /* One leaf of the entrance: an aluminium stile-and-rail door with a
+     full glass light, a push bar across it and a kick plate. */
+  const p = new Pix(48, 64, 954);
+  p.fill('grey', 0.34);
+  p.box(4, 3, 40, 52, 'brown', 0.12);        // the light
+  for (let y = 3; y < 55; y++) for (let x = 4; x < 44; x++)
+    if ((x * 2 + y * 5) % 43 < 3) p.wash(x, y, 'bone', 0.58, 0.16);
+  p.frame(3, 2, 42, 54, 'grey', 0.50);
+  p.frame(4, 3, 40, 52, 'grey', 0.22);
+  p.box(2, 55, 44, 7, 'grey', 0.46);         // the bottom rail
+  p.hline(2, 45, 55, 'bone', 0.66);
+  p.box(4, 57, 40, 4, 'bone', 0.40);         // the kick plate
+  p.box(6, 30, 36, 3, 'grey', 0.58);         // the push bar
+  p.hline(6, 41, 30, 'bone', 0.80);
+  for (const x of [8, 39]) p.box(x, 28, 2, 7, 'grey', 0.42);
+  p.vline(0, 0, 63, 'grey', 0.18); p.vline(47, 0, 63, 'grey', 0.18);
+  p.grime(0.22, 'grey', 0.06, 955);
+  return p.snap(0.4);
+};
+
+T.OFFSIGN = () => {
+  /* The band over the doors. NO NAME, which is the rule every sign in
+     this game keeps — what is on it is the street number, in cut
+     aluminium letters with a shadow under each, and the eye supplies
+     the rest. */
+  const p = new Pix(64, 16, 956);
+  aggregate(p, 956, { baseKey: 'grey', baseLo: 0.16, baseHi: 0.21,
+    grades: [{ count: 90, min: 0.4, max: 1.0, key: 'bone', lo: 0.14, hi: 0.22 }] });
+  p.hline(0, 63, 0, 'bone', 0.40); p.hline(0, 63, 15, 'grey', 0.07);
+  drawTextCentred(p, '100', 32, 6, 'grey', 0.10, 2);       // the shadow
+  drawTextCentred(p, '100', 31, 5, 'bone', 0.80, 2);
+  p.grime(0.20, 'grey', 0.05, 957);
+  return p.snap(0.4);
+};
+
+T.ROOFBALL = () => {
+  /* THE FLAT ROOF you see from anything higher than it: built-up
+     membrane with a ballast of river gravel over it, the seams showing
+     where the rock has washed off, and the puddle that never dries in
+     the middle of the bay. The first flat roof in this game that is a
+     FLOOR rather than a picture of one. */
+  const p = new Pix(64, 64, 958);
+  aggregate(p, 958, { baseKey: 'grey', baseLo: 0.14, baseHi: 0.20,
+    grades: [{ count: 900, min: 0.5, max: 1.6, key: 'bone', lo: 0.16, hi: 0.30 },
+             { count: 500, min: 0.5, max: 1.4, key: 'brown', lo: 0.12, hi: 0.22 }] });
+  /* the seams, which are where the ballast is thin */
+  for (const y of [12, 44]) for (let x = 0; x < 64; x++) {
+    p.wash(x, y, 'grey', 0.09, 0.55); p.wash(x, y + 1, 'grey', 0.22, 0.35);
+  }
+  for (const x of [28]) for (let y = 0; y < 64; y++) {
+    p.wash(x, y, 'grey', 0.09, 0.55); p.wash(x + 1, y, 'grey', 0.22, 0.35);
+  }
+  /* and the pond */
+  for (let y = 18; y < 39; y++) for (let x = 34; x < 55; x++) {
+    const d = Math.hypot(x - 44, y - 28);
+    if (d < 9.5) p.wash(x, y, 'blue', 0.12, d < 6 ? 0.55 : 0.30);
+  }
+  p.grime(0.30, 'brown', 0.06, 959);
+  return p.snap(0.45);
+};
+
+/* --------------------------------------------------------------------
+   INSIDE: what a ground floor is made of
+   ------------------------------------------------------------------ */
+
+T.TERRAZZO = () => {
+  /* The lobby floor: poured terrazzo with brass divider strips on a
+     four-foot grid, which is what the floor of every building with a
+     reception desk in it was until carpet tile. The chips are the whole
+     picture — three sizes of them, and they must not line up. */
+  const p = new Pix(64, 64, 960);
+  aggregate(p, 960, { baseKey: 'bone', baseLo: 0.26, baseHi: 0.32,
+    grades: [{ count: 700, min: 0.6, max: 2.0, key: 'bone', lo: 0.40, hi: 0.62 },
+             { count: 380, min: 0.5, max: 1.6, key: 'grey', lo: 0.12, hi: 0.22 },
+             { count: 150, min: 0.5, max: 1.4, key: 'brown', lo: 0.18, hi: 0.30 }] });
+  for (const a of [0, 32]) {
+    p.hline(0, 63, a, 'yellow', 0.52); p.hline(0, 63, a + 1, 'brown', 0.22);
+    p.vline(a, 0, 63, 'yellow', 0.52); p.vline(a + 1, 0, 63, 'brown', 0.22);
+  }
+  /* AND THE SHINE, raked the other way from the grid so the two do not
+     agree — a polished floor with its highlight along a joint is a
+     photograph of a joint. */
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
+    if ((x * 3 + y * 8) % 71 < 4) p.wash(x, y, 'bone', 0.70, 0.13);
+  return p.snap(0.45);
+};
+
+T.OFFCARP = () => {
+  /* Carpet tile: a grey-blue loop pile laid quarter-turned, so the
+     seams show as a change of direction and not as a line. Every office
+     floor in the country, and the flecks are what stop it being a
+     rectangle of one colour. */
+  const p = new Pix(64, 64, 962);
+  const n = fbm(64, 64, 24, 3, 962);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+    const quarter = (x < 32) === (y < 32);
+    const g = n[y * 64 + x];
+    p.ink(x, y, 'grey', 0.25 + g * 0.06 + (quarter ? 0.014 : 0));
+    p.wash(x, y, 'blue', 0.30, 0.26);
+  }
+  speckle(64, 64, 700, 963, (x, y, a, b) =>
+    p.wash(x, y, a < 0.45 ? 'grey' : a < 0.8 ? 'bone' : 'olive', 0.16 + b * 0.18, 0.22 + b * 0.25));
+  /* the loop, which runs with the pile: short dashes, turned per tile */
+  const rng = makeRng(964);
+  for (let i = 0; i < 700; i++) {
+    const x = Math.floor(rng() * 64), y = Math.floor(rng() * 64);
+    const quarter = (x < 32) === (y < 32);
+    p.wash(x, y, 'bone', 0.30, 0.13);
+    if (quarter) p.wash(x + 1, y, 'grey', 0.10, 0.13);
+    else p.wash(x, y + 1, 'grey', 0.10, 0.13);
+  }
+  for (const a of [0, 32]) for (let k = 0; k < 64; k++) {
+    p.wash(k, a, 'grey', 0.08, 0.35); p.wash(a, k, 'grey', 0.08, 0.35);
+  }
+  p.grime(0.26, 'grey', 0.05, 965);
+  return p.snap(0.4);
+};
+
+T.RECEPDSK = () => {
+  /* The front of the reception desk: an oak-veneer body with a reveal
+     at the floor so it reads as standing on the terrazzo rather than
+     growing out of it, and a stone transaction ledge over the top. */
+  const p = new Pix(64, 40, 966);
+  const n = fbm(64, 40, 6, 3, 966);
+  for (let y = 0; y < 40; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'brown', 0.22 + n[y * 64 + x] * 0.08);
+  for (let i = 0; i < 26; i++) {                 // the grain
+    const y = Math.floor((i * 40) / 26);
+    p.hline(0, 63, y, 'brown', 0.15 + (i % 3) * 0.04);
+  }
+  /* the ledge across the top */
+  p.box(0, 0, 64, 5, 'grey', 0.30);
+  p.hline(0, 63, 0, 'bone', 0.60);
+  p.hline(0, 63, 4, 'grey', 0.12);
+  speckle(64, 5, 90, 967, (x, y, a, b) => p.wash(x, y, a < 0.5 ? 'bone' : 'grey', 0.20 + b * 0.3, 0.4));
+  /* the panel joints down the face, and the reveal at the bottom */
+  for (const x of [16, 32, 48]) { p.vline(x, 6, 34, 'brown', 0.12); p.vline(x + 1, 6, 34, 'brown', 0.34); }
+  p.box(0, 35, 64, 5, 'grey', 0.07);
+  p.hline(0, 63, 35, 'brown', 0.10);
+  p.grime(0.22, 'grey', 0.05, 968);
+  return p.snap(0.4);
+};
+
+T.RECEPTOP = () => {
+  /* Looking down on the desk: the stone top, and what is on it. A
+     telephone with a cord, a log book left open, a cup of pens and the
+     ring where a mug has been since Tuesday. */
+  const p = new Pix(64, 48, 969);
+  aggregate(p, 969, { baseKey: 'grey', baseLo: 0.26, baseHi: 0.33,
+    grades: [{ count: 260, min: 0.5, max: 1.5, key: 'bone', lo: 0.30, hi: 0.46 },
+             { count: 120, min: 0.5, max: 1.2, key: 'brown', lo: 0.16, hi: 0.26 }] });
+  p.box(6, 6, 16, 11, 'grey', 0.10);           // the telephone
+  p.box(7, 7, 14, 7, 'grey', 0.20);
+  for (let y = 8; y < 13; y += 2) p.hline(8, 19, y, 'grey', 0.34);
+  p.box(8, 15, 12, 2, 'grey', 0.30);
+  for (let i = 0; i < 9; i++) p.ink(22 + i, 12 + (i % 3), 'grey', 0.14);  // the cord
+  p.box(30, 20, 22, 16, 'bone', 0.62);         // the log book
+  p.vline(41, 20, 35, 'grey', 0.26);
+  for (let y = 23; y < 34; y += 3) { p.hline(32, 39, y, 'grey', 0.26); p.hline(43, 50, y, 'grey', 0.26); }
+  p.disc(12, 34, 4, 'grey', 0.16);             // the pen cup
+  p.disc(12, 34, 3, 'grey', 0.08);
+  for (const d of [-1, 0, 2]) p.vline(12 + d, 28, 33, d ? 'blue' : 'red', 0.36);
+  p.disc(54, 10, 5, 'brown', 0.20);            // and the ring
+  p.disc(54, 10, 3, 'grey', 0.30);
+  p.grime(0.24, 'grey', 0.05, 970);
+  return p.snap(0.4);
+};
+
+T.LIFTDOOR = () => {
+  /* A pair of lift doors: brushed stainless, centre-opening, with the
+     call station beside them and the floor indicator over. They do not
+     open — there is nowhere to go, the stairs having been deleted — and
+     a lift that never comes is the most office thing in the building. */
+  const p = new Pix(64, 48, 971);
+  p.fill('grey', 0.30);
+  for (let y = 0; y < 48; y++) for (let x = 0; x < 64; x++)
+    if ((x * 7 + y) % 3 === 0) p.wash(x, y, 'bone', 0.44, 0.18);
+  /* the frame */
+  p.box(0, 0, 4, 48, 'grey', 0.40); p.box(60, 0, 4, 48, 'grey', 0.40);
+  p.box(0, 0, 64, 4, 'grey', 0.44);
+  p.vline(3, 0, 47, 'grey', 0.14); p.vline(60, 0, 47, 'grey', 0.14);
+  p.hline(0, 63, 0, 'bone', 0.66); p.hline(0, 63, 3, 'grey', 0.14);
+  /* the two leaves and the joint between them */
+  p.vline(31, 4, 47, 'grey', 0.12); p.vline(32, 4, 47, 'bone', 0.50);
+  for (const x of [10, 20, 43, 53]) for (let y = 5; y < 47; y++) p.wash(x, y, 'bone', 0.38, 0.45);
+  /* the indicator over the door, and the call button beside it */
+  p.box(24, 5, 16, 6, 'grey', 0.10);
+  p.box(26, 6, 3, 4, 'yellow', 0.72); p.box(31, 6, 3, 4, 'grey', 0.22); p.box(36, 6, 3, 4, 'grey', 0.22);
+  p.box(56, 20, 6, 10, 'grey', 0.22);
+  p.disc(59, 23, 1, 'bone', 0.60); p.disc(59, 27, 1, 'grey', 0.14);
+  p.grime(0.26, 'grey', 0.05, 972);
+  return p.snap(0.4);
+};
+
+T.CUBEPANL = () => {
+  /* A CUBICLE PARTITION, which is the single object that says office
+     more than any other: a fabric-covered panel on a steel frame, a
+     rail across the top you hang a shelf off, and a raceway along the
+     bottom with the power in it. One repeat is the panel's height. */
+  const p = new Pix(64, 44, 973);
+  const n = fbm(64, 44, 20, 3, 973);
+  for (let y = 0; y < 44; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'olive', 0.18 + n[y * 64 + x] * 0.06);
+  /* the weave, which is a cross-hatch one pixel on and one off */
+  for (let y = 0; y < 44; y++) for (let x = 0; x < 64; x++)
+    if (((x + y) & 1) === 0) p.wash(x, y, 'bone', 0.26, 0.14);
+    else if (((x - y) & 3) === 0) p.wash(x, y, 'grey', 0.10, 0.12);
+  /* the top rail */
+  p.box(0, 0, 64, 4, 'grey', 0.34);
+  p.hline(0, 63, 0, 'bone', 0.62); p.hline(0, 63, 3, 'grey', 0.12);
+  /* the raceway */
+  p.box(0, 38, 64, 6, 'grey', 0.26);
+  p.hline(0, 63, 38, 'grey', 0.12); p.hline(0, 63, 39, 'bone', 0.44);
+  for (const x of [14, 46]) { p.box(x, 40, 5, 3, 'bone', 0.40); p.vline(x + 2, 40, 42, 'grey', 0.10); }
+  /* the joint between panels, every two feet */
+  for (const x of [0, 32]) { p.vline(x, 4, 37, 'grey', 0.12); p.vline(x + 1, 4, 37, 'bone', 0.30); }
+  p.grime(0.24, 'grey', 0.05, 974);
+  return p.snap(0.4);
+};
+
+T.CUBEDESK = () => {
+  /* The work surface seen from over it: laminate, a monitor and its
+     keyboard, a phone, a mug, and the drift of paper that is the
+     difference between a desk and a table. */
+  const p = new Pix(56, 56, 975);
+  const n = fbm(56, 56, 7, 3, 975);
+  for (let y = 0; y < 56; y++) for (let x = 0; x < 56; x++)
+    p.ink(x, y, 'bone', 0.22 + n[y * 56 + x] * 0.05);
+  speckle(56, 56, 300, 976, (x, y, a, b) => p.wash(x, y, a < 0.5 ? 'grey' : 'brown', 0.14 + b * 0.16, 0.3));
+  /* the monitor, at the back, looked down on: the top of the case and a
+     sliver of the screen */
+  p.box(14, 2, 28, 14, 'bone', 0.34);
+  p.bevel(14, 2, 28, 14, 'bone', 0.50, 'grey', 0.14);
+  p.box(17, 4, 22, 7, 'grey', 0.08);
+  for (let y = 5; y < 10; y += 2) p.hline(19, 36, y, 'cyan', 0.42);
+  /* the keyboard */
+  p.box(13, 22, 30, 12, 'bone', 0.30);
+  p.bevel(13, 22, 30, 12, 'bone', 0.44, 'grey', 0.16);
+  for (let y = 24; y < 32; y += 2) for (let x = 15; x < 41; x += 3) p.box(x, y, 2, 1, 'grey', 0.18);
+  /* the mouse, the mug and the phone */
+  p.disc(48, 27, 3, 'bone', 0.32); p.disc(48, 26, 2, 'bone', 0.44);
+  p.disc(7, 10, 4, 'red', 0.30); p.disc(7, 10, 3, 'brown', 0.14);
+  p.box(2, 36, 13, 9, 'grey', 0.16); p.box(3, 37, 11, 5, 'grey', 0.26);
+  /* and the paper */
+  const rng = makeRng(977);
+  for (let i = 0; i < 5; i++) {
+    const x = 18 + Math.floor(rng() * 28), y = 36 + Math.floor(rng() * 12);
+    p.box(x, y, 12, 9, 'bone', 0.56);
+    p.frame(x, y, 12, 9, 'grey', 0.26);
+    for (let k = 2; k < 8; k += 2) p.hline(x + 2, x + 9, y + k, 'grey', 0.30);
+  }
+  return p.snap(0.4);
+};
+
+T.FILECAB = () => {
+  /* A four-drawer filing cabinet: the drawer faces, the pulls, and the
+     label holder on each that nobody has ever filled in. */
+  const p = new Pix(32, 48, 978);
+  p.fill('grey', 0.26);
+  for (let k = 0; k < 4; k++) {
+    const y = 1 + k * 12;
+    p.box(1, y, 30, 11, 'grey', 0.31);
+    p.bevel(1, y, 30, 11, 'bone', 0.46, 'grey', 0.14);
+    p.box(11, y + 7, 10, 2, 'grey', 0.44);      // the pull
+    p.hline(11, 20, y + 7, 'bone', 0.66);
+    p.box(3, y + 3, 7, 3, 'bone', 0.52);        // the label holder
+    p.frame(3, y + 3, 7, 3, 'grey', 0.18);
+  }
+  p.vline(0, 0, 47, 'grey', 0.16); p.vline(31, 0, 47, 'grey', 0.16);
+  p.hline(0, 31, 0, 'bone', 0.44); p.hline(0, 31, 47, 'grey', 0.10);
+  p.grime(0.26, 'grey', 0.05, 979);
+  return p.snap(0.4);
+};
+
+T.CONFTBL = () => {
+  /* The board table from above: dark veneer with the grain running its
+     length, a power grommet down the middle, blotters, water glasses
+     and the jug. Nobody has been in this room for a week. */
+  const p = new Pix(64, 64, 980);
+  const n = fbm(64, 64, 5, 3, 980);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'brown', 0.12 + n[y * 64 + x] * 0.06);
+  for (let i = 0; i < 40; i++) {                 // the grain, along
+    const y = Math.floor(i * 64 / 40);
+    p.hline(0, 63, y, 'brown', 0.09 + (i % 4) * 0.03);
+  }
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
+    if ((x * 3 + y * 9) % 67 < 3) p.wash(x, y, 'bone', 0.60, 0.11);
+  /* the grommet */
+  p.disc(32, 32, 5, 'grey', 0.10); p.disc(32, 32, 4, 'grey', 0.22);
+  p.hline(28, 35, 32, 'grey', 0.08);
+  /* blotters down each side, a glass on each, and the jug */
+  for (const y of [8, 44]) for (const x of [6, 38]) {
+    p.box(x, y, 20, 12, 'green', 0.16);
+    p.frame(x, y, 20, 12, 'brown', 0.26);
+    p.disc(x + 17, y + 14, 2, 'bone', 0.52);
+  }
+  p.disc(32, 20, 4, 'bone', 0.46); p.disc(32, 20, 3, 'cyan', 0.34);
+  p.grime(0.22, 'grey', 0.05, 981);
+  return p.snap(0.4);
+};
+
+T.WHITEBRD = () => {
+  /* A whiteboard with the last meeting still on it: a box, an arrow, a
+     column of figures, and the grey ghost of everything written on it
+     before that which will not come off. */
+  const p = new Pix(64, 40, 982);
+  p.fill('bone', 0.72);
+  const rng = makeRng(983);
+  for (let i = 0; i < 90; i++) {               // the ghosting
+    const x = Math.floor(rng() * 60), y = Math.floor(rng() * 34);
+    for (let k = 0, w = 2 + Math.floor(rng() * 8); k < w; k++) p.wash(x + k, y, 'grey', 0.54, 0.35);
+  }
+  p.frame(8, 7, 18, 11, 'blue', 0.30);         // the box
+  p.frame(9, 8, 16, 9, 'blue', 0.24);
+  p.line(26, 13, 40, 13, 'red', 0.36);         // the arrow
+  p.line(37, 10, 40, 13, 'red', 0.36);
+  p.line(37, 16, 40, 13, 'red', 0.36);
+  for (let k = 0; k < 4; k++) p.hline(44, 44 + 4 + Math.floor(rng() * 8), 8 + k * 4, 'grey', 0.26);
+  p.line(6, 26, 56, 26, 'green', 0.30);
+  p.frame(0, 0, 64, 40, 'grey', 0.40);         // the tray and the frame
+  p.box(0, 35, 64, 5, 'grey', 0.38);
+  p.hline(0, 63, 35, 'bone', 0.66); p.hline(0, 63, 39, 'grey', 0.12);
+  for (const [x, k] of [[8, 'red'], [14, 'blue'], [20, 'green']]) p.box(x, 36, 4, 2, k, 0.40);
+  return p.snap(0.4);
+};
+
+T.VENDING = () => {
+  /* A vending machine, lit from inside, which in a break room at two in
+     the morning is the brightest thing in the building. Six shelves of
+     product behind the glass, a keypad, and the coin return. */
+  const p = new Pix(44, 64, 984);
+  p.fill('grey', 0.20);
+  p.box(1, 1, 30, 50, 'grey', 0.06);           // the window
+  const rng = makeRng(985);
+  const KEYS = ['red', 'yellow', 'blue', 'green', 'olive', 'rust', 'purple', 'cyan'];
+  for (let sh = 0; sh < 6; sh++) {
+    const y = 3 + sh * 8;
+    for (let x = 3; x < 29; x += 5) {
+      const k = KEYS[Math.floor(rng() * KEYS.length)];
+      p.box(x, y, 4, 6, k, 0.34 + rng() * 0.2);
+      for (let k = 0; k < 6; k++) p.wash(x, y + k, 'bone', 0.50, 0.55);
+    }
+    p.hline(1, 30, y + 6, 'grey', 0.30);
+  }
+  for (let y = 1; y < 51; y++) for (let x = 1; x < 31; x++)
+    if ((x * 2 + y * 5) % 37 < 2) p.wash(x, y, 'bone', 0.80, 0.18);
+  p.frame(1, 1, 30, 50, 'grey', 0.36);
+  /* the keypad, the delivery port and the coin return */
+  p.box(33, 4, 9, 26, 'grey', 0.14);
+  for (let r = 0; r < 5; r++) for (let c = 0; c < 2; c++)
+    p.box(34 + c * 4, 6 + r * 5, 3, 3, 'grey', 0.34);
+  p.box(33, 33, 9, 5, 'bone', 0.30);
+  p.box(1, 53, 40, 9, 'grey', 0.10);
+  p.hline(1, 40, 53, 'grey', 0.30);
+  p.box(33, 42, 8, 3, 'grey', 0.30);
+  p.vline(0, 0, 63, 'grey', 0.12); p.vline(43, 0, 63, 'grey', 0.12);
+  p.grime(0.22, 'grey', 0.05, 986);
+  return p.snap(0.4);
+};
+
+T.BREAKCAB = () => {
+  /* The break-room run: cabinet doors, the handles, and the toe kick
+     under them. Melamine, and it has been wiped a hundred thousand
+     times in exactly one place. */
+  const p = new Pix(64, 32, 987);
+  p.fill('bone', 0.34);
+  for (const x of [0, 32]) {
+    p.box(x + 2, 2, 28, 24, 'bone', 0.40);
+    p.bevel(x + 2, 2, 28, 24, 'bone', 0.56, 'grey', 0.16);
+    p.box(x + 22, 12, 6, 2, 'grey', 0.42);
+    p.hline(x + 22, x + 27, 12, 'bone', 0.70);
+  }
+  p.hline(0, 63, 0, 'bone', 0.62); p.hline(0, 63, 1, 'grey', 0.20);
+  p.box(0, 27, 64, 5, 'grey', 0.10);           // the toe kick
+  p.hline(0, 63, 27, 'grey', 0.24);
+  p.grime(0.30, 'grey', 0.06, 988);
+  return p.snap(0.4);
+};
+
+T.BREAKTOP = () => {
+  /* And the counter over it, looked down on: laminate, a stainless
+     sink with the tap behind it, the coffee maker with a pot in it, and
+     the rings of every mug that was ever put down beside it. */
+  const p = new Pix(64, 32, 989);
+  const n = fbm(64, 32, 7, 3, 989);
+  for (let y = 0; y < 32; y++) for (let x = 0; x < 64; x++)
+    p.ink(x, y, 'bone', 0.26 + n[y * 64 + x] * 0.05);
+  speckle(64, 32, 260, 990, (x, y, a, b) => p.wash(x, y, a < 0.5 ? 'grey' : 'brown', 0.14 + b * 0.16, 0.3));
+  /* the sink */
+  p.box(6, 7, 20, 17, 'grey', 0.22);
+  p.bevel(6, 7, 20, 17, 'grey', 0.12, 'bone', 0.56);
+  p.box(8, 9, 16, 13, 'grey', 0.30);
+  p.disc(16, 16, 2, 'grey', 0.14);
+  p.box(14, 3, 4, 4, 'bone', 0.52);            // the tap
+  p.hline(14, 17, 3, 'bone', 0.72);
+  /* the coffee maker and its pot */
+  p.box(40, 4, 16, 14, 'grey', 0.16);
+  p.box(42, 7, 12, 8, 'brown', 0.22);
+  p.hline(42, 53, 7, 'bone', 0.44);
+  p.box(41, 19, 14, 3, 'grey', 0.30);
+  p.disc(34, 25, 4, 'bone', 0.30); p.disc(34, 25, 3, 'grey', 0.36);
+  p.disc(58, 26, 3, 'brown', 0.20);
+  p.grime(0.30, 'grey', 0.06, 991);
+  return p.snap(0.4);
+};
+
+T.WATRCOOL = () => {
+  /* The water cooler. A bottle with the level down a third, the two
+     taps, and the paper cone dispenser on the side — and it is MASKED,
+     because a cooler is narrower at the top than the bottom and a box
+     of one is a filing cabinet with a bottle painted on it. */
+  const p = new Pix(24, 48, 992);
+  p.clear();
+  /* the cabinet */
+  p.box(2, 20, 20, 28, 'bone', 0.36);
+  p.bevel(2, 20, 20, 28, 'bone', 0.54, 'grey', 0.14);
+  p.box(5, 27, 14, 7, 'grey', 0.14);           // the recess the cup goes in
+  for (const [x, k] of [[8, 'blue'], [14, 'red']]) {
+    p.box(x, 24, 3, 4, k, 0.36); p.ink(x + 1, 23, k, 0.52);
+  }
+  p.box(3, 44, 18, 4, 'grey', 0.12);
+  /* the bottle */
+  p.box(7, 6, 10, 3, 'cyan', 0.30);
+  for (let y = 9; y < 20; y++) {
+    const w = 3 + Math.min(6, (y - 8));
+    p.box(12 - w, y, w * 2, 1, 'cyan', y > 13 ? 0.34 : 0.18);
+  }
+  for (let y = 6; y < 20; y++) p.wash(9, y, 'bone', 0.66, 0.55);
+  p.box(6, 18, 12, 3, 'grey', 0.28);
+  /* the cone dispenser */
+  p.box(19, 24, 4, 12, 'bone', 0.48);
+  p.frame(19, 24, 4, 12, 'grey', 0.22);
+  return p.snap(0.35);
+};
+
+T.DIRECTRY = () => {
+  /* The lobby directory: a black felt board in an aluminium frame with
+     white push-in letters, half the strips blank because half the
+     suites are empty. NO NAMES, as ever — what reads at this size is
+     the RHYTHM of a strip with something on it and a strip without. */
+  const p = new Pix(64, 64, 993);
+  p.fill('grey', 0.06);
+  const n = fbm(64, 64, 26, 2, 993);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
+    p.wash(x, y, 'grey', 0.14, n[y * 64 + x] * 0.30);
+  const rng = makeRng(994);
+  for (let r = 0; r < 12; r++) {
+    const y = 5 + r * 5;
+    if (rng() < 0.25) continue;
+    const w = 14 + Math.floor(rng() * 26);
+    for (let x = 6; x < 6 + w; x += 2) p.box(x, y, 1, 3, 'bone', 0.70);
+    if (rng() < 0.7) {
+      const rx = 48 + Math.floor(rng() * 4);
+      for (let x = rx; x < rx + 8; x += 2) p.box(x, y, 1, 3, 'bone', 0.56);
+    }
+  }
+  p.box(4, 0, 56, 4, 'grey', 0.10);
+  for (let x = 12; x < 52; x += 2) p.box(x, 1, 1, 3, 'yellow', 0.66);
+  p.frame(0, 0, 64, 64, 'grey', 0.42);
+  p.frame(1, 1, 62, 62, 'bone', 0.52);
+  p.frame(3, 3, 58, 58, 'grey', 0.14);
+  /* the glass over it */
+  for (let y = 3; y < 61; y++) for (let x = 3; x < 61; x++)
+    if ((x + y * 2) % 53 < 2) p.wash(x, y, 'bone', 0.66, 0.16);
+  return p.snap(0.4);
+};
+
+T.COPIER = () => {
+  /* The copier, which every floor has one of and which is always by the
+     door: the lid, the paper drawers, the control panel with its green
+     light, and the sheet in the output tray that somebody left. */
+  const p = new Pix(48, 44, 995);
+  p.fill('bone', 0.30);
+  p.box(0, 0, 48, 12, 'bone', 0.38);           // the lid
+  p.bevel(0, 0, 48, 12, 'bone', 0.54, 'grey', 0.16);
+  p.box(4, 3, 26, 6, 'grey', 0.14);            // the platen glass
+  p.box(33, 2, 13, 8, 'grey', 0.12);           // the panel
+  p.disc(36, 6, 1, 'green', 0.60); p.disc(40, 6, 1, 'grey', 0.26);
+  for (let x = 42; x < 45; x += 2) p.box(x, 4, 1, 4, 'grey', 0.30);
+  p.box(2, 13, 44, 7, 'bone', 0.44);           // the output tray
+  p.hline(2, 45, 13, 'grey', 0.18);
+  p.box(8, 15, 22, 4, 'bone', 0.66);
+  for (let k = 0; k < 3; k++) {                // the paper drawers
+    const y = 21 + k * 7;
+    p.box(1, y, 46, 6, 'bone', 0.34);
+    p.bevel(1, y, 46, 6, 'bone', 0.48, 'grey', 0.14);
+    p.box(20, y + 2, 9, 2, 'grey', 0.42);
+  }
+  p.hline(0, 47, 43, 'grey', 0.10);
+  p.grime(0.26, 'grey', 0.06, 996);
+  return p.snap(0.4);
+};
+
+T.PLANTPOT = () => {
+  /* The lobby ficus. Every office has one and it has been in that pot
+     since the building opened; two of its branches are dead and the
+     soil has a cigarette in it. MASKED, because the one thing a plant
+     may not be is a rectangle. */
+  const p = new Pix(40, 56, 997);
+  p.clear();
+  /* the planter */
+  for (let y = 38; y < 56; y++) {
+    const w = 15 - Math.floor((y - 38) / 6);
+    p.box(20 - w, y, w * 2, 1, 'brown', 0.20);
+  }
+  p.box(5, 38, 30, 3, 'brown', 0.30);
+  p.hline(5, 34, 38, 'brown', 0.42);
+  p.box(8, 40, 24, 2, 'grey', 0.10);           // the soil
+  /* the trunk */
+  for (let y = 18; y < 41; y++) p.box(19, y, 3, 1, 'brown', 0.22 + (y % 3) * 0.04);
+  p.vline(19, 18, 40, 'brown', 0.34);
+  /* the leaves, in three clumps, and two of them dead */
+  const rng = makeRng(998);
+  const clump = (cx, cy, r, key, lo, hi) => {
+    for (let i = 0; i < 150; i++) {
+      const a = rng() * Math.PI * 2, d = rng() * r;
+      const x = Math.round(cx + Math.cos(a) * d), y = Math.round(cy + Math.sin(a) * d * 0.8);
+      if (x < 1 || x > 38 || y < 1 || y > 40) continue;
+      p.ink(x, y, key, lo + rng() * (hi - lo));
+      if (rng() < 0.4) p.ink(x, y + 1, key, lo * 0.7);
+    }
+  };
+  clump(14, 14, 11, 'green', 0.16, 0.34);
+  clump(27, 18, 10, 'green', 0.18, 0.38);
+  clump(20, 6, 9, 'green', 0.20, 0.40);
+  clump(31, 9, 5, 'olive', 0.16, 0.26);
+  clump(8, 24, 5, 'olive', 0.14, 0.22);
+  return p.snap(0.35);
 };
 
 const AFTER_THE_FIRE = {

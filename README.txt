@@ -139,7 +139,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         2102 checks, no install and no browser
+  the smoke test         2188 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -5161,6 +5161,213 @@ There is precedent for geometry-over-a-footprint and it is still there:
 knowing, and the church spire is still drawn — a pyramid is four planes
 and a gable is two. The school and the church wear built roofs now.
 
+THE WEIRD PLUS-SHAPED GLITCHY WALL THING
+----------------------------------------
+
+The user sent four photographs of a brick cross eight storeys high
+standing in an empty car park at the east end of the town, and asked
+what it was and for an office building to be put there instead.
+
+WHAT IT WAS. Block A5 was the services block, and what was on it was
+three rectangles of asphalt: a station lot, a "fire station apron" and a
+"police lot". No building on any of them, and between each pair the
+map's usual sixteen units of VOID, because in this map the wall between
+two rooms is the rectangle nobody laid.
+
+INSIDE A BUILDING THAT IS A WALL AND IS WHAT IT IS FOR. Out in the open
+it is a free-standing slab. A line with a sector on one side and nothing
+on the other is ONE-SIDED, and a one-sided line draws its wallTex over
+the whole height of the sector it has — so the sixteen-unit slot along
+the station lot's north edge, with the lot open to the sky at 768, came
+out as a wall of BRICKRED three thousand and seventy-two long and seven
+hundred and sixty-eight tall. The slot between the apron and the police
+lot crossed it at right angles. From the road, at night: a brick cross
+eight storeys high standing in an empty car park with nothing under it.
+
+THE OBVIOUS SUSPECT WAS INNOCENT, which is worth writing down because it
+took a while. The two lots were also laid with `ceil: 2 * STOREY` — a
+ceiling at 224 in a block open at 768 — and that looks exactly like the
+disagreement rule hanging a five-hundred-and-forty-four-unit band over
+them. It is not: a step between two patches of SKY draws nothing, and
+the rule that says so has been at the top of the band loop in
+js/mapgeo.js since there were bands. The lid was invisible. It was the
+void that showed.
+
+Which leaves a rule worth having. A void is a wall, and a wall wants
+something on the other side of it — a room, a shop, an attic, anything
+with a roof on. Leave one standing in open ground and it is a slab of
+brick in a field, and the map file cannot tell you, because from the
+inside a void looks the same either way.
+
+So the suite has the general case. Every one-sided line in the town
+whose sector is outdoors and at grade and more than a hundred and sixty
+tall is collected, and there had better be none of them. It was run
+against the old geometry before it was written down: rebuilt from those
+three rectangles alone it finds twelve, the tallest 768 tall and 3072
+long. Against the town as it stands it finds none.
+
+AND THEN THE OFFICE BLOCK, at the user's request: a building, an
+accessible ground floor, intricate detail, and a parking lot out front.
+
+A speculative suburban office block is a building in a car park, and the
+car park is bigger than the building. The lot is the supermarket's in
+miniature and built out of the same pieces — four rows of bays back to
+back facing each other, three driving lanes, a kerbed island of grass
+and trees along the front, a column of lot lighting every four bays on
+the line where two rows meet nose to nose, wheel stops on the two rows
+nearest the doors, a drive cut through the verge, and eighteen
+cars in sixty bays, parked fuller at the front than at the road, which
+is what a lot looks like when a building is half let. Behind the building is a service yard with painted
+bays, a hatched fire lane, a skip and the two points the fire brigade
+and the police still come from — `arrivalPoints` has read `town.stations`
+since there was a town, and what it reads now is a yard behind a
+building rather than a lot with a ceiling over it.
+
+FOUR STOREYS AND A FLAT ROOF, which is the first one in the town. A flat
+roof is a SLOPE OF NONE — the case topOf() has handled since the church
+tower put a spire over a shut cap — but the cap here is not shut: it is
+an open storey forty units tall inside the parapet with ballast for a
+floor and the sky for a ceiling, so that the packaged units standing on
+it are standing on something and so that a building 584 tall has a top
+when you are above it. It is the second thing in the game to break the
+mall's 480, after the church spire, and the only square-topped one.
+
+ITS ELEVATION IS THREE BANDS out of one strip, which is the school's
+trick with a different accent. A strip of outdoor air sixteen in front
+of the wall whose SHUT GAPS are the courses: a base course of polished
+granite at the pavement, a cornice twenty-four under the roof line, and
+the PARAPET — and the parapet is the new one, because it is the only
+band in this map drawn ABOVE a roof rather than under one. Every other
+band in the town hangs off a floor below the eaves; this one is a
+degenerate storey at 584, forty over the roof deck, and the wall from
+the deck to the coping is the gap under it.
+
+Between the courses, a pier at every line where a wall inside the
+building reaches the outside of it, wearing ribbed aluminium. It is the
+one thing this building tells you about its own plan.
+
+AND THE RIBBON. Twenty-nine bays of glazing, a hundred and twenty-eight
+wide and seventy-two tall, four floors in every one of them, each lit or
+dark on its own — a recess sixteen deep on the outside and one eight
+deep inside it touching the room, with the pane hung on the line
+between, which is the school's window with four storeys in one column
+instead of two. A block of offices at four in the morning is read
+entirely off which of those are lit, and it is the only thing that makes
+one look occupied.
+
+THE WAY IN taught two things, both of them in one screenshot.
+
+The first: the entrance is a bay standing fifty-six in front of the wall
+with the glazing recessed between two piers, and either side of the
+doors is a SIDELIGHT. The first cut made a sidelight what a window is —
+an open storey on each of the four floors — and what you got from the
+forecourt was a slot straight through the lobby and out of the lit
+offices on the far side of the building, four storeys of it, either side
+of the door. A sidelight is a SHUT STOREY, the same as the leaves beside
+it: glass from the floor to the head and the wall over it.
+
+The second: the recess itself was open from the sign band to the
+cornice, fifty-six deep and three hundred and thirty tall, and the
+sidelight beside it is shut over that whole range with nothing to hang a
+texture on — so lineBands fell through to the roof storey's upperTex,
+which is NONE, and put a HOLE in the front of the building. Above the
+canopy the entrance is shut now, and every storey over it is a
+degenerate one whose only job is to say what the band under it wears:
+the sign, the wall, the cornice, the parapet.
+
+And a third thing, which is not an engine lesson, only a good one: there
+was a downpipe standing in the middle of the front door. Free boxes went
+down the middle of each face at u 1160, and 1160 on the front elevation
+is eight units off the centre line of the doorway.
+
+THE GROUND FLOOR, AND YOU CAN WALK INTO IT. Off the plaza, up a step,
+under the canopy, through the doors: a lobby in terrazzo with a
+reception desk, a seat, a directory by the door, a clock and two ficus
+in planters that have been there since the building opened. Across the
+corridor, the lift lobby with two lifts that do not go anywhere, because
+the stairs came out of this town at the user's request and nothing was
+ever going to take you up. Behind them the restrooms. West down the
+corridor: a break room with a counter, a coffee maker, two machines,
+three tables and a cooler; a copy and mail room with the copier, a work
+table, the filing and the door to the yard. East: a conference room with
+a table, six chairs and last week's meeting still on the whiteboard, and
+four private offices that are the same office four times, which is what
+they are in life.
+
+And two open-plan floors of CUBICLES, which is the object that says
+office more than any other. A POD is two rows of them back to back:
+chair, work surface, spine of partition, work surface, chair — a hundred
+and twelve deep, and the unit every open-plan floor in the country is
+laid out in. The partition is a raised floor at FORTY-FOUR, which is
+over the desk and under the eye at forty-nine, so you see across the
+room and not into the next cubicle; that is the whole design intent of
+the object and the reason it is that height in life. It is also twenty
+over MAX_STEP, so it stops you the way a hedge does.
+
+The three floors over you are built, lit and glazed and there is no way
+to reach any of them. Written down rather than quietly lost, the way the
+stairs were.
+
+TWENTY-SIX NEW TEXTURES for all of it: the precast panel with its
+sealant joints, the granite base, the parapet with its coping, the
+ribbed pier, the ribbon lit and dark, the entrance leaf, the number over
+the door, the ballasted roof, terrazzo, carpet tile, the reception desk
+and its stone top, the lift doors, the cubicle panel and the desk you
+look down on, a filing cabinet, the board table, the whiteboard, a
+vending machine, the break-room counter and its top, the water cooler,
+the lobby directory, the copier and the ficus. All at 64 pixels or
+under, as everything in this game is.
+
+AND THE PEOPLE ON THE STREET
+----------------------------
+
+At the user's request, and the town had nobody in it: twenty-five
+blocks, a school, a church, a green, a cemetery, seven hundred and
+thirty-six people inside the supermarket and not one person outside it,
+which at two in the morning reads as exactly what it is. There are five
+hundred and sixty out there now.
+
+WHERE THEY GO IS NOT A LIST. Writing coordinates for five hundred people
+is five hundred chances to put somebody inside a hedge, and every one of
+them goes stale the moment a block is re-laid. So the town is ASKED
+instead. Every rectangle already in the RectMap that is outdoors, at
+grade, inside the town's own grid and wearing a surface a person would
+stand on is a candidate, weighted by what it is: a sidewalk is where
+people are, a pool of lamplight is where they stop, a path and a
+crossing are where they are going, a lawn is where a few of them are, a
+parking lot is where two or three are, and a CARRIAGEWAY is not on the
+list at all, which is the whole of why nobody is standing in the road.
+Move a block and the crowd moves with it, because the crowd is a fact
+about the rectangles and not a fact about the town.
+
+The weights had to be looked at once. Concrete started at the sidewalk's
+and the gas station's forecourt is one rectangle of it three thousand
+units square — a tenth of the whole town standing about on the same
+empty slab. It is worth a fifth of a sidewalk now.
+
+THE SPACING IS THE OTHER HALF, and it is the shop's lesson at town
+scale: people dropped at random into a big enough space land apart, and
+dropped into a small one land on top of each other. Ninety-six is about
+ten feet — close enough to read as a street with people on it, far
+enough that everybody has a step they can take when the fire arrives.
+And nobody is standing inside a parked car: the vehicles are models
+rather than sectors and nothing else in the level would have noticed.
+
+THEY ARE NOT SHOPPERS, and that is the whole reason the type exists.
+Three things in this game mean "the crowd in the supermarket" when they
+say shopper: `peopleLeft`, which is the number over the HUD and is how
+much of the STORE is still alive; the crowd LOD, which draws a fraction
+of them by id; and the suite, which holds every one of them against the
+sales floor rectangle. Five hundred and sixty more SHOPPERs would have
+made the first two wrong quietly and the third fail loudly. A TOWNIE
+inherits everything else — it burns, panics, freezes, gibs and drags a
+trail of fire down a sidewalk exactly as the crowd in the aisles does,
+because all of that belongs to a person near a fire and not to a person
+near a shelf. The two numbers that differ are how far a fright carries
+and how long it lasts: a street is not an aisle, you can see further
+down one, and there is somewhere to run to.
+
+
 FIRE THAT CLIMBS
 - - - - - - - - -
 
@@ -5881,7 +6088,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-2102 checks. Every one of them earns its place by having caught something
+2188 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

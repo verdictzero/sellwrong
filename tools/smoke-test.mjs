@@ -559,10 +559,14 @@ const inTown = s => s.bbox[3] <= TOWN_EDGE;
      checking, because it is the only property of it that is hard to see
      and easy to break. */
   {
-    /* the car park's own slots; the vans along the town's kerbs are
-       marked `street` and checked with the street */
-    const slots = (level.carSlots || []).filter(c => !c.street);
-    note('parking slots', `${slots.length} in the lot, ${(level.carSlots || []).length - slots.length} on the town's streets`);
+    /* the car park's own slots. The vans along the town's kerbs are
+       marked `street`, and since A5 the office block has a lot of its
+       own with cars in it, marked `town` — both of them are checked
+       where they are, and neither of them is this car park. */
+    const slots = (level.carSlots || []).filter(c => !c.street && !c.town);
+    note('parking slots', `${slots.length} in the lot, ` +
+      `${(level.carSlots || []).filter(c => c.street).length} on the town's streets, ` +
+      `${(level.carSlots || []).filter(c => c.town).length} at the office block`);
     /* SPARSE, at the user's request: about one bay in six near the doors
        and almost nothing by the road. The claim is that there IS a car
        park and that it is not full — an empty lot and a full one are
@@ -5852,6 +5856,10 @@ section('the van');
     check('every parked car is in the middle of a bay rather than on a line',
       centred >= lotVans.length - 3,
       across.filter(t => Math.abs(t - bay.w / 2) >= 1).map(t => t.toFixed(0)).join(', '));
+    /* AND EVERY ROW OF BAYS IN THE LEVEL, not just the car park's:
+       the office block's lot and the yard behind it wear the same
+       texture, and a row that is not one repeat deep is a row with a
+       line painted across the middle of it. */
     check('and the bay rows are exactly one repeat of the bay texture deep',
       level.sectors.filter(s => s.floorTex === 'BAYROW').every(s => {
         const ys = s.poly.map(p => p[1]);
@@ -8617,7 +8625,12 @@ section('the town');
        as the wall over a recess is tall, and that is not a floor
        anybody forgot: a door on a three-storey terrace has two storeys
        of brick over it and then the roof. */
-    if (up.roofTex || up.ceil - up.floor < 1e-6) continue;
+    /* AND A FLAT ONE IS STILL A ROOF. The office block's roof storey
+       is open forty units inside its parapet with ballast for a floor,
+       so it has no roofTex to be recognised by; what it does have is
+       the sky over it, which is what every top-of-a-column storey in
+       this map has and is the thing actually being said here. */
+    if (up.roofTex || up.sky || up.ceil - up.floor < 1e-6) continue;
     /* AND A WALL MAY HAVE A RAIL ON TOP OF IT, which is forty-eight
        more: the choir loft's opening starts a rail above its floor so
        the band under it is the balusters, and the church tower's
@@ -8743,7 +8756,12 @@ section('the town');
      door in it, and the foot of every wall shows its foundation. */
   {
     const U3 = await import('../js/util.js');
-    const recesses = level.sectors.filter(s => s.outdoor && /(window \d|door)$/.test(s.name) && !/school|C3|B3/.test(s.name));
+    /* THE HOUSES' WINDOWS, which are a recess with the pane PAINTED on
+       the one-sided wall at the back of it. The school's, the church's
+       and the office block's are the other kind — an outer recess and
+       an inner one with real glass hung on the line between them — and
+       are held to that where they are built. */
+    const recesses = level.sectors.filter(s => s.outdoor && /(window \d|door)$/.test(s.name) && !/school|C3|B3|A5/.test(s.name));
     const windows = recesses.filter(s => / window \d$/.test(s.name));
     const doors = recesses.filter(s => / door$/.test(s.name));
     note('recesses', `${windows.length} window storeys, ${doors.length} doors`);
@@ -8877,7 +8895,7 @@ section('the town');
        no lamp is in somebody's lawn or out in the carriageway, and that
        is still what it asks. */
     check('and every lamp stands on the pavement, or on the strip of tarmac nobody parks on',
-      lamps.every(t => { const s = level.sectorAt(t.x, t.y); return s && /sidewalk|corner|path|bays|trolley bay/.test(s.name); }));
+      lamps.every(t => { const s = level.sectorAt(t.x, t.y); return s && /sidewalk|corner|path|bays|trolley bay|service yard/.test(s.name); }));
     /* THE ARM REACHES OVER THE ROAD. A lamp is a photograph stood flat
        across the street (THE STREET LAMP IS GEOMETRY in js/mapgeo.js)
        and the picture is a pole with its arm on one side, so the
@@ -8888,7 +8906,7 @@ section('the town');
        wider than an arm is long. */
     const over = (t, d) => level.sectorAt(t.x + Math.cos(t.angle) * d, t.y + Math.sin(t.angle) * d)?.name ?? 'nowhere';
     check('every lamp knows which way its arm reaches', lamps.every(t => Number.isFinite(t.angle)));
-    const missed = lamps.filter(t => !/junction|parking|street|crossing|path|bays|trolley bay|driving lane/.test(over(t, 40)));
+    const missed = lamps.filter(t => !/junction|parking|street|crossing|path|bays|trolley bay|driving lane|fire lane|service yard/.test(over(t, 40)));
     check('and the arm reaches over the road, the bays, the junction or the path, all but the outside of the two bends',
       missed.length <= 2 && missed.every(t => /^corner/.test(over(t, 40))),
       `${missed.length} over ${[...new Set(missed.map(t => over(t, 40)))].join(', ')}`);
@@ -8903,7 +8921,7 @@ section('the town');
        the sidewalk and the kerb is where an American town puts its
        street trees, and it is the only name on this list that is not
        somebody's garden. */
-    const PLANTABLE = /yard|garden|lawn|churchyard|graveyard|green|park|cemetery|verge/;
+    const PLANTABLE = /yard|garden|lawn|churchyard|graveyard|green|park|cemetery|verge|island/;
     const onPlantable = pl => { const s = level.sectorAt(pl.x, pl.y); return !!s && !s.roofTex && PLANTABLE.test(s.name); };
     check('the town has its trees', level.plants.length > 500, `${level.plants.length}`);
     check('and none of them stands in the road or in a house',
@@ -8929,8 +8947,8 @@ section('the town');
     check('six kinds of broadleaf line the streets', BROAD.length === 6, BROAD.join(', '));
     check('and there are enough of them to read as an avenue', street.length > 400, `${street.length}`);
     check('and they stand on the verge, the churchyard or the park, never on a corner',
-      street.every(pl => /verge|lawn|yard|green|park|cemetery/.test(level.sectorAt(pl.x, pl.y)?.name ?? '')),
-      street.filter(pl => !/verge|lawn|yard|green|park|cemetery/.test(level.sectorAt(pl.x, pl.y)?.name ?? '')).slice(0, 3)
+      street.every(pl => /verge|lawn|yard|green|park|cemetery|island/.test(level.sectorAt(pl.x, pl.y)?.name ?? '')),
+      street.filter(pl => !/verge|lawn|yard|green|park|cemetery|island/.test(level.sectorAt(pl.x, pl.y)?.name ?? '')).slice(0, 3)
             .map(pl => `${Math.round(pl.x)},${Math.round(pl.y)} ${level.sectorAt(pl.x, pl.y)?.name}`).join(' | '));
     /* THE BOX IS NOT A PLANT ANY MORE. It was a row of photographed
        blocks, one to a 64-unit cell of the wood's grid, turning to face
@@ -9166,7 +9184,12 @@ section('the town');
                      bleachers and stepping along the north wall. A wall bar
                      IS a thing bolted flat to a wall, so it makes the same
                      bargain a downpipe does. */
-                  'TROPHY', 'NOTICEBD', 'RADIATOR', 'FOUNTAIN', 'PILASTR', 'WALLBARS'];
+                  'TROPHY', 'NOTICEBD', 'RADIATOR', 'FOUNTAIN', 'PILASTR', 'WALLBARS',
+                  /* and what an office lobby has on its walls: the
+                     directory by the door, the cooler in the break room,
+                     and the ficus, which is in a planter against a wall
+                     and not a box in the middle of the floor */
+                  'DIRECTRY', 'WATRCOOL', 'PLANTPOT', 'WHITEBRD'];
     const STEPPABLE = ['WHEELSTP'];
     const low = props.filter(q => inTheWay(q) && ![...FLAT, ...STEPPABLE].includes(q.tex));
     note('free boxes up where nobody can stand',
@@ -9325,7 +9348,12 @@ section('the town');
   {
     section('the plant on the parade');
     const props = level.props || [];
-    const of = t => props.filter(q => q.tex === t);
+    /* THE PARADE'S OWN, and the qualifier is not pedantry: the office
+       block on A5 wears RTU, DUCTWORK, ROOFLADR, WALLPACK and METERBOX
+       too, four blocks and five hundred and eighty units of height
+       away, and every claim below is about the strip mall's roofline
+       in particular. The town starts at y -3096. */
+    const of = t => props.filter(q => q.tex === t && q.y0 > -3000);
     const MAP = await import('../js/maps/sellwrong.js');
     const { MAX_STEP } = await import('../js/util.js');
     const SKY = 480;                  // CEIL_SKY: the top of the wall
@@ -9950,6 +9978,265 @@ section('the town');
       T5.CHAINLNK.masked && T5.RAILING.masked);
     check('and the ones that are BANDS are not, because a band has nothing behind it',
       !T5.GYMTRUSS.masked && !T5.HANDRAIL.masked && !T5.ALTARRL.masked);
+
+    /* =================================================================
+       THE OFFICE BLOCK ON A5, AND THE CROSS THAT USED TO BE THERE
+
+       WHAT WAS THERE. Block A5 was the services block and what was on
+       it was three rectangles of asphalt — a station lot, a fire
+       station apron and a police lot — with no building on any of them
+       and the map's usual sixteen units of VOID between each pair,
+       because in this map the wall between two rooms is the rectangle
+       nobody laid.
+
+       INSIDE A BUILDING THAT IS A WALL AND IS WHAT IT IS FOR. Out in
+       the open it is a free-standing slab: a line with a sector on one
+       side and nothing on the other is ONE-SIDED, and a one-sided line
+       draws its wallTex over the whole height of the sector it has. The
+       station lot is open to the sky at 768, so the slot along its north
+       edge came out as a wall of BRICKRED three thousand and
+       seventy-two long and seven hundred and sixty-eight tall, with the
+       slot between the apron and the police lot crossing it. That is
+       the brick cross eight storeys high the user photographed standing
+       in an empty car park, and nothing else on the block was wrong
+       with it. (The lots' `ceil: 2 * STOREY` is a red herring and worth
+       saying so: a step between two patches of sky draws nothing — see
+       the rule at the top of the band loop in js/mapgeo.js — so the lid
+       over them was invisible. It was the void that showed.)
+
+       THE CHECK IS THE GENERAL CASE, and it was run against the old
+       geometry before it was written down here: rebuilt from those
+       three rectangles alone it finds twelve of these, the tallest 768
+       tall and 3072 long. Against the town as it stands it finds none.
+       ================================================================= */
+    {
+      const P5 = level.props || [];
+      const onA5 = q => q.x0 > 6272 && q.x1 < 9344 && q.y0 > -6744 && q.y1 < -3672;
+      const ofT = t => P5.filter(q => q.tex === t && onA5(q));
+      const inx = a => a > level.town.grid.x0 && a < level.town.grid.x1;
+      const iny = a => a > level.town.grid.y0 && a < level.town.grid.y1;
+      const slabs = [];
+      for (const l of level.lines) {
+        if ((l.front === null) === (l.back === null)) continue;     // two-sided
+        const s = level.sectors[l.front === null ? l.back : l.front];
+        if (!s || !s.outdoor || (s.floor ?? 0) > UB.MAX_STEP) continue;
+        if (!(inx(l.x1) && inx(l.x2) && iny(l.y1) && iny(l.y2))) continue;
+        if (s.ceil - s.floor < 160) continue;
+        slabs.push(`${l.middle} ${(s.ceil - s.floor) | 0} tall on ${s.name}`);
+      }
+      note('walls with nothing behind them', `${slabs.length} in the town's open ground`);
+      check('no wall stands in the open with nothing on the other side of it',
+        slabs.length === 0, [...new Set(slabs)].slice(0, 4).join(', '));
+
+      /* THE BUILDING. Four storeys, and the first FLAT ROOF in the
+         town — which is a slope of none, the case topOf() has had
+         since the church tower, with an open storey on top of it
+         instead of a shut cap so that the plant is standing on
+         something. */
+      const lobby = named(/^A5 lobby( floor \d)?$/);
+      const roof = named(/^A5 roof$/);
+      note('the office block', `${named(/^A5 /).length} regions, ${roof.length} of roof, eaves ${roof[0] ? roof[0].floor : '?'}`);
+      check('it is four storeys and every one of them is built',
+        lobby.length >= 4 && [0, 1, 2, 3].every(k => lobby.some(s => s.storey === k)) &&
+        lobby.filter(s => s.storey === 3).every(s => s.floor === 32 + 3 * 128),
+        `${lobby.length} lobby storeys`);
+      check('the roof is flat, open, and has the ballast for a floor',
+        roof.length > 40 && roof.every(s => !s.slopeCeil && s.outdoor && s.floorTex === 'ROOFBALL' &&
+          s.ceil - s.floor === 40), `${roof.length}`);
+      check('and it is the tallest square-topped thing in the level',
+        roof[0].ceil === 584 && roof[0].ceil > 480, `${roof[0].ceil} against the mall's 480`);
+
+      /* THE ELEVATION IS THREE BANDS out of one strip: a granite base
+         course, a cornice, and the parapet standing over the roof —
+         and the parapet is the new one, because it is the only band in
+         this map drawn ABOVE a roof line rather than under it. */
+      const otrim = named(/^A5 trim$/);
+      note('the office\'s courses', `${otrim.length} trim sectors, ${named(/^A5 pier$/).length} piers`);
+      check('a base course of granite, a cornice, and a parapet over the roof',
+        otrim.length > 30 &&
+        otrim.filter(s => s.storey === 0).every(s => s.lowerTex === 'OFFBASE') &&
+        otrim.filter(s => s.storey === 1).every(s => s.lowerTex === 'CORNICE' && s.floor === s.ceil) &&
+        otrim.filter(s => s.storey === 2).every(s => s.lowerTex === 'OFFPARA' && s.floor === 584),
+        `${otrim.filter(s => s.storey === 2).length} parapet storeys`);
+      check('and the parapet stands over the roof rather than under it',
+        otrim.filter(s => s.storey === 2).every(s => s.floor === roof[0].ceil));
+      check('with a pier on every corner and every wall line that reaches the outside',
+        named(/^A5 pier$/).length >= 18 &&
+        named(/^A5 pier$/).every(s => s.lowerTex === 'OFFMULL'));
+
+      /* THE RIBBON: one recess per bay carrying all four floors, with
+         the pane hung on the line between the outer recess and the
+         inner one, lit or dark per floor. */
+      const oglass = level.lines.filter(l => /^OFFWIN(LT|DK)$/.test(l.middle || ''));
+      const owin = named(/^A5 window \d+$/);
+      note('the office\'s ribbon', `${owin.length / 4} bays, ${oglass.length} sheets of glass`);
+      check('twenty-nine bays of glazing, four floors in every one of them',
+        owin.length === 29 * 4 && [0, 1, 2, 3].every(k =>
+          owin.filter(s => s.storey === k).length === 29), `${owin.length}`);
+      check('and every one of them has glass in it that you see through and stop at',
+        oglass.length >= 29 && oglass.every(l => l.blocking));
+      check('a bay is 128 wide and 72 tall, which is what the texture is declared at',
+        T5.OFFWINLT.w === 128 && T5.OFFWINLT.h === 72 &&
+        owin.every(s => Math.abs(s.ceil - s.floor - 72) < 1));
+
+      /* THE WAY IN. A vestibule under a soffit with two leaves, two
+         sidelights and a way between them — and the sidelights are
+         SHUT storeys, because an open one is a hole four storeys tall.
+         And it is a way in and not just a way out: the trim strip the
+         doors open onto stands at FOUND, so the ground either side of
+         it has to be within a step of that. */
+      check('a pair of leaves, two sidelights and a way between them',
+        named(/^A5 door leaf$/).length === 2 && named(/^A5 sidelight$/).length === 2 &&
+        named(/^A5 (front|back) door$/).length === 2);
+      check('and the sidelights are shut storeys, not holes four floors tall',
+        named(/^A5 sidelight$/).every(s => s.floor === s.ceil && s.lowerTex === 'UNITGLAS'));
+      /* WALK IN OFF THE STREET. From the sidewalk at the top of the
+         block to the break room at the back of the ground floor,
+         through the lot, up the plaza, over the trim, in at the doors
+         and down the corridor — every step of it inside MAX_STEP. */
+      {
+        const seen = new Set(), byS = new Map();
+        for (const l of level.lines) for (const si of [l.front, l.back]) {
+          if (si === null) continue;
+          if (!byS.has(si)) byS.set(si, []);
+          byS.get(si).push(l);
+        }
+        const from = level.sectorAt(7808, -3740);
+        seen.add(from.index);
+        const q = [from.index];
+        while (q.length) {
+          const si = q.pop();
+          for (const l of byS.get(si) || []) {
+            const other = l.front === si ? l.back : l.front;
+            if (other === null || seen.has(other)) continue;
+            if (level.lineBlocks(l, level.sectors[si].floor, 56, false)) continue;
+            seen.add(other); q.push(other);
+          }
+        }
+        const want = ['A5 lobby', 'A5 corridor', 'A5 break room', 'A5 lift lobby',
+                      'A5 conference room', 'A5 copy room', 'A5 restroom', 'A5 service yard'];
+        const missed = want.filter(n => !level.sectors.some(s => s.name === n && seen.has(s.index)));
+        check('you can walk in off the street and all the way round the ground floor',
+          missed.length === 0, missed.join(', '));
+        /* AND NOT UP. There are no stairs in this town and the lift has
+           never worked, so the three floors over you are built, lit,
+           glazed and unreachable — which is written down here rather
+           than left for somebody to find. */
+        check('and nowhere above the ground floor, because the stairs went',
+          !level.sectors.some(s => /^A5 /.test(s.name || '') && s.storey > 0 &&
+            s.storey < 4 && seen.has(s.index)));
+      }
+
+      /* THE FIT-OUT, and none of it is a free box standing in the
+         middle of a room: a desk, a partition and a filing cabinet are
+         raised floors, which is what stops you walking through them. */
+      note('the office, fitted out', `${named(/desk$/).filter(s => /^A5 /.test(s.name)).length} desks, ` +
+        `${named(/^A5 .*partition$/).length} partitions, ${named(/^A5 .*chair$/).length} chairs`);
+      check('cubicles with a work surface, a chair and a partition in each',
+        named(/^A5 open plan (west|east) desk$/).filter(s => s.storey === 0).length === 28 &&
+        named(/^A5 open plan (west|east) chair$/).filter(s => s.storey === 0).length === 28 &&
+        named(/^A5 open plan (west|east) partition$/).length > 20);
+      check('the partition is over the desk and under the eye, which is the whole point of one',
+        named(/^A5 .*partition$/).filter(s => s.storey === 0).every(s => s.floor === 32 + 44),
+        'a cubicle wall at 44 against an eye at 49');
+      check('a reception desk, a conference table, a counter, vending and two lifts',
+        named(/^A5 reception desk$/).length >= 1 && named(/^A5 conference table$/).length >= 1 &&
+        named(/^A5 counter$/).length >= 1 && named(/^A5 vending machine$/).length === 2 &&
+        named(/^A5 lift$/).length >= 1 && named(/^A5 lift$/)[0].lowerTex === 'LIFTDOOR');
+      check('and the filing, the copier and the whiteboard',
+        named(/^A5 .*filing$/).length >= 4 && named(/^A5 copier$/).length >= 1 &&
+        ofT('WHITEBRD').length === 1 && ofT('DIRECTRY').length === 1);
+      check('every free box in the building is over your head or flat against something',
+        P5.filter(q => onA5(q) && q.z0 < 32 + 88 && q.tex !== 'WHEELSTP')
+          .every(q => Math.min(q.x1 - q.x0, q.y1 - q.y0) <= 12),
+        P5.filter(q => onA5(q) && q.z0 < 32 + 88 && q.tex !== 'WHEELSTP' &&
+          Math.min(q.x1 - q.x0, q.y1 - q.y0) > 12).slice(0, 3).map(q => q.tex).join(' '));
+      check('and the plant on the roof clears the parapet',
+        ofT('RTU').length === 7 && ofT('RTU').every(q => q.z0 === 544 && q.z1 > 584));
+
+      /* THE LOT, which is the supermarket's in miniature and built out
+         of the same pieces. */
+      const bays = named(/^A5 bays$/), lanes = named(/^A5 driving lane$/);
+      const cars = (level.carSlots || []).filter(c => c.x > 6272 && c.x < 9344 && c.y > -6744 && c.y < -3672);
+      note('the lot out front', `${bays.length} rows of bays, ${lanes.length} lanes, ${cars.length} cars, ${ofT('WHEELSTP').length} wheel stops`);
+      check('four rows of bays back to back with a lane between each pair',
+        bays.length === 4 && lanes.length === 3);
+      check('and they face each other, which is what back to back means',
+        cars.length >= 12 && new Set(cars.map(c => Math.sign(Math.sin(c.angle)))).size === 2,
+        `${cars.length} cars`);
+      check('with an island along the front of it and a way in off the street',
+        named(/^A5 island$/).length === 1 && named(/^A5 drive$/).length === 1);
+      check('and lot lighting, and wheel stops you can step over',
+        level.things.filter(t => t.type === 'STREETLAMP' && t.x > 6272 && t.x < 9344 &&
+          t.y > -6744 && t.y < -3672).length >= 8 &&
+        ofT('WHEELSTP').every(q => q.z1 <= UB.MAX_STEP));
+      /* AND THE ENGINE STILL COMES FROM A5, which is the one thing on
+         this block anything else in the game reads. */
+      const st = level.town.stations;
+      check('the fire and the police still have somewhere on A5 to come from',
+        st && st.fire && st.police &&
+        [st.fire, st.police].every(p => {
+          const s = level.sectorAt(p.x, p.y);
+          return s && s.outdoor && s.ceil - s.floor > 200;
+        }), JSON.stringify(st));
+    }
+
+    /* =================================================================
+       THE PEOPLE ON THE STREET
+
+       The town had nobody in it. What it has now is placed off the
+       RECTANGLES rather than off a list of coordinates — see THE
+       PEOPLE ON THE STREET in js/maps/town.js — so what is worth
+       checking is the three things that would go wrong if the list had
+       been written by hand: somebody inside a wall, two people at one
+       coordinate, and somebody standing in a parked car.
+       ================================================================= */
+    {
+      const folk = level.things.filter(t => t.type === 'TOWNIE');
+      const inside = folk.map(t => ({ t, s: level.sectorAt(t.x, t.y) }));
+      note('the town\'s people', `${folk.length} of them, ${inside.filter(o => o.s && o.s.outdoor).length} out of doors`);
+      check('there are a lot of them', folk.length >= 500, `${folk.length}`);
+      check('and every one of them is standing somewhere with a floor and headroom',
+        inside.every(o => o.s && o.s.ceil - o.s.floor >= 56),
+        inside.filter(o => !o.s || o.s.ceil - o.s.floor < 56).slice(0, 3)
+          .map(o => `${o.t.x | 0},${o.t.y | 0}`).join(' '));
+      check('nobody is in the road, because a carriageway is not on the list',
+        !inside.some(o => /^(street|road) /.test(o.s.name || '') || /^ROAD/.test(o.s.floorTex || '')),
+        inside.filter(o => /^(street|road) /.test(o.s.name || '')).slice(0, 3).map(o => o.s.name).join(', '));
+      /* NOBODY OVERLAPS, which is the shop's lesson at town scale: two
+         people at one coordinate are one person with a shadow, and
+         worse, two people who can never move again. */
+      let closest = Infinity;
+      for (let i = 0; i < folk.length; i++) for (let j = i + 1; j < folk.length; j++) {
+        const d2 = (folk[i].x - folk[j].x) ** 2 + (folk[i].y - folk[j].y) ** 2;
+        if (d2 < closest) closest = d2;
+      }
+      check('and no two of them are closer than a person can walk out of',
+        Math.sqrt(closest) >= 54, `closest two ${Math.sqrt(closest).toFixed(0)} apart`);
+      /* AND NOT IN A CAR. The parked vehicles are models rather than
+         sectors, so nothing else would have stopped this. */
+      let nearestCar = Infinity;
+      for (const t of folk) for (const c of level.carSlots || [])
+        nearestCar = Math.min(nearestCar, (t.x - c.x) ** 2 + (t.y - c.y) ** 2);
+      check('and nobody is standing inside a parked car',
+        Math.sqrt(nearestCar) > 64, `nearest ${Math.sqrt(nearestCar).toFixed(0)}`);
+      /* THEY ARE NOT SHOPPERS, and that is the whole reason the type
+         exists: peopleLeft, the crowd LOD and the suite's own sales
+         floor check all mean the crowd IN THE SHOP when they say
+         shopper. */
+      const AC = await import('../js/states.js');
+      check('a townie is its own kind of person, and not a shopper',
+        AC.ACTORS.TOWNIE && AC.ACTORS.TOWNIE.name === 'Townsfolk' &&
+        !level.things.some(t => t.type === 'SHOPPER' && t.y < -3096));
+      check('and it burns, panics, freezes and gibs exactly as one does',
+        ['burn', 'burnTics', 'freezable', 'frozen', 'death', 'burnTrail', 'flammable']
+          .every(k => JSON.stringify(AC.ACTORS.TOWNIE[k]) === JSON.stringify(AC.ACTORS.SHOPPER[k])));
+      check('with a longer eye and a longer fright, because a street is not an aisle',
+        AC.ACTORS.TOWNIE.scareRange > AC.ACTORS.SHOPPER.scareRange &&
+        AC.ACTORS.TOWNIE.panicTics > AC.ACTORS.SHOPPER.panicTics);
+      check('and the crowd LOD draws them by id the way it draws the crowd',
+        /a\.type === 'SHOPPER' \|\| a\.type === 'TOWNIE'/.test(fsB.readFileSync('js/game.js', 'utf8')));
+    }
   }
 
   /* NOTHING IS OUTSIDE ITS OWN SHELL. RectMap throws on two rectangles

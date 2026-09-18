@@ -50,7 +50,7 @@ import { Weather, climate, CLEAR_FAR } from './weather.js';
 import { Rain } from './rain.js';
 
 const THING_TO_ACTOR = {
-  SHOPPER: 'SHOPPER',
+  SHOPPER: 'SHOPPER', TOWNIE: 'TOWNIE',
   TROLLEY: 'TROLLEY', BOLLARD: 'BOLLARD',
   FUELCAN: 'FUELCAN', CRATE: 'CRATE', LAMP: 'LAMP',
   /* the town's furniture — see js/maps/town.js */
@@ -1302,7 +1302,7 @@ export class Game {
     const crowd = this.quality.crowd;
     this.standees.begin(billboardRot);
     for (const a of this.actors) {
-      if (crowd < 1 && a.type === 'SHOPPER' && (a.id % 16) >= crowd * 16) { a.drawn = false; continue; }
+      if (crowd < 1 && (a.type === 'SHOPPER' || a.type === 'TOWNIE') && (a.id % 16) >= crowd * 16) { a.drawn = false; continue; }
       a.render(p.x, p.y, billboardRot, vx, vy);
     }
     this.standees.end();

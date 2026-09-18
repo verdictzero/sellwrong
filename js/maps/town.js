@@ -52,6 +52,8 @@
    ------------------------------------------------------------------ */
 import { gableSlope } from '../level.js';
 
+import { SHOPPERS } from '../people.js';   // how many people there are pictures of
+
 export const PITCH = 3648;          // a block and the street after it
 export const BLOCK = 3072;          // a block face, 315 ft
 export const STREET = 576;          // a residential street, 60 ft
@@ -69,8 +71,11 @@ const WALL = 16;                    // the void between two rooms IS the wall
    life and was not arranged. */
 export const STOREY = 112, CLEAR = 96, RIDGE = 128;
 
-/* The town's sky ceiling. The church spire breaks the mall's 480 and it
-   is the only thing that does. */
+/* The town's sky ceiling. The church spire breaks the mall's 480 at
+   784, and since A5 the office block breaks it too — 544 to the eaves
+   and 584 over the parapet, which makes it the tallest square-topped
+   thing in the level and the only building in the town you can see the
+   top of from the car park. */
 export const SKY = 768;
 
 /* the street, as five bands: 144 of walk | 24 of verge | 240 of
@@ -258,7 +263,7 @@ export function townGrid(x0 = -9344, yTop = -3096) {
    ===================================================================== */
 export const BLOCK_PLAN = [
   /* row A, nearest the mall */
-  ['gas', 'square', 'civic', 'civic', 'stations'],
+  ['gas', 'square', 'civic', 'civic', 'offices'],
   /* row B */
   ['rows', 'flats', 'church', 'rows', 'motel'],
   /* row C */
@@ -298,7 +303,7 @@ export function buildTown(rm, mb, opts = {}) {
                    lines do not exist until mb.build(), so what a builder
                    can do here is name the two sectors and let
                    js/maps/sellwrong.js hang the wire once they do. */
-                fences: [] };
+                fences: [], folk: 0 };
   /* `a` and `b` are each a rect or a LIST of them: the wire goes
      between every piece of one and every piece of the other, and a pair
      with no line between them simply gets none. Which is what lets a
@@ -489,6 +494,12 @@ export function buildTown(rm, mb, opts = {}) {
   /* a light fitting the game is told about by hand, so the filter that
      drops the mall's gridded ones under low ceilings leaves it alone */
   function fitting(x, y) { mb.thing('LAMP', x, y, 0, { placed: true }); }
+  /* somebody. One of the seventeen drawings, facing wherever they were
+     told — see THE PEOPLE ON THE STREET at the bottom of this file. */
+  function folk(x, y, a = 0) {
+    mb.thing('TOWNIE', x, y, a, { variant: Math.floor(R() * SHOPPERS) });
+    out.folk++;
+  }
 
   /* ---- a street ---------------------------------------------------- */
   /* The carriageway is five strips, the same construction the ring road
@@ -2630,27 +2641,787 @@ export function buildTown(rm, mb, opts = {}) {
   }
 
   /* =================================================================
-     THE ONES WITH A JOB — the two lots that matter are the fire
-     station's and the police station's, because they turn
-     ResponderState.arrive from a PLACEHOLDER into a door.
+     THE OFFICE BLOCK — A5, and what used to be here
+
+     WHAT WAS HERE. Three rectangles of asphalt — a station lot, a fire
+     station apron and a police lot — with no building on any of them,
+     and between each pair the sixteen units of VOID that is how this
+     map spells a wall.
+
+     INSIDE A BUILDING THAT IS A WALL AND IS WHAT IT IS FOR. Out in the
+     open it is a free-standing slab. A line with a sector on one side
+     and nothing on the other is ONE-SIDED, and a one-sided line draws
+     its wallTex over the whole height of the sector it has — so the
+     slot along the station lot's north edge, with the lot open to the
+     sky at 768, came out as a wall of BRICKRED three thousand and
+     seventy-two long and seven hundred and sixty-eight tall, and the
+     slot between the apron and the police lot crossed it. What the user
+     photographed, from the road, was a brick cross eight storeys high
+     standing in an empty car park with nothing under it.
+
+     THE `ceil: 2 * STOREY` ON THE TWO LOTS WAS INNOCENT, and it is
+     worth saying so because it is the obvious suspect: a ceiling at 224
+     in a block open at 768 looks exactly like the disagreement rule
+     hanging a band over it. A step between two patches of SKY draws
+     nothing — see the top of the band loop in js/mapgeo.js — so the lid
+     was invisible. It was the void that showed. A void is a wall and a
+     wall wants something on the other side of it.
+
+     WHAT IS HERE NOW, at the user's request: a speculative office
+     block with a parking lot in front of it and a ground floor you can
+     walk into. It is the first FLAT ROOF in the town and the first
+     building whose elevation is glazing rather than holes — which is
+     why THE TRIM here is three bands and not four, and why topOf() is
+     not used anywhere in this function.
+
+     THE PLAN, in the building's own frame: u along the front, d in
+     from it.
+
+       d    0 ┌──────────────────────────────────────────────────────┐
+              │  ← the wall, and the ribbon in it →                   │
+          24  ├─────────────┬──────────┬──────────┬────────┬─────────┤
+              │ OPEN PLAN W │  LOBBY   │  CONF    │ OFF 1  │  OFF 2  │
+         432  ├─────────────┴──────────┴──────────┴────────┴─────────┤
+         456  │  CORRIDOR                                            │
+         560  ├───────┬────────┬─────────┬──────────┬───────┬────────┤
+              │ BREAK │ COPY   │  LIFTS  │ OPEN     │ OFF 3 │  OFF 4 │
+              │ ROOM  │ & MAIL │  + WCs  │ PLAN E   │       │        │
+        1128  └───────┴────────┴─────────┴──────────┴───────┴────────┘
+        1152      the back wall, and the yard behind it
+       u    0    560      936      1368      1848    2064      2304
+
+     AND THE FOUR STOREYS ARE REAL. Only the ground floor has a way in
+     — the stairs went at the user's request and the lift has never
+     worked — but the three over it are built, lit and glazed, because
+     a window with nothing behind it is a painted window and this town
+     has enough of those. What they do NOT have is furniture: the
+     cubicles, the desks and the counters are the ground floor's, and
+     every column above it is the plain floor plate.
      ================================================================= */
-  function servicesBlock(bx, by, tag) {
+  function officeBlock(bx, by, tag) {
     const [x0, x1] = bx, [y0, y1] = by;
-    /* the forecourt they all stand on */
-    rm.add(x0, y0, x1, y1 - 1600 - WALL, open(`${tag} station lot`, {
-      floorTex: 'ASPHOLD', light: 0.30, ambient: 0.30, fuel: TOWN_FUEL.park,
-      wallTex: 'BRICKRED', upperTex: 'BRICKRED',
-    }));
-    rm.add(x0, y1 - 1600, x0 + 1440, y1, open(`${tag} fire station apron`, {
-      ceil: 2 * STOREY, floorTex: 'ASPHOLD', light: 0.34, ambient: 0.34,
-      fuel: TOWN_FUEL.park, wallTex: 'BRICKRED', upperTex: 'BRICKRED',
-    }));
-    rm.add(x0 + 1440 + WALL, y1 - 1600, x1, y1, open(`${tag} police lot`, {
-      ceil: 2 * STOREY, floorTex: 'ASPHOLD', light: 0.32, ambient: 0.32,
-      fuel: TOWN_FUEL.park, wallTex: 'BRICKRED', upperTex: 'BRICKRED',
-    }));
-    out.stations.fire = { x: x0 + 720, y: y1 - 800 };
-    out.stations.police = { x: x0 + 1440 + (x1 - x0 - 1440) / 2, y: y1 - 800 };
+    /* AN OFFICE STOREY IS NOT A HOUSE'S AND NOT A SCHOOL'S. 112 of
+       clear and 16 of deck: lower than the school, which has to put
+       thirty children and a gym in it, higher than a living room. Four
+       of them over a foundation is 544 to the eaves and 584 over the
+       parapet — which breaks the mall's 480 and is the second thing in
+       the game to do it after the church spire. */
+    const OFF_CLEAR = 112, OFF_STOREY = 128, OFF_N = 4;
+    const PARA = 40;                       // the parapet standing over the roof
+    const OW = 2304, OD = 1152;            // the building, 248ft by 124ft
+    const OM = 128;                        // the block's own margin to the sidewalk
+    const YD = 384;                        // the service yard behind it
+    const ox0 = x0 + (BLOCK - OW) / 2;
+    const oy = y0 + YD + OD;               // where the front wall is
+    const F = frame(ox0, oy, 'N');                    // the front, facing the lot
+    const K = frame(...F.at(0, -OD), 'S');            // the back, facing the yard
+    const WFc = frame(...F.at(0, -OD), 'W');          // and the two ends
+    const EFc = frame(...F.at(OW, -OD), 'E');
+    const B = building(tag, F, OW, OD, OFF_N,
+      { wall: 'OFFPANEL', gable: 'OFFPARA', roof: 'ROOFBALL' },
+      { base: FOUND, winBase: FOUND, sill: 32, litChance: 0.46, jamb: 'OFFPANEL',
+        eaves: FOUND + OFF_N * OFF_STOREY });
+    /* A FLAT ROOF IS A SLOPE OF NONE, which topOf() already knows how
+       to make — it is what the church tower does under its spire. What
+       is different here is that the cap is not shut: it is the ROOF,
+       an open storey forty tall inside the parapet with the ballast for
+       a floor and the sky for a ceiling, so that the plant standing on
+       it is standing on something and so that a building this size has
+       a top when you are above it. */
+    B.slope = null; B.rise = 0; B.top = B.eaves;
+    const EAVES = B.eaves, OZ = FOUND;
+    const lvl = k => OZ + k * OFF_STOREY;
+    const ROOF = { floor: EAVES, ceil: EAVES + PARA, floorTex: 'ROOFBALL', ceilTex: 'SKY',
+                   wallTex: 'OFFPANEL', lowerTex: 'OFFPANEL', upperTex: 'NONE',
+                   light: ROOF_LIGHT, ambient: ROOF_LIGHT, outdoor: true, sky: 1, fuel: 0,
+                   name: `${tag} roof` };
+    /* the office's own `col`: every column in this building ends at the
+       roof, the way every column in a house ends at topOf */
+    const ocol = (storeys, common) => ({ ...common, storeys: [...storeys, ROOF] });
+    const shell = () => ({ storeys: [ROOF] });
+    const osolid = (Fx, u0, v0, u1, v1) => (u1 - u0 > 0 && v1 - v0 > 0) && Fx.add(u0, v0, u1, v1, shell());
+    /* a solid block INSIDE the building — a lift shaft, a riser — which
+       is shut on every floor and wears its own skin on all of them */
+    const pier = (tex, name) => ({ storeys: [{ ...ROOF, lowerTex: tex, wallTex: tex, name }] });
+    /* `I` lays a rect by its distance IN from the front face, and `IB`
+       is the same box for a free box. Exactly the school's pair. */
+    const I = (u0, d0, u1, d1, props) => F.add(u0, -d1, u1, -d0, props);
+    const IB = (u0, d0, u1, d1) => F.box(u0, -d1, u1, -d0);
+
+    const room = (fuel, extra = {}) => ({
+      light: 0.38, ambient: 0.38, ceilTex: 'CEILTILE', wallTex: 'PLASTER',
+      upperTex: 'PLASTER', lowerTex: 'SKIRTING', fuel, ...extra,
+    });
+    /* FOUR FLOORS OF THE SAME PLAN. The upper three are the plain
+       plate: same floor, same ceiling, no walls in them, which is what
+       you see through the glass and is all anybody ever will. */
+    /* EVERY STOREY IS NAMED, because a sector with no name is a blank
+       line in the debug readout and in every note this suite prints.
+       The three over you are the same room a floor up, and say so. */
+    const plate = (k, floorTex, name) => ({ floor: lvl(k), ceil: lvl(k) + OFF_CLEAR, floorTex,
+                                            name: `${name} floor ${k + 1}` });
+    const plates = name => [1, 2, 3].map(k => plate(k, 'OFFCARP', name));
+    const four = (floorTex, name, extra = {}) => ocol(
+      [{ floor: OZ, ceil: OZ + OFF_CLEAR, floorTex, name }, ...plates(name)],
+      room(TOWN_FUEL.office, { floorTex, ...extra }));
+    /* a piece of furniture: a raised floor on the ground and nothing at
+       all on the three floors over it */
+    const furn = (u0, d0, u1, d1, up, top, low, name) => (u1 > u0 && d1 > d0) &&
+      I(u0, d0, u1, d1, ocol(
+        [{ floor: OZ + up, ceil: OZ + OFF_CLEAR, floorTex: top, lowerTex: low, name }, ...plates(name)],
+        room(TOWN_FUEL.office, { floorTex: top, lowerTex: low, name })));
+    /* a doorway you walk through. INSIDE the building it carries the
+       plate over it, because the upper floors have no walls in them to
+       put a door in; through an OUTSIDE wall it does not, or the hole
+       goes all the way up the elevation. */
+    const way = name => ocol(
+      [{ floor: OZ, ceil: OZ + 88, name }, ...plates(name)],
+      room(TOWN_FUEL.office, { floorTex: 'OFFCARP', name }));
+    const outway = name => ocol([{ floor: OZ, ceil: OZ + OFF_CLEAR - 8, name }],
+      room(TOWN_FUEL.office, { floorTex: 'TERRAZZO', upperTex: 'OFFPANEL', name }));
+
+    /* ---- THE SHELL, and the ribbon in it ---------------------------
+       A window is the school's: a recess sixteen deep on the outside
+       and one eight deep inside it touching the room, with the glass
+       hung on the line between once the lines exist. What is different
+       is that there are FOUR of them in one column — one per floor,
+       each lit or dark on its own — and that a bay is 128 wide rather
+       than 64, because ribbon glazing is wide or it is a porthole. */
+    const WIN_WIDE = 128, SILL = 32, HEAD = 104;
+    const win = (Fx, u0, name) => {
+      const spans = [0, 1, 2, 3].map(k => ({ floor: lvl(k) + SILL, ceil: lvl(k) + HEAD, name: `${name} ${k}` }));
+      const outer = Fx.add(u0, -NICHE, u0 + WIN_WIDE, 0, ocol(spans,
+        { ...recess, floorTex: 'SILLWOOD', ceilTex: 'SILLWOOD',
+          wallTex: 'OFFPANEL', lowerTex: 'OFFPANEL', upperTex: 'OFFPANEL' }));
+      const lit = R() < B.litChance;
+      const inner = Fx.add(u0, -ZONE, u0 + WIN_WIDE, -NICHE, ocol(
+        spans.map(s => ({ ...s, name: `${s.name} inside` })),
+        { ...recess, light: lit ? 0.90 : 0.32, ambient: lit ? 0.90 : 0.32,
+          floorTex: 'SILLWOOD', ceilTex: 'PLASTER', wallTex: 'PLASTER',
+          lowerTex: 'PLASTER', upperTex: 'PLASTER' }));
+      out.glass.push({ inner, outer, tex: lit ? 'OFFWINLT' : 'OFFWINDK' });
+      out.windows += OFF_N;
+      return { u0, u1: u0 + WIN_WIDE };
+    };
+    /* one face: the openings in order, and the solid wall between them */
+    const face = (Fx, len, ops) => {
+      let u = 0;
+      for (const op of ops.slice().sort((a, b) => a.u0 - b.u0)) {
+        osolid(Fx, u, -ZONE, op.u0, 0);
+        u = op.u1;
+      }
+      osolid(Fx, u, -ZONE, len, 0);
+    };
+
+    /* WHERE THE WINDOWS GO, and every one of them is inside ONE room —
+       a recess straddling a party wall has two rooms behind it and the
+       glass cannot be in both. */
+    const NWIN = [48, 224, 400, 576, 752,                 // open plan west
+                  1392, 1544, 1696,                       // the conference room
+                  1904, 2120];                            // the two north offices
+    const SWIN = [64, 240, 416,                           // the break room
+                  776,                                    // copy and mail
+                  1416, 1560, 1704,                       // open plan east
+                  1904, 2120];                            // the two south offices
+    /* the ends: u runs NORTH on both of them, so 0 is the back corner */
+    const WWIN = [64, 224, 384, 800, 960];
+    const EWIN = [64, 224, 384, 800, 960];
+
+    /* ---- THE ENTRANCE, which takes the whole width of the lobby -----
+       Two piers standing fifty-six in front of the wall with the entry
+       recessed between them, and in the wall line a sidelight, a leaf,
+       the way through, a leaf and a sidelight — 48 | 48 | 64 | 48 | 48,
+       which puts the middle of the door on the middle of the building.
+       The leaves are SHUT STOREYS wearing the aluminium, the same
+       trick the school's front doors use: one of them is propped and
+       the other one never is. */
+    const BAY0 = 936, BAY1 = 1368, BAY_OUT = 56;
+    const E0 = 1024, E1 = 1280;               // the recessed entry between the piers
+    const DOOR0 = 1120, DOOR1 = 1184;         // and the way through it
+    const entryOps = [];
+    {
+      /* A SIDELIGHT IS A SHUT STOREY, the same as the leaves beside
+         it: glass from the entrance floor to the head and the wall
+         over it. The first cut made it an OPEN storey on all four
+         floors — which is what a window column is — and what you got
+         from the forecourt was a slot straight through the lobby and
+         out of the lit windows on the far side of the building, four
+         storeys of it, either side of the door. */
+      const HEAD = OZ + OFF_CLEAR - 8;
+      const glassLight = (a, b) => F.add(a, -ZONE, b, 0, { storeys: [
+        { floor: HEAD, ceil: HEAD, lowerTex: 'UNITGLAS', upperTex: 'OFFPANEL',
+          wallTex: 'UNITGLAS', floorTex: 'NONE', ceilTex: 'NONE', light: 0.62, ambient: 0.62,
+          name: `${tag} sidelight` }, ROOF] });
+      glassLight(E0, E0 + 48); entryOps.push({ u0: E0, u1: E0 + 48 });
+      glassLight(E1 - 48, E1); entryOps.push({ u0: E1 - 48, u1: E1 });
+      for (const [a, b] of [[E0 + 48, DOOR0], [DOOR1, E1 - 48]])
+        F.add(a, -ZONE, b, 0, { storeys: [
+          { floor: HEAD, ceil: HEAD, lowerTex: 'OFFDOOR', upperTex: 'OFFPANEL',
+            wallTex: 'OFFDOOR', floorTex: 'NONE', ceilTex: 'NONE', name: `${tag} door leaf` }, ROOF] });
+      entryOps.push({ u0: E0 + 48, u1: E1 - 48 });
+      F.add(DOOR0, -ZONE, DOOR1, 0, outway(`${tag} front door`));
+      out.doors++;
+    }
+    face(F, OW, [...NWIN.map(u => win(F, u, `${tag} window`)), { u0: E0, u1: E1 }]);
+    /* the back, with the way out to the yard in it */
+    const BACK0 = 620, BACK1 = 684;
+    K.add(BACK0, -ZONE, BACK1, 0, outway(`${tag} back door`));
+    out.doors++;
+    face(K, OW, [...SWIN.map(u => win(K, u, `${tag} window`)), { u0: BACK0, u1: BACK1 }]);
+    /* the ends, which run only between the two long walls */
+    for (const [Fx, list] of [[WFc, WWIN], [EFc, EWIN]]) {
+      const ops = list.map(u => win(Fx, u, `${tag} window`));
+      let u = ZONE;
+      for (const op of ops) { osolid(Fx, u, -ZONE, op.u0, 0); u = op.u1; }
+      osolid(Fx, u, -ZONE, OD - ZONE, 0);
+    }
+
+    /* ---- THE ELEVATION, IN THREE BANDS ------------------------------
+       A base course of polished granite, a cornice, and the parapet
+       over it, and that is the whole of an office of this age. The
+       trim strip is the school's — a strip of outdoor air standing
+       sixteen in front of the wall whose SHUT GAPS are the bands — and
+       the only new thing in it is the last storey, at the top of the
+       parapet rather than at the eaves, which is what lets a band be
+       drawn ABOVE the roof line instead of under it.
+
+       And the PIERS: a rect of the same strip, solid from the ground
+       to the top of the parapet, at every line where a wall meets the
+       elevation inside. It is the one place this building tells you
+       anything about its own plan. */
+    const SBASE = 16;
+    const otrim = () => ({ ...open(`${tag} trim`, {
+        floor: FOUND, ceil: EAVES, floorTex: 'CONCRETE', light: 0.44, ambient: 0.44,
+        lowerTex: 'OFFBASE', upperTex: 'OFFPARA', wallTex: 'OFFPANEL', fuel: 0 }),
+      storeys: [
+        { floor: FOUND, ceil: EAVES - 24, ceilTex: 'SKY' },
+        { floor: EAVES, ceil: EAVES, ceilTex: 'SKY', lowerTex: 'CORNICE' },
+        { floor: EAVES + PARA, ceil: EAVES + PARA, ceilTex: 'SKY', lowerTex: 'OFFPARA', upperTex: 'NONE' }] });
+    const omull = () => ({ storeys: [{ floor: EAVES + PARA, ceil: EAVES + PARA,
+      floorTex: 'NONE', ceilTex: 'SKY', lowerTex: 'OFFMULL', wallTex: 'OFFMULL', upperTex: 'NONE',
+      light: 0.44, ambient: 0.44, outdoor: true, sky: 1, fuel: 0, name: `${tag} pier` }] });
+    const courses = (Fx, len, piers, skip) => {
+      let u = 0;
+      const plain = (a, b) => (b - a > 0) && Fx.add(a, 0, b, SBASE, otrim());
+      for (const [p0, p1] of [...piers, ...(skip ? [skip] : [])].sort((a, b) => a[0] - b[0])) {
+        plain(u, p0);
+        if (!skip || p0 !== skip[0]) Fx.add(p0, 0, p1, SBASE, omull());
+        u = p1;
+      }
+      plain(u, len);
+    };
+    /* a pier on each corner and on every wall line inside */
+    const NPIER = [[0, 32], [1844, 1876], [2060, 2092], [OW - 32, OW]];
+    const SPIER = [[0, 32], [556, 588], [908, 940], [1364, 1396], [1844, 1876], [2060, 2092], [OW - 32, OW]];
+    const PPIER = [[0, 32], [564, 596], [692, 724], [OD - 32, OD]];
+    courses(F, OW, NPIER, [BAY0, BAY1]);
+    courses(K, OW, SPIER, null);
+    courses(WFc, OD, PPIER, null);
+    courses(EFc, OD, PPIER, null);
+    /* THE ENTRANCE BAY: the two piers standing out, the entry between
+       them, and the cornice and parapet carried round the front of it. */
+    {
+      F.add(BAY0, 0, E0, BAY_OUT, omull());
+      F.add(E1, 0, BAY1, BAY_OUT, omull());
+      F.add(E0, 0, E1, BAY_OUT, { ...open(`${tag} entrance`, {
+          floor: FOUND, ceil: EAVES, floorTex: 'TERRAZZO', light: 0.56, ambient: 0.56,
+          lowerTex: 'OFFBASE', upperTex: 'OFFPARA', wallTex: 'OFFPANEL', fuel: 0 }),
+        /* ABOVE THE CANOPY IT IS SHUT, and every storey over the
+           vestibule is a degenerate one whose only job is to say what
+           the band under it wears: the sign, then the wall, then the
+           cornice, then the parapet. The first cut left it OPEN from
+           the sign to the cornice — a recess fifty-six deep and three
+           hundred and thirty tall — and because the sidelight beside
+           it is shut over that whole range with nothing to hang a
+           texture on, lineBands fell through to the roof storey's
+           upperTex, which is NONE. What you got from the forecourt was
+           a HOLE in the front of the building either side of the door
+           with the lit offices on the far side showing through it. */
+        storeys: [
+          { floor: FOUND, ceil: FOUND + OFF_CLEAR, ceilTex: 'SOFFIT', name: `${tag} entrance` },
+          /* the band over the doors, which is the one sign on the
+             building and has a number on it and not a name */
+          { floor: FOUND + OFF_CLEAR + 40, ceil: FOUND + OFF_CLEAR + 40, ceilTex: 'SKY', lowerTex: 'OFFSIGN' },
+          { floor: EAVES - 24, ceil: EAVES - 24, ceilTex: 'SKY', lowerTex: 'OFFPANEL' },
+          { floor: EAVES, ceil: EAVES, ceilTex: 'SKY', lowerTex: 'CORNICE' },
+          { floor: EAVES + PARA, ceil: EAVES + PARA, ceilTex: 'SKY', lowerTex: 'OFFPARA', upperTex: 'NONE' }] });
+      F.add(BAY0, BAY_OUT, BAY1, BAY_OUT + SBASE, otrim());
+    }
+
+    /* ---- THE GROUND FLOOR -------------------------------------------
+       The corridor first, then the two ranges either side of it, then
+       the wall bands between — which are VOID except where a door is,
+       because in this map the wall between two rooms is the rectangle
+       nobody laid. */
+    const ND0 = 24, ND1 = 432, CD0 = 456, CD1 = 560, SD0 = 584, SD1 = 1128;
+    const oroom = (u0, d0, u1, d1, tex, name, extra = {}) =>
+      (u1 > u0 && d1 > d0) && I(u0, d0, u1, d1, four(tex, `${tag} ${name}`, extra));
+    const odoor = (u0, d0, u1, d1, name) => { I(u0, d0, u1, d1, way(`${tag} ${name}`)); out.doors++; };
+    oroom(24, CD0, 2280, CD1, 'OFFCARP', 'corridor', { light: 0.50, ambient: 0.50 });
+    /* the north wall band: the lobby stands open onto the corridor and
+       everything else has a door */
+    oroom(960, ND1, 1344, CD0, 'TERRAZZO', 'lobby', { light: 0.56, ambient: 0.56 });
+    for (const [a, b, n] of [[440, 512, 'open plan door'], [1560, 1632, 'conference door'],
+                             [1940, 1996, 'office door'], [2156, 2212, 'office door']])
+      odoor(a, ND1, b, CD0, n);
+    /* and the south one, where the lift lobby is the open one */
+    oroom(936, CD1, 1368, SD0, 'TERRAZZO', 'lift lobby', { light: 0.54, ambient: 0.54 });
+    for (const [a, b, n] of [[220, 292, 'break room door'], [716, 788, 'copy room door'],
+                             [1584, 1656, 'open plan door'], [1940, 1996, 'office door'],
+                             [2156, 2212, 'office door']])
+      odoor(a, CD1, b, SD0, n);
+
+    /* ---- A CUBICLE FARM ---------------------------------------------
+       A POD is two rows of cubicles back to back with the spine of
+       partition between them: chair, work surface, spine, work
+       surface, chair, which is a hundred and twelve deep and is the
+       unit every open-plan floor in the country is laid out in.
+
+       THE PARTITION IS A RAISED FLOOR AT FORTY-FOUR — over the desk,
+       under the eye at forty-nine — so you can see across the room and
+       not into the next cubicle, which is the entire design intent of
+       the object and the reason it is that height in life. It is also
+       twenty units over MAX_STEP, so it stops you the way a hedge
+       does and for the same reason. */
+    const CUB_W = 88, CUB_GAP = 8, CUB_PITCH = CUB_W + CUB_GAP;
+    const POD_D = 112, SEAT_D = 20, DESK_D = 32, SPINE = 8, CHAIR_W = 28;
+    const panel = name => ocol(
+      [{ floor: OZ + 44, ceil: OZ + OFF_CLEAR, floorTex: 'PLASTER', lowerTex: 'CUBEPANL', name }, ...plates(name)],
+      room(TOWN_FUEL.office, { floorTex: 'PLASTER', lowerTex: 'CUBEPANL', name }));
+    const pod = (u0, d0, n, name) => {
+      const run = u0 + n * CUB_PITCH - CUB_GAP;
+      const flr = (a, b, c, e) => oroom(a, b, c, e, 'OFFCARP', name);
+      I(u0, d0 + SEAT_D + DESK_D, run, d0 + SEAT_D + DESK_D + SPINE, panel(`${tag} ${name} partition`));
+      for (let k = 0; k < n; k++) {
+        const a = u0 + k * CUB_PITCH, b = a + CUB_W;
+        /* the divider between this cubicle and the next, in two
+           pieces because the spine crosses it in the middle */
+        if (k + 1 < n) for (const [q0, q1] of [[0, SEAT_D + DESK_D], [SEAT_D + DESK_D + SPINE, POD_D]])
+          I(b, d0 + q0, b + CUB_GAP, d0 + q1, panel(`${tag} ${name} partition`));
+        for (const s of [0, 1]) {
+          const c0 = s ? d0 + SEAT_D + DESK_D + SPINE : d0;
+          const seat = s ? c0 + DESK_D : c0;
+          const desk = s ? c0 : c0 + SEAT_D;
+          furn(a, desk, b, desk + DESK_D, 30, 'CUBEDESK', 'DESKFRNT', `${tag} ${name} desk`);
+          const cx = a + (CUB_W - CHAIR_W) / 2;
+          flr(a, seat, cx, seat + SEAT_D);
+          furn(cx, seat, cx + CHAIR_W, seat + SEAT_D, 18, 'CHAIRSIT', 'CHAIRLEG', `${tag} ${name} chair`);
+          flr(cx + CHAIR_W, seat, b, seat + SEAT_D);
+        }
+      }
+      return run;
+    };
+
+    /* OPEN PLAN WEST: two pods, ten cubicles, and the filing down the
+       wall at the far end of it. */
+    {
+      const n = 'open plan west', P0 = 48, P1 = pod(P0, 72, 5, n);
+      pod(P0, 280, 5, n);
+      oroom(24, ND0, 936, 72, 'OFFCARP', n);
+      oroom(24, 184, 936, 280, 'OFFCARP', n);
+      /* and the filing, in a bank against the corridor wall */
+      oroom(24, 392, 700, ND1, 'OFFCARP', n);
+      oroom(700, 392, 892, 396, 'OFFCARP', n);
+      furn(700, 396, 892, ND1, 48, 'CUBEDESK', 'FILECAB', `${tag} filing`);
+      oroom(892, 392, 936, ND1, 'OFFCARP', n);
+      for (const [a, b] of [[72, 184], [280, 392]]) {
+        oroom(24, a, P0, b, 'OFFCARP', n);
+        oroom(P1, a, 936, b, 'OFFCARP', n);
+      }
+      for (const fd of [120, 200, 280]) fitting(...F.at(220, -fd));
+      for (const fd of [120, 200, 280]) fitting(...F.at(700, -fd));
+    }
+    /* OPEN PLAN EAST: one pod of four, and the rest is floor. */
+    {
+      const n = 'open plan east', P0 = 1424, P1 = pod(P0, 680, 4, n);
+      oroom(1392, SD0, 1848, 680, 'OFFCARP', n);
+      oroom(1392, 792, 1848, 1060, 'OFFCARP', n);
+      oroom(1392, 1060, 1560, 1096, 'OFFCARP', n);
+      furn(1560, 1060, 1752, 1096, 48, 'CUBEDESK', 'FILECAB', `${tag} filing`);
+      oroom(1752, 1060, 1848, 1096, 'OFFCARP', n);
+      oroom(1392, 1096, 1848, SD1, 'OFFCARP', n);
+      oroom(1392, 680, P0, 792, 'OFFCARP', n);
+      oroom(P1, 680, 1848, 792, 'OFFCARP', n);
+      for (const fu of [1500, 1740]) for (const fd of [660, 800, 980]) fitting(...F.at(fu, -fd));
+    }
+
+    /* THE LOBBY. A reception desk across the middle of it, a seat
+       nobody has ever sat on, the directory on the wall by the door and
+       two ficus in pots that have been there since the building did. */
+    {
+      const n = 'lobby';
+      const [R0, R1, RD0, RD1] = [1040, 1264, 208, 256];
+      oroom(960, ND0, 1344, RD0, 'TERRAZZO', n, { light: 0.56, ambient: 0.56 });
+      oroom(960, RD0, R0, RD1, 'TERRAZZO', n, { light: 0.56, ambient: 0.56 });
+      furn(R0, RD0, R1, RD1, 40, 'RECEPTOP', 'RECEPDSK', `${tag} reception desk`);
+      oroom(R1, RD0, 1344, RD1, 'TERRAZZO', n, { light: 0.56, ambient: 0.56 });
+      oroom(960, RD1, 1344, 340, 'TERRAZZO', n, { light: 0.56, ambient: 0.56 });
+      /* the seat, which is a pan and a back the way every seat in this
+         game is */
+      oroom(960, 340, 1024, ND1, 'TERRAZZO', n, { light: 0.56, ambient: 0.56 });
+      furn(1024, 340, 1160, 380, 18, 'CHAIRSIT', 'CHAIRLEG', `${tag} lobby seat`);
+      furn(1024, 380, 1160, 392, 44, 'CHAIRBAK', 'CHAIRBAK', `${tag} lobby seat back`);
+      oroom(1024, 392, 1160, ND1, 'TERRAZZO', n, { light: 0.56, ambient: 0.56 });
+      oroom(1160, 340, 1344, ND1, 'TERRAZZO', n, { light: 0.56, ambient: 0.56 });
+      /* the directory on the wall beside the doors, the clock over
+         them, and the two pots */
+      prop(IB(960, 30, 966, 102), OZ + 40, OZ + 112, 'DIRECTRY', { light: 0.74 });
+      prop(IB(1138, 24, 1166, 30), OZ + 84, OZ + 110, 'SCHCLOCK', { light: 0.70 });
+      for (const [pu, pd] of [[968, 24], [1296, 24], [968, 424], [1296, 424]])
+        prop(IB(pu, pd, pu + 40, pd + 8), OZ, OZ + 56, 'PLANTPOT', { light: 0.56 });
+      for (const [fu, fd] of [[1060, 90], [1240, 90], [1060, 330], [1240, 330]]) fitting(...F.at(fu, -fd));
+    }
+
+    /* THE CONFERENCE ROOM: a table, six chairs, and the whiteboard with
+       last week's meeting still on it. */
+    {
+      const n = 'conference room';
+      const [T0, T1, TD0, TD1] = [1488, 1728, 152, 304];
+      oroom(1368, ND0, 1848, TD0 - 40, 'OFFCARP', n);
+      /* the chairs down the north side, the table, and the chairs down
+         the south side */
+      const seats = (d0, back) => {
+        let u = 1368;
+        for (const cu of [1512, 1596, 1680]) {
+          oroom(u, d0, cu, d0 + 40, 'OFFCARP', n);
+          furn(cu, back ? d0 : d0 + 20, cu + 28, back ? d0 + 20 : d0 + 40, 18, 'CHAIRSIT', 'CHAIRLEG', `${tag} chair`);
+          furn(cu, back ? d0 + 20 : d0, cu + 28, back ? d0 + 32 : d0 + 12, 42, 'CHAIRBAK', 'CHAIRBAK', `${tag} chair back`);
+          oroom(cu, back ? d0 + 32 : d0 + 12, cu + 28, back ? d0 + 40 : d0 + 20, 'OFFCARP', n);
+          u = cu + 28;
+        }
+        oroom(u, d0, 1848, d0 + 40, 'OFFCARP', n);
+      };
+      seats(TD0 - 40, false);
+      oroom(1368, TD0, T0, TD1, 'OFFCARP', n);
+      furn(T0, TD0, T1, TD1, 30, 'CONFTBL', 'DESKFRNT', `${tag} conference table`);
+      oroom(T1, TD0, 1848, TD1, 'OFFCARP', n);
+      seats(TD1, true);
+      oroom(1368, TD1 + 40, 1848, ND1, 'OFFCARP', n);
+      prop(IB(1842, 160, 1848, 256), OZ + 44, OZ + 100, 'WHITEBRD', { light: 0.64 });
+      for (const [fu, fd] of [[1470, 120], [1746, 120], [1470, 330], [1746, 330]]) fitting(...F.at(fu, -fd));
+    }
+
+    /* THE FOUR PRIVATE OFFICES, and they are the same office four
+       times: a desk across the window, a chair behind it and a cabinet
+       by the door. Which is what they are in life. */
+    const privateOffice = (u0, u1, d0, d1, k) => {
+      const n = `office ${k}`;
+      const du = u0 + 32, dw = 128;
+      oroom(u0, d0, u1, d0 + 72, 'OFFCARP', n);
+      oroom(u0, d0 + 72, du, d0 + 104, 'OFFCARP', n);
+      furn(du, d0 + 72, du + dw, d0 + 104, 30, 'CUBEDESK', 'DESKFRNT', `${tag} ${n} desk`);
+      oroom(du + dw, d0 + 72, u1, d0 + 104, 'OFFCARP', n);
+      oroom(u0, d0 + 104, du + 44, d0 + 124, 'OFFCARP', n);
+      furn(du + 44, d0 + 104, du + 72, d0 + 124, 18, 'CHAIRSIT', 'CHAIRLEG', `${tag} ${n} chair`);
+      furn(du + 44, d0 + 124, du + 72, d0 + 136, 42, 'CHAIRBAK', 'CHAIRBAK', `${tag} ${n} chair back`);
+      oroom(du + 72, d0 + 104, u1, d0 + 124, 'OFFCARP', n);
+      oroom(u0, d0 + 124, du + 44, d0 + 136, 'OFFCARP', n);
+      oroom(du + 72, d0 + 124, u1, d0 + 136, 'OFFCARP', n);
+      oroom(u0, d0 + 136, u1, d1 - 136, 'OFFCARP', n);
+      oroom(u0, d1 - 136, u1 - 36, d1 - 40, 'OFFCARP', n);
+      furn(u1 - 36, d1 - 136, u1, d1 - 40, 48, 'CUBEDESK', 'FILECAB', `${tag} ${n} filing`);
+      oroom(u0, d1 - 40, u1, d1, 'OFFCARP', n);
+      fitting(...F.at((u0 + u1) / 2, -(d0 + 100)));
+      fitting(...F.at((u0 + u1) / 2, -(d1 - 100)));
+    };
+    privateOffice(1872, 2064, ND0, ND1, 1);
+    privateOffice(2088, 2280, ND0, ND1, 2);
+    privateOffice(1872, 2064, SD0, SD1, 3);
+    privateOffice(2088, 2280, SD0, SD1, 4);
+
+    /* THE BREAK ROOM: the counter down the far wall with the coffee on
+       it, two machines by the door, three tables, and the cooler. All
+       of it against an INSIDE wall, because the outside one is the
+       three windows that give this end of the elevation its rhythm. */
+    {
+      const n = 'break room', L = { light: 0.44, ambient: 0.44 };
+      const flr = (a, b, c, e) => oroom(a, b, c, e, 'KITCHTIL', n, L);
+      /* the two machines, standing against the corridor wall */
+      flr(24, SD0, 340, 628);
+      furn(340, SD0, 384, 628, 96, 'PLASTER', 'VENDING', `${tag} vending machine`);
+      flr(384, SD0, 400, 628);
+      furn(400, SD0, 444, 628, 96, 'PLASTER', 'VENDING', `${tag} vending machine`);
+      flr(444, SD0, 560, 628);
+      flr(24, 628, 560, 660);
+      /* the counter down the east wall */
+      furn(480, 660, 560, 920, 32, 'BREAKTOP', 'BREAKCAB', `${tag} counter`);
+      /* and three tables with a chair either side of each */
+      const TU = [80, 216, 352], TW = 88;
+      const band = (b, e, mk, w) => {
+        let u = 24;
+        for (const tu of TU) {
+          const a = tu + (TW - w) / 2;
+          flr(u, b, a, e); mk(a, b, a + w, e); u = a + w;
+        }
+        flr(u, b, 480, e);
+      };
+      flr(24, 660, 480, 716);
+      band(716, 736, (a, b, c, e) => furn(a, b, c, e, 18, 'CHAIRSIT', 'CHAIRLEG', `${tag} chair`), 28);
+      flr(24, 736, 480, 740);
+      band(740, 804, (a, b, c, e) => furn(a, b, c, e, 30, 'CONFTBL', 'DESKFRNT', `${tag} table`), TW);
+      flr(24, 804, 480, 808);
+      band(808, 828, (a, b, c, e) => furn(a, b, c, e, 18, 'CHAIRSIT', 'CHAIRLEG', `${tag} chair`), 28);
+      flr(24, 828, 480, 920);
+      flr(24, 920, 560, SD1);
+      prop(IB(120, 584, 144, 592), OZ, OZ + 48, 'WATRCOOL', { light: 0.52 });
+      for (const [fu, fd] of [[160, 660], [420, 660], [160, 880], [420, 880], [160, 1080], [420, 1080]])
+        fitting(...F.at(fu, -fd));
+    }
+
+    /* THE COPY AND MAIL ROOM, with the way out to the yard in the back
+       of it. Every office has this room and it is always the one with
+       the fire door in it. */
+    {
+      const n = 'copy room';
+      oroom(584, SD0, 912, 660, 'OFFCARP', n, { light: 0.42, ambient: 0.42 });
+      oroom(584, 660, 616, 704, 'OFFCARP', n, { light: 0.42, ambient: 0.42 });
+      furn(616, 660, 664, 704, 44, 'PLASTER', 'COPIER', `${tag} copier`);
+      oroom(664, 660, 912, 704, 'OFFCARP', n, { light: 0.42, ambient: 0.42 });
+      oroom(584, 704, 912, 800, 'OFFCARP', n, { light: 0.42, ambient: 0.42 });
+      furn(720, 800, 880, 856, 30, 'CUBEDESK', 'DESKFRNT', `${tag} work table`);
+      oroom(584, 800, 720, 856, 'OFFCARP', n, { light: 0.42, ambient: 0.42 });
+      oroom(880, 800, 912, 856, 'OFFCARP', n, { light: 0.42, ambient: 0.42 });
+      oroom(584, 856, 912, 900, 'OFFCARP', n, { light: 0.42, ambient: 0.42 });
+      oroom(584, 900, 876, 1092, 'OFFCARP', n, { light: 0.42, ambient: 0.42 });
+      furn(876, 900, 912, 1092, 48, 'CUBEDESK', 'FILECAB', `${tag} filing`);
+      oroom(584, 1092, 912, SD1, 'OFFCARP', n, { light: 0.42, ambient: 0.42 });
+      for (const [fu, fd] of [[700, 660], [700, 900], [860, 780]]) fitting(...F.at(fu, -fd));
+    }
+
+    /* THE CORE: the lift lobby, the two lifts that do not go anywhere
+       because the stairs went, and the restrooms behind them. */
+    {
+      const n = 'lift lobby';
+      oroom(936, SD0, 1368, 800, 'TERRAZZO', n, { light: 0.54, ambient: 0.54 });
+      oroom(936, 800, 1008, 920, 'TERRAZZO', n, { light: 0.54, ambient: 0.54 });
+      I(1008, 800, 1296, 920, pier('LIFTDOOR', `${tag} lift`));
+      oroom(1296, 800, 1368, 920, 'TERRAZZO', n, { light: 0.54, ambient: 0.54 });
+      oroom(936, 920, 1368, 944, 'TERRAZZO', n, { light: 0.50, ambient: 0.50 });
+      odoor(1020, 944, 1076, 968, 'restroom door');
+      odoor(1228, 944, 1284, 968, 'restroom door');
+      oroom(936, 968, 1140, SD1, 'KITCHTIL', 'restroom', { light: 0.40, ambient: 0.40 });
+      oroom(1164, 968, 1368, SD1, 'KITCHTIL', 'restroom', { light: 0.40, ambient: 0.40 });
+      for (const [fu, fd] of [[1010, 660], [1290, 660], [1152, 880], [1040, 1050], [1264, 1050]])
+        fitting(...F.at(fu, -fd));
+      prop(IB(1140, 800, 1164, 806), OZ + 84, OZ + 110, 'SCHCLOCK', { light: 0.66 });
+    }
+
+    /* ---- AND WHO IS IN IT ------------------------------------------
+       The scatter at the bottom of this file only knows about the
+       ground OUTSIDE — an indoor region is a column and a column is
+       not a rectangle you can drop somebody into blind. Ten by hand,
+       which is all a ground floor at this hour has anyway: somebody
+       behind the reception desk, two waiting in front of it, four at
+       the cubicles, one in the conference room and two in the corridor
+       between them. */
+    folk(...F.at(1152, -288), Math.PI / 2);
+    folk(...F.at(1064, -150), -Math.PI / 2);
+    folk(...F.at(1248, -160), -Math.PI / 2 - 0.4);
+    folk(...F.at(172, -252), Math.PI / 2);
+    folk(...F.at(412, -252), Math.PI / 2 + 0.3);
+    folk(...F.at(684, -60), -Math.PI / 2);
+    folk(...F.at(1500, -656), Math.PI);
+    folk(...F.at(1452, -232), 0);
+    folk(...F.at(608, -508), 0);
+    folk(...F.at(1904, -508), Math.PI);
+    folk(...F.at(1152, -700), -Math.PI / 2);
+    folk(...F.at(300, -700), Math.PI / 2);
+
+    /* ---- AND WHAT IS ON THE WALLS AND OVER THE DOORS ---------------- */
+    for (const [eu, ed] of [[1136, 456], [1136, 554], [636, 1122], [24, 494], [2280, 494]])
+      prop(IB(eu - 34, ed, eu + 34, ed + 6), OZ + 96, OZ + 112, 'EXITSIGN', { light: 1.0 });
+    for (const cu of [480, 1700, 2100]) prop(IB(cu, CD0, cu + 26, CD0 + 6), OZ + 84, OZ + 110, 'SCHCLOCK', { light: 0.64 });
+    for (let u = 120; u < 2280; u += 240) fitting(...F.at(u, -508));
+
+    /* ---- THE ROOF, AND WHAT IS STANDING ON IT -----------------------
+       Free boxes over the deck. Every one of them is above the parapet
+       so that a building four storeys high has something on top of it
+       from the street, which is the only angle anybody will ever see
+       this from. */
+    {
+      const RZ = EAVES;
+      for (const [ru, rd] of [[300, 300], [760, 300], [1500, 300], [1980, 300],
+                              [420, 860], [1000, 860], [1620, 860]]) {
+        prop(IB(ru, rd, ru + 176, rd + 132), RZ, RZ + 80, 'RTU', { topTex: 'RTUTOP', light: 0.52, topLight: ROOF_LIGHT });
+        prop(IB(ru + 40, rd + 132, ru + 96, rd + 180), RZ, RZ + 52, 'DUCTWORK', { topTex: 'DUCTWORK', light: 0.46, topLight: ROOF_LIGHT });
+      }
+      /* the bulkhead the lift machinery is in, over the lift shafts */
+      prop(IB(992, 780, 1312, 940), RZ, RZ + 128, 'OFFPANEL', { topTex: 'ROOFBALL', light: 0.48, topLight: ROOF_LIGHT });
+      prop(IB(1302, 820, 1312, 900), RZ, RZ + 128, 'ROOFLADR', { light: 0.44 });
+      for (const cu of [1760, 1840, 1920]) prop(IB(cu, 560, cu + 56, 616), RZ, RZ + 60, 'CONDENSR',
+        { topTex: 'DUCTWORK', light: 0.50, topLight: ROOF_LIGHT });
+    }
+    /* the lights over the doors, and the meters on the back wall */
+    prop(F.box(E0 + 40, BAY_OUT - 6, E0 + 88, BAY_OUT), FOUND + OFF_CLEAR - 24, FOUND + OFF_CLEAR - 4, 'WALLPACK', { light: 1.0 });
+    prop(F.box(E1 - 88, BAY_OUT - 6, E1 - 40, BAY_OUT), FOUND + OFF_CLEAR - 24, FOUND + OFF_CLEAR - 4, 'WALLPACK', { light: 1.0 });
+    prop(K.box(BACK0 - 60, 0, BACK0 - 12, 6), OZ + 104, OZ + 124, 'WALLPACK', { light: 1.0 });
+    prop(K.box(BACK1 + 40, 0, BACK1 + 104, 8), OZ + 20, OZ + 76, 'METERBOX', { light: 0.44 });
+    /* the downpipes, at the corners and at the two re-entrants beside
+       the entrance bay. NOT one in the middle of each face: the first
+       cut put one at u 1160 on both of them, and 1160 on the front is
+       eight units off the centre line of the front door. */
+    for (const du of [40, 1160, 2264]) prop(K.box(du - 8, 0, du + 8, 6), FOUND, EAVES - 24, 'DOWNPIPE', { light: 0.36 });
+    for (const du of [40, 2264]) prop(F.box(du - 8, 0, du + 8, 6), FOUND, EAVES - 24, 'DOWNPIPE', { light: 0.36 });
+    for (const du of [BAY0 - 20, BAY1 + 20]) prop(F.box(du - 8, 0, du + 8, 6), FOUND, EAVES - 24, 'DOWNPIPE', { light: 0.36 });
+
+    /* =================================================================
+       THE SITE — and the parking lot is the point of it
+
+       A suburban office block is a building in a car park, and the car
+       park is bigger than the building. This one is the supermarket's
+       in miniature and built out of the same pieces: rows of bays back
+       to back facing each other, driving lanes between them, a kerbed
+       island along the front, a column of lot lighting every four bays
+       on the line where two rows meet nose to nose, and wheel stops on
+       the rows nearest the doors.
+       ================================================================= */
+    const lot = (n, extra = {}) => open(`${tag} ${n}`, {
+      floorTex: 'ASPHOLD', light: 0.32, ambient: 0.32, fuel: TOWN_FUEL.park,
+      wallTex: 'OFFPANEL', upperTex: 'OFFPANEL', ...extra });
+    const paved = (n, extra = {}) => open(`${tag} ${n}`, {
+      floor: KERB_H, floorTex: 'CONCRETE', light: 0.48, ambient: 0.48,
+      lowerTex: 'KERBSTON', fuel: 0, wallTex: 'OFFPANEL', upperTex: 'OFFPANEL', ...extra });
+    const grass = (n, extra = {}) => open(`${tag} ${n}`, {
+      floorTex: 'GRASSVRG', light: 0.34, ambient: 0.34, fuel: TOWN_FUEL.yard,
+      wallTex: 'OFFPANEL', upperTex: 'OFFPANEL', ...extra });
+    const g = (a, b, c, e, props) => (c > a && e > b) && rm.add(a, b, c, e, props);
+
+    const LX0 = x0 + OM, LX1 = x1 - OM;          // the lot, inside the block's margin
+    const LY1 = y1 - OM;                          // its north edge, at the sidewalk
+    const TW0 = ox0 - SBASE, TW1 = ox0 + OW + SBASE;   // the building with its trim on
+    const TY0 = oy - OD - SBASE, TY1 = oy + SBASE;
+    const PLZ = 128;                              // the walk across the front of it
+    const LY0 = TY1 + PLZ;                        // where the parking starts
+    const DRV0 = 7648, DRV1 = 7968;               // the way in off the street
+
+    /* the verge along the street, with the drive cut through it */
+    g(x0, LY1, DRV0, y1, grass('verge'));
+    g(DRV0, LY1, DRV1, y1, lot('drive'));
+    g(DRV1, LY1, x1, y1, grass('verge'));
+    /* the lawn down each side of the block, and the yard behind */
+    g(x0, y0, LX0, LY1, grass('lawn'));
+    g(LX1, y0, x1, LY1, grass('lawn'));
+    /* the walks down each side of the building */
+    g(LX0, TY0, TW0, LY0, paved('walk'));
+    g(TW1, TY0, LX1, LY0, paved('walk'));
+    /* the four corners of the trim, which nobody else lays */
+    g(TW0, oy, ox0, LY0, paved('walk'));
+    g(ox0 + OW, oy, TW1, LY0, paved('walk'));
+    g(TW0, TY0, ox0, oy - OD, paved('walk'));
+    g(ox0 + OW, TY0, TW1, oy - OD, paved('walk'));
+    /* THE PLAZA across the front, in three pieces because the entrance
+       bay stands seventy-two out into it */
+    const BX0 = ox0 + BAY0, BX1 = ox0 + BAY1;
+    g(ox0, TY1, BX0, LY0, paved('plaza'));
+    g(BX0, oy + BAY_OUT + SBASE, BX1, LY0, paved('plaza'));
+    g(BX1, TY1, ox0 + OW, LY0, paved('plaza'));
+
+    /* ---- THE BAYS ---------------------------------------------------- */
+    const BAY_W = 186, BAY_D = 180, LANE_D = 160, ISLE = 64;
+    const rows = [];
+    {
+      let y = LY1;
+      const lane = () => { g(LX0, y - LANE_D, LX1, y, lot('driving lane')); y -= LANE_D; };
+      const bayRow = facing => {
+        const top = y, bot = y - BAY_D;
+        g(LX0, bot, LX1, top, lot('bays', { floorTex: 'BAYROW', floorAnchor: [LX0, top] }));
+        rows.push({ y0: bot, y1: top, facing });
+        y = bot;
+      };
+      lane(); bayRow(Math.PI / 2); bayRow(-Math.PI / 2);
+      lane(); bayRow(Math.PI / 2); bayRow(-Math.PI / 2);
+      lane();
+      /* the island along the front of the lot, which is what stops a
+         car park being one sheet of tarmac all the way to the doors */
+      g(LX0, LY0, LX1, y, grass('island', { floor: KERB_H, lowerTex: 'KERBSTON', light: 0.38, ambient: 0.38 }));
+      for (let ix = LX0 + 240; ix < LX1 - 200; ix += 460)
+        plant(broadleaf(), ix, LY0 + ISLE / 2, 0.85 + R() * 0.3);
+    }
+    /* the lot lighting, on the line where two rows meet nose to nose */
+    {
+      let lk = 0;
+      for (let i = 0; i + 1 < rows.length; i++) {
+        if (rows[i].y0 !== rows[i + 1].y1) continue;
+        for (let lx = LX0 + BAY_W * 2; lx < LX1 - BAY_W; lx += BAY_W * 4, lk++)
+          lamp(lx, rows[i].y0, (lk & 1) ? Math.PI / 2 : -Math.PI / 2);
+      }
+      /* and wheel stops on the two rows nearest the doors */
+      const STOP_W = 120, STOP_D = 12;
+      for (const row of rows.slice(2)) {
+        const ny = row.facing < 0 ? row.y0 + 10 : row.y1 - 10 - STOP_D;
+        for (let k = 0; ; k++) {
+          const sx = LX0 + k * BAY_W + (BAY_W - STOP_W) / 2;
+          if (sx + STOP_W > LX1) break;
+          prop({ x0: sx, y0: ny, x1: sx + STOP_W, y1: ny + STOP_D }, 0, 12, 'WHEELSTP',
+               { topTex: 'WHEELSTP', light: 0.66, topLight: 0.80 });
+        }
+      }
+    }
+    /* AND WHO IS PARKED IN IT. Fuller at the front, the way a lot is
+       when a building is half let: nobody walks further than they have
+       to and nobody parks in the drive. */
+    for (let ri = 0; ri < rows.length; ri++) {
+      const row = rows[ri], cy = (row.y0 + row.y1) / 2;
+      const take = 0.58 - ri * 0.06;
+      for (let k = 0; ; k++) {
+        const cx = LX0 + (k + 0.5) * BAY_W;
+        if (cx + BAY_W / 2 > LX1) break;
+        if (cx > DRV0 - 120 && cx < DRV1 + 120) continue;
+        if (R() > take) continue;
+        out.carSlots.push({ x: cx, y: cy + (R() - 0.5) * 12,
+                            angle: row.facing + (R() - 0.5) * 0.09,
+                            variant: Math.floor(R() * 5), town: true });
+      }
+    }
+
+    /* ---- THE YARD BEHIND IT -----------------------------------------
+       WHERE THE ENGINE STANDS. The town's fire and police both used to
+       have a lot on this block with a ceiling over it and no building
+       under it — which is the thing that was drawing the cross. They
+       still come from A5, because ResponderState.arrivalPoints has read
+       `town.stations` since there was a town: they come from the yard
+       behind the municipal offices now, which is where the town keeps
+       its vehicles and is what a place this size actually does. */
+    const FY = y0 + 176, YB0 = y0 + 40, YB1 = TY0 - 40;
+    const BA0 = LX0 + 200, BA1 = LX0 + 1520, BB0 = LX1 - 900, BB1 = LX1 - 200;
+    g(LX0, y0, LX1, YB0, lot('service yard'));
+    /* THE APRON along the back of the building, and it is not a detail:
+       the trim strip the back door opens onto stands at FOUND, the yard
+       is at grade, and thirty-two is eight more than MAX_STEP — without
+       a step in between, the back door is a way out and not a way in. */
+    g(LX0, YB1, LX1, TY0, paved('back apron'));
+    g(LX0, YB0, BA0, YB1, lot('service yard'));
+    /* ONE REPEAT OF THE BAY TEXTURE DEEP, which is 180: the yard is
+       288 and a row painted across the whole of it has a line down the
+       middle of every bay. */
+    const YBB = YB1 - 180;
+    g(BA0, YB0, BA1, YBB, lot('service yard'));
+    g(BA0, YBB, BA1, YB1, lot('vehicle bays', { floorTex: 'BAYROW', light: 0.36, ambient: 0.36,
+                                                floorAnchor: [BA0, YB1] }));
+    /* the middle of the yard, laid round the skip that stands in it */
+    const SK0 = BA1 + 60, SK1 = BA1 + 300, SKD0 = y0 + 48, SKD1 = y0 + 168;
+    g(BA1, YB0, BB0, SKD0, lot('service yard'));
+    g(BA1, SKD0, SK0, SKD1, lot('service yard'));
+    g(SK1, SKD0, BB0, SKD1, lot('service yard'));
+    g(BA1, SKD1, BB0, YB1, lot('service yard'));
+    g(BB0, YB0, BB1, YB1, lot('fire lane', { floorTex: 'HATCHKEEP', light: 0.40, ambient: 0.40 }));
+    g(BB1, YB0, LX1, YB1, lot('service yard'));
+    out.stations.fire = { x: (BB0 + BB1) / 2, y: FY };
+    out.stations.police = { x: BA0 + 560, y: FY };
+    /* the skip against the back fence, which is a raised floor and not
+       a free box for the same reason the mall's is */
+    g(SK0, SKD0, SK1, SKD1, lot('skip', { floor: 88, floorTex: 'SKIPSIDE',
+      lowerTex: 'SKIPSIDE', upperTex: 'SKIPSIDE', wallTex: 'SKIPSIDE', light: 0.40, ambient: 0.40 }));
+    /* and the lights over it, which stand clear of the fire lane —
+       the one thing you do not put a column in the middle of */
+    for (const lx of [BA0 + 100, BA1 - 100, BB1 + 100]) lamp(lx, y0 + 96, Math.PI / 2);
+    for (const px of [LX0 + 60, LX1 - 60]) plant(broadleaf(), px, y0 + 220, 0.9 + R() * 0.3);
+    /* and the trees along the street frontage, which is the one thing
+       every lot like this has an ordinance about */
+    for (let px = x0 + 240; px < x1 - 200; px += 520) {
+      if (px > DRV0 - 200 && px < DRV1 + 200) continue;
+      plant(broadleaf(), px, LY1 + 64, 0.9 + R() * 0.3);
+    }
   }
 
   /* =================================================================
@@ -2834,7 +3605,7 @@ export function buildTown(rm, mb, opts = {}) {
         case 'school':   school(bx, by, tag); break;
         case 'field':    field(bx, by, tag); break;
         case 'church':   church(bx, by, tag); break;
-        case 'stations': servicesBlock(bx, by, tag); break;
+        case 'offices':  officeBlock(bx, by, tag); break;
         case 'square':   parkBlock(bx, by, `${tag} the green`, 'green'); break;
         case 'park':     parkBlock(bx, by, `${tag} the park`, 'park'); break;
         case 'cemetery': parkBlock(bx, by, `${tag} the cemetery`, 'cemetery'); break;
@@ -2848,6 +3619,95 @@ export function buildTown(rm, mb, opts = {}) {
   /* AND THE HEDGES LAST, because every one of them is a hole cut in a
      lawn somebody else laid and the lawn has to be there first. */
   carveHedges();
+
+  /* =================================================================
+     THE PEOPLE ON THE STREET
+
+     The town had nobody in it. Twenty-five blocks, a school, a church,
+     a green, a cemetery, seven hundred and thirty-six people inside the
+     supermarket and not one person outside it — which at two in the
+     morning reads as exactly what it is.
+
+     WHERE THEY GO IS NOT A LIST. Writing coordinates for five hundred
+     people is five hundred chances to put somebody inside a hedge, and
+     every one of them goes stale the moment a block is re-laid. So the
+     town is ASKED instead: every rectangle already in the RectMap that
+     is outdoors, at grade, inside the town's own grid and wearing a
+     surface a person would stand on is a candidate, weighted by what it
+     is. A sidewalk is where people are; a path and a crossing are where
+     they are going; a lawn is where a few of them are; a parking lot is
+     where two or three are; and a CARRIAGEWAY is not on the list, which
+     is the whole of why nobody is standing in the road. Move a block and
+     the crowd moves with it, because the crowd is a fact about the
+     rectangles and not a fact about the town.
+
+     THE SPACING IS THE OTHER HALF, and it is the shop's lesson again
+     (see THE CROWD in js/maps/sellwrong.js): people dropped at random
+     into a big enough space land apart, and dropped into a small one
+     land on top of each other. Ninety-six is about ten feet — close
+     enough to read as a street with people on it, far enough that
+     everybody has a step they can take when the fire arrives.
+
+     AND NOT IN A CAR. The parked vehicles are models rather than
+     sectors and nothing would have stopped a person being placed
+     inside one; `out.carSlots` is complete by this point, so they are
+     simply asked. */
+  {
+    /* what a surface is worth, in people per hundred thousand square
+       units of it. Anything not named here is not somewhere anybody
+       stands, which includes every road surface in the town. */
+    const WORTH = {
+      SIDEWALK: 30, LAMPPOOL: 34, PAVERS: 26, CROSSWLK: 14,
+      /* CONCRETE IS WORTH LESS THAN IT LOOKS. The gas station's whole
+         block is one rectangle of it three thousand units square, and
+         at the sidewalk's weight that one empty forecourt took
+         forty-four people out of five hundred — a tenth of the town
+         standing about on the same slab. */
+      CONCRETE: 6, GRASSVRG: 6, ASPHOLD: 3, BAYROW: 2, HATCHKEEP: 2,
+    };
+    const INSET = 30;                 // nobody stands with their back in a wall
+    const APART = 96, CLEAR_CAR = 104;
+    const spots = [];
+    let total = 0;
+    for (const r of rm.rects) {
+      const p = r.props;
+      if (!p || !p.outdoor || p.storeys || p.arc) continue;
+      if ((p.floor ?? 0) > KERB_H) continue;
+      const w = WORTH[p.floorTex];
+      if (!w) continue;
+      const dx = r.x1 - r.x0 - 2 * INSET, dy = r.y1 - r.y0 - 2 * INSET;
+      if (dx < 16 || dy < 16) continue;
+      if (r.x0 < G.x0 || r.x1 > G.x1 || r.y0 < G.y0 || r.y1 > G.y1) continue;
+      total += w * dx * dy / 1e5;
+      spots.push({ r, dx, dy, acc: total });
+    }
+    const TOWNSFOLK = 560;
+    const taken = [];
+    for (let go = 0; go < TOWNSFOLK * 24 && out.folk < TOWNSFOLK; go++) {
+      const t = R() * total;
+      let lo = 0, hi = spots.length - 1;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (spots[mid].acc < t) lo = mid + 1; else hi = mid; }
+      const sp = spots[lo], r = sp.r;
+      const x = r.x0 + INSET + R() * sp.dx, y = r.y0 + INSET + R() * sp.dy;
+      let ok = true;
+      for (let i = 0; i < taken.length; i += 2) {
+        const ddx = taken[i] - x, ddy = taken[i + 1] - y;
+        if (ddx * ddx + ddy * ddy < APART * APART) { ok = false; break; }
+      }
+      if (ok) for (const c of out.carSlots) {
+        const ddx = c.x - x, ddy = c.y - y;
+        if (ddx * ddx + ddy * ddy < CLEAR_CAR * CLEAR_CAR) { ok = false; break; }
+      }
+      if (!ok) continue;
+      taken.push(x, y);
+      /* facing along the long axis of whatever they are standing on,
+         which on a sidewalk is the way the street goes, with a lean on
+         it so a row of them is not a parade */
+      const along = (r.x1 - r.x0) >= (r.y1 - r.y0);
+      const a = along ? (R() < 0.5 ? 0 : Math.PI) : (R() < 0.5 ? Math.PI / 2 : -Math.PI / 2);
+      folk(x, y, a + (R() - 0.5) * 0.8);
+    }
+  }
 
   return out;
 }

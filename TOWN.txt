@@ -191,6 +191,42 @@ WHERE IT DEPARTS FROM THE PLAN, and why:
     the chimney managed and is what a ceiling should look like.
   THE HALF-SECOND IS NOW ABOUT A SECOND AND A HALF. See THE TEST below
     for what was done about it and README.txt for the number.
+  A5 IS AN OFFICE BLOCK AND NOT TWO STATION LOTS, at the user's request
+    and because of what the two lots were doing. The plan gives A5 the
+    fire station and the police station; what was built was three
+    rectangles of asphalt with no building on any of them and the map's
+    usual 16 units of VOID between each pair. Inside a building a void
+    is a wall and is what it is for; out in the open it is a slab. A
+    one-sided line draws its wallTex over the whole height of the sector
+    it has, and the station lot is open to the sky at 768 — so the slot
+    along its north edge came out as a wall of brick 3072 long and 768
+    tall with the slot between the other two crossing it, which is the
+    brick CROSS eight storeys high the user photographed standing in an
+    empty car park. The `ceil: 2 * STOREY` on the two lots looks like
+    the culprit and is not: a step between two patches of sky draws
+    nothing. What is on the block now is
+    a four-storey speculative office block — a flat roof behind a
+    parapet at 584, a ribbon of twenty-nine glazed bays four floors
+    tall, and a ground floor you can walk into with a lobby, a corridor,
+    two open-plan floors of cubicles, a conference room, four private
+    offices, a break room, a copy room and two lifts that go nowhere —
+    standing in a parking lot of four bay rows, three lanes and a
+    planted island. `arrivalPoints` still reads `town.stations`: the
+    engine and the cruisers come out of the service yard behind it,
+    which is where a town this size keeps its vehicles. Twenty-six new
+    textures. See THE WEIRD PLUS-SHAPED GLITCHY WALL THING in README.txt.
+  AND THERE ARE PEOPLE IN IT, at the user's request, which WHAT THIS
+    PLAN DOES NOT DO says there are not. Five hundred and sixty of them,
+    and they are not a list of coordinates: every rectangle already in
+    the RectMap that is outdoors, at grade, inside the grid and wearing
+    a surface a person would stand on is a candidate, weighted by what
+    it is — a sidewalk and a pool of lamplight heavily, a path and a
+    crossing next, a lawn a little, a lot barely, and a carriageway not
+    at all, which is why nobody is standing in the road. Move a block
+    and the crowd moves with it. They are a TOWNIE and not a SHOPPER
+    because three things in this game mean the crowd in the supermarket
+    when they say shopper; everything else about a person near a fire
+    they inherit. See AND THE PEOPLE ON THE STREET in README.txt.
 
 Nothing below this line was built from. This is the plan, the numbers it
 falls out of, the one engine idea it needs, and the order to do it in.

@@ -549,6 +549,35 @@ export const ACTORS = {
              shootable: true, flammable: false, health: 100000 },
 };
 
+/* ---------------------------------------------------------------------
+   AND THE SAME PERSON, OUT OF DOORS
+
+   The town has people on its streets, at the user's request, and one
+   of them is a shopper in every respect but the only one that matters:
+   they are not IN THE SHOP.
+
+   WHY IT IS A SECOND TYPE and not five hundred more SHOPPERs. Three
+   things in this game mean "the crowd in the supermarket" when they say
+   shopper, and all three would have gone wrong. Game.peopleLeft is the
+   number over the HUD and is how much of the STORE is still alive — it
+   would have counted the whole town and never gone down. The crowd LOD
+   in Game.render draws a fraction of them by id, and the fraction would
+   have been spent on people four blocks away. And the suite holds every
+   shopper against the sales floor rectangle, which the town's would
+   have failed by five hundred.
+
+   Everything else they inherit, and that is the point: a townie burns,
+   panics, freezes, gibs and drags a trail of fire down a sidewalk
+   exactly as the crowd in the aisles does, because the whole of that
+   behaviour belongs to a person near a fire and not to a person near a
+   shelf. The only two numbers changed are how far a fright carries and
+   how long it lasts: a street is not an aisle, you can see further down
+   one, and there is somewhere to run to. */
+ACTORS.TOWNIE = {
+  ...ACTORS.SHOPPER, name: 'Townsfolk',
+  scareRange: 420, panicTics: 11 * TICRATE,
+};
+
 export function stateOf(name) {
   const s = STATES[name];
   if (!s) console.warn('missing state:', name);
