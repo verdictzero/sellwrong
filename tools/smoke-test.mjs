@@ -5209,7 +5209,7 @@ section('the lance, second pass');
     /const row = over > 0\.70 \? \['EJECT', 'THE CELL'\]/.test(scopeSrc2));
   check('and the game itself shouts, four times, on the way down',
     /for \(const \[at, said\] of OVERCHARGE_CALLS\)/.test(playerSrc) &&
-    /this\.game\.setBigMessage\?\.\(said,/.test(playerSrc));
+    /this\.game\.toast\?\.\(said\);/.test(playerSrc));
   {
     /* it does not go off early, and it does go off */
     const fired = [];
@@ -5750,6 +5750,79 @@ section('the readout');
       ['burn', 'full', 'low', 'empty', 'armour1', 'armour2', 'health', 'ink', 'card'].every(k => names.includes(k)));
     check('and the amber is the page\'s own amber, so the readout and the menus agree',
       /#e8c34a/.test(hudSrc) && /#e8c34a/.test(css));
+  }
+
+  /* ---- AND THE GUN'S OWN NOTICES, STACKED IN THE CORNER -------------
+     At the user's request, and it is the opposite of the card in the
+     middle in every way that matters: small, off to one side, several
+     at once, and it goes away by itself. The lance shouts four times on
+     its way to killing you and a fifth time when it does, and all five
+     were going through setBigMessage — thirty-point type across the
+     middle of the picture, one at a time, each wiping the one before
+     it. The fifth landed ON TOP of the end-of-night card and took the
+     "go again" prompt with it, which is the bug this pass found.
+     --------------------------------------------------------------------- */
+  {
+    const fsN = await import('node:fs');
+    const gameSrc = fsN.readFileSync('js/game.js', 'utf8');
+    const playerSrc2 = fsN.readFileSync('js/player.js', 'utf8');
+    const H = await import('../js/hud.js');
+    const G = await import('../js/game.js');
+
+    /* the queue itself, off the real methods and a bare object */
+    const q = { toasts: [], toast: null, toastTic: null };
+    const proto = (await import('../js/game.js')).Game.prototype;
+    q.toast = proto.toast.bind(q); q.toastTic = proto.toastTic.bind(q);
+    q.toast('ONE'); q.toast('TWO'); q.toast('THREE');
+    check('notices stack, newest last, in the order they were said',
+      q.toasts.map(t => t.text).join(',') === 'ONE,TWO,THREE');
+    q.toast('THREE');
+    check('and the same notice twice running is one notice, restarted',
+      q.toasts.length === 3 && q.toasts[2].tics === G.TOAST_LIFE);
+    for (let i = 0; i < 8; i++) q.toast('N' + i);
+    note('the stack, and what it is capped at',
+      `${q.toasts.length} of ${G.TOAST_MAX} after eleven notices`);
+    check('the stack is a stack and not a log: past the cap the oldest goes',
+      q.toasts.length === G.TOAST_MAX && q.toasts[q.toasts.length - 1].text === 'N7');
+    const before = q.toasts.length;
+    for (let i = 0; i < G.TOAST_LIFE + 2; i++) q.toastTic();
+    check('and every one of them goes away on its own',
+      before === G.TOAST_MAX && q.toasts.length === 0);
+    check('the clock runs with the world, so a paused game does not eat them',
+      /this\.toastTic\(\);/.test(gameSrc) &&
+      gameSrc.indexOf('this.toastTic();') > gameSrc.indexOf('  tic() {'));
+
+    /* the fade */
+    check('a notice is at full strength until the last second and a quarter of it',
+      H.toastFade(G.TOAST_LIFE) === 1 && H.toastFade(0) === 0 &&
+      H.toastFade(Math.round(1.25 * 35)) === 1 && H.toastFade(Math.round(0.6 * 35)) < 1);
+
+    /* where it lands, and what it is made of */
+    check('they are drawn bottom left, off the bottom edge and up',
+      /const y = this\.cssH - M - up \* lead;/.test(hudSrc) &&
+      /tracked\(ctx, list\[i\]\.text, M, y, track\);/.test(hudSrc));
+    check('and the newest is the one on the floor, with the older ones above it',
+      /const up = list\.length - 1 - i;/.test(hudSrc));
+    check('text only — no plate, no rule, no box',
+      (() => {
+        const body = hudSrc.slice(hudSrc.indexOf('  _drawToasts() {'),
+                                  hudSrc.indexOf('     Per frame.'));
+        return !/fillRect|strokeRect|roundRect/.test(body);
+      })());
+    check('and the canvas knows to redraw when one of them changes or fades',
+      /\(g\.toasts \|\| \[\]\)\.map\(t => `\$\{t\.text\}:\$\{Math\.round\(toastFade\(t\.tics\) \* 16\)\}`\)/.test(hudSrc));
+
+    /* and the lance says them this way and not the other */
+    check('every one of the lance\'s notices is a notice, not the card',
+      /this\.game\.toast\?\.\(said\);/.test(playerSrc2) &&
+      /g\.toast\?\.\('THE CAPACITOR LET GO'\);/.test(playerSrc2) &&
+      !/setBigMessage\?\.\('THE CAPACITOR LET GO'/.test(playerSrc2));
+    /* the CALL and not the word: the comment beside the line that
+       replaced it names the thing it replaced, which is the point of
+       the comment */
+    check('so the end-of-night card survives the gun going off in your hands',
+      !/setBigMessage\?\.\(/.test(playerSrc2.slice(playerSrc2.indexOf('  blowUp() {'),
+                                                   playerSrc2.indexOf('  get overFraction()'))));
   }
 }
 

@@ -65,6 +65,15 @@ const THING_TO_ACTOR = {
    rather than a blackout — until you shoot out the neighbours too. */
 /* HOW OFTEN THE BURN PICTURE GOES TO THE GPU, in tics. Three of them is
    about twelve hertz; see ticBurnGrid for why it is not thirty-five. */
+/* HOW LONG ONE OF THE GUN'S NOTICES STAYS UP, and how many of them can
+   be up at once. Six seconds is long enough that a rung of the
+   overcharge ladder is still readable when the next one arrives — the
+   gaps are eight, ten and seven seconds — so the stack shows you the
+   countdown rather than one line at a time. Four at once is all five
+   rungs minus the one that has just fallen off the top. */
+export const TOAST_LIFE = 6 * TICRATE;
+export const TOAST_MAX = 4;
+
 const BURN_UPLOAD_EVERY = 3;
 const LAMP_RANGE = 340;
 const LAMP_GAIN = 0.30;
@@ -112,6 +121,8 @@ export class Game {
     this.state = 'play';           // play | dead | won
     this.bigMessage = null;
     this.bigMessageTics = 0;
+    /* the gun's own notices, newest last — see toast() */
+    this.toasts = [];
     this.totalMonsters = 0;
 
     /* Before anything is spawned: every actor puts itself into this on
@@ -475,6 +486,7 @@ export class Game {
     this.ticBurnGrid();
 
     if (this.bigMessageTics > 0 && --this.bigMessageTics === 0) this.bigMessage = null;
+    this.toastTic();
 
     /* the corpses and the spent puffs, cleared once a tic */
     for (let i = this.actors.length - 1; i >= 0; i--)
@@ -718,6 +730,45 @@ export class Game {
   }
 
   setBigMessage(t, tics) { this.bigMessage = t; this.bigMessageTics = tics; }
+
+  /* ------------------------------------------------------------------
+     THE GUN'S OWN NOTICES, at the user's request, and they are TOASTS
+     rather than the big card in the middle of the picture.
+
+     The lance shouts four times on its way to killing you and a fifth
+     time when it does (see OVERCHARGE_CALLS in js/player.js), and every
+     one of them was going through setBigMessage — thirty-point type
+     across the middle of the screen, one at a time, each wiping the one
+     before it. Three problems with that: it is in the way at exactly
+     the moment you are trying to aim, you cannot see the one before it
+     so you lose the sense of a countdown, and it was landing on top of
+     the end-of-night card, which is what setBigMessage is actually for.
+     The last of those was a real bug: blowUp's own line overwrote the
+     YOU DIED card and took the "press space to go again" prompt with
+     it.
+
+     So they stack, in small type, bottom left, and they fade. The newest
+     is at the bottom and the older ones ride up above it, which is the
+     way every notification stack anybody has used works, and it means
+     the one that just arrived is always in the same place.
+     ------------------------------------------------------------------ */
+  toast(text) {
+    if (!text) return;
+    /* the same notice twice running is one notice, restarted: a rung
+       that somehow fired twice should not print twice */
+    const top = this.toasts[this.toasts.length - 1];
+    if (top && top.text === text) { top.tics = TOAST_LIFE; return; }
+    this.toasts.push({ text: String(text), tics: TOAST_LIFE });
+    /* and only so many: past that the oldest goes, which is what makes
+       it a stack and not a log */
+    while (this.toasts.length > TOAST_MAX) this.toasts.shift();
+  }
+
+  /** One tic of the stack: everything ages, and what has run out goes. */
+  toastTic() {
+    for (let i = this.toasts.length - 1; i >= 0; i--)
+      if (--this.toasts[i].tics <= 0) this.toasts.splice(i, 1);
+  }
 
   /* ------------------------------------------------------------------
      Weapons reaching into the world

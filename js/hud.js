@@ -125,6 +125,16 @@ const MAX_UI = 4096;
  * drawing. Exact in a monospace face and only a monospace face, which is
  * why FACE above is one: in a proportional face this would throw away
  * every kerning pair. */
+/* HOW BRIGHT ONE OF THE GUN'S NOTICES IS, by how much of its life is
+   left. Full until the last second and a quarter of it, then down to
+   nothing — a notice that faded from the moment it arrived would be
+   half gone by the time you looked at it. See Game.toast and
+   Readout._drawToasts. */
+const TOAST_FADE = 1.25 * 35;
+export function toastFade(tics) {
+  return Math.max(0, Math.min(1, tics / TOAST_FADE));
+}
+
 function trackedWidth(ctx, str, track) {
   let w = 0;
   for (const ch of str) w += ctx.measureText(ch).width + track;
@@ -449,6 +459,53 @@ export class Hud {
   }
 
   /* ------------------------------------------------------------------
+     THE BOTTOM LEFT: the gun's own notices, stacked.
+
+     At the user's request, and it is the opposite of the card above in
+     every way that matters: small, off to one side, several at once,
+     and it goes away by itself. See Game.toast — the game owns the
+     queue and the clock, this owns where it lands.
+
+     NEWEST AT THE BOTTOM, older ones riding up above it, because that
+     is the way every notification stack anybody has used works and it
+     means the line that has just arrived is always in the same place.
+     Text only: no plate, no rule, no box. On a picture this busy a
+     panel would read as another piece of the gun.
+     ------------------------------------------------------------------ */
+  _drawToasts() {
+    const list = this.game.toasts;
+    if (!list || !list.length) return;
+    const ctx = this.ctx, s = this.s;
+    const M = Math.round(20 * s);
+    const size = Math.round(Math.min(13 * s, this.cssW / 34));
+    const lead = Math.round(size * 1.7);
+    const track = size * 0.2;
+    ctx.save();
+    ctx.font = `${size}px ${FACE}`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.shadowColor = UI.shadow;
+    ctx.shadowBlur = 7 * s;
+    ctx.shadowOffsetY = 1 * s;
+    for (let i = 0; i < list.length; i++) {
+      /* the last in the list is the newest, and it sits on the floor */
+      const up = list.length - 1 - i;
+      const y = this.cssH - M - up * lead;
+      if (y < lead) continue;                       // off the top of a short screen
+      ctx.globalAlpha = toastFade(list[i].tics);
+      /* THE NEWEST IS AMBER AND THE REST ARE THE ORDINARY TYPE COLOUR,
+         which is not the same as being dim: inkDim was the first try
+         and on a lit pavement the three lines above the newest one were
+         barely there. The hierarchy is the colour, not the strength —
+         they all have to be readable or there is no point stacking
+         them. */
+      ctx.fillStyle = up === 0 ? UI.card : UI.ink;
+      tracked(ctx, list[i].text, M, y, track);
+    }
+    ctx.restore();
+  }
+
+  /* ------------------------------------------------------------------
      Per frame.
 
      The canvas is redrawn only when something on it has changed, which
@@ -476,6 +533,13 @@ export class Hud {
         p ? `${Math.round(p.armour2)},${Math.round(p.armour1)},${Math.round(p.health)},${p.dead ? 1 : 0}` : '',
         p && !p.dead ? p.weapon : '',
         g.bigMessage || '',
+        /* AND THE NOTICES, WITH THEIR FADE QUANTISED. The canvas is
+           redrawn only when this key changes, and a toast that fades
+           continuously would either never redraw or redraw every frame
+           depending on how it was written here. Sixteen steps of alpha
+           is a fade nobody can see the stairs in and sixteen redraws
+           per notice, which is nothing. */
+        (g.toasts || []).map(t => `${t.text}:${Math.round(toastFade(t.tics) * 16)}`).join(','),
       ].join('|');
       if (key !== this._key) {
         this._key = key;
@@ -485,6 +549,7 @@ export class Hud {
         this._drawBars(p);
         this._drawName(p);
         this._drawBig();
+        this._drawToasts();
       }
     }
 

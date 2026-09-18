@@ -139,7 +139,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         2443 checks, no install and no browser
+  the smoke test         2455 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -4569,6 +4569,29 @@ crosses it:
   CAPACITOR CRITICAL         18s
   CAPACITOR BREACH IMMINENT  28s
   EJECT THE CELL             35s
+  THE CAPACITOR LET GO       40s
+
+AND THEY ARE TOASTS, at the user's request, which is the opposite of the
+card in the middle of the picture in every way that matters: small type,
+bottom left, text only, several at once, and they go away by themselves.
+Every one of them was a setBigMessage for a release — thirty-point type
+across the middle of the screen, one at a time, each wiping the one
+before it — and that was wrong three times over. It is in the way at
+exactly the moment you are trying to aim. You cannot see the rung before
+it, so the ladder stops reading as a countdown and reads as a series of
+unrelated shouts. And the last one landed ON TOP of the end-of-night
+card and took the "press space to go again" prompt with it for eight
+seconds, which is a real bug and is what finding this fixed.
+
+Game.toast owns the queue and the clock; Readout._drawToasts owns where
+it lands. Four at once, six seconds each, full strength until the last
+second and a quarter. The NEWEST IS AT THE BOTTOM and the older ones
+ride up above it, which is how every notification stack anybody has used
+works and means the line that just arrived is always in the same place.
+The newest is amber and the rest are the ordinary type colour — the
+hierarchy is the colour and not the strength, because the first cut
+dimmed them and on a lit pavement the three above the newest were barely
+there, which defeats the point of stacking them at all.
 
 The gun's own screen says a shorter version of the same thing in TWO
 ROWS — CAPACITOR over CRITICAL, EJECT over THE CELL — because that panel
@@ -7290,7 +7313,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-2443 checks. Every one of them earns its place by having caught something
+2455 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

@@ -1118,7 +1118,7 @@ export class Player {
            once — see OVERCHARGE_CALLS. */
         for (const [at, said] of OVERCHARGE_CALLS)
           if (this.overcharge === Math.round(OVERCHARGE_TICS * at))
-            this.game.setBigMessage?.(said, Math.min(120, OVERCHARGE_TICS - this.overcharge));
+            this.game.toast?.(said);
       }
       this.coilTic();
       return;
@@ -1314,7 +1314,13 @@ export class Player {
     this.momy = -Math.sin(this.angle) * BLAST_KICK;
     this.momz = BLAST_LIFT;
     this.onGround = false;
-    g.setBigMessage?.('THE CAPACITOR LET GO', 300);
+    /* AND THE LAST OF THEM IS A NOTICE TOO, not the card. It was
+       setBigMessage, and because die() runs a line above this one it
+       landed ON TOP of the YOU DIED card and took the "go again"
+       prompt with it for eight seconds. The gun's last word belongs
+       with the gun's other four, down in the corner, and the card
+       belongs to the run that has just ended. */
+    g.toast?.('THE CAPACITOR LET GO');
   }
 
   /** HOW FAR INTO THE OVERCHARGE IT IS, 0 to 1 — what the screen on the
