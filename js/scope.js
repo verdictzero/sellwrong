@@ -163,6 +163,8 @@ uniform sampler2D panel;
 uniform vec4  box;        // minX, minY, 1/width, 1/height, in the mesh's units
 uniform float on;         // 0 dead, 1 lit
 uniform float noise;      // 0..1, static
+uniform float heat;       // 0..1, how hot the chassis round it is
+uniform float over;       // 0..1, how far into the overcharge
 uniform float tics;
 uniform vec3  tint;
 varying vec3 vL;
@@ -178,6 +180,29 @@ void main() {
      a barrel of a couple of per cent, so the picture bows and the scan
      lines bow with it. */
   vec2 fuv = uv + c * dot(c, c) * 0.16;
+
+  /* ---- THE PICTURE COMES APART AS THE COIL DOES -------------------
+     At the user's request, and it is applied to the FEED's coordinates
+     rather than to the finished image for the same reason the static
+     is: the gauges are drawn by the gun, on the gun, and are not coming
+     down a wire from anywhere. A sensor whose cable is sitting next to
+     a capacitor forty seconds into a failure tears, rolls and drops
+     rows. The readout of how long you have left does not, or it stops
+     being a readout at the moment it matters.
+
+     Three things, all of them nothing at over = 0: bands of rows slide
+     sideways, the whole frame jumps now and then, and further in the
+     picture starts losing rows entirely. The thresholds are written as
+     step(1 - over * k, r) so that at zero NOTHING passes — a glitch
+     that is faintly on all the time is a broken screen rather than a
+     failing one. */
+  if (over > 0.0) {
+    float band = floor(uv.y * 26.0);
+    float j = hash(vec2(band, floor(tics * 6.0)));
+    fuv.x += step(1.0 - over * 0.55, j) * (j - 0.5) * over * 0.26;
+    float jump = hash(vec2(7.0, floor(tics * 2.0)));
+    fuv.y += step(1.0 - over * 0.40, jump) * (jump - 0.5) * over * 0.12;
+  }
 
   vec3 col = vec3(0.0);
   if (fuv.x > 0.0 && fuv.x < 1.0 && fuv.y > 0.0 && fuv.y < 1.0) {
@@ -202,9 +227,37 @@ void main() {
      coil mid-discharge) it took the charge ring with it. So the static
      is applied HERE, to the feed, and the overlay goes on top of it
      afterwards and stays crisp. */
+  /* and whole rows that are simply not there this frame */
+  if (over > 0.0) {
+    float d = hash(vec2(floor(uv.y * 44.0), floor(tics * 5.0) + 11.0));
+    col *= 1.0 - step(1.0 - over * 0.34, d);
+  }
+
   float n = hash(floor(uv * 128.0) + floor(tics * 3.0));
   col += (n - 0.5) * noise * 0.8;
   col = mix(col, vec3(n) * tint, noise * 0.25 * step(0.86, hash(vec2(floor(uv.y * 48.0), floor(tics * 2.0)))));
+
+  /* ---- AND THE GLASS COOKS WITH THE REST OF IT --------------------
+     At the user's request: the screen glows as the chassis does, at
+     HALF the brightness. The panel sits at model z -0.169 and the coil
+     the chassis heats from is at -0.16, so the glass is as good as ON
+     the hot spot — which means this is the ramp in GUN_FRAG evaluated
+     where reach is one, and the only difference is the half.
+
+     MOST OF IT GOES UNDER THE GAUGES and a little over, which is not
+     where it started. Putting all of it on top was the obvious reading
+     of "the screen glows" and it whited the panel out at full
+     overcharge: the one moment the warning matters most was the one
+     moment you could not read it. Under the gauges the glass still
+     plainly cooks — the picture behind them goes from dull red to
+     white — and the ring, the bar and the word stay crisp on top of
+     it, with just enough bloom over everything to say the glass itself
+     is hot and not something being displayed on it. */
+  float hh = heat * smoothstep(0.0, 0.9, 0.7 + heat * 0.3);
+  hh = floor(hh * 8.0 + 0.5) / 8.0;
+  vec3 hot = hh < 0.5 ? mix(vec3(0.42, 0.02, 0.0), vec3(1.0, 0.36, 0.05), hh * 2.0)
+                      : mix(vec3(1.0, 0.36, 0.05), vec3(1.0, 0.92, 0.62), (hh - 0.5) * 2.0);
+  col = mix(col, hot, hh * 0.26) + hot * hh * 0.12;
 
   /* the gauges, straight over it, already the right colour */
   vec4 g = texture2D(panel, uv);
@@ -246,6 +299,10 @@ void main() {
   float r = max(abs(c.x), abs(c.y)) * 2.0;
   col *= 1.0 - smoothstep(0.94, 1.02, r);
   col += tint * 0.30 * smoothstep(0.90, 0.97, r) * (1.0 - smoothstep(0.97, 1.02, r));
+
+  /* and the last of the glow, over the bezel too, because the rim is
+     part of the same lump of metal — see the note above the ramp */
+  col += hot * hh * 0.08;
 
   /* and a little of it always on, so a dead screen is dark glass and
      not a hole in the gun */
@@ -408,6 +465,7 @@ export class Scope {
         panel: { value: this.panelTexture },
         box: { value: new THREE.Vector4(0, 0, 1, 1) },
         on: { value: 1 }, noise: { value: 0 }, tics: { value: 0 },
+        heat: { value: 0 }, over: { value: 0 },
         tint: { value: new THREE.Vector3(...PHOSPHOR) },
       },
       vertexShader: SCREEN_VERT, fragmentShader: SCREEN_FRAG,
@@ -501,6 +559,10 @@ export class Scope {
       /* static from the heat, and a hard burst of it while the beam is
          out — the screen is next to a positron coil that is firing */
       s.uniforms.noise.value = Math.min(0.58, heat * 0.42 + (p && p.beamTics > 0 ? 0.24 : 0));
+      /* the glass cooks with the chassis, and comes apart with the
+         overcharge — see SCREEN_FRAG */
+      s.uniforms.heat.value = heat;
+      s.uniforms.over.value = p ? (p.overFraction || 0) : 0;
     }
     if (o) { o.uniforms.tics.value = tics; o.uniforms.charge.value = Math.max(charge, p && p.beamTics > 0 ? 1 : 0); }
     if (!this.ctx) return false;
@@ -665,7 +727,7 @@ export class Scope {
          game's own big message at the same moment anyway (see
          OVERCHARGE_CALLS in js/player.js), so the panel is the thing
          you glance at and that is the thing you read. */
-      const row = over > 0.70 ? ['EJECT', 'THE CELL']
+      const row = over > 0.70 ? ['EJECT', 'CAPACITOR']
                 : over > 0.45 ? ['CAPACITOR', 'CRITICAL']
                 : ['CAPACITOR', 'OVERCHARGE'];
       if (over < 0.70 || blink) {

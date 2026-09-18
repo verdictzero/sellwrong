@@ -65,7 +65,7 @@ const failed = text => { const s = $('load-status'); if (s) s.textContent = text
    and this one is free to be about detail. It is still the frame rate
    control; halving it quarters the pixels being shaded. */
 const DETAIL = [120, 150, 200, 240, 300, 400, 480, 600, 720, 960];
-const DEFAULT_DETAIL = 9;              // 960, the top of the ladder, at the user's request (it was 720)
+const DEFAULT_DETAIL = 6;              // 480, at the user's request, for the frame rate (it was 960)
 
 /* AND HOW BIG A PIXEL IS, which is a different question and used to be
    the same one. This is the grid the finished frame is filtered down
@@ -86,7 +86,7 @@ const DEFAULT_DETAIL = 9;              // 960, the top of the ladder, at the use
    step nobody can see. */
 const PIXELS = [120, 150, 200, 240, 320, 400, 480, 600, 0];
 const PIXELS_OFF = PIXELS.length - 1;
-const DEFAULT_PIXELS = 4;              // 320, at the user's request, up from 240
+const DEFAULT_PIXELS = 3;              // 240, at the user's request, down from 320
 
 /* THE SHAPE OF ONE, width over height as displayed. 320x200 filling a
    4:3 monitor is not a square-pixel mode and never was: each pixel stood

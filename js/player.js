@@ -326,8 +326,8 @@ export const BLAST_LIFT = 17;
 export const OVERCHARGE_CALLS = [
   [0.20, 'CAPACITOR OVERCHARGE'],
   [0.45, 'CAPACITOR CRITICAL'],
-  [0.70, 'CAPACITOR BREACH IMMINENT'],
-  [0.88, 'EJECT THE CELL'],
+  [0.70, 'CAPACITOR FAILURE IMMINENT'],
+  [0.88, 'EJECT CAPACITOR'],
 ];
 /* and what venting costs: a third of the heat a shot would have made,
    because the coil was at full and the energy went somewhere */

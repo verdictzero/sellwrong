@@ -100,6 +100,25 @@ const UI = {
    throw away kerning in any other. */
 const FACE = 'ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace';
 
+/* AND A FACE THAT HAS THE KANJI IN IT, for the death card. The page's
+   own face is a monospace stack and none of those carry CJK, so the
+   character would come out as a tofu box on most of them. This is the
+   usual ladder — what Apple ships, what Windows ships, what Google
+   ships, what a Linux box is likely to have — ending at the generic
+   serif, which on any system with a Japanese font installed resolves
+   to one. A brush-ish serif rather than a gothic because the card is
+   meant to land like a seal. */
+const KANJI = '"Hiragino Mincho ProN", "Yu Mincho", YuMincho, "Noto Serif JP", "Noto Sans CJK JP", IPAGothic, serif';
+
+/* WHAT THE CARD SAYS, and it says it twice. 死 is the whole of it in
+   Japanese — the character means death by itself, which is why it is
+   the one on the seal and not 死亡 or a sentence. */
+const DEATH_KANJI = '\u6b7b';
+const DEATH_TEXT = 'YOU DIED';
+/* red, and a red that survives the page's own amber sitting next to it */
+const DEATH_INK = '#c8102e';
+const DEATH_DIM = 'rgba(200, 16, 46, 0.62)';
+
 /* HOW BIG THE READOUT IS, from the window and nothing else. Not from
    the buffer, not from the chunky grid — that coupling is the bug this
    file just got rid of. A 720-row window is the unit; it grows a little
@@ -459,6 +478,67 @@ export class Hud {
   }
 
   /* ------------------------------------------------------------------
+     THE DEATH CARD, and every death gets the same one.
+
+     At the user's request: YOU DIED, in red, with the Japanese for it
+     in red above, in a black box, with a red filter over the picture
+     behind. It replaces a line of amber type that said YOU DIED IN
+     AISLE 5 and was drawn by the same routine as every other notice —
+     which was fine when there was one way to die in a supermarket and
+     is not now that there are a town's worth.
+
+     THE BOX IS A BAND AND NOT A PANEL: full width, a fixed share of the
+     height, hard edges. A panel with a border reads as a dialogue you
+     are meant to click; a band reads as the picture being taken away
+     from you, which is what has happened. The red filter over the world
+     is the other half of it and lives in the tint below, because that
+     one belongs to the picture and this belongs to the readout.
+     ------------------------------------------------------------------ */
+  _drawDeath(p) {
+    if (!p || !p.dead) return;
+    const ctx = this.ctx, s = this.s;
+    const W = this.cssW, H = this.cssH;
+    const bandH = Math.round(Math.min(H * 0.46, 260 * s));
+    const top = Math.round((H - bandH) / 2);
+    ctx.save();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.88)';
+    ctx.fillRect(0, top, W, bandH);
+    /* a hairline of red top and bottom, which is the only edge it gets */
+    ctx.fillStyle = DEATH_DIM;
+    const rule = Math.max(1, Math.round(s));
+    ctx.fillRect(0, top, W, rule);
+    ctx.fillRect(0, top + bandH - rule, W, rule);
+
+    const mid = top + bandH / 2;
+    /* the seal first, above the line */
+    const kSize = Math.round(Math.min(bandH * 0.42, W * 0.14));
+    ctx.font = `${kSize}px ${KANJI}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = DEATH_INK;
+    ctx.fillText(DEATH_KANJI, W / 2, Math.round(mid - bandH * 0.06));
+
+    /* and the words under it, tracked like everything else here */
+    const tSize = Math.round(Math.min(bandH * 0.17, W / 18));
+    const track = tSize * 0.34;
+    ctx.font = `${tSize}px ${FACE}`;
+    ctx.textAlign = 'left';
+    const w = trackedWidth(ctx, DEATH_TEXT, track);
+    tracked(ctx, DEATH_TEXT, Math.round((W - w) / 2), Math.round(mid + bandH * 0.22), track);
+
+    /* and how to go again, small, because it is an instruction and not
+       an announcement */
+    const pSize = Math.round(Math.max(9 * s, tSize * 0.44));
+    const pTrack = pSize * 0.26;
+    ctx.font = `${pSize}px ${FACE}`;
+    ctx.fillStyle = DEATH_DIM;
+    const prompt = this.game.retryPrompt || '';
+    const pw = trackedWidth(ctx, prompt, pTrack);
+    tracked(ctx, prompt, Math.round((W - pw) / 2), Math.round(top + bandH - bandH * 0.11), pTrack);
+    ctx.restore();
+  }
+
+  /* ------------------------------------------------------------------
      THE BOTTOM LEFT: the gun's own notices, stacked.
 
      At the user's request, and it is the opposite of the card above in
@@ -550,6 +630,7 @@ export class Hud {
         this._drawName(p);
         this._drawBig();
         this._drawToasts();
+        this._drawDeath(p);
       }
     }
 
@@ -588,18 +669,21 @@ export class Hud {
       tintA = Math.max(tintA, 0.20 * Math.max(0, 1 - age * 6) + 0.045);
       tintC = 0xbdffd2;
     }
-    /* AND THE DEATH VEIL IS A FIRST-PERSON EFFECT. Red over everything
-       is what dying looks like from inside the body: you are on the
-       floor, the blood is in your eyes, and Doom has done it that way
-       since 1993. It is exactly wrong for the death the lance gives
-       you — the camera has LEFT the body and is forty feet up looking
-       down at it (see deathCamTic in js/player.js), and a veil at that
-       point is not the player's eyes filling with blood, it is a red
-       filter over a shot of somebody else. It also happened to hide the
-       one thing the whole death is for. So the veil belongs to the eyes
-       it is drawn for: no camera outside the body, no veil. */
-    const watching = p.deathCam && p.deathCam.x !== undefined;
-    if (p.dead && !watching) tintA = Math.max(tintA, 0.35);
+    /* AND A RED FILTER OVER THE WHOLE PICTURE WHEN YOU ARE DEAD, at the
+       user's request, and it is the other half of the death card above:
+       the card belongs to the readout, this belongs to the world.
+
+       IT IS ON FOR EVERY DEATH INCLUDING THE ONE THE CAMERA LEAVES THE
+       BODY FOR, which is a reversal of what this line said a release
+       ago. The argument then was that a veil is what dying looks like
+       from INSIDE the body and the lance's death is watched from forty
+       feet up — true, but the user has asked for one filter over every
+       death and a consistent one is worth more than that distinction.
+       What was actually wrong the first time was the STRENGTH: at 0.35
+       flat it hid the crater, which is the one thing that death is for.
+       At 0.26 it reads as a filter and you can still see what you did
+       through it, which is what the ask wants on both counts. */
+    if (p.dead) { tintA = Math.max(tintA, 0.26); tintC = 0xc8102e; }
     this.tintMesh.material.opacity = tintA;
     this.tintMesh.material.color.setHex(tintC);
     this.tintMesh.scale.set(W, H, 1);

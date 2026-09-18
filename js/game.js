@@ -719,7 +719,14 @@ export class Game {
 
   onPlayerDied() {
     this.state = 'dead';
-    this.setBigMessage(`YOU DIED IN AISLE 5\n${this.retryPrompt}`, 100000);
+    /* AND NOTHING IS SAID HERE ANY MORE. This was a setBigMessage — one
+       line of amber type reading YOU DIED IN AISLE 5, which was the
+       right card when a supermarket was the whole game and had been
+       wrong since the town. Every death now gets the same card, drawn
+       by Readout._drawDeath at the user's request: a black band, the
+       Japanese for it in red, YOU DIED under that, and a red filter
+       over the picture behind. The readout draws it off p.dead, so
+       there is nothing to set and nothing to time out. */
     this.onStateChange?.(this.state);
   }
 

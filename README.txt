@@ -139,7 +139,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         2455 checks, no install and no browser
+  the smoke test         2470 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -786,16 +786,22 @@ the picture as drawn. THE DEFAULT BRIGHTNESS IS 1.35, at the user's
 request — the picture a third brighter than drawn — and the other two
 sit at 1. They are remembered with the rest.
 
-AND THE DEFAULT PICTURE IS 960P RENDERED, 320P OF PIXELS AT 2:3, at the
-user's request — it was 720 and 240 at 5:6, and 200 before that. A pixel
-half again as tall as it is wide, and at 320 rows on a 16:9 window that
-is 853 across off a 1707 by 960 buffer: two buffer columns by three
-buffer rows to every chunky pixel, whole numbers both ways, so each is
-the average of six and the average is a true box. The pixel aspect
-ladder has five rungs now — SQUARE, TALL 5:6, TALL 2:3, WIDE 7:6 and
-TALL 1:3 — the last of which on a 16:9 window is every column of the
-960-row buffer in 320 rows. A saved setting from before takes the new
-defaults, as every moved default has.
+AND THE DEFAULT PICTURE IS 480P RENDERED, 240P OF PIXELS AT 2:3, at the
+user's request and for the frame rate. It was 960 and 320, which is the
+finest buffer this game has ever drawn and FOUR TIMES the shading of
+this one: a phone was paying for rows that the grid in front of them
+averaged away again. The 3D really is 480 — the render buffer measures
+853 by 480 on a 16:9 window, which is what the fragment shader is
+actually run over, and the grid in front of it is 640 by 240. Two buffer
+rows to every chunky row exactly.
+
+The finest rungs are still on both ladders for anyone with a machine
+that wants them: 960 at the top of the render ladder, 320 still on the
+pixel one. It was 720 and 240 at 5:6 before all this, and 200 before
+that. The pixel aspect ladder has five rungs — SQUARE, TALL 5:6,
+TALL 2:3, WIDE 7:6 and TALL 1:3 — and the default is still 2:3, a pixel
+half again as tall as it is wide. A saved setting from before takes the
+new defaults, as every moved default has.
 
 
 ON A PHONE
@@ -4567,8 +4573,8 @@ crosses it:
 
   CAPACITOR OVERCHARGE        8s
   CAPACITOR CRITICAL         18s
-  CAPACITOR BREACH IMMINENT  28s
-  EJECT THE CELL             35s
+  CAPACITOR FAILURE IMMINENT 28s
+  EJECT CAPACITOR            35s
   THE CAPACITOR LET GO       40s
 
 AND THEY ARE TOASTS, at the user's request, which is the opposite of the
@@ -4594,7 +4600,7 @@ dimmed them and on a lit pavement the three above the newest were barely
 there, which defeats the point of stacking them at all.
 
 The gun's own screen says a shorter version of the same thing in TWO
-ROWS — CAPACITOR over CRITICAL, EJECT over THE CELL — because that panel
+ROWS — CAPACITOR over CRITICAL, EJECT over CAPACITOR — because that panel
 is forty chunky pixels across by the time the filter has had it and
 eighteen characters on one line of it is a green smear. Nine characters
 a row reads at a glance, and the full phrase is in the middle of the
@@ -4717,6 +4723,43 @@ exactly the first screenshot of a stage-three one, for exactly the same
 reason. Both distances are now measured in RADII — the ratios the old
 numbers already worked out to — so a clean shot hides precisely what it
 always hid and a wide one hides more.
+
+
+THE GLASS COOKS, AND THE PICTURE COMES APART
+--------------------------------------------
+
+Two more things the screen does, both at the user's request and both
+one uniform.
+
+IT GLOWS WITH THE CHASSIS, at half the brightness. The panel sits at
+model z -0.169 and the coil the chassis heats from is at -0.16, so the
+glass is as good as ON the hot spot: the ramp is GUN_FRAG's own,
+evaluated where reach is one, and the only difference is the half. Which
+means the glass and the metal cannot disagree about how hot the gun is,
+because they are reading the same curve off the same number.
+
+MOST OF IT GOES UNDER THE GAUGES. Putting all of it on top was the
+obvious reading of "the screen glows" and it whited the panel out at
+full overcharge — the one moment the warning matters most was the one
+moment you could not read it, which a photograph showed immediately.
+Under the gauges the glass plainly cooks (the picture behind them runs
+from dull red to white) and the ring, the bar and the words stay crisp,
+with a little bloom left over the bezel to say that the glass itself is
+hot rather than something being displayed on it.
+
+AND IT TEARS. Three things, scaled by how far into the overcharge the
+coil is and all of them exactly nothing at zero: bands of rows slide
+sideways, the whole frame jumps now and then, and further in the picture
+starts losing rows entirely. Every threshold is written as
+step(1 - over * k, r) so that at rest NOTHING passes — a glitch that is
+faintly on all the time is a broken screen rather than a failing one.
+
+IT IS APPLIED TO THE FEED and not to the finished image, for the same
+reason the static is: the gauges are drawn by the gun, on the gun, and
+are not coming down a wire from anywhere. A sensor whose cable is next
+to a capacitor forty seconds into a failure tears. The readout of how
+long you have left does not, or it stops being a readout at the moment
+it matters.
 
 
 AND THE CAMERA LEAVES THE BODY
@@ -5386,6 +5429,46 @@ them is a rebuild every tic for five seconds; once the rebuild has run
 the flag clears and the next punch starts a new wait, so the holes
 appear in steps of about a third of a second for as long as the column
 is out — which is to say, while you watch.
+
+
+ONE DEATH SCREEN, AND EVERY DEATH GETS IT
+-----------------------------------------
+
+At the user's request: "all death screens should be YOU DIED in red, in
+Japanese, red text, black box, red filter on the game field".
+
+What it replaces is a line of amber type reading YOU DIED IN AISLE 5,
+drawn by the same routine as every other notice. That was the right card
+when a supermarket was the whole game; it has been wrong since the town,
+and it was the only thing left that announced the end of a run.
+
+THE BOX IS A BAND AND NOT A PANEL. Full width, a fixed share of the
+height, hard edges, a red hairline top and bottom and nothing else. A
+panel with a border reads as a dialogue you are meant to click; a band
+reads as the picture being taken away from you, which is what has
+happened. Eighty-eight per cent black, so the world is still faintly
+there behind it.
+
+IT SAYS IT TWICE: 死 in red above, YOU DIED in red under it. The kanji
+means death by itself, which is why it is the one on a seal and not 死亡
+or a sentence. It needs a face that HAS it — the page's own face is a
+monospace stack and none of those carry CJK, so the character would come
+out as a tofu box on most of them. The usual ladder, ending at the
+generic serif, which on any system with a Japanese font installed
+resolves to one. And how to go again is still on the card, small,
+because that is an instruction and not an announcement.
+
+AND THE PICTURE BEHIND IT GOES RED. That half lives in the tint over the
+world rather than on the readout, because it belongs to the picture. It
+is on for EVERY death now, including the one the camera leaves the body
+for — which reverses what that line said a release ago, when the veil
+was taken off the third-person death on the grounds that a veil is what
+dying looks like from inside the body. True, and the user has asked for
+one filter over every death, and a consistent one is worth more than the
+distinction. What was actually wrong the first time was the STRENGTH:
+0.35 of flat red hid the crater, which is the one thing that death is
+for. At 0.26 it reads as a filter and you can still see what you did
+through it.
 
 
 THE READOUT CAME OFF THE PICTURE
@@ -7313,7 +7396,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-2455 checks. Every one of them earns its place by having caught something
+2470 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

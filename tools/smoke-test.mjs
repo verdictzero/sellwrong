@@ -4133,14 +4133,24 @@ await (async () => {
     const dDef = +(main.match(/const DEFAULT_DETAIL = (\d+)/) || [])[1];
     const pDef = +(main.match(/const DEFAULT_PIXELS = (\d+)/) || [])[1];
     note('what it opens at', `${pix[pDef]} rows of pixels off a ${det[dDef]}-row render`);
-    check('the game opens at 320P pixels off a 960P render, at the user\'s request',
-      pix[pDef] === 320 && det[dDef] === 960);
-    check('and the render is three rows to the pixel exactly, so the average is a true box',
-      det[dDef] === 3 * pix[pDef]);
-    check('and the render default is the top of its ladder',
-      dDef === det.length - 1 && det.every((v, i) => i === 0 || v > det[i - 1]));
+    /* 480 AND 240, at the user's request and for the frame rate. It was
+       320 off 960, which is the finest buffer this game has ever drawn
+       and four times the shading of this one; a phone was paying for a
+       buffer whose extra rows were being averaged away by the grid in
+       front of it. The 3D IS 480 now — the check below is on the ladder
+       value and not on the index, because an index is a number that
+       means whatever the ladder happens to say that week. */
+    check('the game opens at 240P pixels off a 480P render, at the user\'s request',
+      pix[pDef] === 240 && det[dDef] === 480);
+    check('and the render is two rows to the pixel exactly, so the average is a true box',
+      det[dDef] === 2 * pix[pDef]);
+    check('and both defaults are real rungs of their own ladders',
+      det[dDef] !== undefined && pix[pDef] !== undefined &&
+      det.every((v, i) => i === 0 || v > det[i - 1]));
     check('and the pixel grid is never finer than the buffer behind it',
       pix[pDef] < det[dDef]);
+    check('and the finest rungs are still there for anyone who wants them',
+      det[det.length - 1] === 960 && pix.includes(320));
   }
 
   /* --- THE TWO SIZES, WHICH WERE ONE SIZE -------------------------
@@ -5206,7 +5216,7 @@ section('the lance, second pass');
     playerSrc.indexOf('blowUp() {') < playerSrc.indexOf('if (!this.dead) { this.deathCam'));
   check('the screen on the gun says so for all forty seconds',
     /const over = p \? \(p\.overFraction \|\| 0\) : 0;/.test(scopeSrc2) &&
-    /const row = over > 0\.70 \? \['EJECT', 'THE CELL'\]/.test(scopeSrc2));
+    /const row = over > 0\.70 \? \['EJECT', 'CAPACITOR'\]/.test(scopeSrc2));
   check('and the game itself shouts, four times, on the way down',
     /for \(const \[at, said\] of OVERCHARGE_CALLS\)/.test(playerSrc) &&
     /this\.game\.toast\?\.\(said\);/.test(playerSrc));
@@ -5550,13 +5560,56 @@ section('the overcharged discharge');
                                                             playerSrc.indexOf('  armed(w) {') + 900)));
   }
 
+  /* ---- AND THE GLASS COOKS AND COMES APART -------------------------
+     At the user's request: the screen glows with the chassis at half
+     its brightness, and the picture on it glitches harder as the
+     overload climbs. Both are one uniform each, pushed from the same
+     two numbers the rest of the weapon reads.
+     --------------------------------------------------------------------- */
+  check('the screen is handed the chassis heat and the overcharge, and nothing else',
+    /uniform float heat;/.test(scopeSrc) && /uniform float over;/.test(scopeSrc) &&
+    /s\.uniforms\.heat\.value = heat;/.test(scopeSrc) &&
+    /s\.uniforms\.over\.value = p \? \(p\.overFraction \|\| 0\) : 0;/.test(scopeSrc));
+  check('it glows on the gun\'s own ramp, so the glass and the metal agree',
+    /vec3 hot = hh < 0\.5 \? mix\(vec3\(0\.42, 0\.02, 0\.0\), vec3\(1\.0, 0\.36, 0\.05\), hh \* 2\.0\)/.test(scopeSrc) &&
+    /vec3 hot = h < 0\.5 \? mix\(vec3\(0\.42, 0\.02, 0\.0\), vec3\(1\.0, 0\.36, 0\.05\), h \* 2\.0\)/
+      .test(fs.readFileSync('js/weapon3d.js', 'utf8')));
+  check('and at about half of what the metal reaches, which is the ask',
+    (() => {
+      const gun = fs.readFileSync('js/weapon3d.js', 'utf8');
+      const gm = /c = mix\(c, hot, h \* ([0-9.]+)\) \+ hot \* h \* ([0-9.]+);/.exec(gun);
+      const sm = /col = mix\(col, hot, hh \* ([0-9.]+)\) \+ hot \* hh \* ([0-9.]+);/.exec(scopeSrc);
+      const bloom = /col \+= hot \* hh \* ([0-9.]+);/.exec(scopeSrc);
+      if (!gm || !sm || !bloom) return false;
+      const gunTotal = +gm[1] + +gm[2];
+      const scrTotal = +sm[1] + +sm[2] + +bloom[1];
+      note('how hard the glass glows against the metal',
+        `${scrTotal.toFixed(2)} of the gun's ${gunTotal.toFixed(2)}`);
+      return scrTotal > gunTotal * 0.3 && scrTotal < gunTotal * 0.7;
+    })());
+  /* MOST OF IT UNDER THE GAUGES. All of it on top was the obvious
+     reading and it whited the panel out at full overcharge: the one
+     moment the warning matters most was the one moment it could not be
+     read. Photographed exactly that way. */
+  check('and most of it is under the gauges, so the warning survives the glow',
+    scopeSrc.indexOf('col = mix(col, hot, hh *') < scopeSrc.indexOf('vec4 g = texture2D(panel, uv);'));
+  check('the picture tears, jumps and drops rows, and none of it at rest',
+    /if \(over > 0\.0\) \{/.test(scopeSrc) &&
+    /fuv\.x \+= step\(1\.0 - over \* 0\.55, j\)/.test(scopeSrc) &&
+    /fuv\.y \+= step\(1\.0 - over \* 0\.40, jump\)/.test(scopeSrc) &&
+    /col \*= 1\.0 - step\(1\.0 - over \* 0\.34, d\);/.test(scopeSrc));
+  check('and the glitch is on the FEED, not on the gauges, for the same reason the static is',
+    scopeSrc.indexOf('fuv.x += step(') < scopeSrc.indexOf('texture2D(feed, fuv)'));
+
   /* ---- and every warning says CAPACITOR ---------------------------- */
   note('what the gun shouts on the way down',
     P.OVERCHARGE_CALLS.map(([at, t]) => `${Math.round(at * 40)}s ${t}`).join(', '));
   check('the warnings are a ladder and every one of them says CAPACITOR or EJECT',
     P.OVERCHARGE_CALLS.length >= 3 &&
     P.OVERCHARGE_CALLS.every(([at, t]) => at > 0 && at < 1 && /CAPACITOR|EJECT/.test(t)) &&
-    P.OVERCHARGE_CALLS.some(([, t]) => t === 'CAPACITOR CRITICAL'));
+    P.OVERCHARGE_CALLS.some(([, t]) => t === 'CAPACITOR CRITICAL') &&
+    P.OVERCHARGE_CALLS.some(([, t]) => t === 'CAPACITOR FAILURE IMMINENT') &&
+    P.OVERCHARGE_CALLS.some(([, t]) => t === 'EJECT CAPACITOR'));
   check('and they climb, so the last ten seconds are a countdown and not a state',
     P.OVERCHARGE_CALLS.every(([at], i, a) => i === 0 || at > a[i - 1][0]));
   check('each rung goes off exactly once, on the tic the counter crosses it',
@@ -5565,11 +5618,11 @@ section('the overcharged discharge');
     !/'COIL CRITICAL'/.test(playerSrc) && !/'THE COIL LET GO'/.test(playerSrc) &&
     /'THE CAPACITOR LET GO'/.test(playerSrc));
   check('the screen on the gun says it in two rows, because one row is a green smear',
-    /const row = over > 0\.70 \? \['EJECT', 'THE CELL'\]/.test(scopeSrc) &&
+    /const row = over > 0\.70 \? \['EJECT', 'CAPACITOR'\]/.test(scopeSrc) &&
     /: over > 0\.45 \? \['CAPACITOR', 'CRITICAL'\]/.test(scopeSrc) &&
     /: \['CAPACITOR', 'OVERCHARGE'\];/.test(scopeSrc));
   check('and nothing on those two rows is wider than the panel can draw',
-    ['EJECT', 'THE CELL', 'CAPACITOR', 'CRITICAL', 'OVERCHARGE'].every(t => t.length <= 10));
+    ['EJECT', 'CAPACITOR', 'CRITICAL', 'OVERCHARGE'].every(t => t.length <= 10));
   check('the zoom step steps aside for it, since it wants the same two rows',
     /if \(!\(over > 0\)\)\s*\n\s*label\(ctx, `\$\{ZOOMS\[this\.zoomIndex\]\}/.test(scopeSrc));
 }
@@ -5750,6 +5803,42 @@ section('the readout');
       ['burn', 'full', 'low', 'empty', 'armour1', 'armour2', 'health', 'ink', 'card'].every(k => names.includes(k)));
     check('and the amber is the page\'s own amber, so the readout and the menus agree',
       /#e8c34a/.test(hudSrc) && /#e8c34a/.test(css));
+  }
+
+  /* ---- AND ONE DEATH SCREEN FOR EVERY DEATH -------------------------
+     At the user's request: YOU DIED in red, the Japanese for it in red
+     above, a black box, and a red filter over the picture. It replaces
+     a line of amber type reading YOU DIED IN AISLE 5, which was the
+     right card when a supermarket was the whole game and has been wrong
+     since the town.
+     --------------------------------------------------------------------- */
+  {
+    const fsD = await import('node:fs');
+    const gameSrc2 = fsD.readFileSync('js/game.js', 'utf8');
+    check('there is one card and every death gets it, off p.dead and nothing else',
+      /_drawDeath\(p\) \{/.test(hudSrc) && /if \(!p \|\| !p\.dead\) return;/.test(hudSrc) &&
+      /this\._drawDeath\(p\);/.test(hudSrc));
+    /* the STRING and not the words: both files carry a comment naming
+       the card this replaced, which is what the comment is for */
+    check('and the aisle is not printed anywhere any more',
+      !/`YOU DIED IN AISLE 5/.test(hudSrc) && !/`YOU DIED IN AISLE 5/.test(gameSrc2) &&
+      !/'YOU DIED IN AISLE 5'/.test(hudSrc) && !/'YOU DIED IN AISLE 5'/.test(gameSrc2));
+    check('and nothing is timed out into the middle of the picture instead',
+      !/setBigMessage\(`YOU DIED/.test(gameSrc2));
+    check('it says it in Japanese and in English, both in red',
+      /const DEATH_KANJI = '\\u6b7b';/.test(hudSrc) &&
+      /const DEATH_TEXT = 'YOU DIED';/.test(hudSrc) &&
+      /const DEATH_INK = '#c8102e';/.test(hudSrc));
+    check('and it asks for a face that actually has the kanji in it',
+      /const KANJI = /.test(hudSrc) && /Noto Sans CJK JP/.test(hudSrc) &&
+      /ctx\.font = `\$\{kSize\}px \$\{KANJI\}`;/.test(hudSrc));
+    check('the box is a black band across the whole picture, not a dialogue',
+      /ctx\.fillStyle = 'rgba\(0, 0, 0, 0\.88\)';/.test(hudSrc) &&
+      /ctx\.fillRect\(0, top, W, bandH\);/.test(hudSrc));
+    check('and how to go again is still on it, small, because it is an instruction',
+      /this\.game\.retryPrompt/.test(hudSrc));
+    check('and the picture behind it goes red, for every death including the watched one',
+      /if \(p\.dead\) \{ tintA = Math\.max\(tintA, 0\.26\); tintC = 0xc8102e; \}/.test(hudSrc));
   }
 
   /* ---- AND THE GUN'S OWN NOTICES, STACKED IN THE CORNER -------------
