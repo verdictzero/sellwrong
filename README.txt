@@ -139,7 +139,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         1994 checks, no install and no browser
+  the smoke test         1997 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -1800,6 +1800,16 @@ the dark, and there are nine thousand units of forest for them to be
 somewhere in. That is the hunt, and it is free: no new geometry, and the
 wood already burns.
 
+A PAIR APIECE, at the user's request, and the width is what the building
+would give. Every cross-aisle in this shop is a hundred and forty deep
+and an exit is cut out of the middle of one, so the opening PLUS its
+frame has to fit inside that: a hundred and twenty leaves ten units of
+aisle either side of the leaves and three either side of the frame. Two
+leaves of sixty, which is about what the staff door's are — and a wider
+hole in the wall is the one change you can make to a fire exit that is
+unambiguously in the crowd's favour, which is the entire reason these
+are here.
+
 WHAT MAKES THEM READ AS AN EXIT AND NOT A HOLE: they are LIT. The
 cross-aisles are at 0.26 and these are at 0.62, so the end of the aisle
 glows and you can see from the middle of the shop where the crowd is
@@ -1816,12 +1826,13 @@ supermarket slider cannot be faked by a rising portcullis, and it is done
 as two quads on a track with the collision lines switched between wall
 and hole. A quad on a transform can be MOVED along the wall or TURNED
 about one end of it, and the second one is a hinge. So the same class,
-the same state machine and the same blocking lines give both the
-entrance and the six crash-bar doors, and the differences are two lines
-of spec:
+the same state machine and the same blocking lines give the entrance,
+the six crash-bar doors and the staff door at the back, and the
+differences are three lines of spec:
 
-  swing       one leaf instead of two, turned up to a right angle about
-                the (x0,y0) end. It turns OUTWARD, away from the shop,
+  swing       a leaf on a hinge, turned up to a right angle about the
+                (x0,y0) end, instead of a pair that slide along the wall.
+                It turns OUTWARD, away from the shop,
                 because that is which way a fire door opens and it is not
                 a detail: a door that opens inward against a crowd is the
                 thing every fire regulation in the world exists to
@@ -1829,6 +1840,20 @@ of spec:
                 by minus ninety takes the leaf's own +X onto the wall's
                 outward normal, so an opening declared left-to-right as
                 seen from outside swings the right way by construction.
+  pair        two of those instead of one, hinged at the two jambs and
+                turning the same way — which the fire exits and the staff
+                door both are. It is a flag on ONE door and not two doors
+                side by side, because two would share the opening's
+                blocking lines and overwrite each other's answer about
+                whether the door is wall this tic, and because the swing
+                direction falls out of the declaration order: two leaves
+                hinged at opposite jambs must be declared in opposite
+                orders and would therefore always swing APART, like a
+                saloon being shoved from inside itself. Turning the far
+                leaf through half a circle also pays for itself — its u
+                runs the other way in the world, so ONE texture gives a
+                mirrored pair with the outer stiles at the jambs and the
+                two meeting stiles coming together in the middle.
   panicOnly   the mat under it only trips for somebody who is RUNNING. A
                 fire exit is not an automatic door: it is shut all night
                 and it opens when a person in a hurry leans on the bar.
@@ -5565,7 +5590,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-1994 checks. Every one of them earns its place by having caught something
+1997 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

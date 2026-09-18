@@ -1430,7 +1430,16 @@ export function buildSellWrong(opts = {}) {
 
      The leaf itself swings, is shut all night, and opens for anybody
      running — js/slidedoor.js. */
-  const EXIT_W = 104;                  // one leaf, and a leaf is a person and a bit
+  /* A PAIR, at the user's request, and the width is what the building
+     will give. Every cross-aisle in this shop is 140 deep and an exit is
+     cut out of the middle of one, so the opening plus its frame has to
+     fit inside that with something to spare: 120 leaves ten units of
+     aisle either side of the leaves and three either side of the frame.
+     Two leaves of sixty, which is about what the staff door's are and
+     about two people wide apiece — and a wider hole in the wall is the
+     one change to a fire exit that is unambiguously in the crowd's
+     favour, which is the whole reason these are here. */
+  const EXIT_W = 120;
   const exits = [];
   const exitProps = n => ({
     /* the ceiling is the door head, exactly like the entrance: a shut
@@ -2065,7 +2074,7 @@ export function buildSellWrong(opts = {}) {
     slide.push({
       x0: x.x, y0: x.y0, x1: x.x, y1: x.y1,
       zBot: FLOOR_WALK, zTop: DOOR_TOP,
-      standoff: 0, swing: true, panicOnly: true, opaque: true, tex: 'EXITDOOR',
+      standoff: 0, swing: true, pair: true, panicOnly: true, opaque: true, tex: 'EXITDOOR',
       speed: 8, triggerR: EXIT_W + 40, hold: 210,
       lines, sector: S[x.rect.sector],
     });

@@ -4258,7 +4258,36 @@ section('the way out');
   check('three down each flank of the building',
     swing.filter(d => d.spec.sector.name.includes('west')).length === 3 &&
     swing.filter(d => d.spec.sector.name.includes('east')).length === 3);
-  check('every one of them has one leaf', swing.every(d => d.leaves.length === 1));
+  /* A PAIR APIECE, at the user's request. Which is the crowd's change
+     as much as it is a picture: the opening went from a hundred and four
+     to a hundred and twenty, and a hundred and twenty is what a
+     cross-aisle 140 deep will give once the frame has had its seven
+     either side. */
+  check('every one of them is a pair of leaves',
+    swing.every(d => d.pair && d.leaves.length === 2),
+    swing.map(d => d.leaves.length).join(' '));
+  check('and each leaf is half the opening, hinged at its own jamb',
+    swing.every(d => Math.abs(d.leafW * 2 - d.len) < 0.01 &&
+      Math.abs(d.leaves[0].mesh.position.x - d.spec.x0) < 0.01 &&
+      Math.abs(d.leaves[1].mesh.position.x - d.spec.x1) < 0.01 &&
+      Math.abs(d.leaves[0].mesh.position.z + d.spec.y0) < 0.01),
+    swing.map(d => `${d.leafW} of ${d.len}`).join(', '));
+  /* AND THE WHOLE DOORSET STILL FITS THE AISLE IT IS CUT OUT OF, which
+     is the thing widening it could quietly break: the frame stands seven
+     proud of the opening on each side, and a jamb standing in the
+     gondola run next door is a jamb nobody put there. */
+  {
+    const props = lv.props || [];
+    const bad = swing.filter(d => {
+      const cy = (d.spec.y0 + d.spec.y1) / 2;
+      const aisle = lv.sectorAt(d.spec.x0 + d.nx * 90, cy);
+      return !aisle || d.len / 2 + 7 > (aisle.bbox[3] - aisle.bbox[1]) / 2;
+    });
+    check('and the doorset still fits inside the cross-aisle it is cut out of',
+      bad.length === 0, bad.map(d => d.spec.sector.name).join(', '));
+    check('and the frames went with it', props.filter(q => q.tex === 'DOORFRAM' &&
+      (q.x1 <= MAP.ANCHOR_X0 + 16 || q.x0 >= MAP.ANCHOR_X1 - 16)).length === 36);
+  }
   check('and blocks BOTH faces of the wall it is in',
     swing.every(d => d.spec.lines.length === 2), swing.map(d => d.spec.lines.length).join(' '));
   check('they start shut', swing.every(d => d.state === 'shut' && d.open === 0));
@@ -4367,7 +4396,9 @@ section('the way out');
      in this map rises any more, the picture of a door is on no wall in
      it, and the opening is exactly as tall as the thing that fills it. */
   {
-    const staff = g.slideDoors.filter(d => d.pair);
+    /* ASKED FOR BY NAME, because `pair` stopped meaning "the staff door"
+       the day the fire exits became double doors too. */
+    const staff = g.slideDoors.filter(d => d.spec.sector.name === 'staff door');
     const sec = lv.sectors.find(s => s.name === 'staff door');
     check('there is one staff door and it is a pair of leaves',
       staff.length === 1 && staff[0].leaves.length === 2,

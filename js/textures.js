@@ -2700,15 +2700,26 @@ T.EXITDOOR = () => {
     for (let y = BY - 4; y < BY + 5; y++) p.ink(bx, y, 'bone', 0.34);
     p.ink(bx, BY - 4, 'bone', 0.52);
   }
-  /* the running man, on his green plate, up where a sign goes */
+  /* THE RUNNING MAN, on his green plate, up where a sign goes — and the
+     plate is drawn WIDE AND SHORT because the leaf is not.
+
+     These are a PAIR now, so a leaf is sixty across and a hundred and
+     sixteen tall, and the picture is mapped 0..1 over that: a texel on
+     it is about one unit wide and two units tall. Anything drawn square
+     in here comes out standing on end. So the plate is thirty-four by
+     eighteen, which is square ON THE DOOR, and the figure inside it is
+     not square and should not be — a person is about twice as tall as
+     they are wide, which in these texels is fourteen across by fifteen
+     down. The head is a box rather than a disc for the same reason: a
+     circle of texels is an egg on the leaf. */
   const gx = 32, gy = 20;
-  p.box(gx - 9, gy - 8, 19, 17, 'green', 0.52);
-  p.frame(gx - 9, gy - 8, 19, 17, 'green', 0.68);
-  p.disc(gx - 1, gy - 5, 1.6, 'bone', 0.92);       // head
-  p.line(gx - 2, gy - 3, gx + 1, gy + 1, 'bone', 0.92);   // body
-  p.line(gx + 1, gy + 1, gx + 4, gy + 5, 'bone', 0.92);   // trailing leg
-  p.line(gx + 1, gy + 1, gx - 3, gy + 5, 'bone', 0.92);   // leading leg
-  p.line(gx - 2, gy - 2, gx + 3, gy - 4, 'bone', 0.86);   // arm, thrown forward
+  p.box(gx - 17, gy - 9, 34, 18, 'green', 0.52);
+  p.frame(gx - 17, gy - 9, 34, 18, 'green', 0.68);
+  p.box(gx - 4, gy - 7, 4, 2, 'bone', 0.92);              // head
+  p.line(gx - 3, gy - 4, gx + 1, gy + 1, 'bone', 0.92);   // body
+  p.line(gx + 1, gy + 1, gx + 6, gy + 6, 'bone', 0.92);   // trailing leg
+  p.line(gx + 1, gy + 1, gx - 5, gy + 6, 'bone', 0.92);   // leading leg
+  p.line(gx - 3, gy - 3, gx + 4, gy - 6, 'bone', 0.86);   // arm, thrown forward
   /* THE KICK PLATE, which this door wanted for as long as the staff door
      did and for a better reason: the crowd that comes through here is
      not carrying a cage, it is RUNNING, and what hits the bottom of a
