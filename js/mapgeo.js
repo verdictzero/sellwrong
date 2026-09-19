@@ -34,7 +34,7 @@
 import * as THREE from 'three';
 import { createWallMaterial } from './material.js';
 import { roofFraming } from './ruin.js';
-import { VOX, TORN, RUIN_TORN_VARIANTS } from './voxel.js';
+import { VOX, SPAN, TORN, RUIN_TORN_VARIANTS, solidSpans } from './voxel.js';
 
 /* A batch collects triangles for one texture and hands back a mesh. */
 class Batch {
@@ -481,6 +481,54 @@ function addVoxelWall(set, level, l, bank) {
 
   const P = (a, z, w) => [l.x1 + ux * a + wx * w, z, -(l.y1 + uy * a + wy * w)];
 
+  /* THE WINDING IS NOT DERIVED, IT IS CHECKED — see the note above. The
+     quad goes in wound any way at all, its normal is taken with a cross
+     product, and the corners are reversed if it came out facing the
+     wrong way. `o` is where the face is SUPPOSED to look, in the
+     renderer's axes. */
+  const put = (b, p, uv, ox, oy, oz) => {
+    const e1 = [p[1][0] - p[0][0], p[1][1] - p[0][1], p[1][2] - p[0][2]];
+    const e2 = [p[2][0] - p[0][0], p[2][1] - p[0][1], p[2][2] - p[0][2]];
+    const cx = e1[1] * e2[2] - e1[2] * e2[1];
+    const cy = e1[2] * e2[0] - e1[0] * e2[2];
+    const cz = e1[0] * e2[1] - e1[1] * e2[0];
+    if (cx * ox + cy * oy + cz * oz < 0) { p.reverse(); uv.reverse(); }
+    b.quad(p, uv, lit, sk, ch);
+  };
+  /* where the face of the wall looks: back out of it, toward the room.
+     A map direction (mx, my, up) lands at (mx, up, -my). */
+  const faceX = -wx, faceY = 0, faceZ = wy;
+
+  /* THE REST OF THE WALL IS STILL A WALL, and forgetting that is how
+     you put a round into a shopfront and take down sixty metres of it.
+     A lattice is built for the SPAN that was hit and for no other, but
+     the line is out of the list that draws quads the moment the first
+     of them exists — so every span without one has to be drawn here or
+     it is drawn by nothing at all. Runs of them go out as ONE quad, so
+     a wall with a single hole in it is two quads and a lattice rather
+     than twenty, and a wall nobody has touched is the one quad it has
+     always been. */
+  {
+    let run = -1;
+    const flush = (from, to) => {
+      if (from < 0) return;
+      const a0 = from * SPAN, a1 = Math.min(to * SPAN, l.len);
+      if (a1 <= a0) return;
+      for (const sp of solidSpans(l, level.sectors)) {
+        const b = set.get(wallTex);
+        const p = [P(a0, sp.z1, 0), P(a1, sp.z1, 0), P(a1, sp.z0, 0), P(a0, sp.z0, 0)];
+        const uv = [[uAt(a0), (sp.z1 - peg) / wt.h], [uAt(a1), (sp.z1 - peg) / wt.h],
+                    [uAt(a1), (sp.z0 - peg) / wt.h], [uAt(a0), (sp.z0 - peg) / wt.h]];
+        put(b, p, uv, faceX, faceY, faceZ);
+      }
+    };
+    for (let i = 0; i < l.voxels.count; i++) {
+      if (l.voxels.grids[i]) { flush(run, i); run = -1; }
+      else if (run < 0) run = i;
+    }
+    flush(run, l.voxels.count);
+  }
+
   for (const span of l.voxels.built()) {
     const tornTex = 'RUINWALL' + span.tornVariant;
     const tt = bank.get(tornTex);
@@ -531,14 +579,7 @@ function addVoxelWall(set, level, l, bank) {
       else if (axis === 1) { ox = 0;         oy = sign; oz = 0; }
       else                 { ox = sign * wx; oy = 0;    oz = -sign * wy; }
 
-      const e1 = [p[1][0] - p[0][0], p[1][1] - p[0][1], p[1][2] - p[0][2]];
-      const e2 = [p[2][0] - p[0][0], p[2][1] - p[0][1], p[2][2] - p[0][2]];
-      const cx = e1[1] * e2[2] - e1[2] * e2[1];
-      const cy = e1[2] * e2[0] - e1[0] * e2[2];
-      const cz = e1[0] * e2[1] - e1[1] * e2[0];
-      if (cx * ox + cy * oy + cz * oz < 0) { p.reverse(); uv.reverse(); }
-
-      b.quad(p, uv, lit, sk, ch);
+      put(b, p, uv, ox, oy, oz);
     });
   }
 }

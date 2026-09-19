@@ -6341,6 +6341,106 @@ section('the voxel wall in the picture');
       size(shot) > size(clean) && size(shot) < size(clean) + 400, `${size(shot) - size(clean)}`);
   }
 
+  /* A WALL IS LONGER THAN A SPAN, AND THE REST OF IT IS STILL A WALL.
+     The lattice is built for the piece that was hit and for no other,
+     but the LINE leaves the list that draws quads the moment the first
+     of them exists — so every span without a lattice has to be drawn by
+     the voxel path or it is drawn by nothing. Got wrong, one burst into
+     a shopfront takes down sixty metres of it and you can see the
+     shoppers through the gap. The count of triangles does not catch
+     that; the AREA of them does, because a wall that has gone is gone
+     whatever it was made of. */
+  {
+    const area = group => {
+      let a = 0;
+      const walk = o => {
+        const at = o.geometry && o.geometry.attributes && o.geometry.attributes.position;
+        if (at) {
+          const P = at.array;
+          for (let t = 0; t < P.length / 9; t++) {
+            const i = t * 9;
+            const e1 = [P[i + 3] - P[i], P[i + 4] - P[i + 1], P[i + 5] - P[i + 2]];
+            const e2 = [P[i + 6] - P[i], P[i + 7] - P[i + 1], P[i + 8] - P[i + 2]];
+            a += Math.hypot(e1[1] * e2[2] - e1[2] * e2[1],
+                            e1[2] * e2[0] - e1[0] * e2[2],
+                            e1[0] * e2[1] - e1[1] * e2[0]) / 2;
+          }
+        }
+        for (const c of (o.children || [])) walk(c);
+      };
+      walk(group);
+      return a;
+    };
+
+    const long = level.lines
+      .filter(l => voxelisable(l, level.sectors) && l.len > SPAN * 3)
+      .sort((a, b) => b.len - a.len)[0];
+    check('there is a wall several spans long to test with', !!long);
+    const sec = level.sectors[long.front ?? long.back];
+    const wallArea = long.len * (sec.ceil - sec.floor);
+
+    /* AND IT HAS TO FACE THE ROOM. Area cannot see which way a triangle
+       is wound, and a wall wound backwards is culled by the GPU before
+       it is ever drawn — which looks exactly like a wall that is not
+       there. So: every triangle lying in this wall's own plane AND
+       along its own length, added up along the normal that points at
+       the open side, has to come out positive and about the size of the
+       wall. Along its own length matters — the parade's whole frontage
+       is collinear, so a plane test on its own sums a dozen shopfronts
+       and one of them backwards vanishes into the total. */
+    const facing = group => {
+      const ux = long.dx / long.len, uy = long.dy / long.len;
+      const nx = uy, ny = -ux;                      // into the front sector
+      const front = long.front !== null;
+      const dx = front ? nx : -nx, dy = front ? ny : -ny;
+      let sum = 0;
+      const walk = o => {
+        const at = o.geometry && o.geometry.attributes && o.geometry.attributes.position;
+        if (at) {
+          const P = at.array;
+          for (let t = 0; t < P.length / 9; t++) {
+            const i = t * 9;
+            let on = true;
+            for (let k = 0; k < 3; k++) {
+              const X = P[i + k * 3], Z = P[i + k * 3 + 2];
+              const off = (X - long.x1) * nx + (-Z - long.y1) * ny;
+              const along = (X - long.x1) * ux + (-Z - long.y1) * uy;
+              if (Math.abs(off) > 0.5 || along < -0.5 || along > long.len + 0.5) { on = false; break; }
+            }
+            if (!on) continue;
+            const e1 = [P[i + 3] - P[i], P[i + 4] - P[i + 1], P[i + 5] - P[i + 2]];
+            const e2 = [P[i + 6] - P[i], P[i + 7] - P[i + 1], P[i + 8] - P[i + 2]];
+            /* the renderer's axes: a map direction (mx,my,0) is (mx,0,-my) */
+            sum += ((e1[1] * e2[2] - e1[2] * e2[1]) * dx +
+                    (e1[0] * e2[1] - e1[1] * e2[0]) * -dy) / 2;
+          }
+        }
+        for (const c of (o.children || [])) walk(c);
+      };
+      walk(group);
+      return sum;
+    };
+
+    const geoWas = buildLevelGeometry(level, bank).group;
+    const was = area(geoWas), faceWas = facing(geoWas);
+    long.voxels = new VoxelWall(long, level.sectors);
+    long.voxels.gridAt(long.len / 2);           // one span of it, and not a mark on it
+    const geoNow = buildLevelGeometry(level, bank).group;
+    const now = area(geoNow), faceNow = facing(geoNow);
+
+    note('the long wall', `${Math.round(long.len)} units over ${long.voxels.count} spans, one of them latticed`);
+    note('the wall facing the room', `${Math.round(faceWas)} -> ${Math.round(faceNow)} units²`);
+    check('a latticed wall still faces the room it is in',
+      faceWas > 0 && faceNow > faceWas * 0.9, `${Math.round(faceNow)} against ${Math.round(faceWas)}`);
+
+    const added = now - was;
+    check('voxelising one span of a long wall loses none of it',
+      added > -1, `${(added / wallArea * 100).toFixed(1)}% of the wall's area changed`);
+    check('and what it adds is the cavity, not a second wall',
+      added > 0 && added < wallArea * 0.4, `${Math.round(added)} units²`);
+    delete long.voxels;
+  }
+
   /* A WALL IS SHOT HALFWAY THROUGH THE GAME, not at build time, and
      that is the whole difficulty. The doors' list can be settled once
      because which sectors move is written in the map; which walls have
