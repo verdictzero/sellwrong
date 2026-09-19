@@ -40,6 +40,7 @@
    ===================================================================== */
 
 import { pointInPoly, polyArea2, closestOnSeg, segIntersect, dist2, MAX_STEP } from './util.js';
+import { alongLine } from './voxel.js';
 
 /* Vertices that land within this of each other are the same vertex. Map
    coordinates are integers in practice, so this only ever catches float
@@ -531,6 +532,18 @@ export class Level {
         const openBottom = Math.max(fs.floor, bs.floor);
         const z = az + (bz - az) * t;
         solid = (z < openBottom || z > openTop);
+      }
+      /* A HOLE IN IT IS NOT SOLID. Once a wall has been shot open, the
+         next round through the same gap does not stop on a wall that is
+         no longer there — it carries on and takes the next thing along,
+         which is the far skin of the same wall, and then the room past
+         that. Everything that asks this question gets the same answer,
+         so the flame goes through a hole, the frost goes through a
+         hole, and a trooper can see you through one. A hole you can
+         shoot through is a hole. */
+      if (solid && l.voxels) {
+        const px = ax + (bx - ax) * t, py = ay + (by - ay) * t, pz = az + (bz - az) * t;
+        if (l.voxels.openAt(alongLine(l, px, py), pz)) continue;
       }
       if (solid) { bestT = t; best = l; }
     }

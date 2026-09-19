@@ -7339,7 +7339,7 @@ section('a wall under the minigun');
   const { Game } = await import('../js/game.js');
   const MAPW = await import('../js/maps/sellwrong.js');
   const VX = await import('../js/voxel.js');
-  const { voxelisable, alongLine, ROUND_RADIUS, VOX } = VX;
+  const { voxelisable, alongLine, ROUND_RADIUS, VOX, VoxelWall } = VX;
   const { TICRATE } = await import('../js/util.js');
   const fs = await import('node:fs');
 
@@ -7415,6 +7415,96 @@ section('a wall under the minigun');
   }
 
   note('a round reaches', `${ROUND_RADIUS} units, against a ${VOX}-unit voxel`);
+
+  /* ------------------------------------------------------------------
+     AND THEN THE NEXT ROUND GOES THROUGH IT
+
+     A hole you cannot shoot through is a decal with extra steps. Once
+     the wall is open, rayHitWall stops counting it — and because
+     EVERYTHING asks rayHitWall, the flame goes through the hole too,
+     and so does the frost, and so can a trooper see you through it.
+     ---------------------------------------------------------------- */
+  {
+    const L = g.level;
+    const line = L.lines
+      /* NOT THE ONE THE BURST ABOVE ALREADY OPENED — it has a hole in
+         it at exactly the spot this aims at, so the "before" ray would
+         sail through and the check would fail for being right. */
+      .filter(l => voxelisable(l, L.sectors) && l.len > 200 && l !== wall && !l.voxels)
+      .sort((a, b) => b.len - a.len)[0];
+    const s2 = L.sectors[line.front ?? line.back];
+    const ux = line.dx / line.len, uy = line.dy / line.len;
+    const nx = uy, ny = -ux;                             // into the front sector
+    const side = line.front !== null ? 1 : -1;
+    const mx = (line.x1 + line.x2) / 2, my = (line.y1 + line.y2) / 2;
+    /* stand off the open side and look straight at it */
+    const ex = mx + nx * 40 * side, ey = my + ny * 40 * side;
+    const tx = mx - nx * 120 * side, ty = my - ny * 120 * side;
+    const z = (s2.floor + s2.ceil) / 2;
+
+    const before = L.rayHitWall(ex, ey, z, tx, ty, z);
+    check('the ray stops on the wall while the wall is there',
+      !!before && before.line === line,
+      before ? `stopped on a ${Math.round(before.line.len)}-unit ${before.line.middle} at t=${before.t.toFixed(2)}` : 'nothing hit');
+
+    line.voxels = new VoxelWall(line, L.sectors);
+    line.voxels.carve(alongLine(line, mx, my), z, 40);
+    const after = L.rayHitWall(ex, ey, z, tx, ty, z);
+    check('and goes through once the wall is not', !after || after.line !== line,
+      after ? `stopped on a ${Math.round(after.line.len)}-unit line` : 'stopped on nothing');
+
+
+    /* aimed a little to the side of the hole it still stops */
+    const off = 90;
+    const beside = L.rayHitWall(ex + ux * off, ey + uy * off, z, tx + ux * off, ty + uy * off, z);
+    check('beside the hole the wall is still a wall', !!beside && beside.line === line);
+
+    /* and above it */
+    const hi = Math.min(s2.ceil - 8, z + 90);
+    const over = L.rayHitWall(ex, ey, hi, tx, ty, hi);
+    check('and above it too', !!over && over.line === line, `z ${Math.round(hi)}`);
+
+    delete line.voxels;
+  }
+
+  /* ------------------------------------------------------------------
+     A WALL HAS TWO SKINS, and that is why a fresh hole shows you the
+     inside of a wall rather than the room beyond it. The map's WALL is
+     16 units of void with a one-sided line on each face of it, each
+     owning eight; blowing through the one you shot leaves the far one
+     standing, and it has to be shot through in its turn. Nothing was
+     built to do that — it falls out of the map's own idea of what a
+     wall is — so it is worth a check that says so out loud.
+     ---------------------------------------------------------------- */
+  {
+    const L = g.level;
+    let found = null;
+    for (const l of L.lines) {
+      if (!voxelisable(l, L.sectors) || l.voxels || l.len < 200) continue;
+      const ux = l.dx / l.len, uy = l.dy / l.len, nx = uy, ny = -ux;
+      const side = l.front !== null ? 1 : -1;
+      const mx = (l.x1 + l.x2) / 2, my = (l.y1 + l.y2) / 2;
+      const sc = L.sectors[l.front ?? l.back];
+      const z = (sc.floor + sc.ceil) / 2;
+      const ex = mx + nx * 40 * side, ey = my + ny * 40 * side;
+      const tx = mx - nx * 600 * side, ty = my - ny * 600 * side;
+      if (L.rayHitWall(ex, ey, z, tx, ty, z)?.line !== l) continue;
+      l.voxels = new VoxelWall(l, L.sectors);
+      l.voxels.carve(alongLine(l, mx, my), z, 40);
+      const past = L.rayHitWall(ex, ey, z, tx, ty, z);
+      const gap = past && past.line !== l ? Math.hypot(past.x - mx, past.y - my) : Infinity;
+      if (gap <= 40) { found = { l, gap, past }; break; }
+      delete l.voxels;
+    }
+    check('a wall in this building has a second skin behind the first', !!found);
+    if (found) {
+      note('the far skin of a shot wall', `${Math.round(found.gap)} units past the near one`);
+      check('and the round stops on it rather than reaching the room',
+        found.gap > 0 && found.gap <= 40, `${Math.round(found.gap)} units`);
+      check('which is the void the map calls a wall', found.gap <= 24, `${Math.round(found.gap)}`);
+      delete found.l.voxels;
+    }
+  }
 }
 
 /* ---------- the site ---------- */

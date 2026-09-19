@@ -486,15 +486,22 @@ function addVoxelWall(set, level, l, bank) {
      product, and the corners are reversed if it came out facing the
      wrong way. `o` is where the face is SUPPOSED to look, in the
      renderer's axes. */
-  const put = (b, p, uv, ox, oy, oz) => {
+  const put = (b, p, uv, ox, oy, oz, light = lit) => {
     const e1 = [p[1][0] - p[0][0], p[1][1] - p[0][1], p[1][2] - p[0][2]];
     const e2 = [p[2][0] - p[0][0], p[2][1] - p[0][1], p[2][2] - p[0][2]];
     const cx = e1[1] * e2[2] - e1[2] * e2[1];
     const cy = e1[2] * e2[0] - e1[0] * e2[2];
     const cz = e1[0] * e2[1] - e1[1] * e2[0];
     if (cx * ox + cy * oy + cz * oz < 0) { p.reverse(); uv.reverse(); }
-    b.quad(p, uv, lit, sk, ch);
+    b.quad(p, uv, light, sk, ch);
   };
+  /* AND THE INSIDE OF A WALL IS DARK. A torn edge is eight units down a
+     hole with a room's worth of wall around it, and nothing shines in
+     there — RUINWALL is pale board and at the room's own light level a
+     fresh hole reads as a bright PATCH stuck on a dark wall rather than
+     as a way through it. The same argument as Doom's fake contrast and
+     the same size of nudge, in the other direction. */
+  const litTorn = Math.max(0.02, lit * 0.4);
   /* where the face of the wall looks: back out of it, toward the room.
      A map direction (mx, my, up) lands at (mx, up, -my). */
   const faceX = -wx, faceY = 0, faceZ = wy;
@@ -579,7 +586,7 @@ function addVoxelWall(set, level, l, bank) {
       else if (axis === 1) { ox = 0;         oy = sign; oz = 0; }
       else                 { ox = sign * wx; oy = 0;    oz = -sign * wy; }
 
-      put(b, p, uv, ox, oy, oz);
+      put(b, p, uv, ox, oy, oz, torn ? litTorn : lit);
     });
   }
 }
