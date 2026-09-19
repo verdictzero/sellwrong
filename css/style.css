@@ -77,7 +77,14 @@ html, body {
 #title {
   background: linear-gradient(to bottom, rgba(5, 6, 10, .18), rgba(5, 6, 10, .34) 55%, rgba(5, 6, 10, .62));
 }
-#pause { background: rgba(5, 6, 10, .58); z-index: 20; }
+/* AND THE PAUSE SCREEN PUTS THE GAME OUT, at the user's request. It
+   used to be a wash of 58% over a lit shop floor, which is not a
+   background: every word in the menu was read against whatever was
+   behind it — a burning car park, a white ceiling, the gun — and moved
+   when that did. Eighty-eight per cent is dark enough that the picture
+   is a suggestion of where you were, and the menu is the only thing on
+   the glass with an edge. */
+#pause { background: rgba(4, 5, 9, .88); z-index: 20; }
 #loading.gone, #title.gone, #pause.gone, #dial.gone { opacity: 0; pointer-events: none; }
 
 .panel { text-align: center; max-width: 42rem; padding: 2rem; }
@@ -124,7 +131,7 @@ html, body {
 }
 @media (prefers-reduced-motion: reduce) { .prompt { animation: none; } }
 
-h2 { font-size: .78rem; letter-spacing: .42em; color: rgba(207, 207, 214, .55); margin-bottom: 1rem; font-weight: normal; }
+h2 { font-size: .78rem; letter-spacing: .42em; color: #ececf2; margin-bottom: 1rem; font-weight: normal; }
 
 /* what shows depends on what the game is being played with — decided
    by input.js, stamped on <html> */
@@ -139,11 +146,22 @@ html.touch .desk-only, html:not(.touch) .touch-only { display: none !important; 
    square tile with rounded corners, six to a page, and the pages are
    tabbed. NOTHING IN HERE SCROLLS, at the user's request — if a page is
    full the next one is a tab away. */
+/* AND IT IS A CARD, with a rim you can see. The menu used to be a
+   column of words standing directly on the game with nothing under
+   them, so nothing in it had an edge and every tile was a slightly
+   darker patch of shop floor. A panel with a border says where the
+   menu stops and the game starts, which is the whole of being
+   readable: two pounds of contrast at the boundary rather than an
+   ounce spread over everything. */
 .menu {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: .5rem;
-  width: min(100%, 34rem); height: 100%;
+  width: min(100%, 36rem); height: auto; max-height: 100%;
   padding: 1rem;
+  background: #0b0d14;
+  border: 2px solid rgba(207, 207, 214, .55);
+  border-radius: 18px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .75);
   overflow: hidden;                      /* clipped rather than scrolled, deliberately */
 }
 .menu h2 { margin: 0; }
@@ -161,13 +179,17 @@ html.touch .desk-only, html:not(.touch) .touch-only { display: none !important; 
 .tab {
   min-height: 34px; padding: .4rem .7rem;
   font: inherit; font-size: .58rem; letter-spacing: .18em; text-transform: uppercase;
-  color: rgba(207, 207, 214, .5); background: transparent;
-  border: 1px solid rgba(207, 207, 214, .16); border-radius: 10px;
+  color: #cfcfd6; background: rgba(255, 255, 255, .04);
+  border: 2px solid rgba(207, 207, 214, .38); border-radius: 10px;
   cursor: pointer; touch-action: manipulation;
   transition: color .1s, border-color .1s, background .1s;
 }
-.tab:hover, .tab:focus-visible { color: #fff; border-color: rgba(207, 207, 214, .4); outline: none; }
-.tab.on { color: #e8c34a; border-color: rgba(232, 195, 74, .55); background: rgba(232, 195, 74, .08); }
+.tab:hover, .tab:focus-visible { color: #fff; border-color: #cfcfd6; outline: none; }
+/* THE PAGE YOU ARE ON IS FILLED IN, not merely tinted: a hairline of
+   yellow at 8% over a dark tile is the kind of difference you have to
+   go looking for, and which tab is lit is the one thing in here that
+   has to be answered from across the room. */
+.tab.on { color: #14161d; border-color: #e8c34a; background: #e8c34a; }
 
 /* the page: three tiles across, always two rows tall whether or not
    the page has six on it, and the tiles are the same size on every
@@ -187,11 +209,14 @@ html.touch .desk-only, html:not(.touch) .touch-only { display: none !important; 
   width: var(--tile); height: var(--tile);
   padding: .5rem .3rem;
   font: inherit; text-align: center;
-  color: rgba(207, 207, 214, .72);
-  /* dark glass with a light top edge, the same bevel the thumb buttons
-     wear — solid enough to read a word off over a burning car park */
-  background: linear-gradient(160deg, rgba(255, 255, 255, .08), rgba(255, 255, 255, .02) 55%, rgba(0, 0, 0, .16)), rgba(8, 10, 16, .78);
-  border: 1px solid rgba(207, 207, 214, .2);
+  color: #e9e9ee;
+  /* A FACE, NOT A PANE. It was dark glass at 78% over whatever the game
+     was showing, which is a tile whose colour is the shop floor's; it
+     is opaque now and a shade LIGHTER than the card it sits on, so the
+     six of them read as six things standing on a surface. The bevel is
+     the one the thumb buttons wear, kept. */
+  background: linear-gradient(160deg, rgba(255, 255, 255, .08), rgba(255, 255, 255, .02) 55%, rgba(0, 0, 0, .16)), #161a24;
+  border: 2px solid rgba(207, 207, 214, .45);
   border-radius: calc(var(--tile) * .18);
   cursor: pointer; touch-action: manipulation;
   overflow: hidden;
@@ -199,71 +224,83 @@ html.touch .desk-only, html:not(.touch) .touch-only { display: none !important; 
 }
 .tile:hover, .tile:focus-visible {
   color: #fff;
-  background: linear-gradient(160deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .05) 55%, rgba(0, 0, 0, .16)), rgba(14, 17, 26, .86);
-  border-color: rgba(207, 207, 214, .45); outline: none;
+  background: linear-gradient(160deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .05) 55%, rgba(0, 0, 0, .16)), #1e2330;
+  border-color: #cfcfd6; outline: none;
 }
 .tile:active { transform: scale(.96); }
 .tile:disabled { opacity: .3; pointer-events: none; }
-.tile .tn { font-size: .5rem; letter-spacing: .13em; line-height: 1.35; color: rgba(207, 207, 214, .55); }
-.tile .tv { font-size: .66rem; letter-spacing: .07em; line-height: 1.25; font-weight: normal; color: #e8c34a; }
+.tile .tn { font-size: .5rem; letter-spacing: .13em; line-height: 1.35; color: #cfcfd6; }
+.tile .tv { font-size: .66rem; letter-spacing: .07em; line-height: 1.25; font-weight: normal; color: #ffd257; }
 /* a switch that is off says so in grey; one that is on lights the tile */
-.tile[aria-pressed="false"] .tv { color: rgba(207, 207, 214, .45); }
+.tile[aria-pressed="false"] .tv { color: #9a9aa4; }
 .tile[aria-pressed="true"] {
-  border-color: rgba(232, 195, 74, .5);
-  /* a layer of the yellow over the same glass: only the last layer of a
+  border-color: #e8c34a;
+  /* a layer of the yellow over the same face: only the last layer of a
      background may be a flat colour, so the tint is a gradient of one */
   background: linear-gradient(160deg, rgba(255, 255, 255, .08), rgba(255, 255, 255, .02) 55%, rgba(0, 0, 0, .16)),
-              linear-gradient(rgba(232, 195, 74, .14), rgba(232, 195, 74, .14)), rgba(8, 10, 16, .82);
+              linear-gradient(rgba(232, 195, 74, .18), rgba(232, 195, 74, .18)), #161a24;
 }
 .tile .tm {
   min-height: .72rem;
   font-size: .46rem; font-style: normal; letter-spacing: .1em; line-height: 1;
-  color: rgba(232, 195, 74, .75);
+  color: #e8c34a;
 }
-.tile .tm.bar { width: 60%; min-height: 0; height: 3px; margin-bottom: .18rem; border-radius: 2px; background: rgba(207, 207, 214, .16); }
+.tile .tm.bar { width: 60%; min-height: 0; height: 4px; margin-bottom: .18rem; border-radius: 2px; background: rgba(207, 207, 214, .34); }
 .tile .tm.bar span { display: block; height: 100%; border-radius: 2px; background: #e8c34a; }
 
 /* the two that are not settings, under every page */
 .foot { display: flex; flex-wrap: wrap; justify-content: center; gap: .5rem; }
+/* AND THEY ARE BUTTONS, WITH BORDERS ROUND THEM, at the user's
+   request. RESUME and RESTART were two words in grey with an underline
+   that only appeared under the mouse — nothing about either said it
+   could be pressed, which on a phone, where there is no hover to find
+   it with, means the only two things in the menu that DO anything were
+   the two that looked like a caption. A box each: the one you want
+   filled in, the one that throws the night away outlined. */
 .btn {
   min-height: 44px; min-width: 44px;                 /* a thumb's worth, still */
-  padding: .5rem 1rem;
+  padding: .5rem 1.2rem;
   font: inherit; font-size: .7rem; letter-spacing: .2em; text-transform: uppercase;
-  color: rgba(207, 207, 214, .72); background: transparent;
-  border: 0; border-bottom: 1px solid transparent; border-radius: 0;
+  color: #e9e9ee; background: rgba(255, 255, 255, .04);
+  border: 2px solid rgba(207, 207, 214, .5); border-radius: 12px;
   cursor: pointer; touch-action: manipulation;
-  transition: color .08s, border-color .08s;
+  transition: color .08s, border-color .08s, background .08s;
 }
-.btn:hover, .btn:focus-visible { color: #fff; border-bottom-color: rgba(207, 207, 214, .4); outline: none; }
-.btn:active { color: #e8c34a; }
-.btn.primary { color: #e8c34a; }
-.btn.primary:hover { color: #ffe07a; border-bottom-color: #e8c34a; }
-.btn.quiet { color: rgba(207, 207, 214, .45); }
-.btn.quiet.armed { color: #e8c34a; }
+.btn:hover, .btn:focus-visible { color: #fff; border-color: #cfcfd6; background: rgba(255, 255, 255, .1); outline: none; }
+.btn:active { transform: translateY(1px); }
+.btn.primary { color: #14161d; background: #e8c34a; border-color: #e8c34a; }
+.btn.primary:hover { color: #14161d; background: #ffd257; border-color: #ffd257; }
+.btn.quiet { color: #cfcfd6; }
+/* RESTART ASKS TWICE and says so in the colour of the thing it is
+   about to do — the second press throws the night away. */
+.btn.quiet.armed { color: #14161d; background: #e05a3a; border-color: #e05a3a; }
+/* and DOWNLOAD lights up while it is packing, because the button is
+   also the progress bar — see js/pack.js */
+.btn.busy { color: #14161d; background: #e8c34a; border-color: #e8c34a; pointer-events: none; }
 
 /* ---- the window a tile opens -------------------------------------
    For the settings that are a number between two numbers. It sits OVER
    the menu rather than in it, so asking for a slider does not move the
    page underneath, and it is the one place in this menu with a slider
    in it at all. */
-#dial { background: rgba(5, 6, 10, .72); z-index: 30; transition: opacity .12s ease; }
+#dial { background: rgba(4, 5, 9, .8); z-index: 30; transition: opacity .12s ease; }
 .dial-box {
   width: min(24rem, 86vw);
   padding: 1.1rem 1.2rem;
   text-align: center;
-  background: #0a0c12;
-  border: 1px solid rgba(207, 207, 214, .22);
+  background: #0b0d14;
+  border: 2px solid rgba(207, 207, 214, .55);
   border-radius: 18px;
   box-shadow: 0 18px 50px rgba(0, 0, 0, .6);
 }
 .dial-box h3 {
   margin-bottom: .8rem; font-weight: normal;
-  font-size: .64rem; letter-spacing: .3em; color: rgba(207, 207, 214, .6);
+  font-size: .64rem; letter-spacing: .3em; color: #ececf2;
 }
 .slot { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: .5rem; }
 .slot b {
   grid-column: 1 / -1;
-  font-weight: normal; font-size: .82rem; letter-spacing: .16em; color: #e8c34a;
+  font-weight: normal; font-size: .82rem; letter-spacing: .16em; color: #ffd257;
 }
 .slot input {
   width: 100%; height: 44px;
@@ -272,12 +309,12 @@ html.touch .desk-only, html:not(.touch) .touch-only { display: none !important; 
 .nudge {
   width: 44px; height: 44px;
   font: inherit; font-size: 1rem;
-  color: rgba(207, 207, 214, .72); background: rgba(207, 207, 214, .05);
-  border: 1px solid rgba(207, 207, 214, .18); border-radius: 12px;
+  color: #e9e9ee; background: rgba(255, 255, 255, .06);
+  border: 2px solid rgba(207, 207, 214, .45); border-radius: 12px;
   cursor: pointer; touch-action: manipulation;
   transition: color .1s, border-color .1s, background .1s;
 }
-.nudge:hover, .nudge:focus-visible { color: #fff; border-color: rgba(207, 207, 214, .45); outline: none; }
+.nudge:hover, .nudge:focus-visible { color: #fff; border-color: #cfcfd6; outline: none; }
 .nudge:disabled { opacity: .3; pointer-events: none; }
 #dial-done { margin-top: .7rem; }
 

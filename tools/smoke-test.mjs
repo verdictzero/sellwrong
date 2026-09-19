@@ -4154,6 +4154,32 @@ await (async () => {
        left anywhere in here is the old menu coming back. */
     check('and nothing in the menu scrolls: the pages are what replaced it',
       /\.menu \{[^}]*overflow: hidden/.test(css) && !/overflow-y: (auto|scroll)/.test(css));
+    /* AND YOU CAN READ IT OVER A LIT SHOP FLOOR, which is the other
+       half of what was asked for and the half a layout test cannot
+       see. It was dim words on a wash: 58% of shade over the game, a
+       hairline at 20% round each tile, text at 72% of a grey, and the
+       only two buttons in the menu drawn as underlined captions. Every
+       one of those is a number, so every one of them is checkable. */
+    const blockOf = sel => { const i = css.indexOf(sel); return i < 0 ? '' : css.slice(i, css.indexOf('}', i)); };
+    const borderPx = sel => { const m = blockOf(sel).match(/border: (\d+)px/); return m ? +m[1] : 0; };
+    const scrim = parseFloat(((css.match(/#pause \{ background: rgba\(([^)]*)\)/) || [])[1] || '').split(',')[3] || '0');
+    note('the menu', `scrim ${scrim}, borders: tile ${borderPx('.tile {')}px, ` +
+      `tab ${borderPx('.tab {')}px, button ${borderPx('.btn {')}px`);
+    check('the game is put out behind the menu rather than merely shaded', scrim >= 0.85, `alpha ${scrim}`);
+    check('and the menu is a card with a rim, not words standing on the picture',
+      /\.menu \{[^}]*background: #[0-9a-f]{6}/.test(css) && /\.menu \{[^}]*border: 2px/.test(css));
+    check('every tap target in it has a border somebody can see',
+      borderPx('.tile {') >= 2 && borderPx('.tab {') >= 2 && borderPx('.btn {') >= 2,
+      `tile ${borderPx('.tile {')}, tab ${borderPx('.tab {')}, button ${borderPx('.btn {')}`);
+    /* THE TWO BUTTONS ARE BUTTONS. A border-bottom that only appears
+       under the mouse is not one, and a phone has no mouse. */
+    check('and RESUME and RESTART are boxes, not underlined captions',
+      /\.btn \{[^}]*border: 2px[^}]*\n[^}]*border-radius/.test(css + '\n') || /\.btn \{[^}]*border: 2px solid[^}]*border-radius: \d+px/s.test(css),
+      blockOf('.btn {').match(/border[^;]*/g)?.join(' / '));
+    /* nothing in the menu is written in a colour you have to lean in
+       for: the name on a tile and the word PAUSED are both flat */
+    check('and nothing in it is drawn in a half-transparent grey',
+      !/\.tile \.tn \{[^}]*rgba\([^)]*, \.\d+\)/.test(css) && !/^h2 \{[^}]*rgba/m.test(css));
     /* the two kinds of tap, which is the other half of what was asked
        for: a list wraps round, a number opens the window */
     check('tapping a list cycles it and wraps, tapping a number opens the window',
@@ -12636,6 +12662,97 @@ section('what it costs to draw');
   }
 }
 
+/* ---------- the download ---------- */
+section('the download');
+{
+  /* THE USER ASKED FOR A BUTTON THAT HANDS YOU THE GAME, and the thing
+     that can go quietly wrong with it is not the button: it is the zip.
+     A writer that puts a byte in the wrong place makes a file that
+     every unzipper refuses, and nobody finds out until somebody tries
+     to keep the game. So the archive is written here and read back
+     here, by a reader that knows nothing about the writer — the table
+     at the end is walked, each name is found at the offset it claims,
+     and each CRC is recomputed off the bytes that came back. */
+  const { Zip, crc32, packSite, RUN_ME, FOLDER } = await import('../js/pack.js');
+  const fsP = await import('node:fs');
+  const html = fsP.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const main = fsP.readFileSync(new URL('../js/main.js', import.meta.url), 'utf8');
+
+  check('the sum is the standard one, against the standard sentence',
+    crc32(new TextEncoder().encode('The quick brown fox jumps over the lazy dog')) === 0x414fa339,
+    crc32(new TextEncoder().encode('The quick brown fox jumps over the lazy dog')).toString(16));
+
+  const body = new Uint8Array(3000);
+  for (let i = 0; i < body.length; i++) body[i] = (i * 7) & 0xFF;
+  const zip = new Zip();
+  zip.addText(`${FOLDER}/RUN-ME.txt`, RUN_ME);
+  zip.add(`${FOLDER}/js/main.js`, body);
+  zip.add(`${FOLDER}/assets/empty.bin`, new Uint8Array(0));
+  const bytes = new Uint8Array(await (zip.close()).arrayBuffer());
+
+  /* the reader: end of central directory, then the table, then each
+     file where the table says it is */
+  const dv = new DataView(bytes.buffer);
+  let eocd = bytes.length - 22;
+  while (eocd >= 0 && dv.getUint32(eocd, true) !== 0x06054B50) eocd--;
+  const count = eocd >= 0 ? dv.getUint16(eocd + 10, true) : 0;
+  let at = eocd >= 0 ? dv.getUint32(eocd + 16, true) : 0;
+  const read = [];
+  for (let i = 0; i < count; i++) {
+    const nameLen = dv.getUint16(at + 28, true), extra = dv.getUint16(at + 30, true);
+    const comment = dv.getUint16(at + 32, true), offset = dv.getUint32(at + 42, true);
+    const name = new TextDecoder().decode(bytes.subarray(at + 46, at + 46 + nameLen));
+    const crc = dv.getUint32(at + 16, true), size = dv.getUint32(at + 24, true);
+    const nl = dv.getUint16(offset + 26, true), el = dv.getUint16(offset + 28, true);
+    const from = offset + 30 + nl + el;
+    read.push({ name, crc, size, data: bytes.subarray(from, from + size), method: dv.getUint16(offset + 8, true) });
+    at += 46 + nameLen + extra + comment;
+  }
+  note('the archive', `${bytes.length} bytes, ${count} entries read back`);
+  check('an archive it writes can be read back by its table of contents', read.length === 3,
+    `${read.length} of 3`);
+  check('and every name is where the table says it is, with the sum it claims',
+    read.length === 3 && read.every(e => crc32(e.data) === e.crc && e.data.length === e.size));
+  check('and the bytes that come back are the bytes that went in',
+    read[1] && read[1].data.length === body.length && read[1].data.every((b, i) => b === body[i]));
+  check('an empty file is still a file', read[2] && read[2].size === 0 && read[2].crc === 0);
+  check('everything is stored rather than deflated, which is what the writer promises',
+    read.every(e => e.method === 0));
+  check('and it unpacks into a folder of its own rather than all over your downloads',
+    read.every(e => e.name.startsWith(FOLDER + '/')));
+
+  /* AND THE NOTE IN THE BOX. Every file in here is an ES module and a
+     browser will not load one over file://, so an archive that does not
+     say how to serve it is an archive that looks broken. */
+  check('the archive carries the one thing a person needs to be told',
+    /http:\/\/localhost:8000/.test(RUN_ME) && /http\.server|http-server/.test(RUN_ME));
+
+  /* THE PACKER ITSELF, against a made-up site: it reads a list and
+     fetches what the list names, and nothing else. */
+  const asked = [];
+  const fetcher = async (url) => {
+    asked.push(url);
+    if (url.endsWith('files.json')) return { ok: true, status: 200, json: async () => ['index.html', 'js/main.js'] };
+    return { ok: true, status: 200, arrayBuffer: async () => new TextEncoder().encode('// ' + url).buffer };
+  };
+  const packed = await packSite({ fetcher, base: '' });
+  check('the packer reads the list and fetches exactly what it names',
+    asked.join() === 'files.json,index.html,js/main.js', asked.join());
+  check('and the note goes in on top of them', packed.count === 3, `${packed.count}`);
+  let failed = '';
+  try { await packSite({ fetcher: async () => ({ ok: false, status: 404 }) }); }
+  catch (e) { failed = e.message; }
+  check('and a site with no packing list on it says so rather than handing over an empty box',
+    /404/.test(failed), failed);
+
+  /* the button, and the wire from it to all of the above */
+  check('there is a DOWNLOAD in the pause menu', /id="btn-download"[^>]*class="btn/.test(html));
+  check('and it is wired to the packer, loaded only when somebody asks',
+    /import\('\.\/pack\.js'\)/.test(main) && /packSite\(\{ onProgress/.test(main) && /save\(blob\)/.test(main));
+  check('and the button is the progress bar, because there is nowhere else to put one',
+    /PACKING \$\{Math\.round\(d \* 100\)\}%/.test(main));
+}
+
 section('the site');
 {
   /* The deploy is a copy, and a copy can leave something out. The fire
@@ -12682,6 +12799,38 @@ section('the site');
   check('and no fire strips, because the fire is drawn now', !fs.existsSync(path.join(out, 'assets/fire')));
   check('the page, its icon and its manifest are', ['index.html', 'icon.png', 'manifest.webmanifest'].every(f => fs.existsSync(path.join(out, f))));
   check('and the source tree is not', !fs.existsSync(path.join(out, 'tools')) && !fs.existsSync(path.join(out, 'README.txt')) && !fs.existsSync(path.join(out, 'art')));
+
+  /* THE PACKING LIST, which is how the DOWNLOAD in the menu knows what
+     the site is. A static host cannot be asked what is on it, so the
+     site carries a list of itself — and a list is a second copy of the
+     truth, which is a thing that drifts. The build writes one from what
+     it actually copied; the repository keeps one so a checkout served
+     off the disk packs too; and this is the check that they are the
+     same file. An asset added without rebuilding the list fails here
+     rather than in somebody's download. */
+  const packedList = path.join(out, 'files.json');
+  const listed = fs.existsSync(packedList) ? JSON.parse(fs.readFileSync(packedList, 'utf8')) : [];
+  const kept = JSON.parse(fs.readFileSync(path.join(root, 'files.json'), 'utf8'));
+  const onDisk = [];
+  const walkAll = d => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p2 = path.join(d, e.name);
+      if (e.isDirectory()) walkAll(p2);
+      else if (e.name !== 'files.json') onDisk.push(path.relative(out, p2).split(path.sep).join('/'));
+    }
+  };
+  walkAll(out);
+  onDisk.sort();
+  note('the packing list', `${listed.length} files, ${(listed.join().length / 1024).toFixed(1)}kB of names`);
+  check('the built site carries a list of itself, for the download in the menu', listed.length > 100);
+  check('and it names every file in the site and nothing else',
+    listed.join('\n') === onDisk.join('\n'),
+    `${listed.length} listed against ${onDisk.length} on disk`);
+  check('and it does not name itself: an archive of the game does not need it',
+    !listed.includes('files.json'));
+  check('and the copy in the repository is the same list, so a checkout packs too',
+    kept.join('\n') === listed.join('\n'),
+    `${kept.length} kept against ${listed.length} built`);
   fs.rmSync(out, { recursive: true, force: true });
 }
 
