@@ -821,6 +821,95 @@ has a tab and every tab a page, and there is no scroller anywhere in the
 menu's CSS. A tile that lights up under the thumb and does nothing at
 all is the one thing this layout can quietly become.
 
+AND YOU CAN READ IT, at the user's request, which the tiles on their own
+did not settle. The layout was right and the paint was wrong: the game
+behind the menu was shaded by 58% and no more, so every word in it was
+read against whatever happened to be back there — a lit ceiling, a
+burning car park, the gun — and moved when that did. The tiles were dark
+glass at 78% with a hairline round them at 20% of a grey, which over a
+bright frame is not an edge; the names on them were a grey at 55%; and
+RESUME and RESTART, the only two things in the whole menu that DO
+anything, were drawn as words with an underline that appeared under the
+mouse. On a phone there is no mouse to find it with.
+
+So the contrast is spent where it is worth something — at the edges:
+
+  THE GAME GOES OUT       88% of shade, not 58%. The picture behind the
+                          menu is a suggestion of where you were
+  THE MENU IS A CARD      an opaque panel with a 2px rim and a shadow
+                          under it, so there is one boundary between the
+                          menu and the game instead of six faint ones
+  THE TILES HAVE FACES    opaque, and a shade LIGHTER than the card they
+                          stand on, with a 2px border: six things on a
+                          surface rather than six darker patches of shop
+                          floor
+  THE TAB YOU ARE ON      is filled in, black on amber. A tint of yellow
+                          at 8% is a difference you have to go looking
+                          for, and which page you are on is the one
+                          thing here to be answered across the room
+  AND THEY ARE BUTTONS    RESUME filled, RESTART outlined, DOWNLOAD
+                          outlined — three boxes with borders, at the
+                          user's request. RESTART still asks twice, and
+                          turns the colour of what it is about to do
+
+Every one of those is a number in css/style.css, so every one of them is
+checked: the scrim's alpha, the border widths on a tile, a tab and a
+button, that the menu has a background colour of its own, and that no
+text in it is written in a half-transparent grey.
+
+
+TAKING IT HOME: THE DOWNLOAD
+----------------------------
+
+A BUTTON IN THE PAUSE MENU THAT HANDS YOU THE WHOLE GAME, at the user's
+request: one zip file, to keep and to run on your own machine with
+nothing to install and no network once it is unpacked.
+
+There is no server here to ask for one. The game is a static page, and
+the only machine in the transaction is the one already holding every
+file — it fetched them all to play. So the page BUILDS THE ARCHIVE
+ITSELF (js/pack.js): it reads the packing list, fetches each file back,
+and writes a ZIP by hand. The fetches come out of the browser's cache,
+which is why sixty megabytes takes about three seconds rather than a
+second download of the site.
+
+THE ZIP IS STORED, NOT DEFLATED. Fifty-six of the sixty megabytes are
+PNGs, MP3s and GLBs, all compressed already; squeezing the two and a
+half megabytes of source on top would cost a pass over everything to
+save under two per cent. Every entry goes in flat, which makes the
+writer small enough to read in one sitting: a local header and the bytes
+per file, a central directory at the end, and a CRC32 of each. The
+button is the progress bar — PACKING 0%, then SAVED 59MB — because
+there is nowhere else in that menu to put one and a percentage in the
+thing you just pressed is where you are already looking.
+
+THE PACKING LIST is the one part that is not obvious. A page cannot ask
+a static host what is on it, so the site carries a list of itself:
+tools/build-site.sh writes files.json out of what it actually copied.
+A list is a second copy of the truth and second copies drift, so the
+same list is kept at the top of the repository — which is what makes a
+checkout served straight off the disk pack too — and the smoke test
+rebuilds the site and fails if the two are not the same file. An asset
+added without regenerating it fails there rather than in somebody's
+download.
+
+AND THE ARCHIVE SAYS HOW TO RUN IT. Everything here is an ES module, and
+a browser will not load one over file:// — it treats a page opened by
+double-clicking as having no origin and blocks its own files, with an
+error about CORS that tells you nothing about what to do. So the zip
+carries RUN-ME.txt next to the page with the answer in it: serve the
+folder with any web server and open localhost.
+
+    python3 -m http.server 8000      # or npx http-server, or php -S
+    http://localhost:8000/
+
+The zip writer is written here and read back in the smoke test by a
+reader that knows nothing about it — the table at the end is walked,
+every name is found at the offset it claims, and every CRC is recomputed
+off the bytes that came back. A writer that puts one byte in the wrong
+place makes a file every unzipper refuses, and nobody finds that out
+until somebody tries to keep the game.
+
 
 BRIGHTNESS, CONTRAST, GAMMA
 ---------------------------

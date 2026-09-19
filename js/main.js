@@ -818,6 +818,39 @@ async function boot() {
     clearTimeout(restartArmed);
     restartArmed = setTimeout(() => { restartBtn.classList.remove('armed'); restartBtn.textContent = 'RESTART'; }, 3000);
   });
+  /* ---- the download -------------------------------------------------
+     AT THE USER'S REQUEST: a button in the menu that hands you the
+     whole site as one file, to keep and to run on your own machine.
+
+     The zip is written in the page, by js/pack.js, out of the files
+     the browser already has — so the work is a pass over the cache
+     rather than a second download of sixty megabytes, and the module
+     that does it is not loaded at all until somebody asks. The button
+     is the progress bar: there is nowhere else in this menu to put one
+     and a percentage in the thing you pressed is where you are already
+     looking. */
+  const dlBtn = $('btn-download');
+  let packing = false;
+  dlBtn.addEventListener('click', async () => {
+    if (packing) return;
+    packing = true;
+    dlBtn.classList.add('busy');
+    const say = t => { dlBtn.textContent = t; };
+    say('PACKING 0%');
+    try {
+      const { packSite, save } = await import('./pack.js');
+      const { blob } = await packSite({ onProgress: d => say(`PACKING ${Math.round(d * 100)}%`) });
+      save(blob);
+      say(`SAVED ${Math.round(blob.size / 1048576)}MB`);
+    } catch (e) {
+      /* the one way this fails on a served site is a packing list that
+         is not there — a checkout with no files.json in it */
+      console.warn('[pack]', e);
+      say('CANNOT PACK');
+    }
+    setTimeout(() => { say('DOWNLOAD'); dlBtn.classList.remove('busy'); packing = false; }, 5000);
+  });
+
   document.addEventListener('pointerlockchange', () => {
     if (started && input.mode === 'desktop' && !document.pointerLockElement && !game.paused) pause(true);
   });

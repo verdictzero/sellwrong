@@ -45,6 +45,20 @@ cp -r css js vendor "$OUT/"
 # (js/skyart.js) and the photograph in there is kept, not shipped.
 cp -r assets/forest assets/people assets/models assets/fonts assets/music assets/sfx "$OUT/assets/"
 
+# THE PACKING LIST, for the DOWNLOAD in the pause menu. The page has no
+# way to ask a static host what is on it, so the site carries a list of
+# itself: every file just copied, sorted, as a JSON array of paths
+# relative to the site root. js/pack.js fetches this and zips what it
+# names. It is written last, and leaves itself out — an archive of the
+# game does not need the list the archive was made from.
+#
+# The same file is kept at the top of the repository so a checkout
+# served straight off the disk packs too, and the smoke test rebuilds
+# the site and fails if the two have drifted apart.
+( cd "$OUT" && find . -type f ! -name files.json | sed 's|^\./||' | LC_ALL=C sort |
+  awk 'BEGIN { printf "[" } { printf "%s\n  \"%s\"", (NR > 1 ? "," : ""), $0 } END { printf "\n]\n" }'
+) > "$OUT/files.json"
+
 printf 'built %s: ' "$OUT"
 find "$OUT" -type f | wc -l | tr -d ' '
 printf ' files, '
