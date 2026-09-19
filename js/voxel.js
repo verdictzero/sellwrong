@@ -81,6 +81,12 @@ export const TOUGHNESS = 900;
    ever reach. */
 export const MAX_LINE = 6000;
 
+/* HOW MANY WAYS A TORN EDGE CAN LOOK, which is RUIN_VARIANTS in
+   js/textures.js and is written again here rather than imported,
+   because this file has no dependencies and is worth keeping that way.
+   The smoke test holds the two numbers against each other. */
+export const RUIN_TORN_VARIANTS = 3;
+
 /* Knuth's multiplicative hash, the same one js/ruin.js picks a sagging
    joist with and js/textures.js picks a ruin variant with, for the same
    reason: stable across a reload, different from its neighbour's. */
@@ -139,6 +145,13 @@ export function solidSpans(l, sectors) {
 export function voxelisable(l, sectors) {
   if (l.front !== null && l.back !== null) return false;
   if (l.len > MAX_LINE || l.len <= 0) return false;
+  /* AND NOT A DOOR. A dynamic sector's walls are rebuilt from scratch
+     every tic it is moving, and a lattice is a thing that remembers
+     what has been done to it — the two ideas do not belong on the same
+     line. Shooting a shutter is a problem for whoever wants a shutter
+     that can be shot. */
+  const s = l.front !== null ? sectors[l.front] : sectors[l.back];
+  if (!s || s.dynamic) return false;
   return solidSpans(l, sectors).length > 0;
 }
 
@@ -174,12 +187,20 @@ export class VoxelSpan {
     this.dmg = new Uint8Array(n);
     this.broken = 0;
 
-    /* Fill by height: a voxel is whatever slot its middle falls inside,
-       and empty where the line has a window in it. */
+    /* FILL BY OVERLAP, NOT BY CENTRE, which is the difference between a
+       wall and a wall with a draught under the ceiling. A shop unit is
+       228 units floor to ceiling and a voxel is 8, so the top row of the
+       lattice is a part row — and a part row whose MIDDLE is above the
+       ceiling is not filled, which leaves the wall four units short of
+       the roof and, worse, leaves the row below it with a top face that
+       the mesher then draws as a torn edge across the whole building.
+       A voxel that overlaps the mass at all is mass. What that
+       overshoots by, mesh() gives back: the rectangles it emits are
+       clipped to where the wall actually stops. */
     for (let iz = 0; iz < this.nz; iz++) {
-      const wz = this.zBot + iz * VOX + VOX / 2;
+      const lo = this.zBot + iz * VOX, hi = lo + VOX;
       let slot = EMPTY;
-      for (const s of spans) if (wz >= s.z0 && wz < s.z1) { slot = s.slot; break; }
+      for (const s of spans) if (hi > s.z0 && lo < s.z1) { slot = s.slot; break; }
       if (slot === EMPTY) continue;
       for (let iu = 0; iu < this.nu; iu++)
         for (let iw = 0; iw < this.nw; iw++)
@@ -189,6 +210,14 @@ export class VoxelSpan {
   }
 
   at(iu, iz, iw) { return (iz * this.nu + iu) * this.nw + iw; }
+
+  /* Which ruin this span's torn edges wear. Off the span's own seed, so
+     two holes in one wall tear the same way and the wall next door
+     tears differently — the rule js/ruin.js and js/textures.js both
+     already follow. */
+  get tornVariant() {
+    return Math.min(RUIN_TORN_VARIANTS - 1, Math.floor(this.seed * RUIN_TORN_VARIANTS));
+  }
 
   get(iu, iz, iw) {
     if (iu < 0 || iz < 0 || iw < 0 || iu >= this.nu || iz >= this.nz || iw >= this.nw) return EMPTY;

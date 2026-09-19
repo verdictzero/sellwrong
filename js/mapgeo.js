@@ -34,6 +34,7 @@
 import * as THREE from 'three';
 import { createWallMaterial } from './material.js';
 import { roofFraming } from './ruin.js';
+import { VOX, TORN, RUIN_TORN_VARIANTS } from './voxel.js';
 
 /* A batch collects triangles for one texture and hands back a mesh. */
 class Batch {
@@ -138,7 +139,22 @@ export function buildLevelGeometry(level, bank) {
     const b = l.back !== null ? level.sectors[l.back] : null;
     if ((f && f.dynamic) || (b && b.dynamic)) dynamicLines.add(l);
   }
-  const staticLines = level.lines.filter(l => !dynamicLines.has(l));
+  /* A LINE THAT HAS BEEN SHOT DRAWS ITSELF DIFFERENTLY. Once something
+     has put a lattice on a line (js/voxel.js, hung off l.voxels by
+     whatever hit it) the line stops being a quad and becomes the
+     rectangles its lattice merges down to. It is the same filter the
+     doors get four lines up, for the same reason: one list of lines
+     that need something other than addLine, taken out of the list that
+     does not. */
+  const isVoxel = l => !!(l.voxels && l.voxels.live > 0);
+  /* AND THE SPLIT IS MADE ON EVERY REBUILD, not once here. A line
+     becomes a lattice the moment something shoots it, which is halfway
+     through the game — decided once at build time it would be a wall
+     that is still a quad in the list that draws quads, and the hole
+     would never appear. The doors' list can be settled up front
+     because which sectors move is in the map; which walls have been
+     shot is not. */
+  const fixedLines = level.lines.filter(l => !dynamicLines.has(l));
   const dynamicSectors = level.sectors.filter(s => s.dynamic);
   const staticSectors = level.sectors.filter(s => !s.dynamic);
 
@@ -160,7 +176,14 @@ export function buildLevelGeometry(level, bank) {
     staticGroup.clear();
     const set = new BatchSet();
     for (const s of staticSectors) addFlats(set, level, s, bank);
-    for (const l of staticLines) addLine(set, level, l, bank);
+    /* A wall that has been opened up goes in as the rectangles its
+       lattice merges down to, and into the SAME BatchSet as everything
+       else — so a store shot to pieces is the same twenty draw calls a
+       clean one is, and the count does not grow with the damage. */
+    for (const l of fixedLines) {
+      if (isVoxel(l)) addVoxelWall(set, level, l, bank);
+      else addLine(set, level, l, bank);
+    }
     /* AND THE STEEL, over whichever regions have lost their deck. It
        goes in the same BatchSet as everything else, so the whole ruined
        roof of a burnt-out store is one more draw call and not one per
@@ -396,5 +419,126 @@ function addQuad(set, l, bank, texName, zBot, zTop, facingFront, peg, light, sk 
       [[x1, zTop, -y1], [x2, zTop, -y2], [x2, zBot, -y2], [x1, zBot, -y1]],
       [[u1, vT],        [u0, vT],        [u0, vB],        [u1, vB]],
       lit, sk, ch);
+  }
+}
+
+/* --------------------------------------------------------------------
+   A WALL THAT HAS BEEN OPENED UP
+
+   js/voxel.js merges a shot wall down to as few rectangles as it will
+   go into and hands them over in LATTICE coordinates — how far along
+   the line, how far up, how far into the thickness — with one of the
+   three ranges collapsed to name the plane the face lies in. This turns
+   those into triangles, and it is the only part of the voxel work that
+   knows what a renderer is.
+
+   THE TWO FACES ACROSS THE THICKNESS ARE THE WALL and they have to land
+   exactly where addQuad would have put them, texture and all, or
+   voxelising a shopfront changes the picture before anybody has fired
+   at it. So they take the same u from the same end, the same peg, the
+   same light and the same charring — the arithmetic below is addQuad's,
+   evaluated at a distance along the line rather than at its two ends.
+   The smoke test holds one against the other, vertex by vertex.
+
+   EVERY OTHER FACE IS TORN. You are only looking at it because the wall
+   is open, so it gets RUINWALL — broken board with the studs standing
+   behind it, which the fire already uses on a gutted region and which
+   is doing exactly the same job here an inch at a time.
+
+   THE WINDING IS NOT DERIVED, IT IS CHECKED. Six directions, two
+   handednesses depending on which side of the line the sector is on,
+   and the map's y becoming the renderer's minus z on top of both — that
+   is twelve cases to get right by reasoning and one to get right by
+   measuring. So the quad is built in any order, its normal is taken
+   with a cross product, and if it points the wrong way the corners are
+   reversed. It costs a cross product per rectangle and it cannot be
+   subtly wrong.
+   ------------------------------------------------------------------ */
+function addVoxelWall(set, level, l, bank) {
+  const front = l.front !== null ? level.sectors[l.front] : null;
+  const back  = l.back  !== null ? level.sectors[l.back]  : null;
+  const s = front || back;
+  if (!s) return;
+
+  const facingFront = !!front;
+  const wallTex = l.middle || 'WALL';
+  if (wallTex === 'NONE') return;
+  const wt = bank.get(wallTex);
+  const peg = pegOf(l, 'middle', s.floor, s.ceil, s, wt.h);
+  const lit = Math.max(0.02, Math.min(1.4, s.light + l.contrast));
+  const sk = skyOf(s), ch = charOf(s);
+
+  /* the line's own frame, in map space: along it, and into it */
+  const ux = l.dx / l.len, uy = l.dy / l.len;
+  /* the front sector is on the RIGHT of v1->v2, so its normal is
+     (dy,-dx); the wall goes the other way, into the void behind */
+  const nx = uy, ny = -ux;
+  const wx = facingFront ? -nx : nx;
+  const wy = facingFront ? -ny : ny;
+
+  /* u runs from whichever end this side measures from — see addQuad */
+  const uAt = a => (l.xoff + (facingFront ? a : l.len - a)) / wt.w;
+
+  const P = (a, z, w) => [l.x1 + ux * a + wx * w, z, -(l.y1 + uy * a + wy * w)];
+
+  for (const span of l.voxels.built()) {
+    const tornTex = 'RUINWALL' + span.tornVariant;
+    const tt = bank.get(tornTex);
+
+    span.mesh((slot, axis, sign, iu0, iu1, iz0, iz1, iw0, iw1) => {
+      /* CLIPPED BACK TO THE WALL. A lattice is a whole number of cubes
+         and a wall is not: a 180-unit line is 23 voxels of 8 with four
+         units over, and a 228-tall unit is 29 with four over. Drawn as
+         it is stored, every wall in the building is half a voxel too
+         long and half a voxel too tall, which is a wall through its own
+         corner and a texture that no longer lines up with the one on
+         the line next door. So the lattice is generous going in — see
+         the fill rule in js/voxel.js — and the rectangles are clipped
+         back to the real wall coming out. */
+      const a0 = Math.min(span.u0 + iu0 * VOX, l.len);
+      const a1 = Math.min(span.u0 + iu1 * VOX, l.len);
+      const z0 = Math.min(span.zBot + iz0 * VOX, span.zTop);
+      const z1 = Math.min(span.zBot + iz1 * VOX, span.zTop);
+      if (a0 === a1 && axis !== 0) return;
+      if (z0 === z1 && axis !== 1) return;
+      const w0 = iw0 * VOX, w1 = iw1 * VOX;
+
+      const torn = slot === TORN;
+      const t = torn ? tt : wt;
+      const b = set.get(torn ? tornTex : wallTex);
+
+      /* the four corners, and the two texture coordinates that vary
+         with them. Which pair varies is which plane the face is in. */
+      let p, uv;
+      if (axis === 2) {                       // the wall itself
+        p = [P(a0, z1, w0), P(a1, z1, w0), P(a1, z0, w0), P(a0, z0, w0)];
+        uv = [[uAt(a0), (z1 - peg) / t.h], [uAt(a1), (z1 - peg) / t.h],
+              [uAt(a1), (z0 - peg) / t.h], [uAt(a0), (z0 - peg) / t.h]];
+      } else if (axis === 0) {                // a torn edge down the side
+        p = [P(a0, z1, w0), P(a0, z1, w1), P(a0, z0, w1), P(a0, z0, w0)];
+        uv = [[(a0 + w0) / t.w, (z1 - peg) / t.h], [(a0 + w1) / t.w, (z1 - peg) / t.h],
+              [(a0 + w1) / t.w, (z0 - peg) / t.h], [(a0 + w0) / t.w, (z0 - peg) / t.h]];
+      } else {                                // a torn edge along the top or the sill
+        p = [P(a0, z0, w0), P(a1, z0, w0), P(a1, z0, w1), P(a0, z0, w1)];
+        uv = [[(l.xoff + a0) / t.w, (z0 + w0 - peg) / t.h], [(l.xoff + a1) / t.w, (z0 + w0 - peg) / t.h],
+              [(l.xoff + a1) / t.w, (z0 + w1 - peg) / t.h], [(l.xoff + a0) / t.w, (z0 + w1 - peg) / t.h]];
+      }
+
+      /* which way it is supposed to face, in the renderer's axes: a map
+         direction (mx, my, up) lands at (mx, up, -my) */
+      let ox, oy, oz;
+      if (axis === 0)      { ox = sign * ux; oy = 0;    oz = -sign * uy; }
+      else if (axis === 1) { ox = 0;         oy = sign; oz = 0; }
+      else                 { ox = sign * wx; oy = 0;    oz = -sign * wy; }
+
+      const e1 = [p[1][0] - p[0][0], p[1][1] - p[0][1], p[1][2] - p[0][2]];
+      const e2 = [p[2][0] - p[0][0], p[2][1] - p[0][1], p[2][2] - p[0][2]];
+      const cx = e1[1] * e2[2] - e1[2] * e2[1];
+      const cy = e1[2] * e2[0] - e1[0] * e2[2];
+      const cz = e1[0] * e2[1] - e1[1] * e2[0];
+      if (cx * ox + cy * oy + cz * oz < 0) { p.reverse(); uv.reverse(); }
+
+      b.quad(p, uv, lit, sk, ch);
+    });
   }
 }

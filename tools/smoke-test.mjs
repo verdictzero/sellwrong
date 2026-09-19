@@ -6237,6 +6237,135 @@ section('the voxel wall');
   }
 }
 
+/* ---------- the wall in the picture ---------- */
+section('the voxel wall in the picture');
+{
+  const VX = await import('../js/voxel.js');
+  const { VoxelWall, voxelisable, SPAN, RUIN_TORN_VARIANTS } = VX;
+  const { buildLevelGeometry } = await import('../js/mapgeo.js');
+
+  check('the torn edge has as many ruins as the fire does',
+    RUIN_TORN_VARIANTS === tex.RUIN_VARIANTS, `${RUIN_TORN_VARIANTS} vs ${tex.RUIN_VARIANTS}`);
+
+  const bank = tex.bakeTextures();
+
+  /* Every triangle in a built level, keyed by what it would put on the
+     screen — where its corners are, what texture coordinate each one
+     carries, and the light, sky and char it was given. Two builds that
+     draw the same picture produce the same bag of these. */
+  function triangles(group) {
+    const bag = new Map();
+    const walk = o => {
+      if (o.geometry && o.geometry.attributes && o.geometry.attributes.position) {
+        const P = o.geometry.attributes.position.array;
+        const U = o.geometry.attributes.uv.array;
+        const L = o.geometry.attributes.light.array;
+        const S = o.geometry.attributes.sky.array;
+        const C = o.geometry.attributes.charred.array;
+        const r = n => Math.round(n * 1e4) / 1e4;
+        for (let t = 0; t < P.length / 9; t++) {
+          const v = [];
+          for (let k = 0; k < 3; k++) {
+            const i = t * 3 + k;
+            v.push([r(P[i * 3]), r(P[i * 3 + 1]), r(P[i * 3 + 2]),
+                    r(U[i * 2]), r(U[i * 2 + 1]), r(L[i]), r(S[i]), r(C[i])].join(','));
+          }
+          /* rotate to the smallest corner: the same triangle written
+             from a different starting vertex is the same triangle, and
+             rotating keeps the winding it was wound with */
+          let at = 0;
+          for (let k = 1; k < 3; k++) if (v[k] < v[at]) at = k;
+          const key = o.name + '|' + [v[at], v[(at + 1) % 3], v[(at + 2) % 3]].join('|');
+          bag.set(key, (bag.get(key) || 0) + 1);
+        }
+      }
+      for (const c of (o.children || [])) walk(c);
+    };
+    walk(group);
+    return bag;
+  }
+  const size = bag => [...bag.values()].reduce((a, b) => a + b, 0);
+
+  /* ONE SPAN, SO THE COMPARISON IS EXACT. A wall longer than a span is
+     drawn as one quad today and as one quad PER SPAN once it has a
+     lattice — the same surface, with the same texture running across
+     it, cut at the joins. Those are different triangles covering
+     identical pixels, which is a thing this test cannot tell apart from
+     a bug, so the wall it holds up to the light is a short one. */
+  const short = level.lines
+    .filter(l => voxelisable(l, level.sectors) && l.len <= SPAN && l.len >= 64)
+    .sort((a, b) => b.len - a.len)[0];
+  check('there is a wall short enough to compare whole', !!short);
+
+  const clean = triangles(buildLevelGeometry(level, bank).group);
+
+  short.voxels = new VoxelWall(short, level.sectors);
+  short.voxels.gridAt(0);                       // built, and not a mark on it
+  const voxed = triangles(buildLevelGeometry(level, bank).group);
+
+  note('the wall under test', `${Math.round(short.len)} units of ${short.middle || 'WALL'}`);
+  note('triangles, clean / voxelised', `${size(clean)} / ${size(voxed)}`);
+
+  /* THE GATE. Every triangle the clean build drew is still there,
+     unmoved, with the same texture coordinates on it. */
+  let missing = 0, firstMissing = null;
+  for (const [k, n] of clean) {
+    const got = voxed.get(k) || 0;
+    if (got < n) { missing += n - got; if (!firstMissing) firstMissing = k; }
+  }
+  check('voxelising a wall moves nothing that was already drawn',
+    missing === 0, `${missing} triangles changed, first: ${firstMissing}`);
+
+  /* and what it adds is the back of the cavity: the far side of the
+     eight units this line owns of the void, which faces away from the
+     room and is culled before it is ever rasterised */
+  let extra = 0;
+  for (const [k, n] of voxed) extra += Math.max(0, n - (clean.get(k) || 0));
+  note('what the lattice adds while intact', `${extra} triangles (the back of the cavity)`);
+  check('an intact lattice adds only the cavity back', extra === 2, `${extra}`);
+
+  /* AND A HOLE IS A HOLE. Once something is taken out, triangles that
+     were there must GO — a hole you cannot see through is a decal with
+     extra steps. */
+  {
+    short.voxels.carve(short.len / 2, (level.sectors[short.front ?? short.back].floor +
+                                       level.sectors[short.front ?? short.back].ceil) / 2, 28);
+    const shot = triangles(buildLevelGeometry(level, bank).group);
+    let gone = 0;
+    for (const [k, n] of clean) gone += Math.max(0, n - (shot.get(k) || 0));
+    note('after a 28-unit hole', `${size(shot)} triangles, ${gone} of the original gone`);
+    check('a hole takes the wall that was there away', gone > 0, `${gone}`);
+    check('and puts a torn edge in its place',
+      [...shot.keys()].some(k => k.startsWith('RUINWALL')));
+    check('the store is still one batch per texture, not one per hole',
+      size(shot) > size(clean) && size(shot) < size(clean) + 400, `${size(shot) - size(clean)}`);
+  }
+
+  /* A WALL IS SHOT HALFWAY THROUGH THE GAME, not at build time, and
+     that is the whole difficulty. The doors' list can be settled once
+     because which sectors move is written in the map; which walls have
+     been shot is not. Decided once at build time, a line that becomes a
+     lattice in the middle of a firefight stays in the list that draws
+     quads, keeps drawing its quad, and the hole never appears at all —
+     which is what this does if the split is not made on every rebuild. */
+  {
+    delete short.voxels;                        // back to a wall nobody has touched
+    const geo = buildLevelGeometry(level, bank);
+    const before = size(triangles(geo.group));
+    const sec = level.sectors[short.front ?? short.back];
+    short.voxels = new VoxelWall(short, level.sectors);
+    short.voxels.carve(short.len / 2, (sec.floor + sec.ceil) / 2, 28);
+    geo.rebuildStatic();
+    const after = triangles(geo.group);
+    check('a wall shot after the level was built draws its hole',
+      size(after) !== before && [...after.keys()].some(k => k.startsWith('RUINWALL')),
+      `${before} -> ${size(after)}`);
+  }
+
+  /* leave the level as it was found: everything after this builds on it */
+  delete short.voxels;
+}
+
 /* ---------- the vans under fire ---------- */
 section('the vans under fire');
 {
