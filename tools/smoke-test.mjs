@@ -3548,13 +3548,18 @@ section('the cold');
     check('and the flamethrower is the only one with a pilot light, being the only one that burns',
       Array.isArray(w3.GUNS.FLAMER.pilot) && E.pilot === null && w3.GUNS.BORE.pilot === null
       && w3.GUNS.LANCE.pilot === null);
-    /* AND THE TWO THAT COOK DO NOT SHARE A NUMBER. The minigun's
-       barrels and the lance's whole body both glow with GUN_FRAG's heat
-       term, and both read a property off the player by name — so a
-       minigun put away white-hot must not hand its glow to the next
-       thing drawn. */
-    check('the two guns that heat read different numbers off the player',
-      w3.GUNS.MINIGUN.heat.from === 'heat' && w3.GUNS.LANCE.heat.from === 'lanceHeat');
+    /* AND ONLY ONE GUN COOKS. Both the minigun's barrels and the
+       lance's whole body used to glow with GUN_FRAG's heat term, each
+       reading a property off the player by name; at the user's request
+       the lance has no heat at all, so the minigun is alone with it and
+       the shader's second, middle-out gradient mode has no caller. The
+       mode is left in place — it is correct and it is behind a branch
+       nothing on the lance satisfies — and this is what says so. */
+    check('the minigun is the only gun that heats, and it reads its own number',
+      w3.GUNS.MINIGUN.heat.from === 'heat' && w3.GUNS.LANCE.heat === undefined &&
+      Object.values(w3.GUNS).filter(g => g.heat).length === 1);
+    check('and no gun asks for the middle-out mode any more',
+      Object.values(w3.GUNS).every(g => !g.heat || g.heat.mid === undefined));
     check('and it is the only one whose muzzle is fire as painted',
       !w3.GUNS.FLAMER.cold && w3.GUNS.FLAMER.tint.every(v => v === 1));
 
@@ -4807,8 +4812,14 @@ section('the holes');
     check('and then it stops, because a hole that grew for ever would eat the building',
       sys.live.length === 0);
     check('the beam punches on its structural clock and not every tic',
-      /this\.holed \+= g\.breaches\?\.cut\(this\.from, this\.angle, this\.slope, BEAM_RANGE, r\)/.test(beamSrc2) &&
+      /g\.breaches\?\.cut\(this\.from, this\.angle, this\.slope, BEAM_RANGE, r\)/.test(beamSrc2) &&
       beamSrc2.indexOf('breaches?.cut') > beamSrc2.indexOf('if (++this.pass >= PASS_EVERY)'));
+    /* AND THE TALLY OF THEM IS A MAX AND NOT A SUM, which only started
+       mattering when the number began being shown to the player: the
+       line is fixed at the trigger now, so every pass re-opens the same
+       walls and a sum counts each of them once per pass. */
+    check('and the tally of walls opened is the most one pass did, not the sum',
+      /this\.holed = Math\.max\(this\.holed,/.test(beamSrc2));
     check('and a hole is lit, so it goes on burning after the beam has stopped',
       /g\.fire\?\.ignite\(w\.x, w\.y, 150/.test(breachSrc));
     /* A WALL THAT IS GONE WAS HOLDING SOMETHING UP. Without this the
@@ -4874,8 +4885,8 @@ section('the lance');
     P.CHARGE_STAGES[0] === 3 && P.CHARGE_STAGES[1] === 5 && P.CHARGE_STAGES[2] === 7);
   check('and a full charge is the last of them, in tics',
     P.CHARGE_MAX === 7 * TICRATE);
-  check('the beam lasts three to five seconds, by stage, as asked',
-    P.BEAM_SECONDS.length === 3 && P.BEAM_SECONDS[0] === 3 && P.BEAM_SECONDS[2] === 5 &&
+  check('the beam is a shot and not a sweep: under two seconds at the top stage',
+    P.BEAM_SECONDS.length === 3 && P.BEAM_SECONDS[2] > 0.5 && P.BEAM_SECONDS[2] < 2 &&
     P.BEAM_TICS.every((t, i) => t === Math.round(P.BEAM_SECONDS[i] * TICRATE)));
   check('and a later stage is always a longer, wider, harder shot',
     P.BEAM_TICS[0] < P.BEAM_TICS[1] && P.BEAM_TICS[1] < P.BEAM_TICS[2] &&
@@ -4897,7 +4908,7 @@ section('the lance');
       stageAt(3 * TICRATE) === 1 && stageAt(4.9 * TICRATE | 0) === 1 &&
       stageAt(5 * TICRATE) === 2 && stageAt(6.9 * TICRATE | 0) === 2 &&
       stageAt(7 * TICRATE) === 3);
-    check('and the charge cannot be held past the top',
+    check('and the charge cannot be wound past the top',
       P.CHARGE_MAX === 7 * TICRATE && stageAt(P.CHARGE_MAX) === 3);
     /* the pitch every charge sound rides */
     p.charge = 0;
@@ -4916,17 +4927,16 @@ section('the lance');
   check('a charged weapon never runs the frame-list firing path',
     /if \(this\.def\.charge\) \{ this\.lanceTic\(input\); return; \}/.test(playerSrc));
   check('a tap under the first mark vents rather than firing, and spends nothing',
-    /if \(stage >= FIRE_AT\) \{[\s\S]{0,200}?this\.fireBeam\(stage, over\);\s*\n\s*\}\s*\n\s*else this\.ventCharge\(\);/.test(playerSrc));
-  /* AND A CHARGE HELD AT THE TOP NO LONGER VENTS ITSELF. It did, for
-     three seconds, in the first cut: the coil let go on its own and you
-     got your finger back. At the user's request the gun now keeps it,
-     and keeping it is what kills you — see the overcharge below. The
-     old self-vent is gone entirely rather than made longer, because a
-     gun that saves you from yourself after forty seconds and a gun that
-     explodes after forty seconds are different guns. */
-  check('and a charge held at the top is kept, not vented — there is no self-vent left',
-    !/CHARGE_HOLD/.test(playerSrc) && !/holdTics/.test(playerSrc) &&
-    /if \(this\.charge >= CHARGE_MAX\) \{/.test(playerSrc));
+    /if \(stage >= FIRE_AT\) \{[\s\S]{0,200}?this\.fireBeam\(stage\);\s*\n\s*\}\s*\n\s*else this\.ventCharge\(\);/.test(playerSrc));
+  /* AND A CHARGE HELD AT THE TOP VENTS ITSELF AGAIN. It did, for three
+     seconds, in the first cut; then the overcharge replaced it with
+     forty seconds and an explosion; and at the user's request the
+     explosion is gone and a window is back, five seconds of it. The
+     three states a held trigger can be in are therefore: winding, held
+     in the window, vented. Nothing kills you in any of them. */
+  check('and a charge held at the top vents itself, after a window to take the shot in',
+    P.HOLD_TICS > 3 * TICRATE && P.HOLD_TICS <= 8 * TICRATE &&
+    /if \(this\.charge >= CHARGE_MAX && \+\+this\.hold >= HOLD_TICS\) \{\s*\n\s*this\.ventCharge\(\);/.test(playerSrc));
   check('a trigger held through a vent does not start another charge',
     /if \(!input\.attack\) this\.vented = false;/.test(playerSrc) &&
     /input\.attack && can && !this\.vented/.test(playerSrc));
@@ -4937,37 +4947,61 @@ section('the lance');
     /const grip = braced \? 0 : this\.charge > 0 \? CHARGE_WALK : 1;/.test(playerSrc));
   check('nor jump out of one',
     /input\.jump && !braced/.test(playerSrc));
-  check('but can still sweep it, slowly',
-    P.BEAM_TURN > 0 && P.BEAM_TURN < 0.5 &&
-    /const rate = this\.beamTics > 0 \? BEAM_TURN : 1;/.test(playerSrc));
+  /* AND THE HEAD IS FREE WHILE IT IS OUT, which is the opposite of what
+     it was. The sweep used to be clamped to a fifth of the rate because
+     the column chased the barrel; the column is nailed to its firing
+     line now (see _aim), so turning cannot move the damage and the
+     clamp only stopped you looking along your own shot. */
+  check('but the head is free while it is out, since turning cannot drag the column',
+    P.BEAM_TURN === undefined && !/BEAM_TURN/.test(playerSrc.replace(/BEAM_TURN used to be/g, '')) &&
+    /this\.angle -= input\.look\.x;/.test(playerSrc));
   check('and the shot takes the momentum with it rather than sliding to a halt',
     (() => {
-      const body = playerSrc.slice(playerSrc.indexOf('fireBeam(stage, over = 0) {'), playerSrc.indexOf('get chargeStage()'));
-      return /this\.momx = 0; this\.momy = 0;/.test(body) && /beam\?\.fire\(this, stage, over\)/.test(body) &&
+      const body = playerSrc.slice(playerSrc.indexOf('fireBeam(stage) {'), playerSrc.indexOf('get chargeStage()'));
+      return /this\.momx = 0; this\.momy = 0;/.test(body) && /beam\?\.fire\(this, stage\)/.test(body) &&
              body.indexOf('this.momx = 0') < body.indexOf('beam?.fire');
     })());
   check('a charge slows you but does not stop you, which the beam does',
     P.CHARGE_WALK > 0 && P.CHARGE_WALK < 0.5);
 
-  /* ---- the coil cooks and has to be waited out ---------------------- */
-  check('the lance has its own heat, not the minigun\'s',
-    /this\.lanceHeat = 0;/.test(playerSrc) && P.LANCE_HEAT_UP > 0 && P.LANCE_HEAT_DOWN > P.LANCE_HEAT_UP);
-  check('and a cooking lance refuses the trigger until it has cooled to a mark',
-    P.LANCE_HOT > P.LANCE_COOL_AT &&
-    /if \(WEAPONS\[w\]\.charge && \(this\.lanceHot \|\| this\.beamTics > 0\)\) return false;/.test(playerSrc));
-  check('a stage-three discharge is most of the coil\'s heat',
-    P.BEAM_TICS[2] / P.LANCE_HEAT_UP > 0.7 && P.BEAM_TICS[2] / P.LANCE_HEAT_UP <= 1);
-  check('and venting costs heat too, so a charge you throw away is not free',
-    P.VENT_HEAT > 0 && P.VENT_HEAT < 1);
-  /* INFINITE AMMO TAKES THE LATCH OFF AND LEAVES THE METAL ALONE. It
-     zeroed the temperature as well for one release, which turned the
-     chassis glow off in every ordinary game — the switch is on by
-     default and its branch runs once a tic, so the number the shader
-     reads never reached a frame. See the note in fuelTic; the check
-     with teeth is in 'the overcharged discharge'. */
-  check('infinite ammo takes the latch off, and does not pretend the coil is cold',
-    /this\.lanceHot = false;/.test(playerSrc) &&
-    !/this\.lanceHeat = 0; this\.lanceHot = false;/.test(playerSrc));
+  /* ---- AND THE COIL DOES NOT COOK, at the user's request -----------
+     Every one of these was a check on the heat and is now a check that
+     the heat is GONE — kept rather than deleted because "no heat" is a
+     thing this weapon now promises, and a promise nothing tests is a
+     promise that comes back. The minigun's heat is untouched and is
+     checked here too, because that is the way this could quietly
+     regress: by someone re-deriving the lance's glow from the gun rack
+     rather than from the player. */
+  check('the lance has no heat at all: no temperature, no latch, no constants',
+    !/lanceHeat|lanceHot/.test(playerSrc) &&
+    P.LANCE_HEAT_UP === undefined && P.LANCE_HEAT_DOWN === undefined &&
+    P.LANCE_HOT === undefined && P.LANCE_COOL_AT === undefined &&
+    P.CHARGE_HEAT === undefined && P.VENT_HEAT === undefined);
+  check('and the only thing that refuses its trigger is its own beam being out',
+    /if \(WEAPONS\[w\]\.charge && this\.beamTics > 0\) return false;/.test(playerSrc));
+  check('so what limits it is the magazine: four cells, one at a time, slowest in the game',
+    P.CELLS === 4 && P.CELL_REGEN_EVERY >= 20 * TICRATE &&
+    P.CELL_REGEN_EVERY > P.REGEN_EVERY && P.CELL_REGEN_EVERY > P.BELT_REGEN_EVERY);
+  check('a vent costs nothing but the seven seconds now',
+    (() => {
+      const body = playerSrc.slice(playerSrc.indexOf('  ventCharge() {'),
+                                   playerSrc.indexOf('  get chargePitch()'));
+      return !/heat|Heat/.test(body) && /this\.charge = 0;/.test(body) && /this\.hold = 0;/.test(body);
+    })());
+  check('the gun rack asks the lance for no heat either, and the minigun still has its own',
+    w3.GUNS.LANCE.heat === undefined && w3.GUNS.MINIGUN.heat.from === 'heat');
+  /* AND THE INFINITE-AMMO BRANCH HAS NOTHING LEFT TO SAY ABOUT IT. It
+     used to clear the coil's latch, because the lance's real limit was
+     temperature and a switch that only refilled tanks would have left
+     it out; one release of that branch also zeroed the temperature and
+     turned the chassis glow off in every ordinary game. Both are moot:
+     the cell IS the limit and the loop above has already filled it. */
+  check('and infinite ammo needs no special case for it any more',
+    (() => {
+      const body = playerSrc.slice(playerSrc.indexOf('    if (this.debug) {'),
+                                   playerSrc.indexOf("    this._refill('fuel'"));
+      return !/lanceHot|lanceHeat/.test(body) && /this\.cellTick = 0;/.test(body);
+    })());
 
   /* ---- the line, and what it takes down ----------------------------- */
   check('the beam is a line through the map and not a shot that stops at a wall',
@@ -5017,19 +5051,33 @@ section('the lance');
     /float flat_ = 1\.0;/.test(beamSrc));
   check('with rings travelling out of the muzzle, so the column has a direction',
     B.RINGS > 0 && B.RING_SPEED > 0);
-  /* AND THE COLUMN LAGS THE BARREL, which is the only reason it is ever
-     seen as a column rather than as a disc: a beam fired along your own
-     line of sight is seen end-on, always, and what puts it across the
-     frame is that it does not turn as fast as you do. */
-  check('the column chases the barrel rather than following it',
-    B.LAG > 0.1 && B.LAG < 1 &&
-    /const k = 1 - Math\.exp\(-1 \/ \(TICRATE \* LAG\)\);/.test(beamSrc) &&
-    /this\.angle \+= d \* k;/.test(beamSrc));
-  check('and it takes the short way round, so crossing the wrap does not sweep the town',
-    /while \(d > Math\.PI\) d -= Math\.PI \* 2;/.test(beamSrc));
-  check('but the first tic plants it where the barrel is',
-    /this\._aim\(player, true\);/.test(beamSrc) && /_aim\(player, snap = false\)/.test(beamSrc));
-  check('and what it cuts is the drawn column and not the crosshair',
+  /* AND THE COLUMN IS NAILED TO THE LINE IT WAS FIRED ALONG, which is
+     the whole of the dial-back's aiming half and the reverse of what it
+     used to be. The column CHASED the barrel, at a time constant, so
+     the damage followed the drawn column rather than the crosshair and
+     where the shot landed depended on how your wrist was moving. Fixed
+     at the trigger it goes where you aimed, and the end-on problem
+     solves itself better than the lag solved it: turn your head at all
+     and the column is no longer in front of you. */
+  check('the line is taken once, at the trigger, and never chased',
+    B.LAG === undefined && !/TICRATE \* LAG/.test(beamSrc) &&
+    !/this\.angle \+= d \* k;/.test(beamSrc) && /_aim\(player\) \{/.test(beamSrc));
+  check('so _aim is called from fire and from nowhere else',
+    (beamSrc.match(/this\._aim\(player\)/g) || []).length === 1 &&
+    beamSrc.indexOf('this._aim(player)') > beamSrc.indexOf('  fire(player, stage) {') &&
+    beamSrc.indexOf('this._aim(player)') < beamSrc.indexOf('  stop() {'));
+  check('and one tic of the beam does not re-read where the player is looking',
+    (() => {
+      /* THE CALL AND NOT THE WORD. The line that used to be here has a
+         comment where it was, saying what it was and why it went, and
+         that comment names _aim — so a bare word match fails on the
+         explanation of its own absence. Third time this file has been
+         bitten by that; strip the comments first. */
+      const body = beamSrc.slice(beamSrc.indexOf('  tic(player) {'), beamSrc.indexOf('  _bodies(player, r) {'))
+                          .replace(/\/\*[\s\S]*?\*\//g, '');
+      return !/this\._aim\(/.test(body) && /this\.tics\+\+;/.test(body) && body.length > 400;
+    })());
+  check('and what it cuts is that same line, so the picture and the damage agree',
     /const ux = Math\.cos\(this\.angle\), uy = Math\.sin\(this\.angle\);/.test(beamSrc) &&
     /g\.fire\?\.damageLine\(this\.from, this\.angle, this\.slope/.test(beamSrc));
   /* AND THE NEAR END IS CLOSED. A tube is hollow, and the front is the
@@ -5046,10 +5094,12 @@ section('the lance');
 
   /* ---- the shake, the particles and the light ----------------------- */
   check('the beam shakes the eye and not the player, so it does not walk your aim off',
-    /const shake = outside \? 0 : \(this\.beam \? this\.beam\.shake : 0\);/.test(fs.readFileSync('js/game.js', 'utf8')) &&
+    /const shake = this\.beam \? this\.beam\.shake : 0;/.test(fs.readFileSync('js/game.js', 'utf8')) &&
     /yaw   \+= k \* \(0\.022/.test(fs.readFileSync('js/game.js', 'utf8')));
-  check('and the shake settles from a jolt to a hum, so the beam can still be aimed',
-    B.SHAKE_PEAK > B.SHAKE_HUM && B.SHAKE_HUM > 0 && B.SHAKE_SETTLE > 0);
+  check('and it is a kick and not a rumble: nearly all of it gone inside a quarter second',
+    B.SHAKE_PEAK > B.SHAKE_HUM && B.SHAKE_HUM > 0 && B.SHAKE_SETTLE > 0 &&
+    B.SHAKE_SETTLE <= 9 && B.SHAKE_HUM < B.SHAKE_PEAK * 0.15 &&
+    B.SHAKE_SETTLE < P.BEAM_TICS[2] / 3);
   check('particles are thrown across the column rather than along its centre line',
     B.SAMPLES >= 12 && /Math\.sqrt\(Math\.random\(\)\) \* r/.test(beamSrc));
   check('the world has a second light and it is a LINE, not a point',
@@ -5059,7 +5109,7 @@ section('the lance');
     /float n = fract\(sin\(dot\(floor\(world \* 0\.017\)/.test(matSrc) &&
     /float flick = 0\.62 \+ 0\.38 \* sin\(beamSeed/.test(matSrc));
   check('and it outlives the column, on the axis the column was on',
-    B.AFTERGLOW > 1 && /this\.glow = Math\.max\(0, this\.glow - dt \/ AFTERGLOW\);/.test(beamSrc) &&
+    B.AFTERGLOW > 0.5 && /this\.glow = Math\.max\(0, this\.glow - dt \/ AFTERGLOW\);/.test(beamSrc) &&
     /the light is NOT stopped/.test(beamSrc));
   check('the light reaches much further than the column is wide',
     B.LIGHT_RANGE.every((v, i) => v > B.BEAM_RADIUS[i] * 5));
@@ -5098,9 +5148,8 @@ section('the lance');
      So the dial is DRAWN instead, into a context that records where
      the ink went, and the extent is measured the way the shader
      measures it: r = max(|x|, |y|) * 2 off the centre, a square bezel
-     and not a round one. Full-panel fills are exempt and only those —
-     the clear, and the flash in the last quarter of the overcharge —
-     because covering the whole screen is what they are for. */
+     and not a round one. Full-panel fills are exempt and only
+     those, because covering the whole screen is what they are for. */
   {
     const bezel = +(scopeSrc.match(/smoothstep\((0\.\d+), 1\.02, r\)/) || [, 0])[1];
     const N = 256;
@@ -5129,12 +5178,12 @@ section('the lance');
     const sc = Object.create(S.Scope.prototype);
     sc.canvas = { width: N, height: N }; sc.held = true; sc.ctx = ctx; sc.stageMarks = [3 / 7, 5 / 7, 1]; sc.zoomIndex = 2; sc.panelTexture = { needsUpdate: false };
     /* the worst case for extent is everything lit at once */
-    sc._draw({ charge: 1, heat: 1, stage: 3, cell: 4, firing: true, over: 0.9, tics: 4 });
+    sc._draw({ charge: 1, hold: 0.2, stage: 3, cell: 4, firing: true, tics: 4 });
     const r = Math.max(Math.abs(0.5 - lo), Math.abs(hi - 0.5)) * 2;
     note('how far the dial reaches, and where the glass goes dark',
       `${r.toFixed(3)} of ${bezel}, over ${ops} marks and ${whole} full-panel fills`);
     check('everything on the dial is inside the bezel, which is the bug the first cut had',
-      bezel > 0.5 && ops > 20 && whole >= 2 && r <= bezel);
+      bezel > 0.5 && ops > 20 && whole >= 1 && r <= bezel);
   }
   /* THE ZOOM STEPS, AND THEY ARE MODEST ONES. They were 1x/4x/8x for a
      draft and the user asked for less zoom and more looking through the
@@ -5232,8 +5281,8 @@ section('the lance, second pass');
   const TICRATE = 35;
   const mkP = () => {
     const p = Object.create(P.Player.prototype);
-    p.charge = 0; p.overcharge = 0; p.beamTics = 0; p.beamStage = 0;
-    p.lanceHeat = 0; p.lanceHot = false; p.dead = false;
+    p.charge = 0; p.hold = 0; p.beamTics = 0; p.beamStage = 0;
+    p.dead = false;
     return p;
   };
 
@@ -5243,7 +5292,7 @@ section('the lance, second pass');
   check('the trigger only gives you the last stage, which is the red one',
     P.FIRE_AT === P.CHARGE_STAGES.length && P.FIRE_AT === 3);
   check('and anything short of it vents instead of firing',
-    /if \(stage >= FIRE_AT\) \{[\s\S]{0,200}?this\.fireBeam\(stage, over\);\s*\n\s*\}\s*\n\s*else this\.ventCharge\(\);/.test(playerSrc));
+    /if \(stage >= FIRE_AT\) \{[\s\S]{0,200}?this\.fireBeam\(stage\);\s*\n\s*\}\s*\n\s*else this\.ventCharge\(\);/.test(playerSrc));
   check('the stages themselves are untouched, so the smaller shots are one number away',
     P.CHARGE_STAGES.join() === '3,5,7' && P.BEAM_TICS.length === 3);
   {
@@ -5256,111 +5305,15 @@ section('the lance, second pass');
     check('and not one tic sooner', p.chargeStage === P.FIRE_AT - 1);
   }
 
-  /* ---- THE CHASSIS COOKS FROM THE MIDDLE OUT ------------------------- */
-  check('the gun shader has a second heat gradient and the lance is what uses it',
-    /float reach = along;/.test(gunSrc2) && /if \(heatMode > 0\.5\) \{/.test(gunSrc2) &&
-    /reach = 1\.0 - clamp\(abs\(vL\.z - heatMid\) \/ half_, 0\.0, 1\.0\);/.test(gunSrc2));
-  check('and the mode is picked by whether the gun says where its hot spot is',
-    /heatMaterial\.uniforms\.heatMode\.value = def\.heat\.mid === undefined \? 0 : 1;/.test(gunSrc2));
-  check('the minigun still heats from the muzzle back and the lance from its coil out',
-    w3.GUNS.MINIGUN.heat.mid === undefined && typeof w3.GUNS.LANCE.heat.mid === 'number' &&
-    w3.GUNS.LANCE.heat.mid > w3.GUNS.LANCE.heat.z[0] && w3.GUNS.LANCE.heat.mid < w3.GUNS.LANCE.heat.z[1]);
-  check('and the hot spot is in the body of the gun and not out along the barrel',
-    w3.GUNS.LANCE.heat.mid < 0.2);
-  {
-    /* charging heats it, on its own, without firing anything */
-    const p = mkP();
-    p.charge = P.CHARGE_MAX; p.overcharge = 0;
-    p.coilTic();
-    const atRed = p.lanceHeat;
-    p.overcharge = P.OVERCHARGE_TICS;
-    p.coilTic();
-    note('the coil while you hold it', `red is ${(atRed * 100) | 0}% hot, the end of the overcharge is ${(p.lanceHeat * 100) | 0}%`);
-    check('a full charge alone makes the gun glow, without a shot being fired',
-      Math.abs(atRed - P.CHARGE_HEAT) < 1e-9 && atRed > 0.2 && atRed < 0.5);
-    check('and the end of the overcharge is all the heat there is',
-      Math.abs(p.lanceHeat - 1) < 1e-9);
-    check('holding the trigger can never COOL a lance',
-      (() => { const q = mkP(); q.lanceHeat = 0.9; q.charge = 1; q.coilTic(); return q.lanceHeat === 0.9; })());
-  }
+  /* ---- AND WHAT USED TO BE HERE --------------------------------------
+     Three blocks stood between the stage machinery above and the zoom
+     below: the chassis cooking from the middle out, the forty seconds
+     of overcharge that killed you, and the third-person camera that
+     watched it happen. All three went at the user's request and the
+     checks that they are GONE are in 'the lance, dialled back', which
+     is where the whole of the dial-back is tested together rather than
+     as holes left in the sections it emptied. */
 
-  /* ---- FORTY SECONDS AND IT KILLS YOU -------------------------------- */
-  note('the overcharge', `${P.OVERCHARGE_TICS / TICRATE}s past red`);
-  check('forty seconds of overcharge, as asked', P.OVERCHARGE_TICS === 40 * TICRATE);
-  check('and at the end of it the coil lets go rather than venting',
-    /if \(\+\+this\.overcharge >= OVERCHARGE_TICS\) \{ this\.blowUp\(\); return; \}/.test(playerSrc) &&
-    !/CHARGE_HOLD/.test(playerSrc));
-  check('the blast is the biggest in the game and takes the street with it',
-    /radius: 1600, damage: 12000/.test(playerSrc) && /structure: 16, structureRadius: 2800/.test(playerSrc));
-  check('and it holes the walls round it the way the beam does, eight ways at once',
-    /g\.breaches\?\.cut\(from, this\.angle \+ i \* Math\.PI \/ 4, 0, 1700, 320\);/.test(playerSrc));
-  check('it kills you, and it is the one thing that ignores the invincible switch',
-    /this\.health = 0;/.test(playerSrc) &&
-    /IT IGNORES THE INVINCIBLE SWITCH/.test(playerSrc) &&
-    playerSrc.indexOf('blowUp() {') < playerSrc.indexOf('if (!this.dead) { this.deathCam'));
-  check('the screen on the gun says so for all forty seconds',
-    /const over = p \? \(p\.overFraction \|\| 0\) : 0;/.test(scopeSrc2) &&
-    /const row = over > 0\.70 \? \['EJECT', 'CAPACITOR'\]/.test(scopeSrc2));
-  check('and the game itself shouts, four times, on the way down',
-    /for \(const \[at, said\] of OVERCHARGE_CALLS\)/.test(playerSrc) &&
-    /this\.game\.toast\?\.\(said\);/.test(playerSrc));
-  {
-    /* it does not go off early, and it does go off */
-    const fired = [];
-    const p = mkP();
-    p.weapon = 'LANCE';
-    p.game = { sound: { play() {}, loop() { return null; } }, setBigMessage() {},
-               beam: { fire() {}, stop() {}, tic() {} }, breaches: { cut() {} },
-               fx: { fireball() {}, puff() {}, wash() {} },
-               explode() { fired.push('boom'); }, spawnSparks() {}, noise() {}, onPlayerDied() {},
-               level: { sectors: [] } };
-    p.ammo = { cells: 4 }; p.maxAmmo = { cells: 4 };
-    p.sector = { storey: 0 }; p.x = 0; p.y = 0; p.z = 0; p.angle = 0;
-    p.momx = 0; p.momy = 0; p.shotsFired = 0; p.fireIndex = -1; p.cellDry = false;
-    p.chargeLoop = null; p._chargeVoice = null; p.vented = false;
-    const input = { attack: true };
-    let tics = 0;
-    while (!p.dead && tics < P.CHARGE_MAX + P.OVERCHARGE_TICS + 10) { p.lanceTic(input); tics++; }
-    note('held down from cold', `${(tics / TICRATE).toFixed(1)}s to the explosion`);
-    check('holding the trigger from cold blows up after the charge and the overcharge and not before',
-      p.dead && fired.length === 1 &&
-      Math.abs(tics - (P.CHARGE_MAX + P.OVERCHARGE_TICS)) <= 2);
-    check('and it left a death camera behind for the renderer to use',
-      !!p.deathCam && p.deathCam.tics === 0);
-  }
-  /* ---- AND THE CAMERA LEAVES THE BODY -------------------------------- */
-  check('the death camera pulls back, lifts, tips down and turns',
-    P.DEATHCAM_DIST > 200 && P.DEATHCAM_LIFT > 100 &&
-    P.DEATHCAM_PITCH > 0 && P.DEATHCAM_SPIN > 0 && P.DEATHCAM_SPIN < 0.02);
-  check('it does not go through walls, which is the ordinary failure of these',
-    /const hit = lv\.rayHitWall \? lv\.rayHitWall\(this\.x, this\.y, eye, wx, wy, wz\) : null;/.test(playerSrc) &&
-    /const t = hit \? Math\.max\(0\.12, hit\.t - 0\.12\) : 1;/.test(playerSrc));
-  check('and only that one death gets one — every other is Doom\'s sink to the floor',
-    /this\.deathCam = null;/.test(playerSrc) &&
-    /if \(this\.deathCam\) this\.deathCamTic\(\);/.test(playerSrc));
-  check('the renderer takes it before the sway and the shake, so a held shot is held',
-    /const outside = p\.dead && p\.deathCam && p\.deathCam\.x !== undefined;/.test(gameSrc2) &&
-    /const shake = outside \? 0 : /.test(gameSrc2) &&
-    gameSrc2.indexOf('const outside =') < gameSrc2.indexOf('if (this.idle) {'));
-  {
-    /* it actually ends up behind the body and looking at it */
-    const p = mkP();
-    p.x = 1000; p.y = 1000; p.z = 0; p.angle = 0;
-    p.deathCam = { tics: 0, dist: 40, yaw: 0, pitch: 0.18 };
-    p.game = { level: { rayHitWall: () => null } };
-    for (let i = 0; i < 200; i++) p.deathCamTic();
-    const back = Math.hypot(p.deathCam.x - p.x, p.deathCam.y - p.y);
-    note('where the death camera ends up', `${Math.round(back)} units back, ${Math.round(p.deathCam.z - p.z)} up`);
-    check('it ends up a few hundred units out and well above the body',
-      back > 300 && back < 600 && p.deathCam.z - p.z > 180);
-    check('and pointed at it', (() => {
-      const wantYaw = Math.atan2(p.y - p.deathCam.y, p.x - p.deathCam.x);
-      let d = p.deathCam.lookYaw - wantYaw;
-      while (d > Math.PI) d -= Math.PI * 2;
-      while (d < -Math.PI) d += Math.PI * 2;
-      return Math.abs(d) < 1e-6 && p.deathCam.lookPitch < 0;
-    })());
-  }
 
   /* ---- THE ZOOM IS NOT A ZOOM ---------------------------------------- */
   note('the scope', `${S.ZOOMS.join('x, ')}x on the panel, view ${S.VIEW_ZOOM.join('/')}, gun ${S.AIM_AT.join('/')} to the eye`);
@@ -5471,247 +5424,229 @@ section('the lance, second pass');
   }
 }
 
-/* ---------- THE OVERCHARGED DISCHARGE, AND WHAT IT DOES TO YOU ----------
+/* ---------- DIALLED BACK: A SNIPER AND NOT AN ARMAGEDDON ----------------
 
-   At the user's request the overcharge is no longer only a way to die:
-   letting go DURING it fires the absurd one. Everything here is the one
-   number `over` — how far past the top of the charge the trigger came
-   up, 0 to 1 — threaded from the release, through the shot, into the
-   column's width, bite and life, and into the shove that throws the
-   player down the street while it is out.
+   At the user's request the lance is a PRECISE weapon now. Three things
+   went, and the going of them is most of what is checked here, because
+   a feature that is removed leaves no code to break and so leaves
+   nothing to notice when it quietly comes back:
 
-   WHAT IS CHECKED IS THAT IT IS ONE NUMBER. A second copy anywhere —
-   the beam keeping its own idea of how overcharged it is, the player
-   keeping a separate multiplier for the recoil — is how this kind of
-   thing falls out of step, and the failure is silent: a column that
-   looks enormous and bites like a clean one.
+     THE OVERCHARGE, in its entirety. Forty seconds past the top of the
+     charge and the coil let go where you were standing and killed you,
+     with a ladder of CAPACITOR warnings, a screen that glitched harder
+     as it climbed, a blast the size of a city block and a third-person
+     death camera to watch it from. None of it is here. Holding at the
+     top is a five-second window and then a vent.
+
+     THE HEAT, in its entirety. The coil cooked as it wound, the chassis
+     glowed with it from the middle out, and over a threshold the gun
+     refused its own trigger until it had cooled. Gone. What limits the
+     weapon is the magazine, which is four cells at twenty-five seconds
+     each.
+
+     AND THE ARMAGEDDON, which was in the numbers rather than in any one
+     feature: a column a hundred and thirty units wide that stayed out
+     for five seconds, took a building down in one pass, set fire to the
+     street and woke the whole town. Every one of those came down, and
+     what makes the weapon a sniper rather than a smaller siege engine
+     is two of them in particular — a column narrower than one person,
+     and a line that is fixed at the trigger instead of chasing the
+     barrel, so the shot goes exactly where the crosshair was.
+
+   THE NUMBERS ARE CHECKED AS RELATIONSHIPS, not as literals, wherever
+   the relationship is the point: narrower than a person, no collapse in
+   one shot, the whole thing over faster than the old shake took to
+   settle. A literal would pass a re-tune that broke the intent.
    --------------------------------------------------------------------- */
-section('the overcharged discharge');
+section('the lance, dialled back');
 {
   const fs = await import('node:fs');
   const P = await import('../js/player.js');
   const B = await import('../js/beam.js');
+  const w3 = await import('../js/weapon3d.js');
+  const U = await import('../js/util.js');
   const playerSrc = fs.readFileSync('js/player.js', 'utf8');
   const beamSrc = fs.readFileSync('js/beam.js', 'utf8');
   const scopeSrc = fs.readFileSync('js/scope.js', 'utf8');
+  const gameSrc = fs.readFileSync('js/game.js', 'utf8');
+  const w3Src = fs.readFileSync('js/weapon3d.js', 'utf8');
   const TICRATE = 35;
 
-  /* ---- the column ------------------------------------------------- */
-  note('what forty seconds adds to the column',
-    `${B.OVER_WIDE}x wide, ${B.OVER_BITE}x bite, ${(1 + P.OVER_LONGER).toFixed(1)}x as long`);
-  check('an overcharged column is wider, hungrier and longer-lived, all of them',
-    B.OVER_WIDE > 1.5 && B.OVER_BITE > 1.5 && P.OVER_LONGER > 0.5);
-  check('and the width is on the one getter everything else reads',
-    /get radius\(\) \{ return \(BEAM_RADIUS\[this\.stage - 1\] \|\| 0\) \* \(1 \+ this\.over \* \(OVER_WIDE - 1\)\); \}/.test(beamSrc));
-  check('so the geometry and the damage sweep cannot disagree about how wide it is',
-    /const R = this\.radius;/.test(beamSrc) && /const r = this\.radius;/.test(beamSrc));
-  check('the bite is one multiplier over damage, structure and heat alike',
-    /get overMul\(\) \{ return 1 \+ this\.over \* \(OVER_BITE - 1\); \}/.test(beamSrc) &&
-    (beamSrc.match(/this\.overMul/g) || []).length >= 3);
-  {
-    /* the numbers a full overcharge actually produces, off the real
-       getters rather than off the constants */
-    const b = Object.create(B.BeamSystem.prototype);
-    b.stage = 3; b.over = 0;
-    const clean = b.radius, cleanMul = b.overMul;
-    b.over = 1;
-    const full = b.radius, fullMul = b.overMul;
-    note('a stage three column, clean and at the top of the overcharge',
-      `${clean.toFixed(0)} units wide -> ${full.toFixed(0)}, bite x${cleanMul} -> x${fullMul}`);
-    check('a full overcharge is a different weapon, not a bigger version of the same one',
-      clean === B.BEAM_RADIUS[2] && cleanMul === 1 &&
-      full > clean * 2 && fullMul > 3);
-  }
-  /* AND THE NEAR END OF IT IS STILL HIDDEN, which is a thing that has
-     to scale or the whole frame goes white. The eye is forty-six units
-     behind the muzzle; a column three hundred wide with a hide distance
-     of a hundred and ninety puts the player back inside their own beam,
-     looking at the inside of a double-sided additive tube. That was the
-     first screenshot of an overcharged shot, exactly as it had been the
-     first screenshot of a stage-three one. */
-  check('the hidden stub and the neck are measured in radii, not in one fixed distance',
-    /export const NECK_R = NECK \/ 130;/.test(beamSrc) &&
-    /export const HIDE_R = HIDE \/ 130;/.test(beamSrc) &&
-    /const neckLen = Math\.max\(NECK, R \* NECK_R\);/.test(beamSrc) &&
-    /const hideLen = Math\.max\(HIDE, R \* HIDE_R\);/.test(beamSrc));
-  check('and nothing in the geometry still reads the fixed ones',
-    !/\/ NECK\)/.test(beamSrc.slice(beamSrc.indexOf('  render(time'))) &&
-    !/\/ HIDE\)/.test(beamSrc.slice(beamSrc.indexOf('  render(time'))));
-  {
-    const b = Object.create(B.BeamSystem.prototype);
-    b.stage = 3; b.over = 0;
-    const cleanHide = Math.max(B.HIDE, b.radius * B.HIDE_R);
-    b.over = 1;
-    const fullHide = Math.max(B.HIDE, b.radius * B.HIDE_R);
-    note('how much of the column is not drawn, at the eye',
-      `${cleanHide.toFixed(0)} units clean, ${fullHide.toFixed(0)} overcharged`);
-    check('a clean shot hides exactly what it always did, and a wide one hides more',
-      Math.abs(cleanHide - B.HIDE) < 1e-9 && fullHide > B.BEAM_RADIUS[2] * B.OVER_WIDE);
-  }
-  check('and the afterglow keeps its own copy, because it outlives the column',
-    /this\.glowOver = this\.over;/.test(beamSrc) &&
-    /this\.over = 0;/.test(beamSrc.slice(beamSrc.indexOf('  stop() {'))));
-
-  /* ---- the trigger hands it over ---------------------------------- */
-  check('the release reads the overcharge before it clears it',
-    /const over = this\.overFraction;\s*\n\s*this\.charge = 0; this\.overcharge = 0;\s*\n\s*this\.fireBeam\(stage, over\);/.test(playerSrc));
-  check('and the shot hands the same number to the beam',
-    /this\.game\.beam\?\.fire\(this, stage, over\);/.test(playerSrc));
-  check('and stretches its own clock by it, since the trigger owns how long a weapon fires',
-    /this\.beamTics = Math\.round\(BEAM_TICS\[stage - 1\] \* \(1 \+ over \* OVER_LONGER\)\);/.test(playerSrc));
-
-  /* ---- and it throws you ------------------------------------------- */
-  const mkShooter = (over) => {
-    const p = Object.create(P.Player.prototype);
-    p.weapon = 'LANCE';                    /* def is a getter off it */
-    p.ammo = { cells: 4 }; p.maxAmmo = { cells: 4 };
-    p.x = 0; p.y = 0; p.z = 0; p.angle = 0; p.sector = { storey: 0 };
-    p.momx = 11; p.momy = -4; p.momz = 0; p.onGround = true; p.launched = 0;
-    p.shotsFired = 0; p.fireIndex = -1; p.cellDry = false; p.beamTics = 0;
-    p.game = { sound: { play() {}, sample() { return null; } }, beam: { fire() {} }, noise() {} };
-    p.fireBeam(3, over);
-    return p;
-  };
-  {
-    const clean = mkShooter(0), full = mkShooter(1), half = mkShooter(0.5);
-    const back = Math.hypot(full.momx, full.momy);
-    note('what letting go of a full overcharge does to the shooter',
-      `${back.toFixed(0)} a tic backwards and ${full.momz.toFixed(1)} up, ` +
-      `for ${(full.beamTics / TICRATE).toFixed(1)}s of beam against ${(clean.beamTics / TICRATE).toFixed(1)}`);
-    check('a clean shot still braces: the momentum goes and nothing moves you',
-      clean.momx === 0 && clean.momy === 0 && clean.momz === 0 && clean.onGround === true);
-    check('an overcharged one throws you BACKWARDS, which is the way you are not facing',
-      full.momx < -P.OVER_KICK * 0.9 && Math.abs(full.momy) < 1e-9);
-    check('and lifts you off the ground, so the ground stops holding you up',
-      full.momz > 0 && full.onGround === false && full.launched > 0);
-    check('the shove is proportional, so two seconds past red barely moves you',
-      Math.abs(half.momx) > 0 && Math.abs(half.momx) < Math.abs(full.momx) * 0.55);
-    check('and an overcharged column stays out longer than a clean one',
-      full.beamTics > clean.beamTics * 1.9 && clean.beamTics === P.BEAM_TICS[2]);
-  }
-  check('it is the one thing that can move you, since the beam pins your feet',
-    /const braced = this\.beamTics > 0;/.test(playerSrc) &&
-    /const grip = braced \? 0 :/.test(playerSrc));
-
-  /* ---- and the blast at the end ------------------------------------ */
-  check('the blast is a city block, not a car park',
-    /radius: 1600, damage: 12000, heat: 900, heatRadius: 1100, ignite: 1600,/.test(playerSrc) &&
-    /structure: 16, structureRadius: 2800, sound: 'explode',/.test(playerSrc));
-  check('and it blows a STAR through the buildings round you, not a cross',
-    /for \(let i = 0; i < 8; i\+\+\)\s*\n\s*g\.breaches\?\.cut\(from, this\.angle \+ i \* Math\.PI \/ 4, 0, 1700, 320\);/.test(playerSrc));
-  check('the fire comes up in three tiers, because one cloud at one size is a blob',
-    /const tier = i % 3;/.test(playerSrc) && /for \(let i = 0; i < 120; i\+\+\)/.test(playerSrc));
-  check('and the body leaves, which deathTic already knows how to carry',
-    P.BLAST_KICK > P.OVER_KICK && P.BLAST_LIFT > P.OVER_LIFT &&
-    /this\.momx = -Math\.cos\(this\.angle\) \* BLAST_KICK;/.test(playerSrc) &&
-    /this\.momz = BLAST_LIFT;/.test(playerSrc));
-  check('and the death camera follows the body rather than the spot it left',
-    /const wx = this\.x/.test(playerSrc) || /lv\.rayHitWall\(this\.x, this\.y/.test(playerSrc));
-
-  /* ---- AND THE GLOW SURVIVES THE DEBUG SWITCH ---------------------- */
-  /* DEBUG: INFINITE AMMO is ON by default, its branch runs once a tic,
-     and for one release it set lanceHeat to zero in passing — so the
-     chassis glow the user asked for was wiped before it reached a frame
-     and the gun never glowed in an ordinary game at all. The user
-     reported it as the shader not working. The shader was fine.
-
-     What the switch is allowed to say about a weapon limited by heat is
-     that the gun will always TAKE THE TRIGGER, which is the latch; it
-     is not allowed to say the metal is cold, because since the
-     overcharge the temperature is a readout of how close the player is
-     to dying and the overcharge kills you with this switch on. */
-  {
-    const p = Object.create(P.Player.prototype);
+  /* A LANCE IN A ROOM WITH NOTHING IN IT, which is all any of the
+     simulations below need: the trigger, the coil and the cell are
+     three counters in Player and the rest of the game is a stub that
+     records what it was asked to do. */
+  function mkLance() {
+    const toasts = [];
+    const game = {
+      sound: { play() {}, sample() { return { rate() {}, release() {} }; } },
+      beam: { fired: null, fire(pl, st) { this.fired = st; }, tic() {}, stop() {} },
+      noise() {}, toast(t) { toasts.push(t); },
+      level: { sectorAt: () => ({ floor: 0, ceil: 200, storey: 0 }), slideMove: (x, y) => [x, y] },
+    };
+    const p = new P.Player(game, 0, 0, 0);
     p.weapon = 'LANCE';
-    p.debug = true;
-    p.ammo = { cells: 1 }; p.maxAmmo = { cells: 4 };
-    p.dry = p.co2Dry = p.beltDry = p.cellDry = false;
-    p.regenTick = p.co2Tick = p.beltTick = p.cellTick = 0;
-    p.lanceHeat = 0.77; p.lanceHot = true;
-    p.fuelTic();
-    note('the coil under DEBUG: INFINITE AMMO',
-      `heat ${p.lanceHeat}, latch ${p.lanceHot}, cells ${p.ammo.cells} of ${p.maxAmmo.cells}`);
-    check('infinite ammo drops the latch but leaves the metal as hot as it is',
-      p.lanceHeat === 0.77 && p.lanceHot === false && p.ammo.cells === 4);
-    check('and nothing in that branch touches the number the glow is drawn from',
-      !/this\.lanceHeat = 0;/.test(playerSrc.slice(playerSrc.indexOf('  fuelTic() {'),
-                                                   playerSrc.indexOf('/** One tank, one tic.'))));
-    /* and the gate really is the latch and not the temperature, which is
-       what lets the two come apart */
-    check('what refuses the trigger is the latch, and only the latch',
-      /if \(WEAPONS\[w\]\.charge && \(this\.lanceHot \|\| this\.beamTics > 0\)\) return false;/.test(playerSrc) &&
-      !/armed[\s\S]{0,600}?lanceHeat/.test(playerSrc.slice(playerSrc.indexOf('  armed(w) {'),
-                                                            playerSrc.indexOf('  armed(w) {') + 900)));
+    p.debug = false;
+    p.ammo.cells = P.CELLS; p.maxAmmo.cells = P.CELLS;
+    return { p, game, toasts };
   }
 
-  /* ---- AND THE GLASS COOKS AND COMES APART -------------------------
-     At the user's request: the screen glows with the chassis at half
-     its brightness, and the picture on it glitches harder as the
-     overload climbs. Both are one uniform each, pushed from the same
-     two numbers the rest of the weapon reads.
-     --------------------------------------------------------------------- */
-  check('the screen is handed the chassis heat and the overcharge, and nothing else',
-    /uniform float heat;/.test(scopeSrc) && /uniform float over;/.test(scopeSrc) &&
-    /s\.uniforms\.heat\.value = heat;/.test(scopeSrc) &&
-    /s\.uniforms\.over\.value = p \? \(p\.overFraction \|\| 0\) : 0;/.test(scopeSrc));
-  check('it glows on the gun\'s own ramp, so the glass and the metal agree',
-    /vec3 hot = hh < 0\.5 \? mix\(vec3\(0\.42, 0\.02, 0\.0\), vec3\(1\.0, 0\.36, 0\.05\), hh \* 2\.0\)/.test(scopeSrc) &&
-    /vec3 hot = h < 0\.5 \? mix\(vec3\(0\.42, 0\.02, 0\.0\), vec3\(1\.0, 0\.36, 0\.05\), h \* 2\.0\)/
-      .test(fs.readFileSync('js/weapon3d.js', 'utf8')));
-  check('and at about half of what the metal reaches, which is the ask',
+  /* ---- the overcharge is gone, all of it --------------------------- */
+  note('what one discharge is now',
+    `${P.BEAM_SECONDS[2]}s of beam, r${B.BEAM_RADIUS[2]} (a person is 32 wide), ` +
+    `${(B.BEAM_STRUCTURE[2] * B.PASS_EVERY * Math.floor(P.BEAM_TICS[2] / B.PASS_EVERY)).toFixed(2)} of a region, ` +
+    `heard at ${(playerSrc.match(/this\.game\.noise\(this, (\d+)\);/) || [])[1]} units`);
+  check('no constant anywhere still describes an overcharge',
+    P.OVERCHARGE_TICS === undefined && P.OVERCHARGE_CALLS === undefined &&
+    P.OVER_KICK === undefined && P.OVER_LIFT === undefined && P.OVER_LONGER === undefined &&
+    P.BLAST_KICK === undefined && P.BLAST_LIFT === undefined &&
+    B.OVER_WIDE === undefined && B.OVER_BITE === undefined);
+  check('and no code: no counter, no fraction, no blowUp, no CAPACITOR',
+    !/overcharge|overFraction|blowUp|CAPACITOR/.test(playerSrc.replace(/\/\*[\s\S]*?\*\//g, '')) &&
+    !/\bover\b|overMul|glowOver/.test(beamSrc.replace(/\/\*[\s\S]*?\*\//g, '')
+                                            .replace(/\/\/.*$/gm, '')));
+  check('the gun cannot kill the player any more, by any path it owns',
+    !/this\.health = 0;/.test(playerSrc.slice(playerSrc.indexOf('  lanceTic(input) {'),
+                                              playerSrc.indexOf('  get chargeStage()'))) &&
+    !/deathCam/.test(playerSrc) && !/deathCam/.test(gameSrc) && P.DEATHCAM_DIST === undefined);
+  /* THE HOLD IS WHAT REPLACED IT, and it is the third thing a held
+     trigger can be doing: winding, sitting in the window, vented. */
+  check('a trigger held from cold vents, and nothing else happens to you',
     (() => {
-      const gun = fs.readFileSync('js/weapon3d.js', 'utf8');
-      const gm = /c = mix\(c, hot, h \* ([0-9.]+)\) \+ hot \* h \* ([0-9.]+);/.exec(gun);
-      const sm = /col = mix\(col, hot, hh \* ([0-9.]+)\) \+ hot \* hh \* ([0-9.]+);/.exec(scopeSrc);
-      const bloom = /col \+= hot \* hh \* ([0-9.]+);/.exec(scopeSrc);
-      if (!gm || !sm || !bloom) return false;
-      const gunTotal = +gm[1] + +gm[2];
-      const scrTotal = +sm[1] + +sm[2] + +bloom[1];
-      note('how hard the glass glows against the metal',
-        `${scrTotal.toFixed(2)} of the gun's ${gunTotal.toFixed(2)}`);
-      return scrTotal > gunTotal * 0.3 && scrTotal < gunTotal * 0.7;
+      const { p, toasts } = mkLance();
+      let vented = -1;
+      for (let i = 0; i < 30 * TICRATE; i++) {
+        p.lanceTic({ attack: true, look: { x: 0, y: 0 } });
+        if (p.charge === 0 && i > 5) { vented = i + 1; break; }
+      }
+      /* CHARGE_MAX + HOLD_TICS - 1, and the missing tic is real rather
+         than slop: the tic that brings the charge to the top is also
+         the first tic of sitting at the top, so the window counts it.
+         Seven seconds up, five at the top, twelve all told to within a
+         thirty-fifth of a second. */
+      note('holding the trigger from cold',
+        `vents at ${(vented / TICRATE).toFixed(2)}s, alive, ${p.ammo.cells} cells still in it, said ${JSON.stringify(toasts)}`);
+      return vented === P.CHARGE_MAX + P.HOLD_TICS - 1 && !p.dead &&
+             p.health > 0 && p.ammo.cells === P.CELLS && toasts.join() === 'COIL VENTED';
     })());
-  /* MOST OF IT UNDER THE GAUGES. All of it on top was the obvious
-     reading and it whited the panel out at full overcharge: the one
-     moment the warning matters most was the one moment it could not be
-     read. Photographed exactly that way. */
-  check('and most of it is under the gauges, so the warning survives the glow',
-    scopeSrc.indexOf('col = mix(col, hot, hh *') < scopeSrc.indexOf('vec4 g = texture2D(panel, uv);'));
-  check('the picture tears, jumps and drops rows, and none of it at rest',
-    /if \(over > 0\.0\) \{/.test(scopeSrc) &&
-    /fuv\.x \+= step\(1\.0 - over \* 0\.55, j\)/.test(scopeSrc) &&
-    /fuv\.y \+= step\(1\.0 - over \* 0\.40, jump\)/.test(scopeSrc) &&
-    /col \*= 1\.0 - step\(1\.0 - over \* 0\.34, d\);/.test(scopeSrc));
-  check('and the glitch is on the FEED, not on the gauges, for the same reason the static is',
-    scopeSrc.indexOf('fuv.x += step(') < scopeSrc.indexOf('texture2D(feed, fuv)'));
+  check('and the window is a real one: long enough to track somebody, short enough to matter',
+    P.HOLD_TICS >= 4 * TICRATE && P.HOLD_TICS <= 8 * TICRATE);
+  check('the gun\'s screen draws it, draining, on the ring the heat used to have',
+    /const hold = p \? \(p\.holdFraction \|\| 0\) : 0;/.test(scopeSrc) &&
+    /if \(hold > 0\)\s*\n\s*dial\(ctx, cx, cy, r2, w2, FROM, SPAN, hold,/.test(scopeSrc));
+  check('and holdFraction counts DOWN, since the question is how long you have left',
+    (() => {
+      const { p } = mkLance();
+      for (let i = 0; i < P.CHARGE_MAX; i++) p.lanceTic({ attack: true, look: { x: 0, y: 0 } });
+      const at = [];
+      for (let s = 0; s <= 4; s++) {
+        at.push(p.holdFraction);
+        for (let i = 0; i < TICRATE && p.charge > 0; i++) p.lanceTic({ attack: true, look: { x: 0, y: 0 } });
+      }
+      note('the window draining', at.map((v, i) => `${i}s:${v.toFixed(2)}`).join('  '));
+      return at[0] > 0.95 && at.every((v, i) => i === 0 || v < at[i - 1]) && at[4] < 0.25;
+    })());
+  check('a charge under the top has no window and draws no inner ring',
+    (() => {
+      const { p } = mkLance();
+      for (let i = 0; i < 4 * TICRATE; i++) p.lanceTic({ attack: true, look: { x: 0, y: 0 } });
+      return p.chargeStage === 1 && p.holdFraction === 0;
+    })());
 
-  /* ---- and every warning says CAPACITOR ---------------------------- */
-  note('what the gun shouts on the way down',
-    P.OVERCHARGE_CALLS.map(([at, t]) => `${Math.round(at * 40)}s ${t}`).join(', '));
-  check('the warnings are a ladder and every one of them says CAPACITOR or EJECT',
-    P.OVERCHARGE_CALLS.length >= 3 &&
-    P.OVERCHARGE_CALLS.every(([at, t]) => at > 0 && at < 1 && /CAPACITOR|EJECT/.test(t)) &&
-    P.OVERCHARGE_CALLS.some(([, t]) => t === 'CAPACITOR CRITICAL') &&
-    P.OVERCHARGE_CALLS.some(([, t]) => t === 'CAPACITOR FAILURE IMMINENT') &&
-    P.OVERCHARGE_CALLS.some(([, t]) => t === 'EJECT CAPACITOR'));
-  check('and they climb, so the last ten seconds are a countdown and not a state',
-    P.OVERCHARGE_CALLS.every(([at], i, a) => i === 0 || at > a[i - 1][0]));
-  check('each rung goes off exactly once, on the tic the counter crosses it',
-    /for \(const \[at, said\] of OVERCHARGE_CALLS\)\s*\n\s*if \(this\.overcharge === Math\.round\(OVERCHARGE_TICS \* at\)\)/.test(playerSrc));
-  check('and the coil is not mentioned anywhere the player can read it any more',
-    !/'COIL CRITICAL'/.test(playerSrc) && !/'THE COIL LET GO'/.test(playerSrc) &&
-    /'THE CAPACITOR LET GO'/.test(playerSrc));
-  check('the screen on the gun says it in two rows, because one row is a green smear',
-    /const row = over > 0\.70 \? \['EJECT', 'CAPACITOR'\]/.test(scopeSrc) &&
-    /: over > 0\.45 \? \['CAPACITOR', 'CRITICAL'\]/.test(scopeSrc) &&
-    /: \['CAPACITOR', 'OVERCHARGE'\];/.test(scopeSrc));
-  check('and nothing on those two rows is wider than the panel can draw',
-    ['EJECT', 'CAPACITOR', 'CRITICAL', 'OVERCHARGE'].every(t => t.length <= 10));
-  check('the zoom step steps aside for it, since it wants the same two rows',
-    /if \(!\(over > 0\)\)\s*\n\s*label\(ctx, `\$\{ZOOMS\[this\.zoomIndex\]\}/.test(scopeSrc));
+  /* ---- the heat is gone, all of it --------------------------------- */
+  check('nothing on the lance has a temperature, in any of the four files',
+    !/lanceHeat|lanceHot/.test(playerSrc + beamSrc + scopeSrc + w3Src) &&
+    !/uniform float heat;/.test(scopeSrc) && !/uniform float over;/.test(scopeSrc));
+  check('and the screen is clean between shots rather than permanently snowy',
+    /s\.uniforms\.noise\.value = p && p\.beamTics > 0 \? 0\.52 : 0;/.test(scopeSrc));
+  check('the minigun kept its own, because only the lance was asked about',
+    w3.GUNS.MINIGUN.heat.from === 'heat' && w3.GUNS.LANCE.heat === undefined &&
+    /if \(def\.heat && o\.material\.name === def\.heat\.material\) heatMaterial = o\.material;/.test(w3Src));
+
+  /* ---- and the armageddon is out of the numbers -------------------- */
+  /* A SIXTH OF THE WIDTH IT WAS, and there is a floor under it that is
+     not aesthetic: the beam's radius is also the radius of the hole it
+     bores through every wall it crosses, and a hole you cannot walk
+     through would quietly undo 'walk through it, shoot through it, see
+     through it'. A 48-unit bore against a 32-unit player is eight units
+     of clearance either side — the narrowest this can go and keep that.
+     Which is still one and a half people rather than eight. */
+  check('the column is a sixth of the width it was, and is the narrowest it can be',
+    B.BEAM_RADIUS[2] <= 130 / 5 && B.BEAM_RADIUS[2] * 2 < 32 * 2 &&
+    B.BEAM_RADIUS[2] * 2 > U.PLAYER_RADIUS * 2 &&
+    B.BEAM_RADIUS.every((r, i) => i === 0 || r > B.BEAM_RADIUS[i - 1]));
+  check('so you can still walk through the hole your own shot leaves',
+    B.BEAM_RADIUS[2] > U.PLAYER_RADIUS);
+  /* THE CEILING AND NOT THE FIGURE. damageLine keeps the largest bite
+     any sample of a region took and the bite falls off across the
+     column, so only a region the dead centre goes through takes the
+     whole of this; measured against the town the worst-hit region loses
+     about two thirds of it. The ceiling is what can be proved from the
+     constants, and it is also the half that matters — under 1.0 means
+     no shot can EVER level anything, however squarely it is aimed. */
+  check('no single discharge can bring a region down, at any stage, however well aimed',
+    B.BEAM_STRUCTURE.every((v, i) =>
+      Math.floor(P.BEAM_TICS[i] / B.PASS_EVERY) * v * B.PASS_EVERY < 1));
+  /* BUT A HANDFUL CAN, which is the other half: you hold four cells, so
+     levelling a building is a deliberate act costing most of a magazine
+     and twenty-one seconds of charging, rather than a side effect of
+     shooting at a man standing in front of it. */
+  check('but it is not decorative either: a few of the top stage will',
+    (() => {
+      const ceil = Math.floor(P.BEAM_TICS[2] / B.PASS_EVERY) * B.BEAM_STRUCTURE[2] * B.PASS_EVERY;
+      note('what it takes to level a region',
+        `at most ${ceil.toFixed(2)} a shot, ~0.34 measured, so 3 shots of ${P.CELLS}`);
+      return ceil < 1 && ceil > 0.25;
+    })());
+  check('the hole through the wall is untouched, because that is the precise part',
+    /g\.breaches\?\.cut\(this\.from, this\.angle, this\.slope, BEAM_RANGE, r\) \|\| 0\);/.test(beamSrc));
+  check('it no longer sets the street alight, nor lights it like a flashbulb',
+    B.BEAM_HEAT.every((v, i) => v < [200, 320, 470][i] * 0.4) &&
+    B.LIGHT_PEAK[2] < 0.7 && B.LIGHT_RANGE[2] < 600);
+  check('and the town no longer comes to the window for every shot',
+    (() => {
+      const m = playerSrc.slice(playerSrc.indexOf('  fireBeam(stage) {'))
+                         .match(/this\.game\.noise\(this, (\d+)\);/);
+      return m && +m[1] > 600 && +m[1] < 1600;
+    })());
+  check('the whole discharge is over faster than the old shake took to settle',
+    P.BEAM_TICS[2] < 3 * TICRATE && P.BEAM_TICS[2] > 0.8 * TICRATE);
+  check('and the muzzle bloom came down with the column it belongs to',
+    (() => {
+      const body = beamSrc.slice(beamSrc.indexOf('  fire(player, stage) {'), beamSrc.indexOf('  stop() {'));
+      const m = body.match(/for \(let i = 0; i < (\d+); i\+\+\)/);
+      return m && +m[1] <= 14 && !/this\.over/.test(body);
+    })());
+
+  /* ---- and the gun says what a shot you cannot see went through ---- */
+  /* THE TOASTS OUTLIVED THE OVERCHARGE THEY WERE BUILT FOR, because the
+     problem they solve is worse here: the shot reaches eight thousand
+     units through whatever is standing in the way, and a clean kill at
+     range and a clean miss at range look identical from the muzzle. */
+  check('a shot that did something says so, once, in the corner',
+    (() => {
+      const said = [];
+      const bs = Object.create(B.BeamSystem.prototype);
+      Object.assign(bs, { live: true, stage: 3, tics: 0, killed: 2, holed: 5, downed: 0,
+                          game: { toast: t => said.push(t) } });
+      B.BeamSystem.prototype.stop.call(bs);
+      note('what the gun says about a shot', said.join(' / ') || '(nothing)');
+      return said.length === 1 && /2 DOWN/.test(said[0]) && /5 THROUGH/.test(said[0]);
+    })());
+  check('and a shot that hit nothing says nothing, which is itself the answer',
+    (() => {
+      const said = [];
+      const bs = Object.create(B.BeamSystem.prototype);
+      Object.assign(bs, { live: true, stage: 3, tics: 0, killed: 0, holed: 0, downed: 0,
+                          game: { toast: t => said.push(t) } });
+      B.BeamSystem.prototype.stop.call(bs);
+      return said.length === 0;
+    })());
+  check('the stack is still the stack, and nothing goes through the big card any more',
+    /export const TOAST_MAX = 4;/.test(gameSrc) &&
+    !/setBigMessage/.test(playerSrc) && !/setBigMessage/.test(beamSrc));
 }
 
-/* ---------- the wiring ---------- */
 /* ---------- THE READOUT, AND WHICH SIDE OF THE FILTER IT IS ON ----------
 
    For most of this project's life the bars, the weapon's name and the
@@ -5985,17 +5920,19 @@ section('the readout');
     check('and the canvas knows to redraw when one of them changes or fades',
       /\(g\.toasts \|\| \[\]\)\.map\(t => `\$\{t\.text\}:\$\{Math\.round\(toastFade\(t\.tics\) \* 16\)\}`\)/.test(hudSrc));
 
-    /* and the lance says them this way and not the other */
+    /* AND THE GUN STILL SAYS THINGS THIS WAY, though what it says has
+       changed completely: the stack was built for the overcharge's four
+       warnings and a fifth line as it killed you, and what goes through
+       it now is a vent and a tally of what a shot went through. The
+       mechanism is the thing being checked, so it survived the feature
+       it was built for — see 'the lance, dialled back'. */
     check('every one of the lance\'s notices is a notice, not the card',
-      /this\.game\.toast\?\.\(said\);/.test(playerSrc2) &&
-      /g\.toast\?\.\('THE CAPACITOR LET GO'\);/.test(playerSrc2) &&
-      !/setBigMessage\?\.\('THE CAPACITOR LET GO'/.test(playerSrc2));
-    /* the CALL and not the word: the comment beside the line that
-       replaced it names the thing it replaced, which is the point of
-       the comment */
-    check('so the end-of-night card survives the gun going off in your hands',
-      !/setBigMessage\?\.\(/.test(playerSrc2.slice(playerSrc2.indexOf('  blowUp() {'),
-                                                   playerSrc2.indexOf('  get overFraction()'))));
+      /this\.game\.toast\?\.\('COIL VENTED'\);/.test(playerSrc2) &&
+      !/setBigMessage/.test(playerSrc2));
+    /* the CALL and not the word, since a comment may well name it */
+    check('so the end-of-night card is the only thing that uses the middle of the screen',
+      !/setBigMessage\?\.\(/.test(playerSrc2) &&
+      /setBigMessage/.test(fs.readFileSync('js/game.js', 'utf8')));
   }
 }
 

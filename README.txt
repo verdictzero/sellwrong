@@ -139,7 +139,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         2502 checks, no install and no browser
+  the smoke test         2467 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -336,25 +336,25 @@ of them. So the spending still happens exactly as it always did and is
 simply undone before anybody looks, and not one line anywhere else in
 the game knows the mode exists.
 
-WHAT IT SAYS ABOUT THE LANCE IS THE LATCH AND NOT THE TEMPERATURE, and
-getting that wrong cost the weapon its best feature for a release. The
-positron lance is limited by heat rather than by a tank (see THE
-POSITRON SNIPER LANCE), so the switch has to say SOMETHING about heat or
-it does nothing to it — and the first cut said the coil was cold,
-setting lanceHeat to zero here. This branch runs once a tic with the
-switch ON BY DEFAULT, so the number the chassis glow is drawn from was
-wiped before it ever reached a frame: the gun never glowed in an
-ordinary game at all, and the user reported it as the shader not
-working. The shader was fine.
+WHAT IT SAYS ABOUT THE LANCE IS NOTHING, NOW, and it is worth keeping
+the story of why it ever had to.
 
-The glow is not a fuel gauge. Since the overcharge it is a readout of
-how close the player is to dying, drawn on the part of the gun they are
-looking at, and the overcharge kills you with this switch on — blowUp
-ignores the invincible mode on purpose. Turning off the one warning
-that is in the middle of the picture, on the grounds of infinite AMMO,
-was backwards. What the switch clears now is lanceHot, the latch that
-refuses the trigger; armed() reads the latch and nothing reads the
-temperature but the shader, so the two come apart cleanly.
+The lance used to be limited by HEAT rather than by a tank, so a switch
+that only refilled tanks left the one weapon in the game it did not
+touch, and this branch had to say something about temperature to mean
+anything. The first cut said the coil was cold — setting lanceHeat to
+zero here — and since this branch runs once a tic with the switch ON BY
+DEFAULT, the number the chassis glow was drawn from got wiped before it
+ever reached a frame. The gun never glowed in an ordinary game at all,
+and the user reported it as the shader not working. The shader was fine.
+The repair was to clear only the LATCH, which is what armed() reads, and
+leave the temperature alone, which is what the shader reads.
+
+All of it is moot: at the user's request the lance has no heat, no latch
+and no temperature (see DIALLED BACK), and the cell IS its limit, so the
+loop above has already filled it and there is nothing special left to
+say. The lesson survives the feature — a debug switch that has to reach
+into a system to mean anything is a debug switch that can break it.
 
 
 AND THE OTHER END OF IT
@@ -4620,8 +4620,9 @@ THE TRIGGER IS A DURATION
 Three seconds is a stage, five is two, seven is three. It fires on the
 RELEASE, and — at the user's request — ONLY FROM THE THIRD MARK. Let go
 at four seconds and nothing leaves the muzzle: the cell is not spent,
-the coil fizzles down, and you have cancelled a charge. That is the only
-way to cancel one, and it is the only thing letting go early does.
+the coil fizzles down, and you have cancelled a charge. Letting go early
+is one of the two ways to cancel one; the other is holding it past the
+window at the top, which vents it for you.
 
 THIS IS A DIFFERENT WEAPON FROM THE ONE THE FIRST CUT SHIPPED. Firing at
 whatever stage was reached made the stages a menu — three seconds for a
@@ -4634,14 +4635,12 @@ is why the dial is on the gun. FIRE_AT in js/player.js is the whole
 rule, and it is CHARGE_STAGES.length rather than a 3 typed in, so a
 fourth stage would move the bar with it.
 
-AND AT THE TOP THERE IS NO LONGER A CLOCK. The first cut gave three
-seconds of grace at the third mark and then vented the coil for you:
-the charge went, the shot did not happen, and you got your finger back.
-That safety is gone. Hold it at red and the coil KEEPS the charge, and
-keeping it is what kills you — see the overcharge, below. A gun that
-saves you from yourself after forty seconds and a gun that explodes
-after forty seconds are different guns, and the user asked for the
-second one.
+AND AT THE TOP THERE IS A WINDOW. Five seconds at the third mark and
+then the coil vents for you: the charge goes, the shot does not happen,
+the cell is not spent, and you start again. Between those two states
+there was a third — forty seconds of overcharge that ended with the gun
+killing you — and it is gone at the user's request. See DIALLED BACK,
+below, which is where the whole of that lives now.
 
 A trigger held through a vent still does not start another charge — you
 have to let go and press again.
@@ -4651,299 +4650,231 @@ the user's ask and it is the number that makes the three stages mean
 something: a seven-second charge you can sprint through is a trigger you
 hold all the time. WHILE THE BEAM IS OUT you cannot move at all, which
 is, and the momentum is spent at the moment of firing rather than
-ignored for the next five seconds, so you stop where you fired from
-rather than sliding to a halt under a beam that is already lit. You can
-still SWEEP, at a fifth of the rate: leaning a column of light across a
-street is the whole reason to draw one, and five seconds at that rate is
-one row of shopfronts rather than all four sides of the junction.
+ignored for the length of the discharge, so you stop where you fired
+from rather than sliding to a halt under a beam that is already lit. The
+HEAD is free, which it did not used to be: the sweep was clamped to a
+fifth of its rate while the column chased the barrel, and the column
+does not chase any more. See THE LINE IS NAILED DOWN AT THE TRIGGER.
 
-AND IT COOKS. A stage-three shot is five seconds of beam and takes the
-coil to five sixths of everything it has; over that it will not take the
-trigger again until it is back under a third, which is fourteen seconds
-of cooling. So the answer to "can I fire again" is usually "walk
-somewhere first". The cell holds four and fills itself one every
+AND IT DOES NOT COOK. A coil that heated as it wound, glowed on the
+chassis and refused its own trigger over a threshold was the right
+machinery for a weapon whose limit was how much you dared ask of it, and
+at the user's request this is a precise weapon whose limit is somewhere
+else. The CELL is where: it holds four and fills itself one every
 twenty-five seconds, which is the slowest magazine in the game and
-should be: a full cell is four lines drawn through the town.
+should be — a full cell is four lines drawn through the town, and at
+seven seconds of charge apiece you will think about all four.
 
 
-THE CHASSIS COOKS FROM THE MIDDLE OUT
--------------------------------------
-
-At the user's request, and it is the minigun's heat glow with one thing
-changed. The minigun heats at the MUZZLE, because that is where the
-rounds are going off, and the glow creeps back down the barrels from
-there. The lance heats in the MIDDLE, because that is where the coil is,
-and the glow spreads out from it toward the muzzle one way and into the
-stock the other.
-
-One uniform does it. GUN_FRAG already had the muzzle ramp — how far
-along the barrel a fragment is, between the two ends the gun declares —
-and `heat.mid` adds a second: one at the coil, falling to zero in BOTH
-directions, normalised by whichever half of the gun is longer so the far
-end of the long half still reaches zero. A gun whose def has no `mid` is
-in the old mode and nothing about the minigun changed.
-
-WHAT IT IS A READOUT OF is the thing that matters. The glow is not the
-heat from firing — it is the heat from HOLDING, and it is a pure
-function of how long the trigger has been down: a third of everything
-the metal has by the time the dial is red, and all of it at the end of
-the forty seconds of overcharge. So a player who never looks at the
-screen on the gun still sees the gun going white in their hands, and
-that is the game telling them, in the middle of the picture, how close
-they are to dying. It is taken as a MAXIMUM against whatever heat the
-coil already had, so a gun still hot from the last shot does not cool
-down by being asked to charge.
-
-
-FORTY SECONDS OF OVERCHARGE AND IT KILLS YOU
+DIALLED BACK: A SNIPER AND NOT AN ARMAGEDDON
 --------------------------------------------
 
-"if there is 40 seconds of overcharge the gun explodes and you die, epic
-nuclear explosion with 3rd person death cam".
+At the user's request: "lets dial the positron lance way back, no
+overload, no heat, focus on precise sniping as opposed to armageddon."
 
-Past the seventh second the charge stops climbing and a second counter
-starts. It runs for forty seconds — OVERCHARGE_TICS — and it is the only
-clock in this game that ends with the player dead by their own hand.
-The gun says so the entire time: the bar across the bottom of its screen
-from the first second, the chassis going from dull red to white, and
-four separate shouts across the middle of the picture, because a player
-who is looking at neither the screen nor the gun is a player about to be
-very surprised.
+Three things went, and it is worth naming them because the rest of this
+chapter used to be about them.
 
-AND THE WARNINGS SAY CAPACITOR, at the user's request. A ladder rather
-than one shout — eight seconds in, eighteen, twenty-eight and
-thirty-five — each rung firing exactly once, on the tic the counter
-crosses it:
+THE OVERCHARGE, IN ITS ENTIRETY. Holding at red used to wind a second
+clock: forty seconds, a ladder of CAPACITOR warnings in the corner, a
+screen that tore and dropped rows harder as it climbed, and at the end
+of it the coil let go where you were standing and killed you — a blast
+sixteen hundred units across, eight beam-holes blown through the
+buildings round you as a star, and a third-person camera that pulled
+out of the body to watch. Letting go DURING it fired an absurd version
+of the shot: nearly three times as wide, three and a half times the
+bite, twice as long, and a shove that threw you three hundred units
+backwards down the street on your back. None of that is here. There is
+no OVERCHARGE_TICS, no blowUp, no OVER_WIDE, no death camera, and
+nothing the gun can do to the person holding it.
 
-  CAPACITOR OVERCHARGE        8s
-  CAPACITOR CRITICAL         18s
-  CAPACITOR FAILURE IMMINENT 28s
-  EJECT CAPACITOR            35s
-  THE CAPACITOR LET GO       40s
+THE HEAT, IN ITS ENTIRETY. The coil cooked as it wound; the whole
+chassis glowed with it from the middle out on GUN_FRAG's second gradient
+mode; the glass on the back glowed at half of that; and over a threshold
+the gun refused its own trigger until it had cooled back under a lower
+one. There is no lanceHeat, no lanceHot, no LANCE_HOT, no CHARGE_HEAT
+and no VENT_HEAT. The gun rack's LANCE entry has no `heat` at all, so
+the minigun is the only weapon in the game that cooks, and the shader's
+middle-out mode is left in place with nothing asking for it — it is one
+branch behind `if (heat > 0.001)`, it is correct, and the next gun that
+heats from its middle will find it already written.
 
-AND THEY ARE TOASTS, at the user's request, which is the opposite of the
-card in the middle of the picture in every way that matters: small type,
-bottom left, text only, several at once, and they go away by themselves.
-Every one of them was a setBigMessage for a release — thirty-point type
+WHAT LIMITS THE WEAPON NOW is the thing that always should have: it
+holds four cells and they come back one every twenty-five seconds, the
+slowest magazine in the game. A charge takes seven seconds and you get
+four of them.
+
+AND AT THE TOP THERE IS A WINDOW AGAIN. Five seconds — HOLD_TICS — and
+then the coil vents: the charge goes, the shot does not happen, the cell
+is not spent, and you start the seven seconds over. It costs nothing but
+the time. The first cut had three seconds of this, the overcharge
+replaced it with forty and an explosion, and five is what it is now
+because a sniper is ALLOWED to wait for the shot — five seconds is long
+enough to track somebody the length of a street or let a van clear the
+line, and not long enough to hold the trigger down while you go looking.
+
+The gun's screen draws the window on the ring the heat used to have, and
+draws it DRAINING, because the question is how long you have left rather
+than how long you have had. In the last quarter of it the middle of the
+reticle blinks red as well: a ring that is nearly empty is a ring that
+is nearly not there, and the middle of the reticle is the one part of
+that panel the eye is already on while you are aiming.
+
+
+A COLUMN NARROWER THAN A PERSON
+-------------------------------
+
+The armageddon was never one feature. It was in the numbers, and this is
+all of them:
+
+                       was          is
+  radius (stage 3)     130          24
+  beam seconds         3, 4, 5      0.6, 0.9, 1.4
+  structure a pass     1.30         0.0105
+  heat a tic           470          110
+  light peak / range   1.00 / 1200  0.55 / 440
+  shake peak / hum     1.00 / 0.34  0.62 / 0.05
+  shake settle         18 tics      7 tics
+  afterglow            1.6s         0.9s
+  heard at             2400 units   1100 units
+
+THE RADIUS IS THE ONE THAT MATTERS. A hundred and thirty is a column
+eight people wide that took the whole front of a house at once; you did
+not aim it, you pointed it, and whatever was within four metres of what
+you meant went with the thing you meant. Twenty-four is forty-eight
+across — one and a half people rather than eight — so it takes the
+person the crosshair was on and at most a shoulder of whoever is pressed
+against them.
+
+AND IT CANNOT GO NARROWER, which is the part worth writing down, because
+it looks like a taste decision and is not. The beam's radius is also the
+radius of the hole it bores through every wall it crosses, and the
+player is thirty-two units across. At forty-eight there are eight units
+of clearance either side and you can walk through your own hole, which
+is a thing this game already promises three sections above this one. At
+thirty you could not. Twenty-four is a floor and the reason is
+collision.
+
+NO SINGLE SHOT CAN BRING A BUILDING DOWN ANY MORE, at any stage, however
+squarely it is aimed. The old table took 1.30 of a region's integrity
+per pass with fifty-odd passes left to run, so every discharge levelled
+whatever it was fired through and the hole in the front of the building
+was academic — the building followed it down a quarter of a second
+later. The ceiling now is 0.50 for a whole stage-three discharge, and
+the measured figure against the town is 0.34, so it is THREE shots. You
+hold four cells. Levelling a building costs three quarters of everything
+you have and twenty-one seconds of charging: a decision rather than a
+side effect of shooting at a man standing in front of it.
+
+(The ceiling and the measured figure differ for a reason worth knowing
+if you ever retune this. FireSystem.damageLine bites
+`amount * (1 - |t| / radius)` and keeps the largest bite any sample of a
+region took, so only a region the column's dead centre passes through
+takes the whole of it. The suite checks the CEILING, because that is
+what can be proved from the constants and it is also the half that
+matters: under 1.0 means never in one shot.)
+
+MIND PASS_EVERY IF YOU DO RETUNE IT. BEAM_STRUCTURE is per PASS and the
+caller multiplies by PASS_EVERY, so a stage-three discharge is 49 tics =
+16 passes x 3 x 0.0105. The first cut of the dialled-back table forgot
+that factor, came out at 1.34, and levelled a house in one shot anyway —
+which was the exact thing it was written to stop.
+
+THE HOLE ITSELF IS UNTOUCHED. Punching a clean bore through every wall
+on the line is the PRECISE part of this weapon and none of it changed:
+the same breaches.cut, the same debris tunnel round the rim, the same
+burning. What changed is that the wall the hole is in stays up.
+
+
+THE LINE IS NAILED DOWN AT THE TRIGGER
+--------------------------------------
+
+There is a real geometry problem here and the fix used to be the
+opposite of what it is now.
+
+A beam fired from the gun in your hands, along the line you are looking
+down, is seen END-ON. Always. However you turn, the column turns with
+you and what is on screen is its cross-section: a bright disc in the
+middle of the frame. That is unavoidable and it is what the first three
+screenshots of this weapon were — a glowing blob over a lawn, with none
+of the length that is the entire point of it.
+
+THE FIRST ANSWER WAS INERTIA. The barrel said where the column wanted to
+be and the column chased it at a time constant of a third of a second,
+so while you swept it trailed about twenty degrees and you saw its side.
+It worked, and it cost the thing this weapon is now for: the damage
+followed the DRAWN column rather than the crosshair, so where a shot
+landed depended on how your wrist happened to be moving as you let go.
+You could not aim it. You could point it and lean.
+
+THE SECOND ANSWER IS BETTER AT BOTH JOBS. The line — origin and
+direction both — is taken once, in _aim, called from fire() and nowhere
+else, and never moves again. So the shot goes exactly where the
+crosshair was, which is the whole of "precise"; and the end-on problem
+solves itself more completely than the lag ever solved it, because the
+moment you turn your head AT ALL the column is no longer in front of
+you. It is a fixed line in the world and you are looking across it. Turn
+ninety degrees and you see the entire eight thousand units in profile.
+
+AND THE SWEEP CLAMP WENT WITH IT. Turning used to be cut to a fifth of
+its rate while the beam was out, because a free head on a chasing column
+meant one shot could take all four sides of a junction. Nothing is left
+for that clamp to protect, and it was costing the one thing the shot is
+for: turning to look along the line it left. The feet are still nailed
+down. The head is free.
+
+THE SHAKE CAME DOWN TO MATCH. A kick rather than a rumble: nearly all of
+it inside the first fifth of a second and then a trace, because the
+thing worth looking at is where the shot went, and this weapon is no
+longer aimed WHILE it fires.
+
+
+AND THE GUN SAYS WHAT A SHOT YOU CANNOT SEE WENT THROUGH
+--------------------------------------------------------
+
+The toast stack outlived the feature it was built for. It was made for
+the overcharge's four warnings and a fifth line as the coil killed you,
+all of which had been going through setBigMessage — thirty-point type
 across the middle of the screen, one at a time, each wiping the one
-before it — and that was wrong three times over. It is in the way at
-exactly the moment you are trying to aim. You cannot see the rung before
-it, so the ladder stops reading as a countdown and reads as a series of
-unrelated shouts. And the last one landed ON TOP of the end-of-night
-card and took the "press space to go again" prompt with it for eight
-seconds, which is a real bug and is what finding this fixed.
+before it, in the way at exactly the moment you were trying to aim, and
+landing on top of the end-of-night card.
 
-Game.toast owns the queue and the clock; Readout._drawToasts owns where
-it lands. Four at once, six seconds each, full strength until the last
-second and a quarter. The NEWEST IS AT THE BOTTOM and the older ones
-ride up above it, which is how every notification stack anybody has used
-works and means the line that just arrived is always in the same place.
-The newest is amber and the rest are the ordinary type colour — the
-hierarchy is the colour and not the strength, because the first cut
-dimmed them and on a lit pavement the three above the newest were barely
-there, which defeats the point of stacking them at all.
+The problem it solves is WORSE for the dialled-back weapon, not better.
+This gun fires along eight thousand units of street, through whatever is
+standing in the way, and almost everything it does happens somewhere you
+cannot see from where you fired it. A clean kill at range and a clean
+miss at range look identical from the muzzle: a bright column, and then
+nothing. So the gun says two things, in small type, bottom left:
 
-The gun's own screen says a shorter version of the same thing in TWO
-ROWS — CAPACITOR over CRITICAL, EJECT over CAPACITOR — because that panel
-is forty chunky pixels across by the time the filter has had it and
-eighteen characters on one line of it is a green smear. Nine characters
-a row reads at a glance, and the full phrase is in the middle of the
-picture at the same moment anyway. The zoom step's little label steps
-aside to make room: past the top of the charge there is more urgent news
-in those two rows.
+  COIL VENTED                    the window ran out, here is why your
+                                 seven seconds just evaporated
+  2 DOWN  ·  39 THROUGH          what the last shot did, once, and only
+                                 when it did something
 
-THE COUNTER IS ONLY WOUND DOWN BY AN IDLE COIL, and getting that wrong
-was the one real bug in this pass. The reset lived in the cooling block
-that runs every tic before the winding branch, so the counter was zeroed
-and re-incremented every tic and could never reach two: forty seconds of
-overcharge that took forever to arrive. It was the suite's simulated
-hold-from-cold that caught it — the check that says the gun blows up at
-CHARGE_MAX + OVERCHARGE_TICS and not before, which ran the full 1,645
-tics and reported 47.3 seconds with nothing having happened. The reset
-is now conditional on a charge of zero, and the clock is cleared where
-the charge is: on the vent, on the shot, and on the first tic of a new
-wind.
+A shot that hit nobody and went through nothing says nothing, which is
+itself the answer to "did I get him".
 
-THE BLAST is the biggest single explosion in the game and not by a
-little: sixteen hundred units of radius against the hundred and fifty a
-car gets, which is a city block; twelve thousand damage, which is a
-hundred and twenty shoppers' worth in one tic; and sixteen points of
-structural damage over twenty-eight hundred units, which takes down
-every region inside it and most of the ones looking at it. There is no
-survivable distance and there is not meant to be. The whole town hears
-it — eight thousand units of noise, twice the range of anything else.
-
-WHAT IT LOOKS LIKE IS A MUSHROOM, and that is three tiers rather than
-one cloud: a hundred and twenty fireballs split between a core, a skirt
-and a canopy, at three sizes and three heights, because a hundred and
-twenty of anything at one size and one height is a blob. Seventy-two
-smoke puffs out to seventeen hundred units under it.
-
-AND IT BLOWS A STAR THROUGH THE BUILDINGS. Eight beam cuts at
-forty-five degrees, seventeen hundred units long and three hundred and
-twenty wide — every one of them a full beam's worth of hole with its own
-ring of debris (see A TUNNEL OF DEBRIS, below) — so what is left of the
-junction you were standing in is a set of spokes blown through every
-elevation facing you. Two cuts at right angles was enough to prove the
-mechanism and was nowhere near enough to be absurd, which is what the
-user asked for.
-
-AND THE BODY LEAVES. deathTic already carried momentum and gravity on a
-corpse and slid it against the walls, so throwing you is four lines:
-sixty-two units a tic backwards and seventeen up. You tumble, you land,
-you slide — and the death camera follows, because it tracks the body
-rather than the patch of road the body was standing on.
-
-IT IGNORES THE INVINCIBLE SWITCH, deliberately and documented in the
-source. Every other way of dying in this game respects it; this one does
-not, because the overcharge is not damage arriving from outside, it is
-the weapon the player chose to hold ending the run. A debug flag that
-let you stand in the middle of it would make the forty seconds mean
-nothing.
-
-
-LETTING GO DURING IT FIRES THE ABSURD ONE
------------------------------------------
-
-At the user's request: "make the overcharged beam even more destructive
-and crazy and absurd and make the player fly back".
-
-The forty seconds were only ever a way to die. They are also a way to
-SHOOT: the trigger still works the whole time it is running down, and
-what comes out is not a stage-three discharge that happened to be held
-longer. The coil has been storing past full for up to forty seconds and
-every one of those seconds is in the column.
-
-ONE NUMBER DOES ALL OF IT. `over` is how far past the top the trigger
-came up, zero to one, read off the counter at the moment of release —
-before it is cleared, because the shot is the only thing that will ever
-ask — and handed to the beam. Everything scales off it along a straight
-line from zero, so a shot let go two seconds past red is barely
-different from a clean one and a shot let go at thirty-nine is a
-different weapon:
-
-  the column   130 units wide becomes 338 — OVER_WIDE, and it is on the
-               one radius getter, so the GEOMETRY and the damage sweep
-               cannot disagree about how wide it is
-  the bite     damage, structural damage and heat all times 3.4 —
-               OVER_BITE, one multiplier, because an overcharge has no
-               reason to be selective about which of the three
-  the life     five seconds of beam becomes ten and a half —
-               OVER_LONGER, which lives in js/player.js next to
-               BEAM_SECONDS because how long a trigger keeps a weapon
-               firing is the trigger's business
-  the shake    half again as hard, all the way through
-  the flash    fifty-eight fireballs at the muzzle instead of eighteen
-
-Nothing here is a fourth stage. The stage tables are untouched and still
-decide the shape; this scales it. Measured across a town: eight regions
-brought down, six killed and nearly seven thousand wall-holes cut in a
-single ten-second discharge.
-
-AND IT THROWS YOU BACKWARDS. Thirty-eight units of momentum a tic
-straight away from where you are pointing, and seven and a half up.
-That is about twenty-four running strides put into you in one tic, and
-the friction in move() turns it into a slide worth roughly ten times the
-kick — three hundred units measured, which is across a street and into
-the far kerb.
-
-IT IS THE ONLY THING THAT CAN MOVE YOU while the beam is out, which is
-what makes it interesting rather than annoying: your feet are pinned
-(grip is zero while braced) and your aim is slowed to a fifth, so an
-overcharged shot SWEEPS ITS OWN COLUMN across whatever you were pointing
-at as you go down the street on your back. Momentum and not a teleport,
-so walls stop it, and the lift means the ground stops being something
-you are standing on until you land.
-
-AND THE NEAR END STILL HAS TO BE HIDDEN, which was the one bug this
-added. The eye is forty-six units behind the muzzle and NECK and HIDE —
-the world distances over which the column opens out and over which it is
-not drawn at all — were four hundred and thirty and a hundred and ninety,
-fixed, because at the time nothing was wider than a hundred and thirty.
-At three hundred and four the player is back inside their own beam
-looking at the inside of a double-sided additive tube, which is a white
-screen and nothing else: the first screenshot of an overcharged shot was
-exactly the first screenshot of a stage-three one, for exactly the same
-reason. Both distances are now measured in RADII — the ratios the old
-numbers already worked out to — so a clean shot hides precisely what it
-always hid and a wide one hides more.
-
-
-THE GLASS COOKS, AND THE PICTURE COMES APART
---------------------------------------------
-
-Two more things the screen does, both at the user's request and both
-one uniform.
-
-IT GLOWS WITH THE CHASSIS, at half the brightness. The panel sits at
-model z -0.169 and the coil the chassis heats from is at -0.16, so the
-glass is as good as ON the hot spot: the ramp is GUN_FRAG's own,
-evaluated where reach is one, and the only difference is the half. Which
-means the glass and the metal cannot disagree about how hot the gun is,
-because they are reading the same curve off the same number.
-
-MOST OF IT GOES UNDER THE GAUGES. Putting all of it on top was the
-obvious reading of "the screen glows" and it whited the panel out at
-full overcharge — the one moment the warning matters most was the one
-moment you could not read it, which a photograph showed immediately.
-Under the gauges the glass plainly cooks (the picture behind them runs
-from dull red to white) and the ring, the bar and the words stay crisp,
-with a little bloom left over the bezel to say that the glass itself is
-hot rather than something being displayed on it.
-
-AND IT TEARS. Three things, scaled by how far into the overcharge the
-coil is and all of them exactly nothing at zero: bands of rows slide
-sideways, the whole frame jumps now and then, and further in the picture
-starts losing rows entirely. Every threshold is written as
-step(1 - over * k, r) so that at rest NOTHING passes — a glitch that is
-faintly on all the time is a broken screen rather than a failing one.
-
-IT IS APPLIED TO THE FEED and not to the finished image, for the same
-reason the static is: the gauges are drawn by the gun, on the gun, and
-are not coming down a wire from anywhere. A sensor whose cable is next
-to a capacitor forty seconds into a failure tears. The readout of how
-long you have left does not, or it stops being a readout at the moment
-it matters.
-
-
-AND THE CAMERA LEAVES THE BODY
-------------------------------
-
-Every other death in this game is Doom's: the view sinks to the floor
-and the screen goes red. This one pulls OUT. deathCamTic eases the
-camera back four hundred and thirty units, lifts it two hundred and
-fifty, tips it down and turns it slowly round the body, which is lying
-in the middle of everything the blast just set on fire.
-
-IT DOES NOT GO THROUGH WALLS, which is the ordinary failure of these:
-the camera's own position is traced back from the body with the level's
-wall ray, and if it hits something the camera stops just short of it. So
-dying in a corridor gives you a close third-person shot rather than a
-view of the inside of a brick.
-
-AND THE DEATH VEIL COMES OFF. Red over everything is what dying looks
-like from INSIDE the body, and the hud has done it that way since the
-first week. It is exactly wrong here: the camera is forty feet up
-looking down at somebody else, and a veil at that point is a red filter
-over the one shot the whole death is for. It hid the crater completely
-the first time it was photographed. The veil now belongs to the eyes it
-is drawn for — no camera outside the body, no veil.
-
-Only that one death gets a camera. Everything else sets deathCam to null
-and sinks to the floor as it always did.
+THE TALLY IS A MAX AND NOT A SUM, and this only started mattering when
+the number began being shown to a player rather than to the tests.
+breaches.cut returns how many walls it opened on THAT pass, and the line
+does not move any more, so every pass after the first re-opens the same
+ones. A shot through 39 walls accumulated to 624 over sixteen passes and
+the gun cheerfully said so. The most any one pass opened IS the number
+of walls the line crosses, because the first pass opens all of them.
 
 
 THE BEAM
 --------
 
 IT IS NOT A LASER. A laser is a line you draw to a hit point and it
-stops at the first thing it touches. This is a COLUMN two to eight
-metres across drawn from the muzzle to the far side of the map — eight
-thousand two hundred units, which crosses the town and keeps going —
-and it does not stop at anything, because nothing it touches is still
-there afterwards. There is no hit point. The whole segment is the hit.
+stops at the first thing it touches. This is a COLUMN half a metre to a
+metre and a half across drawn from the muzzle to the far side of the map
+— eight thousand two hundred units, which crosses the town and keeps
+going — and it does not stop at anything, because nothing SOFT it
+touches is still there afterwards. There is no hit point. The whole
+segment is the hit.
 
-Every tic, for the three to five seconds it is out, it does four things:
+Every tic, for the second and a half it is out, it does four things:
 
   the bodies      everything soft inside the column, every tic, for
                   enough that there is no survivable stage
@@ -4953,16 +4884,15 @@ Every tic, for the three to five seconds it is out, it does four things:
                   woodland both, so what the beam did not finish burns
   the picture     sixteen sample points a tic, moved along the line each
                   tic and scattered ACROSS the column rather than along
-                  its axis, so five seconds lays a continuous stem of
+                  its axis, so the discharge lays a continuous stem of
                   fire up the whole length
 
 THE BUILDINGS ARE ON A SLOWER CLOCK THAN THE BODIES and it is worth
 saying why. Taking a region down is a walk over the fire grid, and a
-stage-three column is eight metres across and a hundred and sixty long:
+stage-three column is a metre and a half across and eight thousand long:
 the box that bounds it is a good part of the town. Doing that
-thirty-five times a second for five seconds is a hundred and seventy-five
-sweeps of a grid to answer a question whose answer changes about ten
-times. Every third tic with the bite multiplied by three is the same
+thirty-five times a second for the whole discharge is fifty sweeps of a
+grid to answer a question whose answer changes about twice. Every third tic with the bite multiplied by three is the same
 building coming down for a third of the arithmetic. Bodies are a flat
 loop over the actor list and cost nothing, so they run every tic, where
 the player can see them.
@@ -5125,17 +5055,24 @@ there now:
                    read as a bar, with the three stage marks cut THROUGH
                    it in the background colour — a line drawn over a lit
                    arc at this size is a lit arc
-  the inner ring   the heat, concentric inside it and going the same
-                   way, so the two are one instrument and not two
+  the inner ring   the window at the top of the charge, DRAINING,
+                   concentric inside it and going the same way, so the
+                   two are one instrument read from the outside in: the
+                   charge fills, then the window empties, and if the
+                   second runs out the first goes with it. It was the
+                   coil's temperature until the heat went — a gauge you
+                   could do nothing about, replaced by one you act on
   four pips        the cell, because it holds four and four dots are
                    legible at a size an arc is not
   the reticle      a cross with a gap, and a box round the middle that
                    blinks while the beam is out
 
-and one character, the stage — and, once the coil is past the top, a bar
-across the bottom of the panel with the word OVERCHARGE over it, which
-becomes EJECT and takes the whole screen in a red flash for the last ten
-seconds. Everything is inside the bezel, and the bezel is a SQUARE one:
+and one character, the stage, with the zoom step in small type below the
+reticle. In the last quarter of the window the middle of the reticle
+blinks red, which is all that is left of a bar across the bottom saying
+CAPACITOR and a red flash over the whole panel — those went with the
+overcharge. Everything is inside the bezel, and the bezel is a SQUARE
+one:
 the glass goes dark past max(|x|, |y|) * 2 > 0.94 off the middle, so
 what matters is the greater of the two axes and not the distance from
 the centre. That was the bug: the charge ring, the biggest thing on the
@@ -5147,8 +5084,8 @@ typed into the suite, which went stale the moment the warning bar
 arrived — a Y COORDINATE of 0.905 and a RADIUS of 0.905 are not the same
 distance from the middle. The suite now DRAWS the dial into a context
 that records where the ink went and measures the extent the way the
-shader measures it: 0.907 of 0.94 at the widest, which is the warning
-bar, with the two deliberate full-panel fills exempt.
+shader measures it: 0.907 of 0.94 at the widest, with the deliberate
+full-panel fills exempt.
 
 The whole thing is drawn in the lens's own green — the model says the
 optics are (0.344, 0.800, 0.000) and the monitor is that, because a
@@ -5306,9 +5243,9 @@ floor, a ceiling and a player's eye.
 PUNCHING MERGES RATHER THAN APPENDS
 -----------------------------------
 
-The beam is out for three to five seconds and punches on its structural
-clock, which is a dozen times a second: a wall the column sits on would
-collect sixty rectangles, all of them nearly the same rectangle. So a
+The beam punches on its structural clock, a dozen times a second, for
+the whole of its discharge: a wall the column sits on would collect
+sixteen rectangles, all of them nearly the same rectangle. So a
 punch that OVERLAPS what is already gone grows that hole to the union
 instead of adding to the list — cheaper, and truer, because a wall does
 not get two holes where one beam crossed it, it gets a bigger hole.
@@ -7540,7 +7477,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-2502 checks. Every one of them earns its place by having caught something
+2467 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

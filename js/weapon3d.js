@@ -265,11 +265,14 @@ export const GUNS = {
      it, and `rot` cants it a few degrees so you are looking at the
      panel rather than across it.
 
-     `heat` is the whole gun and not a barrel set, and it reads
-     `lanceHeat` rather than the minigun's `heat`: a positron coil that
-     has just fired cooks from the muzzle back down the body, which is
-     what GUN_FRAG's gradient already draws and what the screen's static
-     is reading off.
+     IT HAS NO `heat`, and it used to. The whole chassis glowed with the
+     coil, from the middle out, on GUN_FRAG's second gradient mode — the
+     mode exists for this gun and this gun is the only thing that ever
+     asked for it. At the user's request the lance does not heat at all
+     any more, so the entry is gone and the mode is left where it is:
+     one branch behind `if (heat > 0.001)`, which nothing on this weapon
+     now satisfies, and which the next gun that heats from its middle
+     will find already written and already correct.
 
      The muzzle effect is small and additive and green-white — the thing
      that says this gun is firing is the beam, which is js/beam.js's, and
@@ -312,14 +315,6 @@ export const GUNS = {
     aim: { pos: [-0.1894, 0.2730, 0], rot: [-0.04, -0.17, 0.05], out: 1.80 },
     display: { material: 'dynamic_display_surface_mat' },
     optics: { material: 'optics_mat', base: [0.34, 0.80, 0.0] },
-    /* AND IT COOKS FROM THE MIDDLE OUT, at the user's request, which is
-       the one thing about this glow that is not the minigun's: the coil
-       is behind the grip and the heat spreads from there along the
-       barrel one way and into the stock the other. `mid` is where that
-       is in the model's own units — just behind the receiver — and its
-       presence is what puts GUN_FRAG into its second mode. The span is
-       the whole gun, so at full heat the whole gun is white. */
-    heat: { material: 'wzbr_mat', z: [-1.00, 1.62], mid: -0.16, from: 'lanceHeat' },
   },
 };
 

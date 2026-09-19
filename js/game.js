@@ -66,11 +66,11 @@ const THING_TO_ACTOR = {
 /* HOW OFTEN THE BURN PICTURE GOES TO THE GPU, in tics. Three of them is
    about twelve hertz; see ticBurnGrid for why it is not thirty-five. */
 /* HOW LONG ONE OF THE GUN'S NOTICES STAYS UP, and how many of them can
-   be up at once. Six seconds is long enough that a rung of the
-   overcharge ladder is still readable when the next one arrives — the
-   gaps are eight, ten and seven seconds — so the stack shows you the
-   countdown rather than one line at a time. Four at once is all five
-   rungs minus the one that has just fallen off the top. */
+   be up at once. Six seconds is long enough to still be readable when
+   the next shot's line arrives under it, which is what makes the stack
+   worth having: at seven seconds a charge you can see what the last two
+   or three shots did at the same time as taking the next one. Four at
+   once is a cell's worth and then some. */
 export const TOAST_LIFE = 6 * TICRATE;
 export const TOAST_MAX = 4;
 
@@ -742,19 +742,24 @@ export class Game {
      THE GUN'S OWN NOTICES, at the user's request, and they are TOASTS
      rather than the big card in the middle of the picture.
 
-     The lance shouts four times on its way to killing you and a fifth
-     time when it does (see OVERCHARGE_CALLS in js/player.js), and every
-     one of them was going through setBigMessage — thirty-point type
-     across the middle of the screen, one at a time, each wiping the one
-     before it. Three problems with that: it is in the way at exactly
-     the moment you are trying to aim, you cannot see the one before it
-     so you lose the sense of a countdown, and it was landing on top of
-     the end-of-night card, which is what setBigMessage is actually for.
-     The last of those was a real bug: blowUp's own line overwrote the
-     YOU DIED card and took the "press space to go again" prompt with
-     it.
+     They were built for the overcharge — four warnings on the coil's
+     way to killing you and a fifth when it did — all of which had been
+     going through setBigMessage: thirty-point type across the middle of
+     the screen, one at a time, each wiping the one before it. It was in
+     the way at exactly the moment you were trying to aim, and it landed
+     on top of the end-of-night card, which is what setBigMessage is
+     actually for.
 
-     So they stack, in small type, bottom left, and they fade. The newest
+     THE OVERCHARGE IS GONE and these are not, because what they were
+     really solving is a problem the dialled-back lance has MORE of, not
+     less. This weapon fires along eight thousand units of street,
+     through whatever is standing in the way, and most of what it does
+     happens somewhere you cannot see from where you fired it. So the
+     gun says: what a shot went through, and why a charge you were
+     holding is suddenly not there. Two lines, neither of them in the
+     middle of the picture.
+
+     They stack, in small type, bottom left, and they fade. The newest
      is at the bottom and the older ones ride up above it, which is the
      way every notification stack anybody has used works, and it means
      the one that just arrived is always in the same place.
@@ -1335,16 +1340,6 @@ export class Game {
   render(now = 0) {
     const p = this.player;
     let yaw = p.angle, pitch = p.pitch, ex = p.x, ey = p.y, ez = p.viewZ;
-    /* THE ONE DEATH THE CAMERA LEAVES THE BODY FOR, which is the lance
-       going off in your hands — see Player.deathCamTic, which owns
-       every number in it. Taken before the idle sway and the shake so
-       that neither applies: a held shot of what you just did is held. */
-    const outside = p.dead && p.deathCam && p.deathCam.x !== undefined;
-    if (outside) {
-      const c = p.deathCam;
-      ex = c.x; ey = c.y; ez = c.z;
-      yaw = c.lookYaw; pitch = c.lookPitch;
-    }
     if (this.idle) {
       /* THE TITLE. Nothing moves — the world is not being stepped — but
          the eye does, a little, the way a person standing still is never
@@ -1373,7 +1368,7 @@ export class Game {
        It is added to the eye and NOT to the player: p.angle is
        untouched, so the shake does not walk your aim off the street you
        picked. See js/beam.js for how hard it is shaking. */
-    const shake = outside ? 0 : (this.beam ? this.beam.shake : 0);
+    const shake = this.beam ? this.beam.shake : 0;
     if (shake > 0.001) {
       const t = now * 0.001;
       const k = shake * shake;

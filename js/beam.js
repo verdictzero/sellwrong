@@ -91,54 +91,91 @@ import { world } from './material.js';
    and not a line within it. */
 export const BEAM_RANGE = 8200;
 
-/* AND HOW WIDE, by stage. A person is thirty-two units across and a
-   fire cell is thirty-two square, so the first stage is three people
-   wide, the second five, and the third eight — a column that takes the
-   whole front of a house at once. */
-export const BEAM_RADIUS = [46, 82, 130];
+/* AND HOW WIDE, by stage, and this is the number the whole dial-back
+   turns on.
+
+   It was 46, 82 and 130: a person is thirty-two units across, so the
+   top stage was a column eight people wide that took the entire front
+   of a house at once. You did not aim it, you pointed it, and whatever
+   was within four metres of what you meant went with the thing you
+   meant. That is a weapon of mass destruction and at the user's request
+   this is not one any more.
+
+   A radius of twenty-four is forty-eight across: one and a half people
+   rather than eight, and a sixth of the width. It takes the person the
+   crosshair was on and at most a shoulder of whoever is pressed against
+   them, instead of the house they were standing in front of — which is
+   the difference between a siege engine and a rifle, and it is a single
+   number.
+
+   AND IT CANNOT GO NARROWER, which is the part worth writing down. This
+   radius is also the radius of the hole the shot bores through every
+   wall it crosses (see breaches.cut below), and the player is thirty-
+   two units across: at forty-eight there are eight units of clearance
+   either side and you can walk through your own hole, which is a thing
+   this game already promises. At thirty you could not. Twenty-four is
+   the floor and the reason is collision, not taste.
+
+   IT IS STILL VISIBLE, which was the other worry. Forty-eight units at
+   five hundred away is about fifty pixels on an 853-wide render, and it
+   is an additive tube with nested shells and a bloom over the top of
+   it. What it stops being is the whole screen. */
+export const BEAM_RADIUS = [10, 16, 24];
 
 /* WHAT IT DOES TO SOMETHING SOFT, per tic, by stage. There is no
    survivable stage and there is not meant to be: the smallest of these
-   is nine times a shopper's health in one thirty-fifth of a second. The
-   numbers differ anyway because they are what a VEHICLE feels, and a
-   police van at stage one should take a moment longer than one at
-   stage three. */
+   is nine times a shopper's health in one thirty-fifth of a second.
+   Narrowing the column did not soften it and should not have — a
+   positron lance that grazed you and left you standing would be a
+   worse weapon and a stranger one. What changed is how much of the
+   street is inside it, not what being inside it costs. */
 export const BEAM_DAMAGE = [900, 1800, 3200];
 
 /* AND TO A BUILDING: integrity off a region at the centre of the
-   column, per pass. A region starts at 1, so stage one takes about
-   three passes to bring a shopfront down — a quarter of a second — and
-   stage three takes one. */
-export const BEAM_STRUCTURE = [0.34, 0.72, 1.30];
+   column, per pass. A region starts at 1.
 
-/* ---------------------------------------------------------------------
-   AND WHAT FORTY SECONDS OF HELD CHARGE ADDS TO ALL OF IT
+   THESE USED TO BRING A HOUSE DOWN IN ONE SHOT — 1.30 a pass at the top
+   stage, which is the whole of a region's integrity in a single pass,
+   with fifty-odd passes left to go. Every discharge levelled whatever
+   it was aimed through, and the hole the beam punched in the front of
+   the building was academic because the building followed it down a
+   quarter of a second later.
 
-   At the user's request: an overcharged discharge is not a stage-three
-   discharge that happened to be held longer, it is the absurd one. The
-   coil has been storing for up to forty seconds past the point where it
-   was full and every one of those seconds is in the column.
+   Now no single shot can take anything down, at any stage, however
+   squarely it is aimed: the absolute worst a stage-three discharge can
+   do to one region is 0.50, and the measured figure against the town is
+   0.34. THREE shots do it. You hold four cells, so levelling a building
+   costs three quarters of everything you have and twenty-one seconds of
+   charging — a decision rather than a side effect of shooting at a man
+   standing in front of it. That is the dial-back in one line: you can
+   still do it, and you can no longer do it by accident.
 
-   These are multipliers AT THE TOP of the overcharge, applied along a
-   straight line from zero, so a shot let go two seconds past red is
-   barely different from a clean one and a shot let go at thirty-nine is
-   a different weapon. Nothing here is a new stage: the stage tables
-   above still decide the shape and these scale it, which is why a
-   fourth entry was not added to them. One number, threaded from the
-   trigger to the geometry.
+   TWO THINGS TO MIND IN THE ARITHMETIC, both of which bit while these
+   numbers were being set:
 
-   WIDE is the one you see. A stage three column is 130 units across,
-   which is the whole front of a house; times 2.6 is 338, which is the
-   house. BITE is damage, structural damage and heat together, because
-   an overcharge has no reason to be selective about which of the three
-   it multiplies. HOW LONG it stays out is not here: BEAM_SECONDS lives
-   in js/player.js because the trigger owns it, and so does the
-   multiplier on it. */
-export const OVER_WIDE = 2.6;
-export const OVER_BITE = 3.4;
+     PASS_EVERY. These are per pass and the CALLER multiplies by it, so
+     a stage-three discharge is 49 tics = 16 passes x 3 x 0.0105 = 0.50,
+     not 16 x 0.0105. Forgetting that factor is how the first cut of
+     this table came out at 1.34 and levelled a house in one shot
+     anyway — the exact thing it was written to stop.
 
-/* how much heat and accelerant it leaves, by stage */
-export const BEAM_HEAT = [200, 320, 470];
+     AND 0.50 IS THE CEILING, NOT THE FIGURE. damageLine bites
+     `amount * (1 - |t| / radius)` and keeps the largest bite any sample
+     of a region took (see FireSystem.damageLine), so only a region the
+     column's dead centre passes through gets the whole of it. Measured
+     against the town the worst-hit region loses 0.34 a shot, which is
+     where the three comes from. The suite checks the CEILING, because
+     that is the part that can be proved from the constants and is also
+     the part that matters: under 1.0 means never in one shot. */
+export const BEAM_STRUCTURE = [0.0028, 0.0058, 0.0105];
+
+/* HOW MUCH HEAT AND ACCELERANT IT LEAVES, by stage. It was 200, 320
+   and 470, which set fire to the whole street it crossed — appropriate
+   for a weapon that had just flattened the street, and absurd for one
+   that has drilled a hole through a wall. A quarter of it: the line is
+   scorched, what was already flammable along it catches, and the town
+   does not go up every time you take a shot. */
+export const BEAM_HEAT = [40, 70, 110];
 
 /* TICS BETWEEN STRUCTURAL PASSES. See the note above: the bite is
    multiplied by this, so the building comes down at the same rate and
@@ -149,25 +186,34 @@ export const PASS_EVERY = 3;
    column's own radius, because what the user asked to see is the street
    either side of it picked out, not a glow hugging the tube. See the
    note on beamPos in js/material.js for the shader end of this. */
-export const LIGHT_RANGE = [520, 820, 1200];
+export const LIGHT_RANGE = [190, 300, 440];
 /* AND HOW HARD. These were more than twice this to begin with and the
    first screenshot of a stage-three discharge was a white rectangle:
    between the column, the wash on the readout, the bloom and this, four
    separate things were each bright enough on their own. The column is
    the one that should be blinding; this is the STREET, and a street lit
-   past white has stopped being a street. */
-export const LIGHT_PEAK = [0.50, 0.72, 1.00];
+   past white has stopped being a street.
+
+   AND THEY CAME DOWN AGAIN with the column, by about the same ratio the
+   radius did. A tube a fifth as wide throwing the same light was the
+   giveaway that the old numbers were painting a nuclear flash rather
+   than lighting a beam: what you want now is the line picked out along
+   the ground and the wall beside it, so you can see where the shot
+   went. */
+export const LIGHT_PEAK = [0.26, 0.38, 0.55];
 
 /* AND HOW LONG IT OUTLIVES THE BEAM, in seconds. The axis is left
    exactly where the last tic of the column was and the intensity falls
    off over this — so the street stays lit by a thing that is not there
    any more, which is the "post charge" the user asked for and is also
    simply what a discharge that size does to your eyes. */
-export const AFTERGLOW = 1.6;
+export const AFTERGLOW = 0.9;
 
 /* ---------------------------------------------------------------------
-   THE COLUMN LAGS THE BARREL, AND THAT IS THE ONLY REASON IT IS EVER
-   SEEN AS A COLUMN
+   THE COLUMN IS NAILED TO THE LINE IT WAS FIRED ALONG
+
+   There is a real problem here and it is worth stating before the fix,
+   because the fix used to be the opposite of this.
 
    A beam fired from the gun in your hands, along the line you are
    looking down, is seen END-ON. Always. However you turn, the column
@@ -177,36 +223,55 @@ export const AFTERGLOW = 1.6;
    blob over a lawn, with none of the length that is the entire point of
    the thing.
 
-   So the column has INERTIA. The barrel says where it wants to be; the
-   beam chases that, at LAG, and while you are sweeping it trails. At a
-   sweep of a radian a second the steady lag is about twenty degrees,
-   which is a fifth of the picture: the column leans off across the
-   frame and you see its SIDE — the length, the rings travelling out of
-   it, the taper — instead of its end.
+   THE FIRST ANSWER WAS INERTIA. The barrel said where the column wanted
+   to be and the column chased it, at a time constant, so while you
+   swept it trailed twenty degrees behind and you saw its side. It
+   worked, and it cost the one thing this weapon is now for: the damage
+   followed the DRAWN column rather than the crosshair, so where the
+   shot landed depended on how you happened to be moving your wrist as
+   you let go. You could not aim it. You could only point it and lean.
 
-   It is also true. Eight thousand units of plasma does not pivot
-   because you moved your wrist, and a weapon that made it do so would
-   feel like a torch. What it feels like instead is heavy, which is what
-   a thing you cannot walk while firing ought to feel like.
+   THE SECOND ANSWER IS BETTER AT BOTH JOBS. The line — origin AND
+   direction — is taken once, at the instant the trigger comes up, and
+   never moves again. So:
 
-   THE DAMAGE FOLLOWS THE DRAWN COLUMN and not the crosshair, because
-   both read the same two numbers. A beam you can see leaning off to the
-   left is a beam that is cutting what is to the left. */
-/* how long the column takes to catch up with the barrel, in seconds —
-   a first-order chase, so this is the time constant and the lag it
-   produces is (sweep rate) times this: about twenty degrees at the
-   fastest a braced player can turn */
-export const LAG = 0.34;
+     it goes exactly where the crosshair was, which is the whole of
+     what the user asked for in asking for a sniper;
 
-/* THE SHAKE, in radians of view and units of eye, at the peak. It is
-   biggest in the first half second and settles to a hum for the rest of
-   the discharge: a shake that stays at full for five seconds is a shake
-   nobody can aim through, and this weapon is aimed WHILE it fires. */
-export const SHAKE_PEAK = 1.0;
-export const SHAKE_HUM = 0.34;
-/* and how many tics it takes to settle from the one to the other: half
-   a second at the game's 35 */
-export const SHAKE_SETTLE = 18;
+     and the end-on problem solves itself more completely than the lag
+     ever solved it, because the moment you turn your head AT ALL the
+     column is no longer in front of you. It is a fixed line in the
+     world and you are looking across it. Turn ninety degrees and you
+     see the entire eight thousand units of it in profile.
+
+   The feet are nailed down for the second and a half either way (see
+   Player.move), so the origin cannot drift more than the width of your
+   own shoulders; and the head is free now precisely BECAUSE the line
+   does not follow it — see the note where BEAM_TURN used to be in
+   js/player.js.
+
+   It is also more true than the lag was. Eight thousand units of plasma
+   does not pivot because you moved your wrist — and it does not trail
+   round after it either. It goes where it was pointed when it left. */
+
+/* THE SHAKE, in radians of view and units of eye, at the peak.
+
+   IT IS A KICK NOW AND NOT A RUMBLE. It was 1.0 settling to a hum of
+   0.34 over half a second, and that was right for a five-second column
+   you steered: the picture had to keep saying "this is enormous and it
+   is still happening" for the whole of it. This one is over in a second
+   and a half and you are not steering it, so what the picture has to
+   say is that a very large thing just LEFT — hard on the first few
+   frames and then almost nothing, so you can watch where the shot went
+   instead of watching the screen wobble.
+
+   The hum is not zero. A trace of it says the column is still out. */
+export const SHAKE_PEAK = 0.62;
+export const SHAKE_HUM = 0.05;
+/* and how many tics it takes to settle from the one to the other: a
+   fifth of a second, against the half it used to take, because the
+   whole discharge is now shorter than the old settle plus its hum */
+export const SHAKE_SETTLE = 7;
 
 /* The tube. Twelve sides is round enough at the size this is ever seen
    and cheap enough to rebuild three times a frame; twenty-eight rings
@@ -301,21 +366,26 @@ const SHELLS = [
    to be there anyway: a beam leaves a gun in a ball of light, and the
    ball is where the tube would have been in your face.
 
-   AND BOTH SCALE WITH THE RADIUS, which the first version of them did
-   not, because at the time there was nothing wider than a hundred and
-   thirty units to scale for. An overcharged column is three hundred and
-   four — see OVER_WIDE — and a hide distance of a hundred and ninety
-   against a radius of three hundred puts the eye back inside the tube
-   and bleaches the whole frame white again, which is precisely what the
-   first screenshot of an overcharged shot was. The ratios below are
-   the ones the stage-three numbers already worked out to (430/130 and
-   190/130), so nothing about a clean shot changes; they are simply
-   written as what they always were. */
-export const NECK = 430;
-export const HIDE = 190;
+   AND BOTH CAME DOWN WITH THE COLUMN. They were 430 and 190, tuned
+   against a stage-three radius of 130 where the player really was
+   standing inside their own beam — the muzzle is about forty-six units
+   out and the tube was a hundred and thirty across, so there was no
+   choice. At a radius of twenty-four the eye is comfortably OUTSIDE the
+   tube and hiding the first hundred and ninety units of it would only
+   be drawing a shot that starts two car lengths in front of the gun,
+   which for a weapon you are supposed to be aiming looks like a fault.
+   Fifty-five is just past the metal, where the muzzle bloom is.
+
+   THEY STILL SCALE WITH THE RADIUS, as ratios of the top stage's, so
+   anything wider than the lance pushes them back out and cannot put the
+   eye inside its own column again. At the top stage the two agree
+   exactly and the ratio changes nothing; it is a floor under a wider
+   beam and not a number anything currently uses. */
+export const NECK = 120;
+export const HIDE = 55;
 /* how many radii of neck and of hide, which is what those two are */
-export const NECK_R = NECK / 130;
-export const HIDE_R = HIDE / 130;
+export const NECK_R = NECK / BEAM_RADIUS[BEAM_RADIUS.length - 1];
+export const HIDE_R = HIDE / BEAM_RADIUS[BEAM_RADIUS.length - 1];
 
 const VERT = /* glsl */`
 attribute vec3 aNormal;
@@ -367,8 +437,8 @@ void main() {
 `;
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
-/* the world's tic rate, which this file needs only to turn LAG into a
-   per-tic chase — see _aim */
+/* the world's tic rate, which this file needs only to turn AFTERGLOW's
+   seconds into tics — see fade */
 const TICRATE = 35;
 
 export class BeamSystem {
@@ -382,6 +452,8 @@ export class BeamSystem {
     this.shots = 0;             // how many have been fired, for the tests
     this.downed = 0;            // regions brought down by the one in progress
     this.holed = 0;             // and walls it has punched a hole through
+                                /* as a MAX over the passes, not a sum
+                                   — see the note in tic() */
     this.killed = 0;
     /* where the column is THIS tic — recomputed every tic from the
        player, because the barrel moves while the feet do not */
@@ -394,12 +466,6 @@ export class BeamSystem {
        axis frozen where the beam last was, and a level falling to
        nothing over AFTERGLOW seconds. `glow` is 0..1 of LIGHT_PEAK. */
     this.glow = 0;
-    /* HOW FAR PAST THE TOP the shot that made this was let go, 0 to 1,
-       and the same for the light that outlives it — the column stops
-       but its glow does not, so the afterglow needs its own copy the
-       same way it needs its own stage. See AFTERGLOW. */
-    this.over = 0;
-    this.glowOver = 0;
     this.glowStage = 1;
     this.lit = { x: 0, y: 0, z: 0, dx: 1, dy: 0, dz: 0, len: 1 };
     /* and how hard the picture is being shaken, 0..1 — read by
@@ -407,12 +473,7 @@ export class BeamSystem {
     this.shake = 0;
   }
 
-  /** HOW FAR PAST THE TOP OF THE CHARGE THIS SHOT WAS LET GO, 0 to 1.
-   *  Set once at the trigger and read by everything below, so there is
-   *  exactly one place that knows and no second copy to fall out of
-   *  step with the player's. */
-  get overMul() { return 1 + this.over * (OVER_BITE - 1); }
-  get radius() { return (BEAM_RADIUS[this.stage - 1] || 0) * (1 + this.over * (OVER_WIDE - 1)); }
+  get radius() { return BEAM_RADIUS[this.stage - 1] || 0; }
   /** 0 at the muzzle flash, 1 as it dies — what the geometry fades on. */
   get age() { return this.total > 0 ? this.tics / this.total : 0; }
 
@@ -422,9 +483,8 @@ export class BeamSystem {
 
   /** The trigger came up at `stage`. js/player.js has already spent the
    *  cell and nailed the feet down; this starts the column. */
-  fire(player, stage, over = 0) {
+  fire(player, stage) {
     this.live = true;
-    this.over = clamp(over || 0, 0, 1);
     this.stage = clamp(stage | 0, 1, BEAM_RADIUS.length);
     this.tics = 0;
     this.total = player.beamTics || 1;
@@ -433,57 +493,72 @@ export class BeamSystem {
     this.downed = 0;
     this.holed = 0;
     this.killed = 0;
-    this._aim(player, true);
+    /* THE LINE, TAKEN ONCE AND KEPT. See _aim: nothing moves it again
+       until the next shot, which is what makes this a rifle. */
+    this._aim(player);
     /* THE MUZZLE GOES FIRST. A column that simply appears has no
        beginning; a flash and a ring of dust at the metal is the half
-       second that says it left a gun. */
+       second that says it left a gun. Smaller than it was, because the
+       column behind it is a fifth of the width it was and a muzzle
+       bloom wider than its own beam reads as an explosion at the gun
+       rather than a shot leaving one. */
     const g = this.game;
     const f = this.from;
-    const flash = 18 + Math.round(this.over * 40);
-    for (let i = 0; i < flash; i++)
-      g.fx?.fireball(f.x, f.y, f.z, (34 + i * 8) * (1 + this.over), 10 + (i & 7));
-    g.fx?.wash?.(f.x, f.y, f.z, 1.9 + this.over * 2.4);
-    g.spawnSparks?.(f.x, f.y, f.z, 14 + Math.round(this.over * 60));
+    for (let i = 0; i < 11; i++)
+      g.fx?.fireball(f.x, f.y, f.z, 18 + i * 5, 8 + (i & 7));
+    g.fx?.wash?.(f.x, f.y, f.z, 1.1);
+    g.spawnSparks?.(f.x, f.y, f.z, 12);
     this.shake = 1;
     this.glow = 1;
     this.glowStage = this.stage;
-    this.glowOver = this.over;
   }
 
   stop() {
+    /* WHAT THE SHOT WENT THROUGH, said once, in the corner.
+
+       This is the one piece of feedback a weapon like this genuinely
+       cannot do without. It reaches eight thousand units along a street
+       and through whatever is standing in the way, and almost all of
+       what it does happens where you cannot see it from where you fired
+       it: the man on the roof two blocks down, the four walls the line
+       passed through on the way to him. Without a line saying so, a
+       clean kill at range and a clean miss at range look exactly alike
+       — a bright column, and then nothing.
+
+       Only when it did something, and only ever one line. A shot that
+       hit nobody and went through nothing says nothing, which is itself
+       the answer to "did I get him". */
+    if (this.live && (this.killed || this.holed)) {
+      const said = [];
+      if (this.killed) said.push(`${this.killed} DOWN`);
+      if (this.holed) said.push(`${this.holed} THROUGH`);
+      if (this.downed) said.push(`${this.downed} COLLAPSED`);
+      this.game.toast?.(said.join('  \u00b7  '));
+    }
     this.live = false;
     this.stage = 0;
-    this.over = 0;
     this.tics = 0;
     /* the light is NOT stopped: it stays on the axis it was on and
        fades over AFTERGLOW seconds — see the note there */
   }
 
-  /** Where the column is, off the player. The muzzle if the model is
-   *  loaded and the eye if it is not, and the direction is where they
-   *  are looking — both re-read every tic, because the whole point of
-   *  the brace is that the barrel still moves.
+  /** WHERE THE SHOT GOES, TAKEN ONCE. The muzzle if the model is loaded
+   *  and the eye if it is not, and the direction is where the player is
+   *  looking at the instant the trigger comes up.
    *
-   *  `snap` plants it there outright, which is what the first tic wants;
-   *  every tic after that CHASES, which is the whole of the note on LAG
-   *  above and the reason this weapon is ever seen as a column. */
-  _aim(player, snap = false) {
+   *  CALLED FROM fire() AND NOWHERE ELSE, which is the whole of the note
+   *  above: the line is fixed for the length of the discharge, so the
+   *  damage lands where the crosshair was and turning your head shows
+   *  you the column in profile instead of dragging it round after you.
+   *  It used to be called every tic with a first-order chase in it. */
+  _aim(player) {
     const n = this.game.nozzle?.();
     if (n) { this.from.x = n.x; this.from.y = n.y; this.from.z = n.z; }
     else { this.from.x = player.x; this.from.y = player.y; this.from.z = player.eyeZ; }
+    this.angle = player.angle;
     /* the pitch as a RISE PER UNIT of ground travelled, because that is
        what a walk over a floor grid wants — see FireSystem.damageLine */
-    const wantSlope = Math.tan(clamp(player.pitch, -1.4, 1.4));
-    if (snap) { this.angle = player.angle; this.slope = wantSlope; return; }
-    /* THE SHORT WAY ROUND. An angle chased without this takes the long
-       way whenever the player crosses the wrap, which is a column that
-       sweeps the whole town backwards once per revolution. */
-    let d = player.angle - this.angle;
-    while (d > Math.PI) d -= Math.PI * 2;
-    while (d < -Math.PI) d += Math.PI * 2;
-    const k = 1 - Math.exp(-1 / (TICRATE * LAG));
-    this.angle += d * k;
-    this.slope += (wantSlope - this.slope) * k;
+    this.slope = Math.tan(clamp(player.pitch, -1.4, 1.4));
   }
 
   /* ------------------------------------------------------------------
@@ -492,7 +567,9 @@ export class BeamSystem {
   tic(player) {
     if (!this.live) return;
     this.tics++;
-    this._aim(player);
+    /* AND THE LINE IS NOT RE-READ. _aim used to run here, chasing the
+       barrel; the shot is fixed at the trigger now — see the note above
+       _aim and the one at the head of this file. */
     const g = this.game;
     const r = this.radius;
 
@@ -503,14 +580,23 @@ export class BeamSystem {
     if (++this.pass >= PASS_EVERY) {
       this.pass = 0;
       this.downed += g.fire?.damageLine(this.from, this.angle, this.slope, BEAM_RANGE, r,
-                                        BEAM_STRUCTURE[this.stage - 1] * PASS_EVERY * this.overMul) || 0;
+                                        BEAM_STRUCTURE[this.stage - 1] * PASS_EVERY) || 0;
       /* AND A HOLE THROUGH EVERY WALL IT CROSSES, at the user's
          request. Integrity is a question about whether a REGION is
          still standing; this is a question about the brick itself, and
          they are not the same question — a beam through the front of a
          house leaves a hole in the front of the house long before the
          house comes down, and usually instead of it. See js/breach.js. */
-      this.holed += g.breaches?.cut(this.from, this.angle, this.slope, BEAM_RANGE, r) || 0;
+      /* MAX AND NOT PLUS, and this mattered the moment the number
+         started being shown to the player rather than only to the
+         tests. cut() returns how many walls it opened on THAT pass, and
+         the line does not move any more, so every pass after the first
+         re-opens the same ones: a shot through 39 walls accumulated to
+         624 over sixteen passes and the gun cheerfully said so. The
+         most any one pass opened IS the number of walls the line
+         crosses, because the first pass opens all of them. */
+      this.holed = Math.max(this.holed,
+        g.breaches?.cut(this.from, this.angle, this.slope, BEAM_RANGE, r) || 0);
     }
 
     /* ---- 3. what it sets alight ------------------------------------- */
@@ -527,17 +613,13 @@ export class BeamSystem {
     L.len = BEAM_RANGE;
     this.glow = 1;
     this.glowStage = this.stage;
-    this.glowOver = this.over;
 
-    /* THE SHAKE: everything in the first half second, and a hum after
-       it. See SHAKE_PEAK — a discharge you cannot aim through for five
-       seconds is a discharge that wastes its own best feature. */
+    /* THE SHAKE: everything in the first fifth of a second and almost
+       nothing after it. See SHAKE_PEAK — it is a kick now rather than a
+       rumble, because the thing worth looking at is where the shot
+       went. */
     const settle = Math.min(1, this.tics / SHAKE_SETTLE);
-    /* and an overcharged column shakes half again as hard, all the way
-       through: it is nearly three times as wide and stays out twice as
-       long, and a picture that held still for it would be saying the
-       shot was the same size as a clean one */
-    this.shake = (SHAKE_PEAK + (SHAKE_HUM - SHAKE_PEAK) * settle) * (1 + this.over * 0.55);
+    this.shake = SHAKE_PEAK + (SHAKE_HUM - SHAKE_PEAK) * settle;
   }
 
   /** The light fading after the column has gone, and the shake with it.
@@ -550,7 +632,7 @@ export class BeamSystem {
     }
     if (!world.beam) return;
     const g = this.glow;
-    world.beam.value = g * g * (LIGHT_PEAK[this.glowStage - 1] || 1) * (1 + this.glowOver * 0.5);
+    world.beam.value = g * g * (LIGHT_PEAK[this.glowStage - 1] || 1);
     if (g > 0) {
       const L = this.lit;
       /* game coordinates into the renderer's, which is the one
@@ -558,7 +640,7 @@ export class BeamSystem {
       world.beamPos.value.set(L.x, L.z, -L.y);
       world.beamDir.value.set(L.dx, L.dz, -L.dy);
       world.beamLen.value = L.len;
-      world.beamRange.value = (LIGHT_RANGE[this.glowStage - 1] || 700) * (1 + this.glowOver * 1.2);
+      world.beamRange.value = LIGHT_RANGE[this.glowStage - 1] || 400;
       /* the clock the flicker rides — see the shader. It runs fast
          while the beam is out and slows as the afterglow dies, so the
          light settles rather than strobing to the last frame. */
@@ -573,7 +655,7 @@ export class BeamSystem {
     const g = this.game;
     const ux = Math.cos(this.angle), uy = Math.sin(this.angle);
     const f = this.from;
-    const dmg = BEAM_DAMAGE[this.stage - 1] * this.overMul;
+    const dmg = BEAM_DAMAGE[this.stage - 1];
     for (const a of g.actors) {
       if (a === player || a.removed || a.dead || !a.shootable) continue;
       const wx = a.x - f.x, wy = a.y - f.y;
@@ -602,7 +684,7 @@ export class BeamSystem {
     const ux = Math.cos(this.angle), uy = Math.sin(this.angle);
     const f = this.from;
     const step = Math.max(64, r * 1.4);
-    const heat = BEAM_HEAT[this.stage - 1] * this.overMul;
+    const heat = BEAM_HEAT[this.stage - 1];
     for (let s = 0; s <= BEAM_RANGE; s += step) {
       const bz = f.z + this.slope * s;
       const x = f.x + ux * s, y = f.y + uy * s;

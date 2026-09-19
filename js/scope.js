@@ -13,7 +13,7 @@
    WHAT IS ON IT: the world, live, through a second camera at the
    player's own eye with a narrow field of view — a camera-to-texture
    feed and not a painted picture — with round gauges over it for the
-   charge, the heat and the cell, and a reticle in the middle. It is a
+   charge, the hold and the cell, and a reticle in the middle. It is a
    sniper scope that happens to be a monitor, which is what a lance
    with a flat panel where the optics should be IS.
 
@@ -156,15 +156,13 @@ void main() {
 /* The screen itself. Two samplers — the live feed and the gauges over it
    — and everything else is what makes a lit panel look like a lit panel
    rather than a photograph glued to a gun: a phosphor tint, scan lines,
-   a soft edge, and static that climbs with the heat. */
+   a soft edge, and a burst of static while the beam is out. */
 const SCREEN_FRAG = /* glsl */`
 uniform sampler2D feed;
 uniform sampler2D panel;
 uniform vec4  box;        // minX, minY, 1/width, 1/height, in the mesh's units
 uniform float on;         // 0 dead, 1 lit
 uniform float noise;      // 0..1, static
-uniform float heat;       // 0..1, how hot the chassis round it is
-uniform float over;       // 0..1, how far into the overcharge
 uniform float tics;
 uniform vec3  tint;
 varying vec3 vL;
@@ -181,29 +179,6 @@ void main() {
      lines bow with it. */
   vec2 fuv = uv + c * dot(c, c) * 0.16;
 
-  /* ---- THE PICTURE COMES APART AS THE COIL DOES -------------------
-     At the user's request, and it is applied to the FEED's coordinates
-     rather than to the finished image for the same reason the static
-     is: the gauges are drawn by the gun, on the gun, and are not coming
-     down a wire from anywhere. A sensor whose cable is sitting next to
-     a capacitor forty seconds into a failure tears, rolls and drops
-     rows. The readout of how long you have left does not, or it stops
-     being a readout at the moment it matters.
-
-     Three things, all of them nothing at over = 0: bands of rows slide
-     sideways, the whole frame jumps now and then, and further in the
-     picture starts losing rows entirely. The thresholds are written as
-     step(1 - over * k, r) so that at zero NOTHING passes — a glitch
-     that is faintly on all the time is a broken screen rather than a
-     failing one. */
-  if (over > 0.0) {
-    float band = floor(uv.y * 26.0);
-    float j = hash(vec2(band, floor(tics * 6.0)));
-    fuv.x += step(1.0 - over * 0.55, j) * (j - 0.5) * over * 0.26;
-    float jump = hash(vec2(7.0, floor(tics * 2.0)));
-    fuv.y += step(1.0 - over * 0.40, jump) * (jump - 0.5) * over * 0.12;
-  }
-
   vec3 col = vec3(0.0);
   if (fuv.x > 0.0 && fuv.x < 1.0 && fuv.y > 0.0 && fuv.y < 1.0) {
     vec3 f = texture2D(feed, fuv).rgb;
@@ -219,45 +194,18 @@ void main() {
 
   /* STATIC, AND IT GOES ON THE PICTURE AND NOT ON THE GAUGES.
 
-     It is the heat talking: a lance whose coils are cooking has a
-     sensor that cannot hold a picture. But the gauges are not coming
-     down a wire from anywhere — they are drawn by the gun, on the gun —
-     so noise over them is noise on the one part of the screen that has
-     no reason to have any, and at the moment it matters most (a hot
-     coil mid-discharge) it took the charge ring with it. So the static
-     is applied HERE, to the feed, and the overlay goes on top of it
-     afterwards and stays crisp. */
-  /* and whole rows that are simply not there this frame */
-  if (over > 0.0) {
-    float d = hash(vec2(floor(uv.y * 44.0), floor(tics * 5.0) + 11.0));
-    col *= 1.0 - step(1.0 - over * 0.34, d);
-  }
-
+     A sensor pointed down the barrel of its own positron discharge
+     cannot hold a picture, and for the second and a half that one is
+     out this is the whole of what it looks like. But the gauges are not
+     coming down a wire from anywhere — they are drawn by the gun, on
+     the gun — so noise over them is noise on the one part of the screen
+     that has no reason to have any, and at the moment it matters most
+     it took the charge ring with it. So the static is applied HERE, to
+     the feed, and the overlay goes on top of it afterwards and stays
+     crisp. */
   float n = hash(floor(uv * 128.0) + floor(tics * 3.0));
   col += (n - 0.5) * noise * 0.8;
   col = mix(col, vec3(n) * tint, noise * 0.25 * step(0.86, hash(vec2(floor(uv.y * 48.0), floor(tics * 2.0)))));
-
-  /* ---- AND THE GLASS COOKS WITH THE REST OF IT --------------------
-     At the user's request: the screen glows as the chassis does, at
-     HALF the brightness. The panel sits at model z -0.169 and the coil
-     the chassis heats from is at -0.16, so the glass is as good as ON
-     the hot spot — which means this is the ramp in GUN_FRAG evaluated
-     where reach is one, and the only difference is the half.
-
-     MOST OF IT GOES UNDER THE GAUGES and a little over, which is not
-     where it started. Putting all of it on top was the obvious reading
-     of "the screen glows" and it whited the panel out at full
-     overcharge: the one moment the warning matters most was the one
-     moment you could not read it. Under the gauges the glass still
-     plainly cooks — the picture behind them goes from dull red to
-     white — and the ring, the bar and the word stay crisp on top of
-     it, with just enough bloom over everything to say the glass itself
-     is hot and not something being displayed on it. */
-  float hh = heat * smoothstep(0.0, 0.9, 0.7 + heat * 0.3);
-  hh = floor(hh * 8.0 + 0.5) / 8.0;
-  vec3 hot = hh < 0.5 ? mix(vec3(0.42, 0.02, 0.0), vec3(1.0, 0.36, 0.05), hh * 2.0)
-                      : mix(vec3(1.0, 0.36, 0.05), vec3(1.0, 0.92, 0.62), (hh - 0.5) * 2.0);
-  col = mix(col, hot, hh * 0.26) + hot * hh * 0.12;
 
   /* the gauges, straight over it, already the right colour */
   vec4 g = texture2D(panel, uv);
@@ -299,10 +247,6 @@ void main() {
   float r = max(abs(c.x), abs(c.y)) * 2.0;
   col *= 1.0 - smoothstep(0.94, 1.02, r);
   col += tint * 0.30 * smoothstep(0.90, 0.97, r) * (1.0 - smoothstep(0.97, 1.02, r));
-
-  /* and the last of the glow, over the bezel too, because the rim is
-     part of the same lump of metal — see the note above the ramp */
-  col += hot * hh * 0.08;
 
   /* and a little of it always on, so a dead screen is dark glass and
      not a hole in the gun */
@@ -465,7 +409,6 @@ export class Scope {
         panel: { value: this.panelTexture },
         box: { value: new THREE.Vector4(0, 0, 1, 1) },
         on: { value: 1 }, noise: { value: 0 }, tics: { value: 0 },
-        heat: { value: 0 }, over: { value: 0 },
         tint: { value: new THREE.Vector3(...PHOSPHOR) },
       },
       vertexShader: SCREEN_VERT, fragmentShader: SCREEN_FRAG,
@@ -552,17 +495,18 @@ export class Scope {
     this.tics = tics;
     const s = this.screen, o = this.optic;
     const charge = p ? (p.chargeFraction || 0) : 0;
-    const heat = p ? (p.lanceHeat || 0) : 0;
     if (s) {
       s.uniforms.tics.value = tics;
       s.uniforms.on.value = this.held ? 1 : 0;
-      /* static from the heat, and a hard burst of it while the beam is
-         out — the screen is next to a positron coil that is firing */
-      s.uniforms.noise.value = Math.min(0.58, heat * 0.42 + (p && p.beamTics > 0 ? 0.24 : 0));
-      /* the glass cooks with the chassis, and comes apart with the
-         overcharge — see SCREEN_FRAG */
-      s.uniforms.heat.value = heat;
-      s.uniforms.over.value = p ? (p.overFraction || 0) : 0;
+      /* A HARD BURST OF STATIC WHILE THE BEAM IS OUT, and nothing the
+         rest of the time. It used to ride on the coil's temperature as
+         well, and a resting screen was always faintly snowy for it;
+         with the heat gone the picture is CLEAN until the moment the
+         sensor is looking down its own discharge, which is both what a
+         sensor would do and the one thing a sniper's screen has any
+         business doing — a scope you cannot read between shots is not a
+         scope. */
+      s.uniforms.noise.value = p && p.beamTics > 0 ? 0.52 : 0;
     }
     if (o) { o.uniforms.tics.value = tics; o.uniforms.charge.value = Math.max(charge, p && p.beamTics > 0 ? 1 : 0); }
     if (!this.ctx) return false;
@@ -570,26 +514,26 @@ export class Scope {
     const stage = p ? (p.chargeStage || 0) : 0;
     const cell = p ? Math.max(0, Math.min(1, (p.ammo?.cells ?? 0) / (p.maxAmmo?.cells || 1))) : 0;
     const firing = !!(p && p.beamTics > 0);
-    /* AND HOW CLOSE THE COIL IS TO GOING OFF IN YOUR HANDS, which is a
-       number this screen exists to tell you — see OVERCHARGE_TICS in
-       js/player.js. Forty seconds is a very long time to be doing
-       something fatal, and it is only long enough to be fair if the gun
-       is shouting for every one of them. */
-    const over = p ? (p.overFraction || 0) : 0;
+    /* AND HOW MUCH OF THE WINDOW AT THE TOP IS LEFT, 1 the moment the
+       dial goes red and 0 as the coil vents — see HOLD_TICS in
+       js/player.js. It is the inner ring, and it is the number this
+       screen exists to tell you now that the coil cannot go off in your
+       hands: how long you have to take the shot you are lining up. */
+    const hold = p ? (p.holdFraction || 0) : 0;
     /* THE DIRTY KEY, and everything in it is something that is DRAWN.
        A range readout was on here for a while and went, because four
        characters of it were illegible at forty pixels — and while it
        was in this key the canvas was redrawn every time the player
        turned, which is every frame. What a screen redraws on has to be
        what a screen shows. */
-    const key = [this.held ? 1 : 0, Math.round(charge * 120), Math.round(heat * 90), stage,
+    const key = [this.held ? 1 : 0, Math.round(charge * 120), Math.round(hold * 90), stage,
                  Math.round(cell * 60), this.zoomIndex, firing ? 1 : 0,
                  firing ? (tics >> 1) & 7 : 0,
-                 Math.round(over * 80), over > 0 ? (tics >> 2) & 1 : 0].join('|');
+                 hold > 0 && hold < 0.25 ? (tics >> 2) & 1 : 0].join('|');
     if (key === this._key) return false;
     this._key = key;
     this.draws++;
-    this._draw({ charge, heat, stage, cell, firing, over, tics });
+    this._draw({ charge, hold, stage, cell, firing, tics });
     if (this.panelTexture) this.panelTexture.needsUpdate = true;
     return true;
   }
@@ -611,9 +555,9 @@ export class Scope {
        the outer ring    the charge, three quarters of a turn, thick
                          enough to read as a bar, with the three stage
                          marks cut through it
-       the inner ring    the heat, concentric inside it and going the
-                         same way, so the two are one instrument and
-                         not two
+       the inner ring    the window at the top of the charge, draining,
+                         concentric inside it and going the same way, so
+                         the two are one instrument and not two
        four pips         the cell, because it holds four and four dots
                          are legible at a size an arc is not
        the reticle       a cross with a gap
@@ -635,7 +579,7 @@ export class Scope {
      records where the ink went and measures it, rather than trusting
      the number in this paragraph.
      ------------------------------------------------------------------ */
-  _draw({ charge, heat, stage, cell, firing, over, tics }) {
+  _draw({ charge, hold, stage, cell, firing, tics }) {
     const ctx = this.ctx, N = this.canvas.width;
     ctx.clearRect(0, 0, N, N);
     if (!this.held) return;
@@ -657,10 +601,22 @@ export class Scope {
       tick(ctx, cx, cy, R, W, FROM + SPAN * at, 'rgba(6, 18, 8, 0.95)', 1.25);
     }
 
-    /* ---- THE HEAT, concentric inside it ------------------------------ */
+    /* ---- THE WINDOW, concentric inside it ----------------------------
+       Nothing at all until the outer ring is full, and then five
+       seconds of it DRAINING while you line the shot up — see
+       HOLD_TICS. The two rings together are therefore one sentence read
+       from the outside in: the charge fills, and then the window
+       empties, and if you let the second one run out the first one goes
+       with it.
+
+       It was the coil's temperature for a while. The heat is gone at
+       the user's request and this is the number that deserved the ring
+       anyway: a temperature you could do nothing about was a gauge you
+       watched, and this is one you act on. */
     const r2 = N * 0.268, w2 = N * 0.054;
-    dial(ctx, cx, cy, r2, w2, FROM, SPAN, heat,
-         heat > 0.75 ? HOT : heat > 0.45 ? WARN : INK, 'rgba(150, 255, 138, 0.10)');
+    if (hold > 0)
+      dial(ctx, cx, cy, r2, w2, FROM, SPAN, hold,
+           hold < 0.25 ? HOT : hold < 0.5 ? WARN : INK, 'rgba(150, 255, 138, 0.10)');
 
     /* ---- THE CELL, four pips along the bottom ------------------------ */
     const have = Math.round(cell * 4);
@@ -698,46 +654,19 @@ export class Scope {
     /* ---- AND THE ONE CHARACTER --------------------------------------- */
     label(ctx, firing ? '\u25b2' : stage > 0 ? String(stage) : '\u00b7',
           cx, N * 0.245, N * 0.125, firing ? HOT : stage > 0 ? stageInk : INK_DIM);
-    /* the zoom step steps aside once the coil is over: the warning
-       below wants those two rows and is the more urgent news */
-    if (!(over > 0))
-      label(ctx, `${ZOOMS[this.zoomIndex]}\u00d7`, cx, N * 0.675, N * 0.078,
-            this.zoomIndex ? INK : INK_DIM);
+    label(ctx, `${ZOOMS[this.zoomIndex]}\u00d7`, cx, N * 0.675, N * 0.078,
+          this.zoomIndex ? INK : INK_DIM);
 
-    /* ---- AND THE THING THE SCREEN IS REALLY FOR ----------------------
-       Past the top of the charge the coil is overcharging, and in forty
-       seconds it kills whoever is holding it. So the whole screen takes
-       the warning: a bar across the bottom that fills, a word, and — in
-       the last quarter — the entire panel flashing, because by then
-       nothing subtler has worked. */
-    if (over > 0) {
-      const y = N * 0.905, bw = N * 0.66;
-      ctx.lineCap = 'butt';
-      ctx.lineWidth = N * 0.055;
-      ctx.strokeStyle = 'rgba(70, 20, 12, 0.85)';
-      ctx.beginPath(); ctx.moveTo(cx - bw / 2, y); ctx.lineTo(cx + bw / 2, y); ctx.stroke();
-      ctx.strokeStyle = HOT;
-      ctx.beginPath(); ctx.moveTo(cx - bw / 2, y); ctx.lineTo(cx - bw / 2 + bw * over, y); ctx.stroke();
-      const blink = (tics >> 2) & 1;
-      /* TWO ROWS, AND THEY SAY CAPACITOR, at the user's request. One row
-         cannot: this panel is forty chunky pixels across by the time
-         the filter has had it, and CAPACITOR CRITICAL on one line is
-         eighteen characters of green smear. Split, each half is eight
-         or nine and reads at a glance — and the full phrase is on the
-         game's own big message at the same moment anyway (see
-         OVERCHARGE_CALLS in js/player.js), so the panel is the thing
-         you glance at and that is the thing you read. */
-      const row = over > 0.70 ? ['EJECT', 'CAPACITOR']
-                : over > 0.45 ? ['CAPACITOR', 'CRITICAL']
-                : ['CAPACITOR', 'OVERCHARGE'];
-      if (over < 0.70 || blink) {
-        label(ctx, row[0], cx, N * 0.700, N * 0.070, HOT);
-        label(ctx, row[1], cx, N * 0.790, N * 0.070, HOT);
-      }
-      if (over > 0.70 && blink) {
-        ctx.fillStyle = 'rgba(255, 70, 40, 0.28)';
-        ctx.fillRect(0, 0, N, N);
-      }
+    /* ---- AND THE LAST SECOND OF THE WINDOW ---------------------------
+       The inner ring has been draining for four seconds by now and a
+       ring that is nearly empty is a ring that is nearly not there. So
+       the last quarter of it blinks the middle of the reticle red as
+       well, which is the one part of this screen the eye is already on
+       while you are aiming. No words: there is nothing to decide any
+       more and nothing you can do about it but shoot. */
+    if (hold > 0 && hold < 0.25 && ((tics >> 2) & 1)) {
+      ctx.fillStyle = HOT;
+      ctx.fillRect(cx - N * 0.022, cy - N * 0.022, N * 0.044, N * 0.044);
     }
   }
 

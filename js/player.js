@@ -206,22 +206,21 @@ export const HEAT_DOWN = 7 * TICRATE;
    CHARGE_STAGES is in seconds because that is the unit the user asked
    in; everything downstream multiplies by TICRATE exactly once, here.
 
-   THE BEAM THEN LASTS THREE, FOUR OR FIVE SECONDS by stage — the user
-   asked for three to five — and for the whole of it the player is
-   nailed to the floor. See move(): a discharge of this size is braced,
-   not carried.
+   THE BEAM THEN LASTS A SECOND AND A HALF at the top stage — see
+   BEAM_SECONDS, which was three to five and is not any more — and for
+   the whole of it the player is nailed to the floor. See move(): a
+   discharge of this size is braced, not carried.
 
-   AND IT COOKS. A stage-three shot is five seconds of beam and takes
-   the coil to five sixths of everything it has; a lance over
-   LANCE_HOT will not begin a charge again until it is back under
-   LANCE_COOL_AT, which is the same two-number latch the tanks use (see
-   REFIRE_AT) said about temperature instead of volume. Fourteen seconds
-   from glowing to cold, so the answer to "can I fire again" is usually
-   "walk somewhere first".
+   AND IT DOES NOT COOK. A coil that heated as it wound, glowed on the
+   chassis, and refused the trigger over a threshold was the right
+   machinery for a weapon whose limit was how much you dared ask of it;
+   at the user's request this is a PRECISE weapon and the limit is
+   somewhere else entirely.
 
-   THE CELL holds four and fills itself one every twenty-five seconds,
-   which is the slowest magazine in the game and should be: a full cell
-   is four lines drawn through the town.
+   THE CELL is where. It holds four and fills itself one every
+   twenty-five seconds, which is the slowest magazine in the game and
+   should be: a full cell is four lines drawn through the town, and at
+   seven seconds of charge apiece you will think about all four.
    ------------------------------------------------------------------- */
 export const CHARGE_STAGES = [3, 5, 7];                       // seconds held
 export const CHARGE_MAX = CHARGE_STAGES[CHARGE_STAGES.length - 1] * TICRATE;
@@ -242,14 +241,25 @@ export const CHARGE_MAX = CHARGE_STAGES[CHARGE_STAGES.length - 1] * TICRATE;
    stage, so lowering this number brings the smaller shots straight
    back. What changed is which of them the trigger will give you. */
 export const FIRE_AT = CHARGE_STAGES.length;
-export const BEAM_SECONDS = [3, 4, 5];                        // by stage, as asked
+
+/* HOW LONG THE COLUMN STAYS OUT, by stage, in seconds.
+
+   It was three, four and five, and five seconds of standing column is
+   not a sniper shot — it is a cutting torch you walk across a street.
+   At the user's request the lance is a PRECISE weapon now, and a
+   precise weapon's shot is an EVENT: you line it up for seven seconds,
+   you let go, and a second and a half later it is over and whatever you
+   were pointing at is not there.
+
+   A second and a half rather than a flash because the column has to be
+   SEEN, and it is fired from inside the picture along the line the
+   camera is looking down — see the note on the end-on problem in
+   js/beam.js. Long enough to turn your head and look along it; short
+   enough that it is one shot and not an era. */
+export const BEAM_SECONDS = [0.6, 0.9, 1.4];
 export const BEAM_TICS = BEAM_SECONDS.map(s => Math.round(s * TICRATE));
 export const CELLS = 4;
 export const CELL_REGEN_EVERY = 25 * TICRATE;
-export const LANCE_HEAT_UP = 6 * TICRATE;                     // beam tics from cold to cooking
-export const LANCE_HEAT_DOWN = 14 * TICRATE;                  // and back
-export const LANCE_HOT = 0.85;                                // at this it stops taking the trigger
-export const LANCE_COOL_AT = 0.35;                            // and will not again until here
 /* HOW MUCH OF YOUR SPEED YOU KEEP WHILE THE COIL IS WINDING. Not zero —
    the user asked for the freeze on the FIRING and not on the charge —
    but not one either: a seven-second charge you can sprint through is a
@@ -261,95 +271,26 @@ export const CHARGE_WALK = 0.35;
 /* HOW LONG YOU MAY STAND AT FULL CHARGE BEFORE IT LETS GO BY ITSELF.
 
    A charge with no top to it is a charge you hold while you look for a
-   target, and the seven seconds stop being a commitment. Three seconds
-   of grace at the third mark — long enough to pick a street, not long
-   enough to walk down it — and then the coil VENTS: the charge goes,
-   the shot does not happen, the cell is not spent, and the gun is left
-   warm and sulking for having been asked to hold it.
+   target, and the seven seconds stop being a commitment. So there is a
+   WINDOW at the top, and at the end of it the coil VENTS: the charge
+   goes, the shot does not happen, the cell is not spent, and you start
+   the seven seconds again.
 
-   It is also where the sound the user asked for lives: a charge that is
-   never fired fizzles out rather than stopping, pitch sliding down and
-   away, which is the one thing a released trigger and a vent have in
-   common and the reason they are the same call. See ventCharge. */
-/* AND WHAT HOLDING IT AT THE TOP COSTS, which is no longer a three
-   second grace and a shrug. At the user's request the coil does not
-   vent itself any more: it OVERCHARGES, for forty seconds, getting
-   hotter the whole time, and at the end of the forty seconds it lets go
-   where it is standing and takes the person holding it with it. See
-   coilTic and blowUp.
+   Five seconds of it, which is longer than the three this had before
+   the overcharge replaced it. A sniper is allowed to wait for the shot
+   — that is most of what a sniper does — and five seconds is enough to
+   track somebody the length of a street or to let a van clear the line.
+   It is not enough to hold the trigger down while you go looking, which
+   is the thing the window exists to stop.
 
-   Forty seconds is a very long time to be doing something obviously
-   fatal, which is the point: the gun is visibly cooking from the middle
-   out for every one of them (see GUN_FRAG's middle-out mode) and the
-   screen on the back of it is saying so. Nobody does this by accident
-   twice. */
-export const OVERCHARGE_TICS = 40 * TICRATE;
+   NOTHING IS PUNISHED AT THE END OF IT ANY MORE. The coil used to
+   overcharge here for forty seconds and then kill you, and at the
+   user's request that is gone in its entirety: no clock, no warnings,
+   no explosion. It vents, it fizzles, and you charge it again.
 
-/* WHAT LETTING GO OF AN OVERCHARGE THROWS YOU BACKWARDS BY, at the
-   user's request, in momentum units at the top of the forty seconds.
-   For scale: RUN_FWD below is 50/32, so this is about twenty-four times
-   a running stride put into you in one tic, and FRICTION at 0.90625
-   means the slide is worth roughly ten times the kick in total distance
-   — four hundred units, which is across a street and into the far
-   kerb. You are BRACED while the beam is out and cannot walk out of it;
-   the shove is the one thing that moves you, so an overcharged shot
-   sweeps its own column sideways across whatever you were aiming at as
-   you go. Up as well, because the ground stops being a thing you are
-   standing on. */
-export const OVER_KICK = 38;
-export const OVER_LIFT = 7.5;
-
-/* AND HOW MUCH LONGER THE COLUMN STAYS OUT for it, as a multiple of the
-   stage's own seconds at the top of the overcharge: five becomes ten
-   and a half. The other two multipliers an overcharge carries — how
-   wide the column is and how hard it bites — are OVER_WIDE and
-   OVER_BITE in js/beam.js, because those are the beam's business. This
-   one is here, next to BEAM_SECONDS, because how long a trigger keeps
-   a weapon firing is the trigger's. */
-export const OVER_LONGER = 1.1;
-
-/* AND WHAT THE CAPACITOR LETTING GO THROWS YOU BY, which is more: you
-   are dead by then and this is the corpse leaving. deathTic already
-   carries momentum and gravity on a body, so it tumbles, lands and
-   slides, and the death camera follows it because it tracks the body
-   rather than the place the body used to be. */
-export const BLAST_KICK = 62;
-export const BLAST_LIFT = 17;
-
-/* THE WARNINGS, AND THEY SAY CAPACITOR, at the user's request. A ladder
-   rather than one shout: each line goes off once as the overcharge
-   crosses its mark, and the marks are close enough together at the end
-   that the last ten seconds are a countdown rather than a state. The
-   gun's own screen is saying a shorter version of the same thing the
-   whole time — see js/scope.js — but this is the one that is in the
-   middle of the picture whether you are looking at the gun or not. */
-export const OVERCHARGE_CALLS = [
-  [0.20, 'CAPACITOR OVERCHARGE'],
-  [0.45, 'CAPACITOR CRITICAL'],
-  [0.70, 'CAPACITOR FAILURE IMMINENT'],
-  [0.88, 'EJECT CAPACITOR'],
-];
-/* and what venting costs: a third of the heat a shot would have made,
-   because the coil was at full and the energy went somewhere */
-export const VENT_HEAT = 0.30;
-
-/* HOW HOT THE COIL GETS JUST FROM BEING CHARGED, at the user's request:
-   the chassis heats while the gun winds up, on the same glow the
-   minigun's barrels wear. A full charge is a third of everything the
-   metal has; the forty seconds of overcharge after it are the other two
-   thirds, and reaching the top of that is the explosion. So the glow is
-   a readout of how close you are to dying, and it is on the part of the
-   gun you can see. */
-export const CHARGE_HEAT = 0.34;
-
-/* THE DEATH CAMERA, for the one death that gets one — see deathCamTic.
-   How far back it ends up, how high it climbs, how far it tips down to
-   look at the body, and how fast it swings round. Slow on all four: it
-   is a held shot of what you did, not a replay camera. */
-export const DEATHCAM_DIST = 430;
-export const DEATHCAM_LIFT = 250;
-export const DEATHCAM_PITCH = 0.42;
-export const DEATHCAM_SPIN = 0.0042;
+   The fizzle is the charge loop played once rather than round and
+   round, pitch sliding down and away — see ventCharge. */
+export const HOLD_TICS = 5 * TICRATE;
 
 /* THE PITCH THE CHARGE RIDES, as playback rates for the recordings —
    see Audio.sample. Every charge clip is on this one curve, so the
@@ -357,12 +298,20 @@ export const DEATHCAM_SPIN = 0.0042;
    rather than three sounds that happen in a row. 0.72 is a coil that
    has just been asked; 1.45 is one that is finished asking. */
 export const CHARGE_PITCH = [0.72, 1.45];
-/* AND HOW FAST YOU CAN SWEEP WHILE IT IS OUT. The feet are nailed down;
-   the barrel is not, because a column of light you can lean across a
-   street is the whole reason to draw one, and a beam you cannot aim
-   once it is lit is a beam you fire at a wall. Slow enough that it is a
-   sweep and not a look. */
-export const BEAM_TURN = 0.22;
+/* THE SWEEP CLAMP IS GONE, and it is worth saying why rather than just
+   deleting it.
+
+   It existed because the column CHASED the barrel: a beam that follows
+   where you look is a beam you can lean across a street, and without a
+   clamp you could spin on the spot and take out all four sides of a
+   junction with one shot. That was the armageddon weapon.
+
+   This one does not chase. The line is fixed at the instant the trigger
+   comes up and it stays there for its second and a half — see _aim in
+   js/beam.js — so turning your head cannot move the damage, and
+   clamping the turn would only stop you LOOKING at the shot you just
+   took. Which, for a weapon whose whole appeal is the line it leaves
+   through four buildings, is exactly backwards. */
 
 /* THE PLAYER CAN JUMP NOW, at the user's request, which is the end of
    the NO GRAVITY, NO JUMPING line below and is done the way a Doom port
@@ -530,12 +479,6 @@ export class Player {
        same vehicle cannot throw you again — see damage() and
        SwatVan.runOver */
     this.launched = 0;
-    /* AND THE ONE DEATH THE CAMERA LEAVES THE BODY FOR. Null for every
-       ordinary death, in which the view sinks to the floor the way
-       Doom's did; an object for the lance going off in your hands,
-       which the player deserves to watch from outside. See deathCamTic
-       and Game.render. */
-    this.deathCam = null;
     this.radius = PLAYER_RADIUS;
     this.height = PLAYER_HEIGHT;
     this._near = [];                   // scratch for thingInWay's blockmap query
@@ -573,21 +516,25 @@ export class Player {
     this.beltDry = false;
     this.spin = 0;
     this.heat = 0;
-    /* THE LANCE'S FOUR NUMBERS, and they are the only weapon state in
+    /* THE LANCE'S THREE NUMBERS, and they are the only weapon state in
        this file that more than one other module reads: the gun's screen
-       draws the first two (js/scope.js), the gun's body glows with the
-       third (js/weapon3d.js), and the beam system lives off the fourth
-       (js/beam.js). All four are STATES and not animations, so a pause
-       holds them where they are.
+       draws the first two (js/scope.js) and the beam system lives off
+       the third (js/beam.js). All three are STATES and not animations,
+       so a pause holds them where they are.
 
          charge     tics of trigger held, 0..CHARGE_MAX
-         lanceHeat  0..1 of a coil that should have stopped
-         lanceHot   the latch: over LANCE_HOT and waiting to get under
-                    LANCE_COOL_AT
-         beamTics   tics of beam still out, and beamStage which one */
+         hold       tics spent sitting at the top of it, 0..HOLD_TICS,
+                    after which the coil vents
+         beamTics   tics of beam still out, and beamStage which one
+
+       THERE WAS A FOURTH, and it was heat: the coil cooked as it wound
+       up, the chassis glowed with it (js/weapon3d.js), and over a
+       threshold the gun refused the trigger until it had cooled. At the
+       user's request there is no heat on this weapon at all now. What
+       stops you firing it constantly is the thing that always should
+       have: it holds four cells and they come back one at a time. */
     this.charge = 0;
-    this.lanceHeat = 0;
-    this.lanceHot = false;
+    this.hold = 0;
     this.beamTics = 0;
     this.beamStage = 0;
     this.cellTick = 0;
@@ -595,10 +542,8 @@ export class Player {
     /* the held charge sound and which of the two it is — see lanceVoice */
     this.chargeLoop = null;
     this._chargeVoice = null;
-    /* tics spent past the top of the charge, and whether the coil has
-       already let go on this press of the trigger — see ventCharge and
-       OVERCHARGE_TICS */
-    this.overcharge = 0;
+    /* whether the coil has already let go on this press of the trigger
+       — see ventCharge */
     this.vented = false;
     /* the held firing sound, while rounds are leaving — see weaponTic */
     this.gunLoop = null;
@@ -659,16 +604,16 @@ export class Player {
   }
 
   turn(input) {
-    /* A SWEEP AND NOT A LOOK, while the beam is out. The feet are nailed
-       down (see move) and the barrel is not, because leaning a column of
-       light across a street is the whole reason to draw one — but at a
-       fifth of the rate, so what you can do with five seconds is take
-       out one row of shopfronts rather than spin on the spot and take
-       out all four sides of the junction. */
-    const rate = this.beamTics > 0 ? BEAM_TURN : 1;
-    this.angle -= input.look.x * rate;
+    /* AND YOU MAY LOOK AT WHAT YOU JUST DID. The feet are nailed down
+       while the beam is out (see move) and the head is not — it used to
+       be clamped to a fifth of the rate, because the column chased the
+       barrel and a free head meant a shot that swept the whole junction.
+       The column does not chase any more, so the clamp had nothing left
+       to protect and was costing the one thing the shot is for: turning
+       to look along the line it left. */
+    this.angle -= input.look.x;
     this.angle = angleNorm(this.angle);
-    this.pitch = clamp(this.pitch - input.look.y * rate, -MAX_PITCH, MAX_PITCH);
+    this.pitch = clamp(this.pitch - input.look.y, -MAX_PITCH, MAX_PITCH);
     this.lookRate += (input.look.x - this.lookRate) * 0.3;
     this.pitchRate += (input.look.y - this.pitchRate) * 0.3;
   }
@@ -845,13 +790,13 @@ export class Player {
        trigger is down, the barrels are winding, and nothing comes out
        for a third of a second — see SPIN_UP and spinTic */
     if (WEAPONS[w].volley && this.spin < 1) return false;
-    /* AND A LANCE THAT IS COOKING WILL NOT TAKE THE TRIGGER. The same
-       two-number latch the tanks use, said about temperature: over
-       LANCE_HOT it refuses, and goes on refusing until it is back under
-       LANCE_COOL_AT. Nothing may begin a charge in between, which is
-       what makes the seventh second of a charge worth something — you
-       do not get another one for a while. */
-    if (WEAPONS[w].charge && (this.lanceHot || this.beamTics > 0)) return false;
+    /* AND A LANCE WILL NOT TAKE THE TRIGGER WHILE ITS OWN BEAM IS OUT.
+       This used to refuse a HOT coil as well, on the same two-number
+       latch the tanks use; the heat is gone at the user's request and
+       so is the refusal. All that is left is the one case that would
+       otherwise let you hold the trigger through your own discharge and
+       start the next seven seconds inside the last shot. */
+    if (WEAPONS[w].charge && this.beamTics > 0) return false;
     return true;
   }
 
@@ -1064,26 +1009,19 @@ export class Player {
       /* `firing` is what the gun's muzzle bloom and the view kick read,
          so it is true for exactly as long as the beam is */
       this.fireIndex = this.beamTics > 0 ? 1 : -1;
-      this.lanceHeat = clamp(this.lanceHeat + 1 / LANCE_HEAT_UP, 0, 1);
-      if (this.lanceHeat >= LANCE_HOT) this.lanceHot = true;
       this.game.beam?.tic(this);
       if (this.beamTics === 0) { this.beamStage = 0; this.game.beam?.stop(); }
       return;
     }
 
-    /* ---- cooling, whatever else is going on ------------------------- */
+    /* ---- idle ------------------------------------------------------- */
     this.fireIndex = -1;
-    this.lanceHeat = clamp(this.lanceHeat - 1 / LANCE_HEAT_DOWN, 0, 1);
-    if (this.lanceHot && this.lanceHeat <= LANCE_COOL_AT) this.lanceHot = false;
-    /* AND THE OVERCHARGE CLOCK IS ONLY WOUND DOWN BY AN IDLE COIL. It
-       lived here unconditionally for one draft and the counter could
-       never climb past one, because this line runs every tic and the
-       increment below is every tic too — forty seconds of overcharge
-       that took forever to arrive. A coil at zero has nothing stored
-       and nothing to let go of; a coil with anything in it keeps its
-       clock, and the clock is reset where the charge is: on the vent,
-       on the shot, and on the first tic of a new wind. */
-    if (this.charge === 0) this.overcharge = 0;
+    /* A COIL AT ZERO HAS NOTHING TO HOLD. The hold clock only means
+       anything while there is a charge sitting on top of it, and it is
+       reset where the charge is: on the vent, on the shot, and on the
+       first tic of a new wind. Clearing it here as well costs nothing
+       and means a stray read between shots gets a zero. */
+    if (this.charge === 0) this.hold = 0;
 
     /* ---- winding ---------------------------------------------------- */
     /* WHAT IT TAKES TO START AND WHAT IT TAKES TO CONTINUE are not the
@@ -1101,26 +1039,20 @@ export class Player {
     if (!input.attack) this.vented = false;
     if (input.attack && can && !this.vented) {
       if (this.charge === 0) {
-        this.overcharge = 0;
+        this.hold = 0;
         this.game.sound?.play('lancestart', this);
       }
       this.charge = Math.min(CHARGE_MAX, this.charge + 1);
-      /* AND PAST THE TOP IT OVERCHARGES. See OVERCHARGE_TICS: forty
-         seconds of it and the coil lets go where you are standing. */
-      if (this.charge >= CHARGE_MAX) {
-        if (++this.overcharge >= OVERCHARGE_TICS) { this.blowUp(); return; }
-        /* AND THE GAME SHOUTS, four times, in the middle of the
-           picture. The gun's own screen has been saying so since the
-           first second (see js/scope.js) and the chassis has been
-           glowing since before that, but a player who is looking at
-           neither is a player about to be very surprised. Each rung
-           fires on the tic the counter crosses it, which is exactly
-           once — see OVERCHARGE_CALLS. */
-        for (const [at, said] of OVERCHARGE_CALLS)
-          if (this.overcharge === Math.round(OVERCHARGE_TICS * at))
-            this.game.toast?.(said);
+      /* AND AT THE TOP THERE IS A WINDOW. Five seconds to take the shot
+         — see HOLD_TICS — and at the end of them the coil vents and you
+         start the seven seconds again. It used to OVERCHARGE here, for
+         forty seconds, and then kill you; at the user's request that is
+         gone in its entirety and this is what is left, which is what
+         was here before it. */
+      if (this.charge >= CHARGE_MAX && ++this.hold >= HOLD_TICS) {
+        this.ventCharge();
+        return;
       }
-      this.coilTic();
       return;
     }
 
@@ -1131,12 +1063,9 @@ export class Player {
          The cell is not spent, nothing leaves the muzzle, and the coil
          fizzles down. Letting go early is how you cancel a charge you
          have changed your mind about, and it is the only way. */
-      /* AND THE OVERCHARGE GOES WITH IT. Read before it is cleared,
-         because the shot is the only thing that will ever ask. */
       if (stage >= FIRE_AT) {
-        const over = this.overFraction;
-        this.charge = 0; this.overcharge = 0;
-        this.fireBeam(stage, over);
+        this.charge = 0; this.hold = 0;
+        this.fireBeam(stage);
       }
       else this.ventCharge();
       return;
@@ -1148,39 +1077,20 @@ export class Player {
 
   /** One cell, one line drawn through the map. The stage decides how
    *  wide and for how long; js/beam.js decides everything else. */
-  fireBeam(stage, over = 0) {
+  fireBeam(stage) {
     const d = this.def;
     if (d.ammo) this.ammo[d.ammo] = Math.max(0, this.ammo[d.ammo] - (d.ammoPerShot ?? 1));
     if (d.ammo && this.ammo[d.ammo] <= 0) this.cellDry = true;
     this.shotsFired++;
     this.beamStage = stage;
-    this.beamOver = over;
-    /* AND AN OVERCHARGED COLUMN STAYS OUT LONGER, on top of being wider
-       and hungrier — see OVER_WIDE and the rest in js/beam.js. Five
-       seconds becomes ten and a half at the top of the forty. */
-    this.beamTics = Math.round(BEAM_TICS[stage - 1] * (1 + over * OVER_LONGER));
+    this.beamTics = BEAM_TICS[stage - 1];
     this.fireIndex = 1;
-    if (over > 0) {
-      /* AND IT THROWS YOU BACKWARDS, at the user's request. You are
-         braced and cannot walk while the beam is out, so this is the
-         only thing that moves you: the column sweeps across whatever
-         you were aiming at as you go down the street on your back.
-         Momentum rather than a teleport, so walls stop it, the friction
-         in move() eases it off, and the lift means the ground stops
-         being something you are standing on. See OVER_KICK. */
-      const k = OVER_KICK * over;
-      this.momx = -Math.cos(this.angle) * k;
-      this.momy = -Math.sin(this.angle) * k;
-      this.momz = Math.max(this.momz, OVER_LIFT * over);
-      this.onGround = false;
-      this.launched = 30;
-    } else {
-      /* BRACED. The momentum goes now rather than being ignored by
-         move() for the next five seconds, so you stop where you are
-         standing instead of sliding to a halt under a beam that is
-         already out. */
-      this.momx = 0; this.momy = 0;
-    }
+    /* BRACED. The momentum goes now rather than being ignored by move()
+       for the length of the discharge, so you stop where you are
+       standing instead of sliding to a halt under a beam that is
+       already out — and a shot taken from a standstill is most of the
+       difference between a rifle and a hose. */
+    this.momx = 0; this.momy = 0;
     /* THE DISCHARGE IS THREE RECORDINGS AT ONCE: the transient the
        moment the trigger comes up, and then the two layers of the shot
        itself, which were mixed as two and are played as two. The charge
@@ -1198,141 +1108,42 @@ export class Player {
     const boom = 1.14 - 0.13 * stage;
     snd?.sample('lancefire', this, { rate: boom });
     snd?.sample('lancefire2', this, { rate: boom });
-    this.game.beam?.fire(this, stage, over);
-    /* AND THE WHOLE TOWN HEARD IT. Two and a half thousand units, which
-       is further than anything else in the game wakes: a positron
-       discharge is not a noise you keep to one aisle. */
-    this.game.noise(this, 2400 + over * 3200);
+    this.game.beam?.fire(this, stage);
+    /* AND WHO HEARD IT. Two and a half thousand units used to, which is
+       further than anything else in the game wakes and was the right
+       number for a weapon that took the street down with the target.
+       Eleven hundred is the new one: still the loudest single shot in
+       the game and still much further than a shotgun, but it no longer
+       brings the whole town to the window every time you take one man
+       off a roof. A precise weapon that announced itself to everybody
+       would be precise about nothing that mattered. */
+    this.game.noise(this, 1100);
   }
 
-  /** THE COIL'S TEMPERATURE WHILE THE TRIGGER IS DOWN, and it is a pure
-   *  function of how long it has been down: a third of everything the
-   *  metal has by the time the dial is red, and all of it at the end of
-   *  the forty seconds of overcharge. Which makes the glow on the
-   *  chassis a readout of how close the player is to dying, drawn on
-   *  the part of the gun they are looking at.
+  /** HOW MUCH OF THE WINDOW AT THE TOP IS LEFT, 1 the moment the dial
+   *  goes red and 0 as the coil vents — see HOLD_TICS. What the gun's
+   *  screen draws its inner ring off and what the tests read.
    *
-   *  MAX and not assignment, so a gun that is still hot from the last
-   *  shot stays hot: holding the trigger cannot COOL a lance. */
-  coilTic() {
-    const hold = Math.min(1, (this.charge / CHARGE_MAX) * CHARGE_HEAT +
-                             (this.overcharge / OVERCHARGE_TICS) * (1 - CHARGE_HEAT));
-    this.lanceHeat = Math.max(this.lanceHeat, hold);
+   *  It is a fraction REMAINING rather than elapsed, because that is
+   *  the question being asked: a sniper at full charge wants to know
+   *  how long they have, not how long they have had. A gauge that
+   *  filled as the window closed would be drawing the wrong one. */
+  get holdFraction() {
+    if (this.charge < CHARGE_MAX || HOLD_TICS <= 0) return 0;
+    return Math.max(0, 1 - this.hold / HOLD_TICS);
   }
 
-  /* ------------------------------------------------------------------
-     FORTY SECONDS OF OVERCHARGE, AND THEN IT KILLS YOU
-
-     At the user's request, and it is the only thing in this game that
-     kills the player for something the player DID rather than for
-     something that happened to them. That is worth the difference in
-     how it behaves.
-
-     IT IGNORES THE INVINCIBLE SWITCH. Everything else that can hurt the
-     player arrives at damage(), which refuses outright when the debug
-     mode is on — see the note there — because everything else is the
-     world doing something to you. This is not the world. It is the
-     thing in your hands, going off in your hands, after forty seconds
-     of it visibly cooking and a screen on the back of it saying so, and
-     a gun that could not kill you would make the whole forty seconds
-     mean nothing.
-
-     THE BLAST IS THE BIGGEST IN THE GAME by a wide margin: a radius
-     nine hundred units across against the hundred and fifty a car gets,
-     enough structural damage to take down everything inside it, and the
-     heat to set fire to what is left standing round the edge. You do
-     not survive being at the middle of it, and neither does the street.
-     ------------------------------------------------------------------ */
-  blowUp() {
-    const g = this.game;
-    this.charge = 0;
-    this.overcharge = 0;
-    this.lanceHeat = 1;
-    this.chargeLoop?.stop(); this.chargeLoop = null;
-    this._chargeVoice = null;
-    const at = { x: this.x, y: this.y, z: this.z, storey: this.sector?.storey || 0 };
-    /* the shot that never left, arriving where it was standing */
-    g.sound?.play('bigboom', this);
-    g.sound?.play('lancefire', this);
-    /* AND IT IS ABSURD, at the user's request, and the numbers are the
-       whole of that: sixteen hundred units of radius against the
-       hundred and fifty a car gets, which is a city block; twelve
-       thousand damage, which is a hundred and twenty shoppers' worth in
-       one tic; and enough structural damage over twenty-eight hundred
-       units to take down every region within it and most of the ones
-       looking at it. There is no survivable distance and there is not
-       meant to be. */
-    g.explode(at, {
-      radius: 1600, damage: 12000, heat: 900, heatRadius: 1100, ignite: 1600,
-      structure: 16, structureRadius: 2800, sound: 'explode',
-    });
-    /* and what it looks like: a column of fire standing where you were,
-       which is the same shape the beam makes and is not a coincidence.
-       Three rings of it — a core, a skirt and a canopy — because one
-       cloud of a hundred and twenty fireballs at one size is a blob and
-       the same hundred and twenty in three sizes is a mushroom. */
-    for (let i = 0; i < 120; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const tier = i % 3;
-      const r = tier === 0 ? Math.random() * 200
-              : tier === 1 ? 180 + Math.random() * 420
-              : 300 + Math.random() * 900;
-      const z = tier === 0 ? Math.random() * 500
-              : tier === 1 ? 200 + Math.random() * 900
-              : 900 + Math.random() * 1500;
-      g.fx?.fireball(at.x + Math.cos(a) * r, at.y + Math.sin(a) * r, at.z + z,
-                     150 + Math.random() * 380, 30 + (i & 23));
-    }
-    for (let i = 0; i < 72; i++) {
-      const a = Math.random() * Math.PI * 2, r = 120 + Math.random() * 1700;
-      g.fx?.puff(at.x + Math.cos(a) * r, at.y + Math.sin(a) * r, at.z + Math.random() * 1100,
-                 220 + Math.random() * 340, 260);
-    }
-    g.spawnSparks?.(at.x, at.y, at.z + 40, 140);
-    g.fx?.wash?.(at.x, at.y, at.z + 40, 6);
-    /* AND THE WALLS GO WITH IT, the same way the beam takes them, but as
-       a STAR rather than a cross: eight cuts at forty-five degrees,
-       every one of them a beam's worth of hole, so what is left of the
-       junction you were standing in is a set of spokes blown through
-       every building around it. Two was enough to prove the mechanism
-       and is not enough to be absurd. */
-    const from = { x: at.x, y: at.y, z: at.z + 40 };
-    for (let i = 0; i < 8; i++)
-      g.breaches?.cut(from, this.angle + i * Math.PI / 4, 0, 1700, 320);
-    g.noise(this, 8000);
-    /* and then you. Not through damage(): see the note above. */
-    this.health = 0;
-    this.armour1 = 0; this.armour2 = 0;
-    this.damageFlash = 60;
-    if (!this.dead) { this.deathCam = { tics: 0, dist: 40, yaw: this.angle, pitch: 0.18 }; this.die(); }
-    /* AND THE BODY LEAVES. deathTic already carries momentum and
-       gravity on a corpse and slides it against the walls, so this is
-       the whole of it: thrown back the way an overcharged shot throws
-       you, only harder, and the death camera follows because it tracks
-       the body rather than the spot the body used to be standing on. */
-    this.momx = -Math.cos(this.angle) * BLAST_KICK;
-    this.momy = -Math.sin(this.angle) * BLAST_KICK;
-    this.momz = BLAST_LIFT;
-    this.onGround = false;
-    /* AND THE LAST OF THEM IS A NOTICE TOO, not the card. It was
-       setBigMessage, and because die() runs a line above this one it
-       landed ON TOP of the YOU DIED card and took the "go again"
-       prompt with it for eight seconds. The gun's last word belongs
-       with the gun's other four, down in the corner, and the card
-       belongs to the run that has just ended. */
-    g.toast?.('THE CAPACITOR LET GO');
-  }
-
-  /** HOW FAR INTO THE OVERCHARGE IT IS, 0 to 1 — what the screen on the
-   *  gun draws its warning off and what the tests read. */
-  get overFraction() {
-    return this.overcharge > 0 ? Math.min(1, this.overcharge / OVERCHARGE_TICS) : 0;
-  }
-
-  /** A CHARGE THAT NEVER BECAME A SHOT, which now happens one way: the
-   *  trigger came up before the dial went red. Nothing is spent —
-   *  the cell is untouched — and what is left is some heat and a noise
-   *  going away.
+  /** A CHARGE THAT NEVER BECAME A SHOT, which happens two ways: the
+   *  trigger came up before the dial went red, or it stayed down past
+   *  the window at the top of it — see HOLD_TICS. Nothing is spent, the
+   *  cell is untouched, and what is left is a noise going away.
+   *
+   *  IT COSTS NOTHING BUT THE SEVEN SECONDS now. It used to leave the
+   *  coil a third hot, on the way to a threshold that would refuse the
+   *  trigger; there is no heat on this weapon any more, so a vent is
+   *  simply a charge you did not take, and the only thing it takes from
+   *  you is the time you spent building it. Which, at seven seconds a
+   *  shot, is plenty.
    *
    *  THE FIZZLE IS THE CHARGE LOOP ITSELF, played once rather than round
    *  and round, from wherever the pitch had got to and sliding down
@@ -1342,13 +1153,16 @@ export class Player {
   ventCharge() {
     const pitch = this.chargePitch;
     this.charge = 0;
-    this.overcharge = 0;
+    this.hold = 0;
     this.vented = true;
-    this.lanceHeat = clamp(this.lanceHeat + VENT_HEAT, 0, 1);
-    if (this.lanceHeat >= LANCE_HOT) this.lanceHot = true;
     const h = this.game.sound?.sample('lancecharge', this, { rate: pitch });
     if (h) { h.rate(CHARGE_PITCH[0] * 0.55, 1.1); h.release(1.2); }
     else this.game.sound?.play('noammo', this);
+    /* AND IT SAYS SO, because a charge that disappears without a word
+       reads as the gun having broken. The fizzle is the other half of
+       this and is the half you hear; this is the half you can check if
+       you were looking down the street rather than at the dial. */
+    this.game.toast?.('COIL VENTED');
   }
 
   /** Where on the pitch curve the coil currently is — see CHARGE_PITCH.
@@ -1429,25 +1243,13 @@ export class Player {
       for (const kind of Object.keys(this.maxAmmo)) this.ammo[kind] = this.maxAmmo[kind];
       this.dry = false; this.co2Dry = false; this.beltDry = false; this.cellDry = false;
       this.regenTick = 0; this.co2Tick = 0; this.beltTick = 0; this.cellTick = 0;
-      /* AND THE COIL'S LATCH IS OFF. Infinite ammo on a weapon whose
-         real limit is temperature has to say something about
-         temperature or the switch does nothing to it — but what it says
-         is that the gun will always TAKE THE TRIGGER, which is the
-         latch, and not that the metal is cold.
-
-         Zeroing lanceHeat here as well was the first cut, and it turned
-         the chassis glow off in every ordinary game: this branch runs
-         once a tic with the switch on by default, so the number the
-         shader reads was being wiped before it ever reached a frame and
-         the gun never glowed at all. The glow is not a fuel gauge any
-         more — since the overcharge it is a readout of how close the
-         player is to dying, drawn on the part of the gun they are
-         looking at, and the overcharge kills you with this switch on
-         (see blowUp). Turning off the one warning that is in the middle
-         of the picture, on the grounds of infinite AMMO, was backwards.
-         armed() reads the latch and nothing reads the temperature but
-         the shader, so the two come apart cleanly. */
-      this.lanceHot = false;
+      /* AND THE LANCE NEEDS NOTHING SAID ABOUT IT HERE ANY MORE. It
+         used to: the coil's real limit was temperature rather than
+         ammunition, so a switch that only refilled tanks left the one
+         weapon in the game it did not touch, and this branch cleared
+         the latch to make up for it. Its heat is gone at the user's
+         request — the cell IS the limit now, and the loop above has
+         already filled it. */
       return;
     }
     this._refill('fuel', REGEN_EVERY, REFIRE_AT, 'regenTick', 'dry');
@@ -1590,59 +1392,8 @@ export class Player {
     this.game.onPlayerDied();
   }
 
-  /* ------------------------------------------------------------------
-     THE CAMERA LEAVES THE BODY
-
-     For every ordinary death the view sinks to the floor and stays
-     there, which is Doom's and is right: you died, you are on the
-     ground, and what you can see is the lino. The lance going off in
-     your hands is not an ordinary death — the player has just done
-     something enormous to a town and the last thing they should be
-     looking at is the floor of it.
-
-     So this one pulls the camera out of the body and back along the
-     line it was facing, up and turning, and points it at what is left.
-     Three numbers and no state machine: how far back, how high, and how
-     far round it has swung, all eased toward their ends so it is a move
-     and not a cut.
-
-     AND IT DOES NOT GO THROUGH WALLS. The camera would otherwise end up
-     inside the house behind you, looking at the back of its wallpaper,
-     which is the ordinary failure of every third-person camera ever
-     written. The way out of it here is one ray: ask the level where the
-     wall is between the body and where the camera wants to be, and stop
-     short of it. Level.rayHitWall was built for bullets and answers
-     this exactly.
-     ------------------------------------------------------------------ */
-  deathCamTic() {
-    const c = this.deathCam;
-    c.tics++;
-    /* out to arm's length and then some, over about a second and a half */
-    c.dist += (DEATHCAM_DIST - c.dist) * 0.055;
-    c.pitch += (DEATHCAM_PITCH - c.pitch) * 0.045;
-    /* and turning, slowly, for as long as it is up */
-    c.yaw += DEATHCAM_SPIN;
-    /* where it wants to be: back along its own yaw and up */
-    const back = c.dist;
-    const wx = this.x - Math.cos(c.yaw) * back;
-    const wy = this.y - Math.sin(c.yaw) * back;
-    const wz = this.z + DEATHCAM_LIFT * Math.min(1, c.tics / 40);
-    /* and where it may actually be */
-    const lv = this.game.level;
-    const eye = this.z + 40;
-    const hit = lv.rayHitWall ? lv.rayHitWall(this.x, this.y, eye, wx, wy, wz) : null;
-    const t = hit ? Math.max(0.12, hit.t - 0.12) : 1;
-    c.x = this.x + (wx - this.x) * t;
-    c.y = this.y + (wy - this.y) * t;
-    c.z = eye + (wz - eye) * t;
-    /* looking back at the body */
-    const dx = this.x - c.x, dy = this.y - c.y, dz = (this.z + 30) - c.z;
-    c.lookYaw = Math.atan2(dy, dx);
-    c.lookPitch = Math.atan2(dz, Math.hypot(dx, dy));
-  }
 
   deathTic() {
-    if (this.deathCam) this.deathCamTic();
     /* the view sinks to the floor and stays there */
     this.viewZ += (this.z + 8 - this.viewZ) * 0.12;
     this.momx *= 0.86; this.momy *= 0.86;
