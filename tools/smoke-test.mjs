@@ -7225,6 +7225,98 @@ section('the gun');
     !names.some(n => /CLAUDE/i.test(n)), names.join());
 }
 
+/* ---------- a wall under the minigun ----------
+   LAST, AND THAT IS NOT TIDINESS. pRandom() is one sequence shared by
+   the whole game, so a section that stands up a Game spends some of it
+   and every check after it that leans on a roll lands somewhere else.
+   Dropping this in the middle of the file moved the gunship's nacelles
+   by four hundredths of a radian and failed a test six hundred lines
+   below it that has nothing to do with walls. A section that builds a
+   world goes at the end, where there is nothing downstream to shift. */
+section('a wall under the minigun');
+{
+  const THREEW = await import('three');
+  const { Game } = await import('../js/game.js');
+  const MAPW = await import('../js/maps/sellwrong.js');
+  const VX = await import('../js/voxel.js');
+  const { voxelisable, alongLine, ROUND_RADIUS, VOX } = VX;
+  const { TICRATE } = await import('../js/util.js');
+  const fs = await import('node:fs');
+
+  const hudStub = { setWeapon() {}, setAmmo() {}, message() {}, setHealth() {}, setArmour() {} };
+  const inputStub = { forward: 0, strafe: 0, turn: 0, fire: false, use: false, jump: false,
+                      run: false, swap: 0, pitch: 0, consumeSwap: () => 0 };
+  const g = new Game({ level: MAPW.buildSellWrong(), scene: new THREEW.Scene(), camera: {},
+                       textures: tex.bakeTextures(), sprites: spr.bakeSprites(),
+                       hud: hudStub, audio: null, input: inputStub });
+
+  /* a wall of the parade, and somewhere in front of it to stand */
+  const wall = g.level.lines
+    .filter(l => voxelisable(l, g.level.sectors) && l.len >= 120)
+    .sort((a, b) => b.len - a.len)[0];
+  const sec = g.level.sectors[wall.front ?? wall.back];
+  const mx = (wall.x1 + wall.x2) / 2, my = (wall.y1 + wall.y2) / 2;
+  const aim = { x: mx, y: my, z: (sec.floor + sec.ceil) / 2 };
+
+  check('nothing has a lattice before a shot is fired',
+    g.level.lines.every(l => !l.voxels));
+
+  /* THE MINIGUN'S OWN NUMBERS: 24 to 48 a round, four rounds a tic. */
+  let tics = 0, broke = 0;
+  while (!broke && tics < 200) {
+    for (let r = 0; r < 4; r++) broke += g.chewWall(wall, aim.x, aim.y, aim.z, 36);
+    tics++;
+  }
+  note('the wall opens after', `${tics} tics — ${(tics / TICRATE).toFixed(2)}s of the trigger held`);
+  check('a held burst opens a wall', broke > 0, `${broke} voxels`);
+  check('and it takes long enough to be a wall and not a curtain',
+    tics >= 8 && tics <= 70, `${tics} tics`);
+  check('the lattice was built by the shooting, not by the level',
+    !!wall.voxels && wall.voxels.live === 1, `${wall.voxels && wall.voxels.live} spans`);
+  note('what it cost', `${(wall.voxels.bytes / 1024).toFixed(1)} KB for the span that was hit`);
+
+  /* AND THE PICTURE IS TOLD, SOON. A hole is the feedback for pulling
+     the trigger; half a second late it reads as the gun not working. */
+  check('the geometry was marked for rebuilding', g._geoDirty === true);
+  check('and soon rather than whenever the fire gets round to it',
+    g._geoAt - g.tics <= 10, `${g._geoAt - g.tics} tics`);
+
+  /* A ROUND IS NOT A CANNON — one of them leaves a decal and a wall. */
+  {
+    const clean = g.level.lines.filter(l => voxelisable(l, g.level.sectors) && l !== wall)[0];
+    check('one round opens nothing', g.chewWall(clean, (clean.x1 + clean.x2) / 2,
+      (clean.y1 + clean.y2) / 2,
+      (g.level.sectors[clean.front ?? clean.back].floor +
+       g.level.sectors[clean.front ?? clean.back].ceil) / 2, 48) === 0);
+  }
+
+  /* WHAT IS NOT CHEWED. The wood's boundary is scenery, a door is
+     rebuilt from scratch every tic it moves, and a two-sided lintel is
+     drawn with no thickness to take away. */
+  {
+    const long = g.level.lines.find(l => l.len > VX.MAX_LINE);
+    check('the edge of the world does not chew', long ? g.chewWall(long, long.x1, long.y1, 40, 999) === 0 : true);
+    const twoSided = g.level.lines.find(l => l.front !== null && l.back !== null);
+    check('nor does a two-sided line', g.chewWall(twoSided, twoSided.x1, twoSided.y1, 40, 999) === 0);
+    check('and neither grew a lattice', !(long && long.voxels) && !twoSided.voxels);
+  }
+
+  /* IT GOES THROUGH THE ONE DOOR THE REST OF THE GAME COMES IN BY, so
+     a trooper's rifle wrecks the shopfront exactly as the minigun does
+     and neither of them needed a special case. */
+  {
+    const src = fs.readFileSync('js/game.js', 'utf8');
+    check('the wall is chewed from hitscan, beside the decal it leaves',
+      /this\.decals\.hole\(wall\.x, wall\.y, wall\.z[\s\S]{0,120}this\.chewWall\(wall\.line/.test(src));
+    check('and every asker goes through the one shared timer',
+      /markGeoDirty\(6\)/.test(src) && /markGeoDirty\(10\)/.test(src) &&
+      /markGeoDirty\(20\)/.test(src) &&
+      !/_geoAt = this\.tics \+/.test(src));
+  }
+
+  note('a round reaches', `${ROUND_RADIUS} units, against a ${VOX}-unit voxel`);
+}
+
 /* ---------- the site ---------- */
 section('the site');
 {

@@ -73,6 +73,13 @@ export const TORN  = 4;
    looks like, not the other way round. */
 export const TOUGHNESS = 900;
 
+/* HOW FAR A ROUND'S SHOCK CARRIES into the wall around where it hit.
+   Rather more than the round itself: a bullet into plasterboard does
+   not make a bullet-shaped hole, it makes a bullet-shaped hole with the
+   board loose around it, and a wall that opens exactly where the rounds
+   went reads as a stencil rather than as damage. */
+export const ROUND_RADIUS = 10;
+
 /* A LINE LONGER THAN THIS IS SCENERY. The wood's boundary is four lines
    of nine thousand units and up; the longest wall in the building is
    three thousand eight hundred and eighty. Nothing between the two

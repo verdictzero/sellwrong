@@ -36,6 +36,7 @@ import { buildSky, followSky } from './sky.js';
 import { Forest } from './forest.js';
 import { FlameStream } from './flame.js';
 import { Decals, wallNormal, UP, DOWN } from './decals.js';
+import { VoxelWall, voxelisable, alongLine, ROUND_RADIUS } from './voxel.js';
 import { Tracers } from './tracers.js';
 import { FrostStream } from './frost.js';
 import { Effects, SMOKE_PUFFS } from './effects.js';
@@ -350,8 +351,7 @@ export class Game {
        Relighting walks every lamp against every sector, so it is not
        done per lamp — a fire takes out a whole run of them within a
        second or two and one rebuild covers the lot. */
-    this._geoDirty = true;
-    this._geoAt = this.tics + 10;
+    this.markGeoDirty(10);
   }
 
   /** What comes out of a light when it goes: bright, brief, and it falls. */
@@ -467,8 +467,7 @@ export class Game {
       for (const d of this.slideDoors)
         if (d.spec.sector && f.newlyCharred.includes(d.spec.sector.index)) d.jam();
       f.newlyCharred.length = 0;
-      this._geoDirty = true;
-      this._geoAt = this.tics + 20;
+      this.markGeoDirty(20);
     }
 
     /* AND THEN THE BUILDING ITSELF. A region whose fuel is all gone
@@ -507,8 +506,7 @@ export class Game {
           if (!lamp.removed && lamp.sector === s) { lamp.dead = true; lamp.remove(); }
       }
       f.newlyGutted.length = 0;
-      this._geoDirty = true;
-      this._geoAt = this.tics + 20;
+      this.markGeoDirty(20);
     }
     if (this._geoDirty && this.tics >= this._geoAt) {
       this._geoDirty = false;
@@ -517,6 +515,53 @@ export class Game {
       this.geo.rebuildStatic();
       this.geo.rebuild();
     }
+  }
+
+  /* --------------------------------------------------------------------
+     THE LEVEL NEEDS REBUILDING, IN A MOMENT
+
+     Two things ask for this and they are not in the same hurry. A
+     region finishing burning changes a room's whole skin and can wait
+     twenty tics for company; a hole appearing in a wall you are firing
+     at cannot, because the hole IS the feedback and half a second late
+     it reads as the gun not working. So the caller says how long it is
+     prepared to wait and the soonest asker wins — a fire and a burst at
+     the same moment cost one rebuild between them, which is the point
+     of having a timer at all.
+     ------------------------------------------------------------------ */
+  markGeoDirty(delay) {
+    const at = this.tics + delay;
+    if (!this._geoDirty || at < this._geoAt) this._geoAt = at;
+    this._geoDirty = true;
+  }
+
+  /* --------------------------------------------------------------------
+     A ROUND TAKES SOME OF THE WALL AWAY
+
+     js/decals.js goes on drawing the mark — a round is not a cannon and
+     one of them should leave a hole in the plaster and nothing more.
+     What this does is take some of the LIFE out of the wall where the
+     round landed, and when enough of them have landed in the same place
+     the wall is not there any more. Half a second of the minigun held
+     on one spot; about a second with the shake real aiming has in it.
+
+     THE LATTICE IS BUILT BY THE FIRST ROUND THAT NEEDS IT and not
+     before, which is why a parade nobody has fired at costs nothing and
+     the level still builds in the half second it always has.
+
+     ONLY THE SIDE THAT WAS HIT OPENS. A wall here is two one-sided
+     lines facing each other across sixteen units of void, and each owns
+     eight of it, so a hole in the one you shot shows you the inside of
+     the wall rather than the room beyond — which is what a hole in a
+     wall looks like from the wrong side of it, and is also the honest
+     picture until a shot can travel through one.
+     ------------------------------------------------------------------ */
+  chewWall(line, x, y, z, damage) {
+    if (!line || !voxelisable(line, this.level.sectors)) return 0;
+    const vw = line.voxels || (line.voxels = new VoxelWall(line, this.level.sectors));
+    const broke = vw.hit(alongLine(line, x, y), z, damage, ROUND_RADIUS);
+    if (broke) this.markGeoDirty(6);
+    return broke;
   }
 
   /* THERE IS NO GOAL. There was — burn sixty per cent and get back to
@@ -675,7 +720,10 @@ export class Game {
       this.spawnPuff(wall.x, wall.y, wall.z);
       if (opts.spark) this.spawnSparks(wall.x, wall.y, wall.z, 2 + (pRandom() & 1));
       /* and the hole it leaves, facing the side it came from */
-      if (opts.shot) this.decals.hole(wall.x, wall.y, wall.z, wallNormal(wall.line, ox, oy));
+      if (opts.shot) {
+        this.decals.hole(wall.x, wall.y, wall.z, wallNormal(wall.line, ox, oy));
+        this.chewWall(wall.line, wall.x, wall.y, wall.z, damage);
+      }
       lh.x = wall.x; lh.y = wall.y; lh.z = wall.z;
     } else if (floorHit !== null) {
       const hx = ox + dx * maxT, hy = oy + dy * maxT;
