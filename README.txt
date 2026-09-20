@@ -112,6 +112,14 @@ weather.
                           megabytes down to one and a half
   tools/build-site.sh   assembles public/ — what actually gets published
   tools/bake-icons.mjs  the home-screen icon, out of the game's own fire
+  tools/bake-textures.mjs
+                        node tools/bake-textures.mjs [outdir] — every
+                          texture the game draws itself, written out as
+                          PNGs at their true size, the charred copies
+                          under the names the bank gives them, and a
+                          contact sheet of the lot. The game does not
+                          read them back; it is for looking at what is
+                          otherwise only ever fifteen milliseconds old
   tools/smoke-test.mjs  node tools/smoke-test.mjs — no install, no browser
 
 
