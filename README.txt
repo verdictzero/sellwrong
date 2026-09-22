@@ -18,11 +18,14 @@ door that is drawn as a door. The fire crosses into it, climbs the
 stairs, and goes through a party wall one house at a time. See TOWN.txt.
 
 THE PAGE OPENS ON A TERMINAL, NOT THE GAME. Black glass, red type, a
-prompt that reads INTERFACE 2037, and nothing on it about what it wants
-or that it wants anything: it is a password, and the only hint is the
-cursor. Every line it puts up is typed out a character at a time, the
-way the ship's computer in ALIEN talks, and every entry is refused with
-the same two lines but one. The one is
+prompt that reads INTERFACE 2037, and nothing else on it at all — no
+name, no date, no word of what it is or what it wants: it is a
+password, and the only hint is the cursor. Every line it puts up is
+typed out a character at a time, the way the ship's computer in ALIEN
+talks, with a teletype tick under each character, a click under each
+key you press, a buzz when it refuses you, a chime when it lets you
+in and a hum under all of it, every sound synthesised in the page.
+Every entry is refused with the same two lines but one. The one is
 
   gss-tangram.exe
 
