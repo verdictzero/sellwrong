@@ -17,6 +17,22 @@ and sixty-eight houses with an upstairs and an interior behind every
 door that is drawn as a door. The fire crosses into it, climbs the
 stairs, and goes through a party wall one house at a time. See TOWN.txt.
 
+THE PAGE OPENS ON A TERMINAL, NOT THE GAME. Black glass, red type, a
+prompt that reads INTERFACE 2037, and nothing on it about what it wants
+or that it wants anything: it is a password, and the only hint is the
+cursor. Every line it puts up is typed out a character at a time, the
+way the ship's computer in ALIEN talks, and every entry is refused with
+the same two lines but one. The one is
+
+  gss-tangram.exe
+
+in any case, and that word is written here and in the smoke test and
+nowhere the site ships: js/terminal.js holds a hash of it and compares
+what is typed against that, so view-source is no help. On the match it
+imports js/main.js, which boots the game exactly as the page used to,
+and the terminal fades off in front of the loading screen. Nothing
+under js/main.js knows the terminal exists.
+
 Open index.html in a browser. No install, no build step. Every texture,
 every sprite, every sound and the whole level are generated in the page
 at start-up, in about a second and a half — it was half a second before
@@ -39,7 +55,8 @@ weather.
                           one. Nothing in it is built either
   .gitlab-ci.yml        test, then publish to GitLab Pages
   .github/workflows/    the same two jobs, for GitHub Pages
-  index.html            the page
+  index.html            the page: the terminal, and the game under it
+  js/terminal.js        the terminal — the password in front of the game
   css/style.css         the furniture around the frame, and the thumb controls
   manifest.webmanifest  what a phone calls it when it is added to a home screen
   icon.png              and what it draws there — node tools/bake-icons.mjs

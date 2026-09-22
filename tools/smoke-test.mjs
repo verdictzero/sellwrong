@@ -4077,6 +4077,38 @@ section('the lights');
 }
 
 /* ---------- the settings ---------- */
+/* THE FRONT DOOR. The page opens on a terminal (js/terminal.js) that
+   refuses everything but one entry, and the entry is not written
+   anywhere the site ships — the terminal holds a hash of it. So the one
+   place the word itself lives, besides the README, is here, where the
+   hash in the source is checked against it: change either without the
+   other and the game is locked behind a password nobody holds. The
+   page is held to loading the terminal and not the game, and the
+   terminal to loading the game, so the door is in front of it. */
+section('the front door');
+await (async () => {
+  const fs2 = await import('node:fs');
+  const html = fs2.readFileSync('index.html', 'utf8');
+  const css = fs2.readFileSync('css/style.css', 'utf8');
+  const term = fs2.readFileSync('js/terminal.js', 'utf8');
+  const fnv = s => {
+    let h = 0x811c9dc5;
+    for (const c of s) { h ^= c.codePointAt(0); h = Math.imul(h, 0x01000193) >>> 0; }
+    return h.toString(16).padStart(8, '0');
+  };
+  const WORD = 'gss-tangram.exe';
+  const key = (term.match(/const KEY = '([0-9a-f]{8})'/) || [])[1];
+  check('the terminal holds the hash of the word', key === fnv(WORD.toUpperCase()), `${key} vs ${fnv(WORD.toUpperCase())}`);
+  check('the page loads the terminal, not the game',
+    /src="js\/terminal\.js"/.test(html) && !/src="js\/main\.js"/.test(html));
+  check('and the terminal loads the game', /import\('\.\/main\.js'\)/.test(term));
+  check('the prompt says INTERFACE 2037', /const PROMPT = 'INTERFACE 2037/.test(term));
+  /* no hints: the word is in none of the three files the page is made of */
+  const shipped = (html + css + term).toLowerCase();
+  check('and the word is nowhere the site ships', !shipped.includes('tangram'));
+  check('the terminal is red on black', /#term \{[^}]*background: #000;[^}]*color: #ff2a1c/s.test(css));
+})();
+
 /* A DEAD BUTTON IS SILENT. js/main.js reaches into the page by id and
    the page is a separate file; a typo in either leaves a control that
    renders, highlights on hover and does nothing at all, and no test that

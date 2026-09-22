@@ -10,4 +10,4 @@
    MAJOR.MINOR.PATCH, the usual way round: the middle number for a
    change a player would notice (a weapon, a level, a control scheme),
    the last for a fix, the first for the day it is finished. */
-export const VERSION = '0.1.0';
+export const VERSION = '0.2.0';
