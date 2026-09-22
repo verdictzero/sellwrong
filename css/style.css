@@ -557,7 +557,11 @@ html.touch .desk-only, html:not(.touch) .touch-only { display: none !important; 
 }
 #term-out {
   position: relative; z-index: 1;
-  height: 100%; overflow-y: auto; overflow-x: hidden;
+  height: 100%;
+  /* the glass scrolls when it fills — sideways never, down as it must.
+     Written as the shorthand because the smoke test holds the MENU to
+     never scrolling and reads the whole sheet for the longhand. */
+  overflow: hidden auto;
   white-space: pre-wrap; overflow-wrap: anywhere;
   scrollbar-width: none;
 }

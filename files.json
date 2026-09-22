@@ -112,6 +112,7 @@
   "js/sprites.js",
   "js/standees.js",
   "js/states.js",
+  "js/terminal.js",
   "js/textures.js",
   "js/touch.js",
   "js/tracers.js",
