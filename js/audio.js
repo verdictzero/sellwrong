@@ -194,6 +194,18 @@ const DEFS = {
   lockfull:  { kind: 'sweep', dur: 0.30, f0: 2200, f1: 2200, gain: 0.24, wave: 'square' },
   missile:   { kind: 'hiss',  dur: 0.55, f0: 2600, f1: 500,  gain: 0.42 },
   clang:     { kind: 'thud',  dur: 0.12, f0: 900,  f1: 300,  gain: 0.30 },
+  /* THE ARC MAW: the charge is a hum struck again every few tics, a
+     step higher each third of the way up, with a rising whine when it
+     tops out; the discharge is a crack, and a full one is a crack with
+     thunder under it; and every strike down the chain is a short zap.
+     Synthesised, like the launcher's. */
+  arccharge1: { kind: 'sweep', dur: 0.20, f0: 170,  f1: 210,  gain: 0.10, wave: 'sawtooth' },
+  arccharge2: { kind: 'sweep', dur: 0.20, f0: 250,  f1: 320,  gain: 0.12, wave: 'sawtooth' },
+  arccharge3: { kind: 'sweep', dur: 0.20, f0: 380,  f1: 500,  gain: 0.14, wave: 'sawtooth' },
+  arcfull:   { kind: 'sweep', dur: 0.42, f0: 600,  f1: 1500, gain: 0.16, wave: 'square' },
+  arcfire:   { kind: 'noise', dur: 0.30, f0: 4200, f1: 700,  gain: 0.50 },
+  arcbig:    { kind: 'boom',  dur: 1.10, f0: 520,  f1: 48,   gain: 0.80 },
+  arczap:    { kind: 'noise', dur: 0.09, f0: 5200, f1: 1800, gain: 0.26 },
   /* THE MINIGUN: a round is the rifle's crack cut short, and the audio
      layer's own rate limit turns a hundred and forty of them a second
      into the buzz a minigun actually makes; the barrels winding up are

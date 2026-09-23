@@ -3631,8 +3631,8 @@ section('the cold');
     const fs3 = await import('node:fs');
     note('the guns', Object.entries(w3.GUNS).map(([k, d]) =>
       `${k} ${d.url.split('/').pop()}${d.fit ? ' (fitted)' : ''}`).join(', '));
-    check('there are six guns and all six files are there',
-      Object.keys(w3.GUNS).length === 6 &&
+    check('there are seven guns and all seven files are there',
+      Object.keys(w3.GUNS).length === 7 &&
       Object.values(w3.GUNS).every(d => fs3.existsSync(d.url)));
     const E = w3.GUNS.EXTINGUISHER;
     /* THE MODEL IS SOMEBODY ELSE'S AND IS NOT REWRITTEN, which is the
@@ -9161,10 +9161,12 @@ section('the minigun, the jump and the van');
   check('the minigun is the fourth weapon, a volley off a belt, and issued',
     !!d && d.slot === 4 && d.volley === true && d.ammo === 'rounds' && d.autofire === true &&
     /* AND THE MOLOTOV MOVED DOWN ONE to make room for the lance, which
-       is the fifth, and again for the launcher, which is the sixth: the
-       molotov is still switched off and still built, and its slot is
-       still one past the last thing you can hold. */
-    pl.WEAPONS.LANCE.slot === 5 && pl.WEAPONS.LAUNCHER.slot === 6 && pl.WEAPONS.MOLOTOV.slot === 7 &&
+       is the fifth, again for the launcher, which is the sixth, and
+       again for the arc maw, which is the seventh: the molotov is still
+       switched off and still built, and its slot is still one past the
+       last thing you can hold. */
+    pl.WEAPONS.LANCE.slot === 5 && pl.WEAPONS.LAUNCHER.slot === 6 && pl.WEAPONS.ARC.slot === 7 &&
+    pl.WEAPONS.MOLOTOV.slot === 8 &&
     new (class extends pl.Player { constructor() { super({ level: level, sectorAt: () => null }, 0, 0, 0); } })().owned.MINIGUN === true);
   note('the belt', `${pl.BELT} rounds at ${pl.BELT_PER_TIC} a tic: ${(pl.BELT / pl.BELT_PER_TIC / 35).toFixed(0)} seconds, ` +
     `back in ${(pl.BELT * pl.BELT_REGEN_EVERY / 35).toFixed(0)}; ${d.rounds} a tic of ${d.damage()}-ish`);
@@ -10618,6 +10620,160 @@ section('the quad launcher');
     TH.THERMAL_ZOOMS.length === TH.THERMAL_AIM_AT.length && TH.THERMAL_ZOOMS[0] === 1);
   check('the launcher\'s parts are baked: a lock bracket in two frames and a motor in three',
     ['TLCKA', 'TLCKB', 'MISLA', 'MISLB', 'MISLC'].every(k => g.sprites.frames.has(k)));
+}
+
+/* ---------- the arc maw ---------- */
+section('the arc maw');
+{
+  const fs = await import('node:fs');
+  const { parseGLB, readAccessor } = await import('../js/glb.js');
+  const w3 = await import('../js/weapon3d.js');
+  const pl = await import('../js/player.js');
+  const AR = await import('../js/arc.js');
+  const AU = await import('../js/audio.js');
+  const { Game } = await import('../js/game.js');
+  const MAPM = await import('../js/maps/sellwrong.js');
+  const THREEM = await import('three');
+  const D = w3.GUNS.ARC;
+
+  /* ---- THE MODEL, AS IT SHIPS: the user's sculpt, finished in Blender
+     (the AO, the curvature and a distressed gunmetal baked through its
+     normal map), cut to sixteen thousand triangles with its UVs kept,
+     and one diffuse sheet with the AO and the relief in it ---- */
+  const file = fs.readFileSync(D.url);
+  const { json, bin } = parseGLB(file.buffer.slice(file.byteOffset, file.byteOffset + file.length));
+  const pr = json.meshes[0].primitives[0];
+  const tris = json.accessors[pr.indices].count / 3;
+  note('the arc maw', `${(file.length / 1024).toFixed(0)}K, ${tris} triangles, one ${json.images?.[0]?.mimeType} sheet`);
+  check('the arc maw ships as one mesh of under twenty thousand triangles, under a megabyte',
+    json.meshes.length === 1 && json.meshes[0].primitives.length === 1 && tris <= 20000 && file.length < 1024 * 1024);
+  check('and wears one diffuse sheet and nothing else, since the gun shader reads colour alone',
+    json.images?.length === 1 && json.materials.length === 1 && !json.materials[0].normalTexture &&
+    !json.materials[0].pbrMetallicRoughness?.metallicRoughnessTexture &&
+    Object.keys(pr.attributes).sort().join() === 'NORMAL,POSITION,TEXCOORD_0');
+  check('with its node\'s turn baked into it, so the model\'s own units are the ones GUNS speaks in',
+    json.nodes.every(n => !n.matrix && !n.rotation && !n.translation && !n.scale));
+  {
+    /* THE MAW IS EMPTY AND THE PRONGS ARE ROUND IT: nothing of the model
+       within a few centimetres of the nozzle, and metal all the way round
+       it a little further out, at the same depth */
+    const P = readAccessor(json, bin, pr.attributes.POSITION).array;
+    const [nx, ny, nz] = D.nozzle;
+    let inside = 0; const sides = new Set();
+    for (let i = 0; i < P.length; i += 3) {
+      const dx = P[i] - nx, dy = P[i + 1] - ny, dz = P[i + 2] - nz, r = Math.hypot(dx, dy);
+      if (Math.hypot(dx, dy, dz) < 0.2) inside++;
+      if (Math.abs(dz) < 0.5 && r > 0.25 && r < 1.0) sides.add(Math.floor((Math.atan2(dy, dx) + Math.PI) / (Math.PI / 3)) % 6);
+    }
+    /* three prongs, so three of the six sixths at least, and never a
+       half circle of them open — the bolt is in the middle of the three */
+    const open3 = [0, 1, 2, 3, 4, 5].some(k => ![0, 1, 2].some(j => sides.has((k + j) % 6)));
+    check('the bolt leaves from between the prongs: nothing at the maw, and metal all the way round it',
+      inside === 0 && sides.size >= 3 && !open3, `${inside} in the maw, ${sides.size} of 6 sixths`);
+  }
+  check('and the gun carries a charge ball in its maw, and a blue flash',
+    !!D.orb && D.orb.radius > 0 && D.orb.reach > D.orb.radius && D.orb.motes >= 16 && D.tint[2] > D.tint[0]);
+
+  /* ---- THE WEAPON ---- */
+  const W = pl.WEAPONS.ARC;
+  const inputSrc = fs.readFileSync('js/input.js', 'utf8');
+  check('the arc maw is the seventh weapon, on the seven key, charged and let go, and issued',
+    W.slot === 7 && W.arc === true && W.ammo === 'volts' && pl.VOLTS >= 4 &&
+    /Digit7: 'weapon7'/.test(inputSrc) && /this\.pressed\('weapon7'\)\) this\.weaponSlot = 7/.test(inputSrc) &&
+    new (class extends pl.Player { constructor() { super({ level: { sectorAt: () => null } }, 0, 0, 0); } })().owned.ARC === true);
+  check('more charge is more strikes: one for a tap, nine at the top, never fewer for more',
+    AR.hitsFor(0) === 1 && AR.hitsFor(1) === 9 && AR.hitsFor(2) === 9 &&
+    [...Array(21)].every((_, i) => i === 0 || AR.hitsFor(i / 20) >= AR.hitsFor((i - 1) / 20)));
+  check('and a strike does more off a bigger charge and less down the chain',
+    AR.strikeDamage(1, 0) > AR.strikeDamage(0, 0) && AR.strikeDamage(1, 8) < AR.strikeDamage(1, 0) && AR.strikeDamage(0, 8) > 0);
+  check('its voice is in the synthesised table: the climbing hum, the top of it, the crack, the thunder and the zap',
+    ['arccharge1', 'arccharge2', 'arccharge3', 'arcfull', 'arcfire', 'arcbig', 'arczap'].every(k => AU.SOUNDS?.[k] || new RegExp(`\\b${k}:`).test(fs.readFileSync('js/audio.js', 'utf8'))));
+
+  /* ---- IN THE SHOP ---- */
+  const g = new Game({
+    level: MAPM.buildSellWrong({ town: false }), scene: new THREEM.Scene(), camera: {},
+    textures: tex.bakeTextures(), sprites: spr.bakeSprites(),
+    hud: { message() {}, ticMessages() {} }, audio: null,
+    input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
+             attack: false, use: false, run: false, jump: false, sample() {}, sensitivity: 0 },
+  });
+  const p = g.player, A = g.arc;
+  p.debug = false;
+  p.weapon = 'ARC';
+  const pick = () => {
+    let t = null, bd = Infinity;
+    for (const a of g.actors) {
+      if (!A.canStrike(a)) continue;
+      const d = Math.hypot(a.x - p.x, a.y - p.y);
+      if (d < 150 || d > 1000 || d > bd) continue;
+      const c = A.chest(a);
+      if (g.level.sightBlocked(p.x, p.y, p.eyeZ, c.x, c.y, c.z)) continue;
+      t = a; bd = d;
+    }
+    return t;
+  };
+  const aimAt = t => { const c = A.chest(t); p.angle = Math.atan2(c.y - p.y, c.x - p.x); p.pitch = Math.atan2(c.z - p.eyeZ, Math.hypot(c.x - p.x, c.y - p.y)); };
+  let t = pick();
+  note('the arc maw\'s first target', t ? `${t.type} ${Math.round(Math.hypot(t.x - p.x, t.y - p.y))} away` : 'nobody in sight');
+  if (t) {
+    /* a tap: one strike */
+    g.input.attack = true; aimAt(t); g.tic();
+    const tapCharge = p.arcCharge;
+    g.input.attack = false; g.tic();
+    check('a tap is one strike, on whoever is in the middle of the sight',
+      A.fired === 1 && A.lastChain.length === 1 && A.lastChain[0] === t && p.arcCharge === 0 && p.ammo.volts === pl.VOLTS - 1,
+      `charge ${tapCharge.toFixed(2)}, chain ${A.lastChain.length}`);
+    for (let k = 0; k < 40; k++) g.tic();
+    /* a full charge: up to nine, a hop a tic, each in reach of the last */
+    t = pick();
+    g.input.attack = true;
+    for (let k = 0; k < AR.ARC.chargeTics + 5; k++) { if (t) aimAt(t); g.tic(); }
+    const full = p.arcCharge;
+    const s0 = A.strikes;
+    g.input.attack = false; g.tic();
+    const b = A.bolts[A.bolts.length - 1], chain = A.lastChain;
+    const revealed = [b ? b.reveal : -1];
+    for (let k = 0; k < 3; k++) { g.tic(); revealed.push(b.reveal); }
+    const hopsOk = b && b.nodes.slice(2).every((n, i) => {
+      const prev = b.nodes[i + 1];
+      return Math.hypot(n.x - prev.x, n.y - prev.y, n.z - prev.z) <= AR.ARC.chain + 60;
+    });
+    check('held to the top it charges full, and lets go as a chain of up to nine, nobody struck twice',
+      full === 1 && chain.length > 1 && chain.length <= 9 && new Set(chain).size === chain.length, `chain ${chain.length}`);
+    check('the chain is revealed a hop a tic, and every hop is in reach of the one before',
+      revealed[1] > revealed[0] && revealed[2] > revealed[1] && hopsOk, revealed.join(','));
+    for (let k = 0; k < 20; k++) g.tic();
+    check('and people standing next to a strike are caught in its field',
+      A.strikes - s0 > chain.length && b.fields.length > 0, `${A.strikes - s0} strikes for ${chain.length} in the chain`);
+    check('and it throws sparks, and sparks that fall with a trail behind them',
+      A.sparks.count > 50 && A.drips.length > 0);
+    const zs = A.drips.slice(0, 5).map(d => d.z);
+    g.tic();
+    check('which fall', A.drips.length === 0 || A.drips.slice(0, 5).some((d, i) => zs[i] !== undefined && d.z < zs[i]));
+    for (let k = 0; k < 200; k++) g.tic();
+    check('and are gone again, bolts and drips and all', A.bolts.length === 0 && A.drips.length === 0);
+  }
+  /* LIGHTNING IS NOT FIRE: a fireproof trooper is hurt by it */
+  {
+    const sw = g.spawn('SWAT', p.x + 300, p.y, undefined, {});
+    const h0 = sw.health;
+    p.angle = 0; p.pitch = Math.atan2(A.chest(sw).z - p.eyeZ, 300);
+    p.ammo.volts = pl.VOLTS;
+    const b = { nodes: [{ x: p.x, y: p.y, z: p.eyeZ, who: null, muzzle: true }, { ...A.chest(sw), who: sw }], reveal: 0, t: 0, charge: 1, struck: new Set([sw]), seed: 1, fields: [] };
+    A.strike(b, 1);
+    check('the bolt hurts a trooper, whose kit shrugs off fire, and never gibs one', (sw.health < h0 || sw.dead) && sw.health >= -8,
+      `${h0} -> ${sw.health}`);
+    check('because it lands as a shock, never as fire', !/fire: true/.test(fs.readFileSync('js/arc.js', 'utf8')));
+  }
+  /* AN EMPTY CAPACITOR CLICKS AND DOES NOTHING */
+  {
+    p.ammo.volts = 0;
+    const f0 = A.fired;
+    g.input.attack = true; g.tic(); g.tic(); g.input.attack = false; g.tic();
+    check('an empty capacitor does nothing', A.fired === f0 && p.arcCharge === 0);
+    for (let k = 0; k < pl.VOLT_REGEN_EVERY + 2; k++) g.tic();
+    check('and a discharge comes back in three seconds', p.ammo.volts >= 1);
+  }
 }
 
 /* ---------- the music ---------- */

@@ -410,6 +410,41 @@ export const GUNS = {
        launcher you are sighting is. */
     aim: { pos: [-0.0862, 0.2048, 0.3990], rot: [-0.04, -0.17, 0.05], out: 1.0 },
   },
+  /* THE ARC MAW, the user's seventh model and the second sculpt: a
+     Nomad file of ninety-one thousand triangles whose paint was a white
+     sheet and whose whole surface was in a normal map. It was finished
+     in Blender, headless, at the user's request: the AO and the
+     curvature baked through the normal map, a distressed gunmetal built
+     out of nodes on top of them — rust and grime in the cavities, edges
+     worn bright, scratches — and baked to a sheet; then cut to sixteen
+     thousand triangles with its UVs kept, and the sheet given the AO and
+     the relief multiplied into it, because this shader reads colour and
+     nothing else. See THE ARC MAW in README.txt.
+
+     THREE PRONGS AT THE FRONT and a loop at the back, and the business
+     end is the space between the prongs: `nozzle` is its middle, where
+     the bolt leaves and where `orb` — the charge, a ball of blue energy
+     with more energy streaming into it — is hung. */
+  ARC: {
+    url: 'assets/models/arcgun.glb',
+    fit: GUN_LENGTH * 1.05,
+    /* the prongs reaching into the lower right of the picture with the
+       maw a sixth of the way right of the middle and a fifth of the way
+       down — picked in the running game off a scan of holds, by where
+       the maw lands on screen */
+    out: 1.7,
+    pos: [0.02, 0.12, 0],
+    rot: [0, 0.06, 0],
+    nozzle: [0.0, 0.0, 5.42],
+    pilot: null,
+    /* the discharge's flash at the maw: short, white-blue */
+    tint: [0.7, 0.95, 1.9],
+    cold: true,
+    muzzle: { len: 0.22, wid: 0.22, additive: true },
+    /* the ball at full charge, and how far out the energy is gathered
+       from, both in metres */
+    orb: { radius: 0.11, reach: 0.26, motes: 64 },
+  },
 };
 
 /* Where the gun sits in front of the eye, in metres, and how it is
@@ -865,6 +900,16 @@ export class Weapon3D {
     }
     inner.add(g.muzzle);
 
+    /* THE ARC MAW'S CHARGE, for a gun that has one: a ball of blue
+       energy hung in its maw and growing with the charge, a halo round
+       it, and motes of energy streaming in from all round the prongs —
+       see orbTic */
+    if (def.orb) {
+      g.orb = makeOrb(def.orb);
+      g.orb.group.position.copy(g.anchors.nozzle);
+      inner.add(g.orb.group);
+    }
+
     return g;
   }
 
@@ -987,6 +1032,8 @@ export class Weapon3D {
       G.muzzleMaterials[1].uniforms.frame.value = (tics + 7) % this.frames;
     }
 
+    if (G.orb) orbTic(G.orb, player, firing, dt, tics);
+
     /* and what they throw on the gun. A gun with no pilot gets no pilot
        glow — an extinguisher lit by a flame it does not have would be
        the one thing on screen saying it is a flamethrower. */
@@ -1029,5 +1076,94 @@ export class Weapon3D {
     const w = dir.multiplyScalar(dist).add(worldCamera.position);
     out.x = w.x; out.y = -w.z; out.z = w.y;
     return out;
+  }
+}
+
+/* ---------------------------------------------------------------------
+   THE ARC MAW'S CHARGE
+
+   A white-hot core, a blue halo round it that breathes, and motes of
+   blue energy born on a shell round the prongs that fall into the
+   middle faster as they near it — more of them, and from further out,
+   the higher the charge. All additive sprites in the gun's own scene,
+   so the ball is always in the maw however the gun moves, and never
+   behind a wall the gun is poking through. The discharge is a flash of
+   the halo, big and gone in a fifth of a second.
+   --------------------------------------------------------------------- */
+let glowTex = null;
+function glowTexture() {
+  if (glowTex || typeof document === 'undefined') return glowTex;
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const x = c.getContext('2d');
+  const gr = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,255,255,1)');
+  gr.addColorStop(0.25, 'rgba(200,230,255,0.9)');
+  gr.addColorStop(0.6, 'rgba(70,140,255,0.35)');
+  gr.addColorStop(1, 'rgba(20,60,255,0)');
+  x.fillStyle = gr; x.fillRect(0, 0, 64, 64);
+  glowTex = new THREE.CanvasTexture(c);
+  glowTex.colorSpace = THREE.SRGBColorSpace;
+  return glowTex;
+}
+
+function orbSprite(color, opacity = 1) {
+  const m = new THREE.SpriteMaterial({ map: glowTexture(), color, transparent: true, opacity,
+                                       blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
+                                       toneMapped: false, fog: false });
+  const s = new THREE.Sprite(m);
+  s.renderOrder = 6;
+  return s;
+}
+
+function makeOrb(def) {
+  const group = new THREE.Group();
+  const halo = orbSprite(0x3f7dff, 0.8), core = orbSprite(0xdff0ff, 1), flash = orbSprite(0x8fc0ff, 1);
+  group.add(halo, core, flash);
+  const motes = [];
+  for (let i = 0; i < def.motes; i++) {
+    const s = orbSprite(i % 3 ? 0x5a9cff : 0xcfe6ff, 1);
+    s.visible = false;
+    group.add(s);
+    motes.push({ s, x: 0, y: 0, z: 0, age: 0, life: 0, live: false });
+  }
+  return { def, group, halo, core, flash, motes, flashT: 0, was: 0, spawn: 0 };
+}
+
+function orbTic(o, player, firing, dt, tics) {
+  const c = player.arcCharging ? (player.arcCharge || 0) : 0;
+  const R = o.def.radius, reach = o.def.reach;
+  /* the discharge: the charge went to nothing with the trigger up */
+  if (o.was > 0.02 && c === 0 && firing) o.flashT = 1;
+  o.was = c;
+  const breathe = 1 + 0.12 * Math.sin(tics * 0.9) + 0.06 * Math.sin(tics * 2.3);
+  const r = c > 0 ? R * (0.12 + 0.88 * Math.sqrt(c)) * breathe : 0;
+  o.core.visible = o.halo.visible = r > 0;
+  o.core.scale.setScalar(r * 1.2);
+  o.halo.scale.setScalar(r * (3.4 + 0.6 * Math.sin(tics * 0.4)));
+  o.halo.material.opacity = 0.45 + 0.45 * c;
+  o.flashT = Math.max(0, o.flashT - dt * 5);
+  o.flash.visible = o.flashT > 0;
+  o.flash.scale.setScalar(R * (2 + 9 * (1 - o.flashT)));
+  o.flash.material.opacity = o.flashT;
+  /* the motes: born on a shell round the maw, drawn in, faster near it */
+  o.spawn += c > 0 ? dt * (18 + 90 * c) : 0;
+  for (const m of o.motes) {
+    if (!m.live) {
+      if (o.spawn < 1) { m.s.visible = false; continue; }
+      o.spawn -= 1;
+      const u = Math.random() * 2 - 1, a = Math.random() * Math.PI * 2, rr = reach * (0.55 + 0.45 * Math.random()) * (0.7 + 0.5 * c);
+      const q = Math.sqrt(1 - u * u);
+      m.x = Math.cos(a) * q * rr; m.y = Math.sin(a) * q * rr; m.z = u * rr * 0.6 - rr * 0.25;
+      m.age = 0; m.life = 0.35 + Math.random() * 0.3; m.live = true;
+    }
+    m.age += dt;
+    const k = Math.min(1, dt * (3 + 9 * m.age / m.life));
+    m.x -= m.x * k; m.y -= m.y * k; m.z -= m.z * k;
+    const d = Math.hypot(m.x, m.y, m.z);
+    if (m.age >= m.life || d < r * 0.5 || c === 0) { m.live = false; m.s.visible = false; continue; }
+    m.s.visible = true;
+    m.s.position.set(m.x, m.y, m.z);
+    m.s.scale.setScalar(R * (0.22 + 0.25 * Math.min(1, d / reach)));
+    m.s.material.opacity = Math.min(1, m.age / 0.08);
   }
 }

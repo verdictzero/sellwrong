@@ -159,7 +159,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         2519 checks, no install and no browser
+  the smoke test         2539 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -220,8 +220,8 @@ THE PICTURE.
   SHIFT         run             LMB/CTRL  fire
   SPACE         jump            WHEEL     cycle weapons
   F             open, use
-  1 - 6         flamer / extinguisher / bore / minigun / lance /
-                quad launcher
+  1 - 7         flamer / extinguisher / bore / minigun / lance /
+                quad launcher / arc maw
   Z  C  RMB     put the scope to your eye: the lance's screen, or the
                 launcher's thermal sight
   [  ]          render size     SHIFT [ ] pixel size
@@ -5515,6 +5515,112 @@ synthesised table and so are silent while MUTED is on, like everything
 else in it; a recording under the same name would take over.
 
 
+THE ARC MAW
+-----------
+
+THE SEVENTH WEAPON, at the user's request, and the request was the
+design: "between the three prongs on the business end a lightning bolt
+will come out and chain-arc up to 9 people, with field effect damage
+for people nearby, lots of trailing falling particle effects, hit
+particle effects, charging is a thing too where blue energy particles
+will gather in the weapon's maw generating an ever growing blue energy
+ball, more charge = more chain hits".
+
+  js/arc.js             the lightning: who it strikes, the field, the
+                        bolts, the sparks and the drips
+  assets/models/arcgun.glb   the gun, finished in Blender
+  tools/blender/        the three headless Blender scripts that did it:
+                        the bake, the full textured export, and the
+                        game's copy. Blender is not needed to run or
+                        test the game — only to rebuild the model
+
+
+THE MODEL WAS A SCULPT, AND ITS SURFACE WAS A NORMAL MAP
+
+The user's second Nomad file: ninety-one thousand triangles, a colour
+sheet that was plain white, and every rib and panel and glyph on it in
+a four-thousand-pixel normal map that nothing in the file even used. So
+it was finished in Blender, run headless, at the user's request: the
+normal map hooked up; the ambient occlusion baked THROUGH it, so the
+sculpted relief shades its own cracks, and a curvature map made from
+the mesh's own shape and the normal map's detail together; and on top
+of the two a distressed gunmetal built out of nodes — dark steel, rust
+and grime settling where the occlusion is deep, edges worn to bright
+metal where the curvature is sharp, scratches, a few patches rusted
+through — baked down to a sheet. The textured model went back to the
+user as it was, normal map and all.
+
+WHAT SHIPS IS A GAME'S COPY of it: cut to sixteen thousand triangles by
+Blender's own collapse, which keeps the UVs, so the baked sheet still
+fits; the file's node — a quarter turn and a lift — baked into the
+vertices and the prongs' axis put on x = y = 0, so the maw is (0, 0, z)
+in the units GUNS speaks in; and one sheet with the occlusion and the
+relief MULTIPLIED into the colour, because the gun shader here reads
+colour and nothing else, and a relief nothing lights is a relief nobody
+sees. 705 kilobytes, a thousand-pixel JPEG. Where the maw is was found
+by rendering the model from the side and down the barrel with a marker
+at the candidate point, not by reading numbers off a list of vertices:
+the first guess ignored the node's turn and sat in mid-air.
+
+
+THE CHARGE
+
+HOLD THE TRIGGER and it charges, from nothing to full over three
+seconds, and stays full as long as you hold it. What you see is the
+gun's (js/weapon3d.js, `orb`): a white-hot core in the maw between the
+three prongs, a blue halo that breathes round it, both growing with the
+square root of the charge, and motes of blue energy born on a shell
+round the prongs and falling into the middle faster as they near it —
+more of them, and from further out, the higher it goes. All of it is
+drawn in the gun's own scene, so the ball is in the maw however the gun
+moves and never behind a wall the barrel is poking through. What you
+hear is a hum struck again every few tics, a step higher each third of
+the way up, and a whine as it tops out.
+
+
+THE DISCHARGE
+
+LET GO and it goes. The first strike is whoever is nearest the middle
+of the sight, inside nine degrees, in range and in plain view; with
+nobody there the bolt goes straight down the sight into whatever stops
+it, and grounds with a scorch. From each body it hops to the nearest
+one it has not struck yet, within 560 units and in plain view of the
+last, until it has made its count — ONE FOR A TAP, NINE AT THE TOP OF
+THE CHARGE, hitsFor(charge) — or has nobody left to hop to. The chain is
+chosen whole when the trigger comes up and REVEALED a hop a tic, so the
+eye can follow it across a crowd, and each strike lands as it arrives:
+48 off a tap and 190 off a full charge, each hop a twelfth less than the
+one before.
+
+THE FIELD: everybody standing within 150 units of a strike who is not
+in the chain takes up to four tenths of it, less the further out they
+are, with a short arc drawn to each of them to say so.
+
+IT IS NOT FIRE. Damage that is not fire is what the fireproof SWAT and
+army feel, and it shatters anybody frozen solid, which is what a bolt
+through a block of ice should do. AND A BOLT KILLS WITHOUT BURSTING: a
+strike is held to what the body has left and a little over, because
+the game reads damage far past zero as a body coming apart, and a
+trooper under a nine-man chain was coming apart in gore. A shopper
+still goes off the way a shopper always does — that is their only
+death in this game.
+
+WHAT YOU SEE: every link a jagged line of light — midpoint displacement
+off a seed, fixed at both ends and widest in the middle — re-cut every
+other tic so it crawls, a wide blue glow under a white core, with forks
+off it; and thinner near your eye, the tracers' rule, or the first link
+out of the maw is a white wall over half the picture. A burst of light
+and sparks at every strike. AND THE DRIPS: hot blue sparks shaken off
+every lit link and every strike that fall, bounce once off the floor,
+and leave a mote behind them every tic all the way down, which is the
+trailing, falling rain the request asked for.
+
+THE CAPACITOR holds six discharges, whatever each was charged to, and
+refills one every three seconds: what a nine-man chain costs is the
+three seconds of standing there with the ball growing. Empty, the
+trigger clicks.
+
+
 A HOLE BLOWN THROUGH A WALL
 ---------------------------
 
@@ -7785,7 +7891,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-2519 checks. Every one of them earns its place by having caught something
+2539 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

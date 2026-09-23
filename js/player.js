@@ -51,6 +51,7 @@
 
 import { PLAYER_RADIUS, PLAYER_HEIGHT, PLAYER_EYE, MAX_STEP, TICRATE,
          angleNorm, clamp, pRandom, pRandomSpread, dist2 } from './util.js';
+import { ARC } from './arc.js';
 
 /* THE PLAYER CANNOT BE HURT BY FIRE. This flag used to say the player
    could not be hurt at all — one flag rather than a hundred missing
@@ -332,6 +333,13 @@ export const CHARGE_PITCH = [0.72, 1.45];
 export const ROCKETS = 4;
 export const ROCKET_REGEN_EVERY = 2 * TICRATE;
 
+/* THE ARC MAW'S CAPACITOR. Six discharges, whatever each was charged
+   to, and one back every three seconds: what a full charge costs is the
+   three seconds of standing there with the ball growing, not the cell,
+   so a tap and a nine-man chain are both one. See arcTic and js/arc.js. */
+export const VOLTS = 6;
+export const VOLT_REGEN_EVERY = 3 * TICRATE;
+
 /* THE PLAYER CAN JUMP NOW, at the user's request, which is the end of
    the NO GRAVITY, NO JUMPING line below and is done the way a Doom port
    does it: a vertical momentum, a gravity that takes a unit a tic off
@@ -493,8 +501,24 @@ export const WEAPONS = {
     damage: () => 0,
     sound: null,
   },
+  /* THE ARC MAW, the user's seventh model. `arc` is the whole of what
+     makes it a different trigger to hold: DOWN charges it — blue energy
+     gathering into a ball between the three prongs, js/weapon3d.js's
+     `orb` — and UP lets it go as a bolt that chains from body to body,
+     one strike for a tap and nine at the top of the charge. Neither is
+     an animation, so it runs its own tic like the lance and the
+     launcher do (see arcTic). Billed one discharge a shot out of the
+     capacitor — see VOLTS. The lightning is js/arc.js's. */
+  ARC: {
+    slot: 7, name: 'ARC MAW', sprite: 'FLMG',
+    ready: 'A', fire: ['B', 'C'], fireTics: [3, 5],
+    ammo: 'volts', ammoPerShot: 1,
+    arc: true,
+    damage: () => 0,
+    sound: null,
+  },
   MOLOTOV: {
-    slot: 7, name: 'MOLOTOV', sprite: 'MOLG',
+    slot: 8, name: 'MOLOTOV', sprite: 'MOLG',
     ready: 'A', fire: ['B', 'B', 'C', 'C'], fireTics: [6, 6, 8, 12],
     throwAt: 2,
     ammo: 'bottles', ammoPerShot: 1,
@@ -530,8 +554,8 @@ export class Player {
     this.shootable = true;
     this.monster = false;
 
-    this.ammo = { fuel: TANK, co2: BOTTLE, bores: BORES, rounds: BELT, cells: CELLS, rockets: ROCKETS, bottles: 0 };
-    this.maxAmmo = { fuel: TANK, co2: BOTTLE, bores: BORES, rounds: BELT, cells: CELLS, rockets: ROCKETS, bottles: 12 };
+    this.ammo = { fuel: TANK, co2: BOTTLE, bores: BORES, rounds: BELT, cells: CELLS, rockets: ROCKETS, volts: VOLTS, bottles: 0 };
+    this.maxAmmo = { fuel: TANK, co2: BOTTLE, bores: BORES, rounds: BELT, cells: CELLS, rockets: ROCKETS, volts: VOLTS, bottles: 12 };
     /* THE LATCH. True from the moment the tank runs out until it is back
        to REFIRE_AT of full, and the only thing that stops the flamer
        firing while there is fuel in it. */
@@ -588,6 +612,14 @@ export class Player {
     this.rocketTick = 0;
     this.rocketDry = false;
     this.launchTube = -1;
+    /* THE ARC MAW'S: how charged it is, 0..1 — the ball in its maw is
+       drawn off this (js/weapon3d.js) and the chain is sized off it
+       (js/arc.js) — whether the trigger is down on it, and the clock
+       that refills its capacitor */
+    this.arcCharge = 0;
+    this.arcCharging = false;
+    this.voltTick = 0;
+    this.voltDry = false;
     /* the held firing sound, while rounds are leaving — see weaponTic */
     this.gunLoop = null;
     /* whether the trigger has already clicked on this press of it */
@@ -604,7 +636,7 @@ export class Player {
        off; the boxcutter is gone; the bore is the third, the minigun
        the fourth, the lance the fifth and the launcher the sixth — see
        the note above WEAPONS. */
-    this.owned = { FLAMER: true, EXTINGUISHER: true, BORE: true, MINIGUN: true, LANCE: true, LAUNCHER: true };
+    this.owned = { FLAMER: true, EXTINGUISHER: true, BORE: true, MINIGUN: true, LANCE: true, LAUNCHER: true, ARC: true };
     this.weapon = 'FLAMER';
     this.pendingWeapon = null;
 
@@ -974,6 +1006,8 @@ export class Player {
     /* and neither does a seeker, for the same reason: its question is
        "is the trigger down", and the answer is a search, not a frame */
     if (this.def.seeker) { this.launcherTic(input); return; }
+    /* and nor does the arc maw: its question is how long, like the lance's */
+    if (this.def.arc) { this.arcTic(input); return; }
     if (this.firing) {
       const d = this.def;
       /* a stream pours every tic the trigger is down, not once a frame */
@@ -1162,6 +1196,50 @@ export class Player {
     if (this.pendingWeapon && this.fireIndex < 0) { this.weapon = this.pendingWeapon; this.pendingWeapon = null; }
   }
 
+  /* ------------------------------------------------------------------
+     THE ARC MAW, which is a trigger held and a trigger let go
+
+       down     the charge climbs, from nothing to full over ARC.chargeTics,
+                and stays full for as long as you hold it
+       up       the discharge: js/arc.js strikes hitsFor(charge) bodies,
+                one for a tap and nine at the top
+
+     An empty capacitor clicks, once a press. The weapon only changes
+     hands with no charge in it — a swap would take the ball with it.
+     ------------------------------------------------------------------ */
+  arcTic(input) {
+    const snd = this.game.sound;
+    if (this.fireIndex >= 0 && --this.fireTics <= 0) this.fireIndex = -1;
+    if (input.attack) {
+      if (!this.arcCharging && (this.ammo.volts | 0) <= 0) {
+        if (!this._clicked) { this._clicked = true; snd?.play('noammo', this); }
+        return;
+      }
+      if (!this.arcCharging) { this.arcCharging = true; this.arcCharge = 0; }
+      const was = this.arcCharge;
+      this.arcCharge = Math.min(1, this.arcCharge + 1 / ARC.chargeTics);
+      /* THE HUM CLIMBS: struck again every few tics, a step higher each
+         third of the way, and one last note as it tops out */
+      const step = this.arcCharge < 0.34 ? 'arccharge1' : this.arcCharge < 0.67 ? 'arccharge2' : 'arccharge3';
+      if (was < 1 && this.arcCharge >= 1) snd?.play('arcfull', this);
+      else if (this.game.tics % 9 === 0) snd?.play(step, this);
+      return;
+    }
+    this._clicked = false;
+    if (this.arcCharging) {
+      this.arcCharging = false;
+      const charge = this.arcCharge;
+      this.arcCharge = 0;
+      this.ammo.volts = Math.max(0, (this.ammo.volts | 0) - 1);
+      if (this.ammo.volts <= 0) this.voltDry = true;
+      this.shotsFired++;
+      this.fireIndex = 1; this.fireTics = 5;
+      this.game.arc?.fire(this, charge);
+      return;
+    }
+    if (this.pendingWeapon && this.fireIndex < 0) { this.weapon = this.pendingWeapon; this.pendingWeapon = null; }
+  }
+
   /** One cell, one line drawn through the map. The stage decides how
    *  wide and for how long; js/beam.js decides everything else. */
   fireBeam(stage) {
@@ -1328,8 +1406,8 @@ export class Player {
        in the game has to know the mode exists. */
     if (this.debug) {
       for (const kind of Object.keys(this.maxAmmo)) this.ammo[kind] = this.maxAmmo[kind];
-      this.dry = false; this.co2Dry = false; this.beltDry = false; this.cellDry = false; this.rocketDry = false;
-      this.regenTick = 0; this.co2Tick = 0; this.beltTick = 0; this.cellTick = 0; this.rocketTick = 0;
+      this.dry = false; this.co2Dry = false; this.beltDry = false; this.cellDry = false; this.rocketDry = false; this.voltDry = false;
+      this.regenTick = 0; this.co2Tick = 0; this.beltTick = 0; this.cellTick = 0; this.rocketTick = 0; this.voltTick = 0;
       /* AND THE LANCE NEEDS NOTHING SAID ABOUT IT HERE ANY MORE. It
          used to: the coil's real limit was temperature rather than
          ammunition, so a switch that only refilled tanks left the one
@@ -1350,6 +1428,8 @@ export class Player {
     this._refill('cells', CELL_REGEN_EVERY, 1 / CELLS, 'cellTick', 'cellDry');
     /* and the launcher's four tubes, one at a time — see ROCKETS */
     this._refill('rockets', ROCKET_REGEN_EVERY, 0, 'rocketTick', 'rocketDry');
+    /* and the arc maw's capacitor, a discharge at a time — see VOLTS */
+    this._refill('volts', VOLT_REGEN_EVERY, 0, 'voltTick', 'voltDry');
   }
 
   /** One tank, one tic. Both fill on the same terms and differ only in

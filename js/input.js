@@ -42,7 +42,7 @@ const KEYMAP = {
   Space: 'jump', KeyF: 'use',
   ControlLeft: 'attack', ControlRight: 'attack',
   Digit1: 'weapon1', Digit2: 'weapon2', Digit3: 'weapon3', Digit4: 'weapon4',
-  Digit5: 'weapon5', Digit6: 'weapon6',
+  Digit5: 'weapon5', Digit6: 'weapon6', Digit7: 'weapon7',
   /* ZOOM, which the game had no use for until the lance arrived with a
      screen on it: a press steps the magnification round — see ZOOMS in
      js/scope.js. The right mouse button is where every game since Halo
@@ -263,6 +263,7 @@ export class Input {
     if (this.pressed('weapon4')) this.weaponSlot = 4;
     if (this.pressed('weapon5')) this.weaponSlot = 5;
     if (this.pressed('weapon6')) this.weaponSlot = 6;
+    if (this.pressed('weapon7')) this.weaponSlot = 7;
     if (this.touch.weapon) { this.weaponSlot = this.touch.weapon; this.touch.weapon = 0; }
     this.weaponCycle = this.wheel; this.wheel = 0;
     if (this.touch.cycle) { this.weaponCycle = this.touch.cycle; this.touch.cycle = 0; }

@@ -49,6 +49,7 @@ import { Standees } from './standees.js';
 import { Vehicles } from './vehicles.js';
 import { BoreSystem } from './bore.js';
 import { MissileSystem } from './missiles.js';
+import { ArcSystem } from './arc.js';
 import { Weather, climate, CLEAR_FAR } from './weather.js';
 import { Rain } from './rain.js';
 
@@ -232,6 +233,8 @@ export class Game {
     this.bore = new BoreSystem(this);
     /* and the quad launcher's seeker and its missiles, on the same terms */
     this.missiles = new MissileSystem(this);
+    /* and the arc maw's lightning — see js/arc.js */
+    this.arc = new ArcSystem(this);
   }
 
   get burnPercent() { return this.fire ? this.fire.burnFraction * 100 : 0; }
@@ -473,6 +476,8 @@ export class Game {
     /* and the missiles, for the same reason: a lock on somebody who died
        this tic is a lock on nobody */
     this.missiles.tic();
+    /* and the lightning, which strikes a hop a tic */
+    this.arc.tic();
     this.ticProjectiles();
     this.ticDoors();
     for (let i = 0; i < this.slideDoors.length; i++) this.slideDoors[i].tic();
@@ -1377,7 +1382,7 @@ export class Game {
     /* AND A MISSILE GOING OFF NEAR YOU SHAKES IT TOO, on the same four
        sines: the harder of the two, not their sum, so a blast under a
        discharge is still one shudder. See MissileSystem.detonate. */
-    const shake = Math.max(this.beam ? this.beam.shake : 0, this.missiles ? this.missiles.shake : 0);
+    const shake = Math.max(this.beam ? this.beam.shake : 0, this.missiles ? this.missiles.shake : 0, this.arc ? this.arc.shake : 0);
     if (shake > 0.001) {
       const t = now * 0.001;
       const k = shake * shake;
@@ -1474,6 +1479,7 @@ export class Game {
     this.renderProjectiles(billboardRot);
     this.bore.render(billboardRot);
     this.missiles.render(billboardRot, ex, ey);
+    this.arc.render(billboardRot, ex, ey, ez);
 
     /* the red mist of being nearly dead */
     const hurt = clamp(1 - p.health / 100, 0, 1);
