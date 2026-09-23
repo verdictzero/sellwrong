@@ -193,6 +193,21 @@ export const world = {
   burnCols:   { value: 1.0 },
   burnRows:   { value: 1.0 },
   emberRamp: { value: EMBER_RAMP.map(c => new THREE.Vector3(c[0], c[1], c[2])) },
+
+  /* THE THERMAL SIGHT'S SWITCH. Nought for every frame anybody looks
+     at, and one for exactly one render call a frame: the feed
+     js/thermal.js draws for the screen on the side of the quad
+     launcher, during which every surface that shades through this file
+     answers HOW WARM IT IS instead of what colour it is — the one
+     number, in all three channels — and the screen turns that number
+     into a palette. See thermalOf, and the THERMAL block at the bottom
+     of COMMON_FRAG.
+
+     A UNIFORM AND NOT A SECOND SET OF MATERIALS, for the reason every
+     uniform in this object is shared: it is the same scene, the same
+     culling and the same draw calls as the frame, so the scope can
+     only ever show what is there, and nothing has to be kept in step. */
+  thermal: { value: 0.0 },
 };
 
 /* THE COLOUR OF A STREET LAMP'S LIGHT, in one place. Mercury vapour: a
@@ -238,6 +253,7 @@ uniform vec2  burnOrigin;
 uniform float burnCell;
 uniform float burnCols;
 uniform float burnRows;
+uniform float thermal;
 `;
 
 /* The two halves of the lighting, as functions.
@@ -531,7 +547,40 @@ float worldBand(float lightIn, float depth, float sky, float fullbright) {
   return mix(l, 1.0, fullbright);
 }
 
+/* ---------------------------------------------------------------------
+   HOW WARM A SURFACE IS, for the thermal sight — see world.thermal
+
+   A NIGHT IN ONE NARROW BAND. Everything that is not a source sits low
+   and close together: a little warmer for darker paint (it held more of
+   the day), a little for the light that is falling on it (a lamp is a
+   heater as well), so a street still reads as a street and the eye goes
+   straight past it to whatever is not in the band. The fire and the
+   beam warm what is near them on the same falloff they light it by;
+   anything that is its own light — the fire, a lamp, a flare — is the
+   hottest thing there is; and the air takes the far distance down to
+   the cold of the sky, which is how a real sensor loses contrast with
+   range. No smoke: seeing through smoke is what a thermal sight is for.
+   ------------------------------------------------------------------- */
+float thermalOf(vec3 albedo, float l, float depth, vec3 world, float fullbright) {
+  float lum = dot(albedo, vec3(0.2126, 0.7152, 0.0722));
+  float h = 0.13 + 0.07 * (1.0 - lum) + 0.09 * lum * lum + 0.06 * clamp(l, 0.0, 1.0);
+  if (fireLight > 0.0) {
+    float fa = clamp(1.0 - distance(world, fireLightPos) / fireLightRange, 0.0, 1.0);
+    h += fa * fa * fireLight * 0.45;
+  }
+  if (beam > 0.0) {
+    vec3 rel = world - beamPos;
+    float along = clamp(dot(rel, beamDir), 0.0, beamLen);
+    float ba = clamp(1.0 - distance(rel, beamDir * along) / beamRange, 0.0, 1.0);
+    h += ba * ba * beam * 0.5;
+  }
+  h = mix(h, 1.0, fullbright);
+  float at = clamp((depth - airNear) / max(1.0, airFar - airNear), 0.0, 1.0);
+  return mix(h, 0.06, at * at * 0.85);
+}
+
 vec3 worldShade(vec3 albedo, float l, float depth, vec3 world, float fullbright) {
+  if (thermal > 0.5) return vec3(thermalOf(albedo, l, depth, world, fullbright));
   vec3 c = albedo * l * tint;
 
   /* Firelight, added on top of the banded light rather than folded into
@@ -762,6 +811,15 @@ const vec3 LAMP_LIGHT = vec3(${LAMP_LIGHT.map(v => v.toFixed(3)).join(', ')});
 
 #ifdef INK
   varying vec4 vInk;
+  /* HOW WARM THIS VEHICLE IS, for the thermal sight only: its engine
+     running, per material, set by js/thermal.js on the frames it draws */
+  uniform float warmth;
+#endif
+#ifdef INSTANCED_SPRITE
+  /* and whether this picture is a BODY — a person, not a trolley. One
+     batch is one picture, and a picture is one kind of thing, so this
+     is per batch; js/standees.js sets it from the actor */
+  uniform float warm;
 #endif
 
 #ifdef FROST
@@ -1063,6 +1121,49 @@ void main() {
     c += emberOf(max(vChar, smoothstep(0.06, 0.92, burn)), vWorld,
                  dot(albedo, vec3(0.2126, 0.7152, 0.0722)), vDepth);
   #endif
+  /* ------------------------------------------------------------------
+     THE THERMAL SIGHT, and nothing here runs on a frame anybody sees.
+
+     worldShade has already said how warm the SURFACE is, in c; what it
+     cannot know is what kind of thing this is, and that is the whole of
+     a thermal picture. A PERSON is warm whatever colour their coat is —
+     the drawing's own light and dark only give the figure its shape,
+     skin a shade over cloth — and a frozen one is the coldest thing in
+     the picture, which is the extinguisher's joke played on the seeker
+     (js/missiles.js will not lock a block of ice either). Somebody on
+     fire is white. A vehicle is as warm as its engine says. Smoke is
+     all but gone. The coals and the flames already added above stay
+     added, because they are hot.
+     ------------------------------------------------------------------ */
+  if (thermal > 0.5) {
+    float h = c.r;
+    #ifdef INSTANCED_SPRITE
+      if (warm > 0.5 && fullbright < 0.5) {
+        float lum = dot(t.rgb, vec3(0.30, 0.59, 0.11));
+        float body = mix(0.66, 0.86, lum);
+        float at = clamp((vDepth - airNear) / max(1.0, airFar - airNear), 0.0, 1.0);
+        h = mix(body, 0.06, at * at * 0.85);
+      }
+    #endif
+    #ifdef FROST
+      h = mix(h, 0.02, clamp(frost, 0.0, 1.0));
+      h = max(h, max(alight, ash));
+    #endif
+    #ifdef INK
+      /* the engine, with the paint giving the body its shape the way a
+         person's drawing does */
+      h = max(h, warmth * (0.64 + 0.14 * dot(t.rgb, vec3(0.30, 0.59, 0.11))));
+    #endif
+    h += dot(glowAdd, vec3(0.30, 0.59, 0.11));
+    #ifdef SEE_THROUGH
+      /* smoke, drawn over the scene rather than in it, which a thermal
+         sensor sees straight through */
+      gl_FragColor = vec4(vec3(h), t.a * 0.12);
+    #else
+      gl_FragColor = vec4(vec3(h), t.a);
+    #endif
+    return;
+  }
   gl_FragColor = vec4(c + glowAdd, t.a);
 }
 `;
@@ -1106,6 +1207,8 @@ export function worldUniforms() {
     burnCell:     world.burnCell,
     burnCols:     world.burnCols,
     burnRows:     world.burnRows,
+    /* and the thermal sight's switch — see world.thermal */
+    thermal:      world.thermal,
   };
 }
 
@@ -1123,8 +1226,11 @@ function baseUniforms(texture, opts) {
    `ink` adds the vehicles' second material to the same draw call, in the
    vertices — the walls never ask for it. */
 export function createWallMaterial(texture, opts = {}) {
+  const u = baseUniforms(texture, opts);
+  /* a vehicle's engine, for the thermal sight — see `warmth` above */
+  if (opts.ink) u.warmth = { value: 0.0 };
   return new THREE.ShaderMaterial({
-    uniforms: baseUniforms(texture, opts),
+    uniforms: u,
     defines: { PER_VERTEX_LIGHT: '', SURFACE_BURN: '', ...(opts.ink ? { INK: '' } : {}) },
     vertexShader: COMMON_VERT,
     fragmentShader: COMMON_FRAG,
@@ -1169,7 +1275,9 @@ export function createSpriteMaterial(texture, opts = {}) {
      against a pane of glass the first one left behind. */
   return new THREE.ShaderMaterial({
     uniforms: u,
-    defines: { BILLBOARD: '', FROST: '' },
+    /* an 'alpha' sprite is smoke, and smoke is the one thing the thermal
+       sight looks through — see SEE_THROUGH */
+    defines: { BILLBOARD: '', FROST: '', ...(blend === 'alpha' ? { SEE_THROUGH: '' } : {}) },
     vertexShader: COMMON_VERT,
     fragmentShader: COMMON_FRAG,
     transparent: blend !== 'cutout' ? true : !!opts.transparent,
@@ -1200,6 +1308,8 @@ export function createStandeeMaterial(texture) {
   u.light = { value: 1.0 };
   u.sky = { value: 0.0 };
   u.charred = { value: 0.0 };
+  /* whether this picture is a body, for the thermal sight — see `warm` */
+  u.warm = { value: 0.0 };
   return new THREE.ShaderMaterial({
     uniforms: u,
     defines: { INSTANCED_SPRITE: '', FROST: '' },

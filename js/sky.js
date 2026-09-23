@@ -58,9 +58,18 @@ const FRAG = /* glsl */`
 uniform sampler2D map;
 uniform vec3  smokeColor;
 uniform float smokeDensity;
+uniform float thermal;
 varying vec2 vUv;
 void main() {
   vec3 c = texture2D(map, vUv).rgb;
+  /* THROUGH THE THERMAL SIGHT the sky is the coldest thing there is —
+     a clear night sky is, to a sensor, a hole into space — with the
+     cloud a shade warmer than the gaps in it, and no smoke, which the
+     sight sees through. See world.thermal in js/material.js. */
+  if (thermal > 0.5) {
+    gl_FragColor = vec4(vec3(0.015 + 0.05 * dot(c, vec3(0.30, 0.59, 0.11))), 1.0);
+    return;
+  }
   /* the same smoke a wall gets at the far end of its ramp, at the
      lowest light the wall's smoke can be lit to — see worldShade */
   c = mix(c, smokeColor * 0.7, smokeDensity);
@@ -98,7 +107,8 @@ export function buildSky(src) {
      not a fix. */
   const g = new THREE.SphereGeometry(RADIUS, 48, 24);
   const mat = new THREE.ShaderMaterial({
-    uniforms: { map: { value: tex }, smokeColor: world.smokeColor, smokeDensity: world.smokeDensity },
+    uniforms: { map: { value: tex }, smokeColor: world.smokeColor, smokeDensity: world.smokeDensity,
+                thermal: world.thermal },
     vertexShader: VERT, fragmentShader: FRAG,
     side: THREE.BackSide, depthWrite: false, depthTest: false, fog: false, toneMapped: false,
   });

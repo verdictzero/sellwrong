@@ -183,6 +183,16 @@ const DEFS = {
   borefire:  { kind: 'sweep', dur: 0.35, f0: 300,  f1: 1400, gain: 0.34, wave: 'sawtooth' },
   borefly:   { kind: 'sweep', dur: 0.20, f0: 1100, f1: 1300, gain: 0.12, wave: 'sawtooth' },
   bore:      { kind: 'sweep', dur: 0.24, f0: 700,  f1: 1900, gain: 0.30, wave: 'sawtooth' },
+  /* THE QUAD LAUNCHER: the seeker finding heat (a low growl), each lock
+     taken (a pip), the last of the four (a higher, longer one), and a
+     missile leaving its tube. Synthesised, so they go quiet with the
+     rest of this table while MUTED is on; a recording of the user's
+     under the same name in SAMPLE_FOR would take over, as the minigun's
+     and the lance's did. */
+  seek:      { kind: 'sweep', dur: 0.12, f0: 420,  f1: 380,  gain: 0.14, wave: 'square' },
+  lockon:    { kind: 'sweep', dur: 0.08, f0: 1760, f1: 1760, gain: 0.22, wave: 'square' },
+  lockfull:  { kind: 'sweep', dur: 0.30, f0: 2200, f1: 2200, gain: 0.24, wave: 'square' },
+  missile:   { kind: 'hiss',  dur: 0.55, f0: 2600, f1: 500,  gain: 0.42 },
   clang:     { kind: 'thud',  dur: 0.12, f0: 900,  f1: 300,  gain: 0.30 },
   /* THE MINIGUN: a round is the rifle's crack cut short, and the audio
      layer's own rate limit turns a hundred and forty of them a second

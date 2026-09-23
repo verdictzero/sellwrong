@@ -100,12 +100,21 @@ export function parseGLB(arrayBuffer) {
   return { json, bin };
 }
 
-/** One accessor as a tightly packed typed array plus its item size. */
+/** One accessor as a tightly packed typed array plus its item size, and
+ *  whether its integers stand for 0..1 — see `normalized` below. */
 export function readAccessor(json, bin, index) {
   const a = json.accessors[index];
   if (a.sparse) throw new Error('sparse accessors are not supported');
   const T = COMPONENT[a.componentType], n = ITEMS[a.type];
   if (!T || !n) throw new Error(`accessor ${index}: unsupported ${a.componentType} ${a.type}`);
+  /* A NORMALISED ACCESSOR IS A FRACTION WRITTEN AS AN INTEGER: bytes of
+     vertex colour mean 0..255 over 255, and read as plain integers they
+     are a colour two hundred and fifty times too bright. Nothing in the
+     game shipped one until the quad launcher, whose paint is in its
+     vertices (see tools/decimate-model.mjs), so the flag was never read
+     and a model carrying it came out white. It goes to the attribute,
+     which is where three does the dividing. */
+  const normalized = !!a.normalized;
   const bv = json.bufferViews[a.bufferView];
   const start = bin.byteOffset + (bv.byteOffset || 0) + (a.byteOffset || 0);
   const stride = bv.byteStride || 0;
@@ -113,7 +122,7 @@ export function readAccessor(json, bin, index) {
   if (!stride || stride === elem) {
     /* Aligned copies only: a typed array view needs its offset to be a
        multiple of the element size, which a GLB does not promise. */
-    return { array: new T(bin.buffer.slice(start, start + a.count * elem)), itemSize: n };
+    return { array: new T(bin.buffer.slice(start, start + a.count * elem)), itemSize: n, normalized };
   }
   const out = new T(a.count * n);
   const src = new DataView(bin.buffer);
@@ -121,7 +130,7 @@ export function readAccessor(json, bin, index) {
   for (let i = 0; i < a.count; i++)
     for (let k = 0; k < n; k++)
       out[i * n + k] = src[get](start + i * stride + k * T.BYTES_PER_ELEMENT, true);
-  return { array: out, itemSize: n };
+  return { array: out, itemSize: n, normalized };
 }
 
 /**
@@ -193,8 +202,8 @@ export async function loadGLB(url, opts = {}) {
     for (const [attr, acc] of Object.entries(p.attributes)) {
       const name = names[attr];
       if (!name) continue;
-      const { array, itemSize } = readAccessor(json, bin, acc);
-      g.setAttribute(name, new THREE.BufferAttribute(array, itemSize));
+      const { array, itemSize, normalized } = readAccessor(json, bin, acc);
+      g.setAttribute(name, new THREE.BufferAttribute(array, itemSize, normalized));
     }
     if (p.indices !== undefined) g.setIndex(new THREE.BufferAttribute(readAccessor(json, bin, p.indices).array, 1));
     if (!g.getAttribute('normal')) g.computeVertexNormals();

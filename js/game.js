@@ -48,6 +48,7 @@ import { StreetLights } from './lamplight.js';
 import { Standees } from './standees.js';
 import { Vehicles } from './vehicles.js';
 import { BoreSystem } from './bore.js';
+import { MissileSystem } from './missiles.js';
 import { Weather, climate, CLEAR_FAR } from './weather.js';
 import { Rain } from './rain.js';
 
@@ -229,6 +230,8 @@ export class Game {
     /* and the cerebral bore: its sight, its lock and what it fires —
        after the quad above, which it draws with */
     this.bore = new BoreSystem(this);
+    /* and the quad launcher's seeker and its missiles, on the same terms */
+    this.missiles = new MissileSystem(this);
   }
 
   get burnPercent() { return this.fire ? this.fire.burnFraction * 100 : 0; }
@@ -467,6 +470,9 @@ export class Game {
        they happen — a drill whose head has just burst is spent now, not
        a tic later */
     this.bore.tic();
+    /* and the missiles, for the same reason: a lock on somebody who died
+       this tic is a lock on nobody */
+    this.missiles.tic();
     this.ticProjectiles();
     this.ticDoors();
     for (let i = 0; i < this.slideDoors.length; i++) this.slideDoors[i].tic();
@@ -1368,7 +1374,10 @@ export class Game {
        It is added to the eye and NOT to the player: p.angle is
        untouched, so the shake does not walk your aim off the street you
        picked. See js/beam.js for how hard it is shaking. */
-    const shake = this.beam ? this.beam.shake : 0;
+    /* AND A MISSILE GOING OFF NEAR YOU SHAKES IT TOO, on the same four
+       sines: the harder of the two, not their sum, so a blast under a
+       discharge is still one shudder. See MissileSystem.detonate. */
+    const shake = Math.max(this.beam ? this.beam.shake : 0, this.missiles ? this.missiles.shake : 0);
     if (shake > 0.001) {
       const t = now * 0.001;
       const k = shake * shake;
@@ -1464,6 +1473,7 @@ export class Game {
     this.streetLights.render(ex, ey, ez, vx, vy);
     this.renderProjectiles(billboardRot);
     this.bore.render(billboardRot);
+    this.missiles.render(billboardRot);
 
     /* the red mist of being nearly dead */
     const hurt = clamp(1 - p.health / 100, 0, 1);

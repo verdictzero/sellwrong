@@ -3518,8 +3518,8 @@ section('the cold');
     const fs3 = await import('node:fs');
     note('the guns', Object.entries(w3.GUNS).map(([k, d]) =>
       `${k} ${d.url.split('/').pop()}${d.fit ? ' (fitted)' : ''}`).join(', '));
-    check('there are five guns and all five files are there',
-      Object.keys(w3.GUNS).length === 5 &&
+    check('there are six guns and all six files are there',
+      Object.keys(w3.GUNS).length === 6 &&
       Object.values(w3.GUNS).every(d => fs3.existsSync(d.url)));
     const E = w3.GUNS.EXTINGUISHER;
     /* THE MODEL IS SOMEBODY ELSE'S AND IS NOT REWRITTEN, which is the
@@ -3542,7 +3542,7 @@ section('the cold');
        model again, with a marker cylinder in it for the emission point,
        so its nozzle is null here — the file says — and the reader that
        was kept for exactly that day reads it. */
-    check('all five guns are fitted to the game\'s length, and four say where they point',
+    check('all six guns are fitted to the game\'s length, and five say where they point',
       Object.values(w3.GUNS).every(d => d.fit) &&
       Object.entries(w3.GUNS).every(([k, d]) => k === 'MINIGUN' ? d.nozzle === null : Array.isArray(d.nozzle) && d.nozzle.length === 3));
     check('and the flamethrower is the only one with a pilot light, being the only one that burns',
@@ -5126,7 +5126,7 @@ section('the lance');
 
   /* ---- the shake, the particles and the light ----------------------- */
   check('the beam shakes the eye and not the player, so it does not walk your aim off',
-    /const shake = this\.beam \? this\.beam\.shake : 0;/.test(fs.readFileSync('js/game.js', 'utf8')) &&
+    /const shake = Math\.max\(this\.beam \? this\.beam\.shake : 0,/.test(fs.readFileSync('js/game.js', 'utf8')) &&
     /yaw   \+= k \* \(0\.022/.test(fs.readFileSync('js/game.js', 'utf8')));
   check('and it is a kick and not a rumble: nearly all of it gone inside a quarter second',
     B.SHAKE_PEAK > B.SHAKE_HUM && B.SHAKE_HUM > 0 && B.SHAKE_SETTLE > 0 &&
@@ -5163,7 +5163,7 @@ section('the lance');
     /if \(!this\.renderer \|\| !this\.held\) return false;/.test(scopeSrc));
   check('the panel\'s picture is laid out on its own box, measured off the geometry',
     /setPanelBox\(min, size\)/.test(scopeSrc) &&
-    /this\.scope\.setPanelBox\(lo, \[hi\[0\] - lo\[0\], hi\[1\] - lo\[1\]\]\)/.test(fs.readFileSync('js/weapon3d.js', 'utf8')));
+    /scope\.setPanelBox\(lo, \[hi\[0\] - lo\[0\], hi\[1\] - lo\[1\]\]\)/.test(fs.readFileSync('js/weapon3d.js', 'utf8')));
   check('and u is flipped, because the model is turned half a circle about y',
     /vec2 uv = vec2\(1\.0 - \(vL\.x - box\.x\) \* box\.z, \(vL\.y - box\.y\) \* box\.w\);/.test(scopeSrc));
   check('no smoothstep on that screen runs its edges backwards, which GLSL leaves undefined',
@@ -5231,7 +5231,7 @@ section('the lance');
     S.ZOOMS[S.ZOOMS.length - 1] >= 2 && S.ZOOMS[S.ZOOMS.length - 1] <= 5 &&
     S.VIEW_ZOOM[S.VIEW_ZOOM.length - 1] > 0.5 && S.VIEW_ZOOM[S.VIEW_ZOOM.length - 1] < 1);
   check('and the look slows by exactly what the view narrowed by',
-    /input\.zoomScale = lance \? scope\.viewScale : 1;/.test(mainSrc) &&
+    /input\.zoomScale = sighted \? sighted\.viewScale : 1;/.test(mainSrc) &&
     /this\.look = \{ x: lx \* zs, y: ly \* zs \};/.test(fs.readFileSync('js/input.js', 'utf8')));
   check('the screen shares nothing with the palette, being a screen and not a painting',
     !/palette\.js/.test((scopeSrc.match(/^import .*$/gm) || []).join('\n')));
@@ -5356,11 +5356,13 @@ section('the lance, second pass');
   check('what the zoom actually does is raise the weapon to the eye',
     S.AIM_AT[0] === 0 && S.AIM_AT[S.AIM_AT.length - 1] === 1 &&
     S.AIM_AT.length === S.ZOOMS.length && /get aim\(\)/.test(scopeSrc2));
-  check('the lance is the only gun with a second hold, having the only thing worth looking at',
-    !!w3.GUNS.LANCE.aim && Object.values(w3.GUNS).filter(d => d.aim).length === 1 &&
-    Array.isArray(w3.GUNS.LANCE.aim.pos) && Array.isArray(w3.GUNS.LANCE.aim.rot));
-  check('and it is a nearer hold than the hip one, since you have brought it to you',
-    w3.GUNS.LANCE.aim.out < w3.GUNS.LANCE.out);
+  /* TWO GUNS HAVE A SECOND HOLD NOW, and they are the two with a screen
+     on them: the lance's panel and the launcher's thermal sight. */
+  check('the lance and the launcher are the guns with a second hold, having the only screens worth looking at',
+    ['LANCE', 'LAUNCHER'].every(k => !!w3.GUNS[k].aim && Array.isArray(w3.GUNS[k].aim.pos) && Array.isArray(w3.GUNS[k].aim.rot)) &&
+    Object.values(w3.GUNS).filter(d => d.aim).length === 2);
+  check('and each is a nearer hold than the hip one, since you have brought it to you',
+    w3.GUNS.LANCE.aim.out < w3.GUNS.LANCE.out && w3.GUNS.LAUNCHER.aim.out < w3.GUNS.LAUNCHER.out);
   check('the gun chases the hold rather than snapping to it',
     /this\.aim \+= \(wantAim - this\.aim\) \* \(1 - Math\.pow\(0\.0015, dt\)\);/.test(gunSrc2));
   check('and the bob and the sway go away with it, since a braced weapon does not swing',
@@ -9046,9 +9048,10 @@ section('the minigun, the jump and the van');
   check('the minigun is the fourth weapon, a volley off a belt, and issued',
     !!d && d.slot === 4 && d.volley === true && d.ammo === 'rounds' && d.autofire === true &&
     /* AND THE MOLOTOV MOVED DOWN ONE to make room for the lance, which
-       is the fifth: the molotov is still switched off and still built,
-       and its slot is still one past the last thing you can hold. */
-    pl.WEAPONS.LANCE.slot === 5 && pl.WEAPONS.MOLOTOV.slot === 6 &&
+       is the fifth, and again for the launcher, which is the sixth: the
+       molotov is still switched off and still built, and its slot is
+       still one past the last thing you can hold. */
+    pl.WEAPONS.LANCE.slot === 5 && pl.WEAPONS.LAUNCHER.slot === 6 && pl.WEAPONS.MOLOTOV.slot === 7 &&
     new (class extends pl.Player { constructor() { super({ level: level, sectorAt: () => null }, 0, 0, 0); } })().owned.MINIGUN === true);
   note('the belt', `${pl.BELT} rounds at ${pl.BELT_PER_TIC} a tic: ${(pl.BELT / pl.BELT_PER_TIC / 35).toFixed(0)} seconds, ` +
     `back in ${(pl.BELT * pl.BELT_REGEN_EVERY / 35).toFixed(0)}; ${d.rounds} a tic of ${d.damage()}-ish`);
@@ -10204,6 +10207,220 @@ section('the gunship');
     check('and it lies there afterwards, smouldering, without anything falling over',
       ship.state === 'wreck' && ship.smoulder > 0 && gg.actors.length > 0);
   }
+}
+
+/* ---------- the quad launcher ---------- */
+section('the quad launcher');
+{
+  const fs = await import('node:fs');
+  const { parseGLB, readAccessor } = await import('../js/glb.js');
+  const w3 = await import('../js/weapon3d.js');
+  const pl = await import('../js/player.js');
+  const MS = await import('../js/missiles.js');
+  const TH = await import('../js/thermal.js');
+  const MAT = await import('../js/material.js');
+  const { Game } = await import('../js/game.js');
+  const MAPM = await import('../js/maps/sellwrong.js');
+  const THREEM = await import('three');
+  const L = w3.GUNS.LAUNCHER;
+
+  /* ---- THE MODEL, AS IT SHIPS ----------------------------------------
+     A Nomad sculpt of four hundred and sixty thousand triangles and
+     fourteen megabytes, decimated by tools/decimate-model.mjs. What is
+     checked is what the game depends on: that it is small, that its
+     paint came through as a normalised colour the loader honours, and
+     that the surface is still one closed skin — a decimator that tore
+     it would show daylight through the box. */
+  const file = fs.readFileSync(L.url);
+  const { json, bin } = parseGLB(file.buffer.slice(file.byteOffset, file.byteOffset + file.length));
+  const prims = json.meshes.flatMap(m => m.primitives);
+  const tris = prims.reduce((n, p) => n + json.accessors[p.indices].count / 3, 0);
+  note('the launcher', `${(file.length / 1024).toFixed(0)}K, ${tris} triangles from ${json.asset.extras?.decimated?.from}`);
+  check('the launcher ships as a model of under a megabyte, from a sculpt nearly twelve times the triangles',
+    file.length < 1024 * 1024 && tris <= 50000 && (json.asset.extras?.decimated?.from || 0) >= 11 * tris);
+  const pr = prims[0];
+  const col = json.accessors[pr.attributes.COLOR_0];
+  check('its paint is in its vertices, as normalised bytes, and there is no texture at all',
+    prims.length === 1 && col && col.componentType === 5121 && col.normalized === true &&
+    !json.images?.length && !json.textures?.length && pr.attributes.NORMAL !== undefined && L.paint === 'vertex');
+  check('and the loader hands the normalised flag to the attribute, or the paint comes out white',
+    readAccessor(json, bin, pr.attributes.COLOR_0).normalized === true &&
+    readAccessor(json, bin, pr.attributes.POSITION).normalized === false);
+  {
+    const idx = readAccessor(json, bin, pr.indices).array;
+    const V = json.accessors[pr.attributes.POSITION].count;
+    const edges = new Map();
+    for (let f = 0; f < idx.length; f += 3)
+      for (const [a, b] of [[idx[f], idx[f + 1]], [idx[f + 1], idx[f + 2]], [idx[f + 2], idx[f]]]) {
+        const k = a < b ? a * V + b : b * V + a;
+        edges.set(k, (edges.get(k) || 0) + 1);
+      }
+    let open = 0;
+    for (const n of edges.values()) if (n !== 2) open++;
+    check('and the decimated surface is still closed: every edge between exactly two faces', open === 0, `${open} edges`);
+  }
+  check('the decimator needs nothing but node, like every other tool here',
+    (fs.readFileSync('tools/decimate-model.mjs', 'utf8').match(/^import .* from '([^']+)'/gm) || [])
+      .every(l => /'node:/.test(l)));
+
+  /* ---- WHERE ITS PARTS ARE, in the model's own units ----------------- */
+  const P = readAccessor(json, bin, pr.attributes.POSITION).array;
+  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < P.length; i += 3) for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], P[i + k]); hi[k] = Math.max(hi[k], P[i + k]); }
+  check('four tubes, each on the front face of the box and inside it',
+    L.tubes.length === 4 && L.tubes.every(t => t[0] > lo[0] && t[0] < hi[0] && t[1] > lo[1] && t[1] < hi[1] && Math.abs(t[2] - hi[2]) < 0.02));
+  /* THE SCREEN GOES ON THE FLAT BACK OF THE SIGHT: the model's own face
+     a hair behind it, and nothing of the model between it and the eye.
+     A flat face decimates to a handful of vertices, so the first half
+     asks for a few, not many; the second half is the one that matters,
+     since a screen with metal in front of it is a screen you cannot see. */
+  {
+    const [x0, y0, x1, y1, z] = L.screen.at;
+    let face = 0, front = 0;
+    for (let i = 0; i < P.length; i += 3) {
+      if (P[i] < x0 || P[i] > x1 || P[i + 1] < y0 || P[i + 1] > y1) continue;
+      if (P[i + 2] > z && P[i + 2] - z < 0.006) face++;
+      if (P[i + 2] < z) front++;
+    }
+    check('the thermal screen is built on the flat back of the sight, with nothing between it and the eye',
+      x1 > x0 && y1 > y0 && face >= 3 && front === 0 && x0 > 0.7 && !L.display, `${face} on the face, ${front} in front`);
+    check('and its picture is the shape of its glass, so nothing is stretched',
+      Math.abs((x1 - x0) / (y1 - y0) / TH.THERMAL_ASPECT - 1) < 0.03);
+  }
+  check('put to the eye, it is turned square on: the aim cancels the hold\'s own cant',
+    Math.abs(w3.VIEW.pitch + L.aim.rot[0]) < 1e-9 && Math.abs(w3.VIEW.yaw + L.aim.rot[1]) < 1e-9 &&
+    Math.abs(w3.VIEW.roll + L.aim.rot[2]) < 1e-9 && L.aim.out < L.out);
+
+  /* ---- THE WEAPON ----------------------------------------------------- */
+  const inputSrc = fs.readFileSync('js/input.js', 'utf8');
+  const d = pl.WEAPONS.LAUNCHER;
+  check('the launcher is the sixth weapon, on the six key, a seeker off four tubes, and issued',
+    d.slot === 6 && d.seeker === true && d.ammo === 'rockets' && pl.ROCKETS === 4 &&
+    /Digit6: 'weapon6'/.test(inputSrc) && /this\.pressed\('weapon6'\)\) this\.weaponSlot = 6/.test(inputSrc) &&
+    new (class extends pl.Player { constructor() { super({ level: { sectorAt: () => null } }, 0, 0, 0); } })().owned.LAUNCHER === true);
+  {
+    const p = new pl.Player({ level: { sectorAt: () => null } }, 0, 0, 0);
+    p.ammo.rockets = 0;
+    let t = 0;
+    while (p.ammo.rockets < pl.ROCKETS && t < 100 * 35) { p.fuelTic(); t++; }
+    check('and its empty tubes load themselves, one at a time', p.ammo.rockets === pl.ROCKETS &&
+      t === pl.ROCKETS * pl.ROCKET_REGEN_EVERY, `${t} tics`);
+  }
+
+  /* ---- THE SEEKER AND THE SALVO, in the shop -------------------------- */
+  const g = new Game({
+    level: MAPM.buildSellWrong({ town: false }), scene: new THREEM.Scene(), camera: {},
+    textures: tex.bakeTextures(), sprites: spr.bakeSprites(),
+    hud: { message() {}, ticMessages() {} }, audio: null,
+    input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
+             attack: false, use: false, run: false, jump: false, sample() {}, sensitivity: 0 },
+  });
+  const p = g.player, M = g.missiles;
+  p.debug = false;
+  p.weapon = 'LAUNCHER';
+  /* somebody warm, in plain sight, not too near */
+  let target = null, best = Infinity;
+  for (const a of g.actors) {
+    if (!M.isHot(a)) continue;
+    const dd = Math.hypot(a.x - p.x, a.y - p.y);
+    if (dd < 200 || dd > 1200 || dd > best) continue;
+    if (g.level.sightBlocked(p.x, p.y, p.eyeZ, a.x, a.y, a.z + a.height * 0.58)) continue;
+    target = a; best = dd;
+  }
+  const aimAt = t => {
+    const h = M.heatPoint(t);
+    p.angle = Math.atan2(h.y - p.y, h.x - p.x);
+    p.pitch = Math.atan2(h.z - p.eyeZ, Math.hypot(h.x - p.x, h.y - p.y));
+  };
+  note('the seeker\'s target', target ? `${target.type} ${Math.round(best)} away` : 'nobody in sight');
+  if (target) {
+    g.input.attack = true;
+    const first = [];
+    for (let t = 1; t <= MS.SEEKER.first + 3 * MS.SEEKER.next + 4; t++) {
+      aimAt(target); g.tic();
+      if (M.locks.length > first.length) first.push(t);
+    }
+    check('holding the trigger on something warm locks it, and goes on locking, to four',
+      M.locks.length === 4 && first[0] >= MS.SEEKER.first && first[0] <= MS.SEEKER.first + 1 &&
+      first[3] - first[0] <= 3 * MS.SEEKER.next + 3, first.join(','));
+    check('and nothing leaves the tubes while it does', M.fired === 0 && M.shots.length === 0 && p.ammo.rockets === 4);
+    g.input.attack = false;
+    const launched = [];
+    for (let t = 1; t <= 40; t++) { aimAt(target); const was = M.fired; g.tic(); if (M.fired > was) launched.push(t); }
+    check('letting go sends one missile per lock, a tube at a time, a few tics apart',
+      launched.length === 4 && launched.every((t, i) => i === 0 || t - launched[i - 1] === MS.MISSILE.gap + 1) &&
+      p.ammo.rockets === 0, launched.join(','));
+    let n = 0;
+    while (!target.dead && n < 200) { g.tic(); n++; }
+    check('and they find it, and it is dead', target.dead && M.blasts >= 1 && M.hits >= 1, `${n} tics, ${M.hits} direct`);
+  }
+  {
+    /* one straight down the sight with nothing locked */
+    const was = M.fired;
+    p.ammo.rockets = 4;
+    g.input.attack = true; g.tic(); g.tic();
+    g.input.attack = false; g.tic(); g.tic();
+    check('with nothing locked, letting go fires one, unguided', M.fired === was + 1 && M.shots.some(s => !s.target));
+    for (let t = 0; t < 300 && M.shots.length; t++) g.tic();
+  }
+  /* WHAT IS WARM, which the seeker and the screen both ask */
+  {
+    const warm = g.actors.find(a => M.isHot(a));
+    check('a person is warm and a frozen one is not, nor a corpse, nor a parked car, while a gunship is',
+      !!warm && !M.isHot({ ...warm, frozen: true }) && !M.isHot({ ...warm, dead: true }) &&
+      !M.isHot({ bodies: [], cz: 0, whole: true, state: 'parked', burning: 0 }) &&
+      M.isHot({ bodies: [], cz: 0, whole: true, state: 'driving' }) && !M.isHot(null));
+    const ship = { whole: true, cz: 300, bodies: [] };
+    check('and anything flying is warm', new MS.MissileSystem({ gunships: { ships: [ship] } }).isHot(ship));
+  }
+  /* A BLAST, NOT FIRE: the troopers are fireproof and a warhead built on
+     Game.explode would walk straight through them */
+  {
+    const sw = g.spawn('SWAT', p.x + 400, p.y, undefined, {});
+    const h0 = sw.health;
+    M.detonate({ x: sw.x + 60, y: sw.y, z: sw.z + 30 }, null);
+    check('the warhead hurts a trooper, whose kit shrugs off fire', sw.health < h0 || sw.dead, `${h0} -> ${sw.health}`);
+    const src = fs.readFileSync('js/missiles.js', 'utf8');
+    check('because it lands as impact, never as fire', /\{ impact: true \}/.test(src) && !/fire: true/.test(src));
+  }
+
+  /* ---- THE THERMAL SIGHT ---------------------------------------------- */
+  const matSrc = fs.readFileSync('js/material.js', 'utf8');
+  check('the world has a thermal switch, declared, bound, and off',
+    MAT.world.thermal.value === 0 && /uniform float thermal;/.test(MAT.WORLD_UNIFORMS_GLSL) &&
+    MAT.worldUniforms().thermal === MAT.world.thermal && /thermal: world\.thermal/.test(fs.readFileSync('js/sky.js', 'utf8')));
+  check('and every surface that shades through the world answers heat when it is on',
+    /if \(thermal > 0\.5\) return vec3\(thermalOf\(/.test(matSrc) && /if \(thermal > 0\.5\) \{\s*float h = c\.r;/.test(matSrc));
+  {
+    /* ON FOR THE ONE RENDER AND NEVER OTHERWISE: a renderer that writes
+       down what the switch said while it was drawing */
+    const seen = [];
+    const r = { getRenderTarget() { return null; }, setRenderTarget() {}, clear() {}, render() { seen.push(MAT.world.thermal.value); } };
+    const sc = new TH.ThermalScope(r);
+    const cam = { position: { copy() {} }, quaternion: { copy() {} }, updateProjectionMatrix() {}, fov: 60, near: 1, far: 100, aspect: 1 };
+    sc.camera = cam;
+    const van = { whole: true, state: 'driving', cz: 40, bodies: [], mesh: { material: { uniforms: { warmth: { value: 0 } } } } };
+    const parked = { whole: true, state: 'parked', burning: 0, cz: 40, bodies: [], mesh: { material: { uniforms: { warmth: { value: 0 } } } } };
+    const fake = { vehicles: { all: [van, parked] }, gunships: { ships: [] } };
+    fake.missiles = new MS.MissileSystem(fake);
+    sc.game = fake;
+    sc.held = true;
+    for (let k = 0; k < 4; k++) sc.render({}, cam);
+    check('the thermal feed is drawn with the switch on, every other frame, and it is off again after',
+      seen.length === 2 && seen.every(v => v === 1) && MAT.world.thermal.value === 0);
+    check('and a running engine is warm in it while a parked car is not',
+      van.mesh.material.uniforms.warmth.value > 0.5 && parked.mesh.material.uniforms.warmth.value === 0);
+    sc.held = false;
+    sc.render({}, cam);
+    check('and it draws nothing with the launcher out of your hands', seen.length === 2);
+  }
+  check('the thermal screen shares the lance\'s u flip, because the launcher is turned the same half circle',
+    /vec2 uv = vec2\(1\.0 - \(vL\.x - box\.x\) \* box\.z, \(vL\.y - box\.y\) \* box\.w\);/.test(fs.readFileSync('js/thermal.js', 'utf8')));
+  check('the zoom raises it to the eye the way it raises the lance',
+    TH.THERMAL_AIM_AT[0] === 0 && TH.THERMAL_AIM_AT[TH.THERMAL_AIM_AT.length - 1] === 1 &&
+    TH.THERMAL_ZOOMS.length === TH.THERMAL_AIM_AT.length && TH.THERMAL_ZOOMS[0] === 1);
+  check('the launcher\'s parts are baked: a lock bracket in two frames and a motor in three',
+    ['TLCKA', 'TLCKB', 'MISLA', 'MISLB', 'MISLC'].every(k => g.sprites.frames.has(k)));
 }
 
 /* ---------- the music ---------- */

@@ -134,7 +134,8 @@ export class TouchControls {
   }
 
   /** THE SCOPE BUTTON IS THE ONE CONTROL THAT COMES AND GOES, because it
-   *  is the only one that belongs to a single weapon. js/main.js says
+   *  is the only one that belongs to particular weapons — the lance and
+   *  the quad launcher, the two with a screen on them. js/main.js says
    *  what is in hand and what step the scope is on; this puts the
    *  button on the glass or takes it off, and writes the step on it so
    *  the player can see what tapping it did. */

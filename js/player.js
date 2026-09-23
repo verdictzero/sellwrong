@@ -42,6 +42,11 @@
                 nothing in the shop to refill it from.
      MOLOTOV    fire with reach. The answer to an aisle you cannot get
                 into and a walkway fire will not cross by itself.
+
+     LAUNCHER   the user's sixth model, slot six: four tubes, a thermal
+                sight, and a seeker that locks up to four warm things
+                while the trigger is held. Letting go sends one missile
+                at each lock; see ROCKETS, launcherTic and js/missiles.js.
    ===================================================================== */
 
 import { PLAYER_RADIUS, PLAYER_HEIGHT, PLAYER_EYE, MAX_STEP, TICRATE,
@@ -313,6 +318,20 @@ export const CHARGE_PITCH = [0.72, 1.45];
    took. Which, for a weapon whose whole appeal is the line it leaves
    through four buildings, is exactly backwards. */
 
+/* THE QUAD LAUNCHER'S FOUR TUBES. Four missiles and no more — the box
+   holds four — and each empty tube is loaded again on its own clock,
+   one every ROCKET_REGEN_EVERY tics, so a full salvo is back in about
+   eight seconds and a single shot in two. No latch, for the bore's
+   reason: a tube is a count of shots, and one loaded tube is a shot.
+
+   IT IS FAST TO RELOAD BECAUSE IT IS SLOW TO USE. Every missile that is
+   worth firing is a lock, and a lock is a dwell with the trigger held
+   and the target in the middle of the sight — a third of a second each,
+   a second and a half for all four — so what rations this weapon is the
+   time you spend standing still with it up, not the tubes. */
+export const ROCKETS = 4;
+export const ROCKET_REGEN_EVERY = 2 * TICRATE;
+
 /* THE PLAYER CAN JUMP NOW, at the user's request, which is the end of
    the NO GRAVITY, NO JUMPING line below and is done the way a Doom port
    does it: a vertical momentum, a gravity that takes a unit a tic off
@@ -458,8 +477,24 @@ export const WEAPONS = {
        fireBeam says what it means. */
     sound: null,
   },
+  /* THE QUAD LAUNCHER. `seeker` is the whole of what makes it a
+     different kind of trigger to hold: DOWN is the seeker looking for
+     heat and locking what it finds, UP is the salvo — one missile per
+     lock, or one straight down the sight with none — and neither is an
+     animation, so it runs its own tic like the lance does (see
+     launcherTic). Billed one tube a missile. The seeker, the flight and
+     the warhead are js/missiles.js's; the sight on the side of the box
+     is js/thermal.js's. */
+  LAUNCHER: {
+    slot: 6, name: 'QUAD LAUNCHER', sprite: 'FLMG',
+    ready: 'A', fire: ['B', 'C'], fireTics: [3, 3],
+    ammo: 'rockets', ammoPerShot: 1,
+    seeker: true,
+    damage: () => 0,
+    sound: null,
+  },
   MOLOTOV: {
-    slot: 6, name: 'MOLOTOV', sprite: 'MOLG',
+    slot: 7, name: 'MOLOTOV', sprite: 'MOLG',
     ready: 'A', fire: ['B', 'B', 'C', 'C'], fireTics: [6, 6, 8, 12],
     throwAt: 2,
     ammo: 'bottles', ammoPerShot: 1,
@@ -495,8 +530,8 @@ export class Player {
     this.shootable = true;
     this.monster = false;
 
-    this.ammo = { fuel: TANK, co2: BOTTLE, bores: BORES, rounds: BELT, cells: CELLS, bottles: 0 };
-    this.maxAmmo = { fuel: TANK, co2: BOTTLE, bores: BORES, rounds: BELT, cells: CELLS, bottles: 12 };
+    this.ammo = { fuel: TANK, co2: BOTTLE, bores: BORES, rounds: BELT, cells: CELLS, rockets: ROCKETS, bottles: 0 };
+    this.maxAmmo = { fuel: TANK, co2: BOTTLE, bores: BORES, rounds: BELT, cells: CELLS, rockets: ROCKETS, bottles: 12 };
     /* THE LATCH. True from the moment the tank runs out until it is back
        to REFIRE_AT of full, and the only thing that stops the flamer
        firing while there is fuel in it. */
@@ -545,6 +580,14 @@ export class Player {
     /* whether the coil has already let go on this press of the trigger
        — see ventCharge */
     this.vented = false;
+    /* THE LAUNCHER'S: whether the trigger is down on it — which is the
+       seeker looking, see js/missiles.js — the clock that loads its
+       empty tubes, and which tube the last missile left, for the flash
+       at the front of the box (js/weapon3d.js) */
+    this.seeking = false;
+    this.rocketTick = 0;
+    this.rocketDry = false;
+    this.launchTube = -1;
     /* the held firing sound, while rounds are leaving — see weaponTic */
     this.gunLoop = null;
     /* whether the trigger has already clicked on this press of it */
@@ -557,10 +600,11 @@ export class Player {
        It is not a heal: it stops you being hurt from the moment it goes
        on, so turned on at forty health you stay at forty for ever. */
     this.invincible = false;
-    /* FIVE WEAPONS. The molotov is built and tested and stays switched
+    /* SIX WEAPONS. The molotov is built and tested and stays switched
        off; the boxcutter is gone; the bore is the third, the minigun
-       the fourth and the lance the fifth — see the note above WEAPONS. */
-    this.owned = { FLAMER: true, EXTINGUISHER: true, BORE: true, MINIGUN: true, LANCE: true };
+       the fourth, the lance the fifth and the launcher the sixth — see
+       the note above WEAPONS. */
+    this.owned = { FLAMER: true, EXTINGUISHER: true, BORE: true, MINIGUN: true, LANCE: true, LAUNCHER: true };
     this.weapon = 'FLAMER';
     this.pendingWeapon = null;
 
@@ -927,6 +971,9 @@ export class Player {
        has nothing to do with frames, so it gets its own tic and the one
        below never sees it. */
     if (this.def.charge) { this.lanceTic(input); return; }
+    /* and neither does a seeker, for the same reason: its question is
+       "is the trigger down", and the answer is a search, not a frame */
+    if (this.def.seeker) { this.launcherTic(input); return; }
     if (this.firing) {
       const d = this.def;
       /* a stream pours every tic the trigger is down, not once a frame */
@@ -1073,6 +1120,46 @@ export class Player {
 
     /* only swap weapons when the coil is idle, never mid-charge */
     if (this.pendingWeapon) { this.weapon = this.pendingWeapon; this.pendingWeapon = null; }
+  }
+
+  /* ------------------------------------------------------------------
+     THE LAUNCHER, which is a trigger held and a trigger let go
+
+       down     the seeker is looking: js/missiles.js locks what is warm
+                in the middle of the sight, one tube's worth at a time
+       up       the salvo: one missile per lock, a tube at a time, or
+                one straight down the sight if nothing was locked
+
+     While a salvo is still leaving the trigger means nothing and the
+     launcher stays in your hands — a weapon swap in the middle of one
+     would leave missiles in tubes that are no longer on screen.
+     ------------------------------------------------------------------ */
+  launcherTic(input) {
+    const M = this.game.missiles;
+    /* the kick of the last one out, which is what the view model's
+       recoil and muzzle flash read as `firing` */
+    if (this.fireIndex >= 0 && --this.fireTics <= 0) this.fireIndex = -1;
+    if (M && M.salvoLeft > 0) { this.seeking = false; return; }
+    if (input.attack) {
+      if (!this.seeking && (this.ammo.rockets | 0) <= 0) {
+        /* empty tubes click, once per press, like a bore with no lock */
+        if (!this._clicked) { this._clicked = true; this.game.sound?.play('noammo', this); }
+        return;
+      }
+      this.seeking = true;
+      return;
+    }
+    this._clicked = false;
+    if (this.seeking) {
+      this.seeking = false;
+      /* the trigger has come up: whatever is locked goes */
+      if (M && M.release(this) > 0) return;
+    }
+    /* ONLY SWAP BETWEEN SALVOS, never while the seeker is up — and not
+       while the last one out is still kicking either: `firing` is shared
+       by every weapon, and the next one in hand would read the tail of
+       this kick as its own trigger and pour a stream nobody asked for */
+    if (this.pendingWeapon && this.fireIndex < 0) { this.weapon = this.pendingWeapon; this.pendingWeapon = null; }
   }
 
   /** One cell, one line drawn through the map. The stage decides how
@@ -1241,8 +1328,8 @@ export class Player {
        in the game has to know the mode exists. */
     if (this.debug) {
       for (const kind of Object.keys(this.maxAmmo)) this.ammo[kind] = this.maxAmmo[kind];
-      this.dry = false; this.co2Dry = false; this.beltDry = false; this.cellDry = false;
-      this.regenTick = 0; this.co2Tick = 0; this.beltTick = 0; this.cellTick = 0;
+      this.dry = false; this.co2Dry = false; this.beltDry = false; this.cellDry = false; this.rocketDry = false;
+      this.regenTick = 0; this.co2Tick = 0; this.beltTick = 0; this.cellTick = 0; this.rocketTick = 0;
       /* AND THE LANCE NEEDS NOTHING SAID ABOUT IT HERE ANY MORE. It
          used to: the coil's real limit was temperature rather than
          ammunition, so a switch that only refilled tanks left the one
@@ -1261,6 +1348,8 @@ export class Player {
        one in it — unlike the tanks, because a cell is a count of shots
        and not a volume, so "enough for a share of one" means nothing */
     this._refill('cells', CELL_REGEN_EVERY, 1 / CELLS, 'cellTick', 'cellDry');
+    /* and the launcher's four tubes, one at a time — see ROCKETS */
+    this._refill('rockets', ROCKET_REGEN_EVERY, 0, 'rocketTick', 'rocketDry');
   }
 
   /** One tank, one tic. Both fill on the same terms and differ only in
@@ -1387,6 +1476,7 @@ export class Player {
     this._chargeVoice = null;
     this.charge = 0;
     this.beamTics = 0;
+    this.seeking = false;
     this.game.beam?.stop();
     this.game.sound?.play('playerDie', this);
     this.game.onPlayerDied();

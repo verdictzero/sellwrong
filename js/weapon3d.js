@@ -115,8 +115,21 @@ export const GUN_LENGTH = 1.4;
      optics  and a material that is a LENS, for the same reason
      aim     a SECOND hold, for a gun that is raised to the eye rather
              than carried at the hip: its own pos, rot and out, blended
-             to by Weapon3D.aim. Only the lance has one, because only
-             the lance has something on it worth putting your eye to */
+             to by Weapon3D.aim. The lance has one, and so does the
+             launcher, because both have something on them worth
+             putting your eye to
+     paint   'vertex' for a model whose colour is in its VERTICES rather
+             than in a texture — a sculpt, painted where it was modelled.
+             Absent means the file's texture, which is every gun but one
+     screen  a screen the game BUILDS, for a gun whose file has a flat
+             face where a screen should be and no mesh to put one on:
+             [x0, y0, x1, y1, z] in the model's own units, a quad facing
+             the eye at that depth. It wears whatever screen the gun's
+             scope makes, exactly as `display` does
+     tubes   more than one mouth, for a gun that has more than one: each
+             in the model's own units, like `nozzle`. What leaves them is
+             the world's business; Weapon3D.tubeWorld hands each one
+             over the way nozzleWorld hands over the one */
 export const GUNS = {
   /* THE CEREBRAL BORE, the user's third model and the one with nothing
      coming out of the nozzle but a red line: the projectile is the
@@ -316,6 +329,78 @@ export const GUNS = {
     display: { material: 'dynamic_display_surface_mat' },
     optics: { material: 'optics_mat', base: [0.34, 0.80, 0.0] },
   },
+
+  /* THE QUAD LAUNCHER, the user's sixth model, and the first that was
+     SCULPTED rather than modelled: a Nomad file of one watertight
+     surface and four hundred and sixty thousand triangles, painted in
+     its vertices, with no texture and no UVs. It went through
+     tools/decimate-model.mjs — forty thousand triangles, fourteen
+     megabytes to under one — and comes in here with its colour where
+     the brush left it (`paint`, and GUN_FRAG's PAINT path).
+
+     FOUR TUBES IN A GREEN BOX, a pistol grip under the middle and a
+     sight on the left, which is an M202 and is held like one: on the
+     right shoulder, the tubes running forward past the hand and the
+     back half of the box over the shoulder and out of the picture. The
+     numbers were measured off the vertices, not guessed:
+
+       the front face is flat at z = 0.999 and the four mouths are
+       recesses four centimetres into it, square, centred on x = 0.039
+       and 0.498 and on y = 0.218 and -0.225. `tubes` is those four,
+       at the face, in the order they fire — top left, top right,
+       bottom left, bottom right, as the gunner sees them, since the
+       half turn puts the model's +x on the left: a salvo ripples
+       across the box rather than down one side of it.
+
+       the sight is a box of its own bolted to the model's +x side,
+       which the half turn every gun gets puts on the LEFT of the
+       picture, next to the eye. Its back is flat at z = 0.0893 — forty-
+       five vertices within three millimetres of it — and runs 0.7815
+       to 1.0193 across and 0.0725 to 0.2438 up. It is a face where a
+       screen should be with nothing on it, so `screen` makes one: the
+       same face less its rounded rim, a hair behind it so the two do
+       not fight over the same depth. See js/thermal.js for what is on
+       it. */
+  LAUNCHER: {
+    url: 'assets/models/launcher.glb',
+    /* A LITTLE UNDER THE FLAMETHROWER'S LENGTH, because it is a box and
+       not a tube: at the flamethrower's own 1.4 metres the thing was
+       half a metre square, and held on the shoulder that is a wall of
+       green across the right half of the picture. At nine tenths of it
+       the box sits in the lower right quarter, running away from you,
+       with the sight on its near edge showing what it sees — measured
+       in the running game, off a dozen holds tried side by side. */
+    fit: GUN_LENGTH * 0.9,
+    out: 2.4,
+    pos: [0.16, -0.10, 0],
+    rot: [0.03, 0.12, -0.03],
+    nozzle: [0.268, -0.004, 1.03],
+    tubes: [[0.498, 0.218, 1.0], [0.039, 0.218, 1.0], [0.498, -0.225, 1.0], [0.039, -0.225, 1.0]],
+    pilot: null,
+    /* what leaves a tube: the motor lighting, short and hot, off the
+       same frames as everything else, whitened and warmed */
+    tint: [1.8, 1.25, 0.7],
+    cold: true,
+    muzzle: { len: 0.30, wid: 0.22, additive: true },
+    paint: 'vertex',
+    screen: { at: [0.8045, 0.0880, 0.9963, 0.2283, 0.0862] },
+    /* AND THE HOLD AT THE EYE, SOLVED rather than nudged, the way the
+       lance's was. `rot` cancels VIEW's own pitch, yaw and roll, so the
+       group is square to the camera and the screen — which faces model
+       -z, and so +z once the model is turned — faces the eye exactly.
+       With no turn, where the screen's middle lands is the group's
+       position plus the screen's middle in the group's own frame: that
+       is (0.9004, 0.1582, 0.0862) less the model's box centre (0.4094,
+       -0.2350, -0.2702), times the fit's scale (1.26 / 2.5375), with x
+       and z negated by the half turn — (-0.2438, 0.1952, -0.1770) — so
+       putting it 0.108 in front of the eye is a subtraction, and `pos`
+       is that less VIEW.pos at an `out` of one. At that distance the
+       screen is 54 per cent of the picture's height, measured off its
+       four corners through the weapon camera, and square on. The box
+       is then a hand's breadth right of your cheek, which is where a
+       launcher you are sighting is. */
+    aim: { pos: [-0.0862, 0.2048, 0.3990], rot: [-0.04, -0.17, 0.05], out: 1.0 },
+  },
 };
 
 /* Where the gun sits in front of the eye, in metres, and how it is
@@ -354,8 +439,16 @@ varying vec2 vUv;
 varying vec3 vN;
 varying vec3 vP;
 varying vec3 vL;
+#ifdef PAINT
+  /* the colour the sculptor painted, per vertex — three declares the
+     attribute itself once the material says vertexColors */
+  varying vec3 vPaint;
+#endif
 void main() {
   vUv = uv;
+  #ifdef PAINT
+    vPaint = color;
+  #endif
   vN = normalize(normalMatrix * normal);
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   vP = mv.xyz;
@@ -384,9 +477,20 @@ varying vec2 vUv;
 varying vec3 vN;
 varying vec3 vP;
 varying vec3 vL;
+#ifdef PAINT
+  varying vec3 vPaint;
+#endif
 void main() {
-  vec4 t = texture2D(map, vUv);
-  if (t.a < 0.5) discard;
+  /* A PAINTED MODEL HAS NO PICTURE TO SAMPLE: its colour arrives in the
+     vertices, already linear (glTF says so), which is what an sRGB
+     texture is decoded to on the way out of texture2D — so the two
+     paths land in the same space and everything below serves both. */
+  #ifdef PAINT
+    vec4 t = vec4(vPaint, 1.0);
+  #else
+    vec4 t = texture2D(map, vUv);
+    if (t.a < 0.5) discard;
+  #endif
   vec3 N = normalize(vN);
   vec3 L = normalize(vec3(-0.35, 0.85, 0.40));
   float d = max(0.0, dot(N, L));
@@ -498,9 +602,16 @@ export class Weapon3D {
   /** `scope` is js/scope.js's, or null: the thing that owns the lance's
    *  screen and its lens. It is passed in rather than made here because
    *  filling the screen is a render of the WORLD, and every render call
-   *  in this game lives in js/main.js. */
-  constructor({ aspect = 1.6, scope = null } = {}) {
+   *  in this game lives in js/main.js.
+   *
+   *  `scopes` is the same thing for more than one gun — name to scope —
+   *  since the launcher has a screen of its own (js/thermal.js) and two
+   *  guns cannot share one: a screen is a render target, a camera and a
+   *  panel box, and the second gun to load would have moved the first
+   *  one's picture. `scope` alone still means the lance's. */
+  constructor({ aspect = 1.6, scope = null, scopes = null } = {}) {
     this.scope = scope;
+    this.scopes = scopes || (scope ? { LANCE: scope } : {});
     /* HOW FAR THE GUN IS TO THE SHOULDER, 0 at the hip and 1 with your
        eye on the glass. Chased rather than set, so raising the weapon
        is a movement and not a cut — see update(). */
@@ -562,6 +673,9 @@ export class Weapon3D {
   }
 
   async _loadOne(name, def, atlas) {
+    /* THIS gun's scope, if it has one — see the constructor */
+    const scope = this.scopes[name] || null;
+    const paint = def.paint === 'vertex';
     const { root, extras } = await loadGLB(def.url, {
       material: (mdef, maps) => {
         /* TWO OF THE LANCE'S THREE MATERIALS ARE NOT METAL and must not
@@ -575,18 +689,24 @@ export class Weapon3D {
            both come out of that line as the same flat dark grey and the
            gun would have a hole where its instruments are. */
         const nm = mdef?.name || '';
-        if (this.scope && def.display && nm === def.display.material) return this.scope.screenMaterial();
-        if (this.scope && def.optics && nm === def.optics.material) return this.scope.opticsMaterial(def.optics.base);
-        if (!maps.map) return new THREE.MeshBasicMaterial({ color: 0x0c1410, toneMapped: false });
+        if (scope && def.display && nm === def.display.material) return scope.screenMaterial();
+        if (scope && def.optics && nm === def.optics.material) return scope.opticsMaterial(def.optics.base);
+        /* AND A PAINTED MODEL HAS NO MAP AND IS NOT A HOLE: its colour is
+           in the vertices, so the fallback below — which is right for a
+           flat-painted part of a textured gun — is wrong for the whole
+           of it. It goes through the gun shader like every other gun,
+           with the PAINT path on. */
+        if (!maps.map && !paint) return new THREE.MeshBasicMaterial({ color: 0x0c1410, toneMapped: false });
         const m = new THREE.ShaderMaterial({
           uniforms: {
-            map: { value: maps.map }, glow: { value: 0 }, glowPos: { value: new THREE.Vector3() },
+            map: { value: maps.map || null }, glow: { value: 0 }, glowPos: { value: new THREE.Vector3() },
             pilot: { value: 0.35 }, pilotPos: { value: new THREE.Vector3() }, dim: { value: 1 },
             heat: { value: 0 }, heatZ: { value: new THREE.Vector2(0, 1) },
             heatMid: { value: 0 }, heatMode: { value: 0 },
           },
           vertexShader: GUN_VERT, fragmentShader: GUN_FRAG,
           side: mdef?.doubleSided ? THREE.DoubleSide : THREE.FrontSide, toneMapped: false, fog: false,
+          ...(paint ? { defines: { PAINT: '' }, vertexColors: true } : {}),
         });
         /* the file's own name for it, so a table can point at one */
         m.name = mdef?.name || '';
@@ -656,6 +776,24 @@ export class Weapon3D {
       heatMaterial.uniforms.heatMid.value = def.heat.mid ?? 0;
     }
 
+    /* --- A SCREEN WHERE THE FILE HAS ONLY A FACE ---------------------
+       See `screen` in GUNS. Built in the model's own units and hung off
+       the model's own root, so the fit already on that root carries it
+       exactly as it carries the metal round it, and it is planar in z
+       like the lance's panel so the box measured next is the picture's
+       two axes on the same terms. Two triangles, wound to face -z, which
+       is the eye once the model has been turned. */
+    if (scope && def.screen) {
+      const [x0, y0, x1, y1, z] = def.screen.at;
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute([x0, y0, z, x0, y1, z, x1, y1, z, x1, y0, z], 3));
+      g.setIndex([0, 1, 2, 0, 2, 3]);
+      g.computeBoundingSphere();
+      const panel = new THREE.Mesh(g, scope.screenMaterial());
+      panel.name = name.toLowerCase() + '-screen';
+      root.add(panel);
+    }
+
     /* --- AND WHERE THE SCREEN IS ON ITS OWN MESH --------------------
        Measured off the geometry the file shipped and not off a number
        written here, because the panel's picture is laid out across its
@@ -664,15 +802,15 @@ export class Weapon3D {
        be edited. The mesh is planar in z — all thirteen of its vertices
        sit at the same depth — so x and y across that box ARE the two
        axes of the screen. */
-    if (this.scope && def.display) {
+    if (scope && (def.display || def.screen)) {
       root.traverse(o => {
-        if (!o.isMesh || o.material !== this.scope.screen) return;
+        if (!o.isMesh || o.material !== scope.screen) return;
         const a = o.geometry?.attributes?.position;
         if (!a || !a.array) return;
         let lo = [Infinity, Infinity], hi = [-Infinity, -Infinity];
         for (let i = 0; i < a.array.length; i += a.itemSize)
           for (let k = 0; k < 2; k++) { lo[k] = Math.min(lo[k], a.array[i + k]); hi[k] = Math.max(hi[k], a.array[i + k]); }
-        if (Number.isFinite(lo[0])) this.scope.setPanelBox(lo, [hi[0] - lo[0], hi[1] - lo[1]]);
+        if (Number.isFinite(lo[0])) scope.setPanelBox(lo, [hi[0] - lo[0], hi[1] - lo[1]]);
       });
     }
 
@@ -682,7 +820,8 @@ export class Weapon3D {
     const spin = extras.spin ? root.getObjectByName(extras.spin) : null;
 
     const g = {
-      def, group, inner, anchors: { nozzle: place(nozzle), pilot: pilot ? place(pilot) : null },
+      def, group, inner, anchors: { nozzle: place(nozzle), pilot: pilot ? place(pilot) : null,
+                                    tubes: def.tubes ? def.tubes.map(place) : null },
       gunMaterials, heatMaterial, spin, spinAngle: 0,
       pilot: null, muzzle: null, muzzleMaterials: [],
     };
@@ -748,7 +887,8 @@ export class Weapon3D {
        over about a third of a second rather than a cut. A gun with no
        second hold — every gun but the lance — never leaves zero and
        none of the blending below does anything. */
-    const wantAim = (G.def.aim && this.scope) ? this.scope.aim : 0;
+    const sc = this.scopes[this.active];
+    const wantAim = (G.def.aim && sc) ? sc.aim : 0;
     this.aim += (wantAim - this.aim) * (1 - Math.pow(0.0015, dt));
     const a = G.def.aim ? this.aim : 0;
     const mix = (hip, aimed) => hip + (aimed - hip) * a;
@@ -822,7 +962,11 @@ export class Weapon3D {
        away glowing does not hand its barrels to the lance. */
     if (G.heatMaterial) G.heatMaterial.uniforms.heat.value = player[G.def.heat?.from || 'heat'] || 0;
 
-    /* the muzzle, only while firing */
+    /* the muzzle, only while firing — and on a gun with more than one
+       mouth, at the one that has just gone: the player says which (see
+       Player.launchTube), so a salvo is four flashes that walk across
+       the front of the box rather than one in the middle of it */
+    if (G.anchors.tubes && player.launchTube >= 0) G.muzzle.position.copy(G.anchors.tubes[player.launchTube % G.anchors.tubes.length]);
     G.muzzle.visible = !!firing;
     if (firing) {
       const s = 0.85 + Math.random() * 0.3;
@@ -851,7 +995,19 @@ export class Weapon3D {
   nozzleWorld(worldCamera, out = { x: 0, y: 0, z: 0 }) {
     const G = this.gun;
     if (!G) return null;
-    const nv = this._tmp2.copy(G.anchors.nozzle);
+    return this._toWorld(G, G.anchors.nozzle, worldCamera, out);
+  }
+
+  /** One of the launcher's four mouths, on the same terms as the nozzle
+   *  — or null for a gun with only the one. */
+  tubeWorld(i, worldCamera, out = { x: 0, y: 0, z: 0 }) {
+    const G = this.gun;
+    if (!G || !G.anchors.tubes) return null;
+    return this._toWorld(G, G.anchors.tubes[i % G.anchors.tubes.length], worldCamera, out);
+  }
+
+  _toWorld(G, anchor, worldCamera, out) {
+    const nv = this._tmp2.copy(anchor);
     G.inner.localToWorld(nv);
     const dist = Math.min(nv.length() * UNITS_PER_METRE, NOZZLE_REACH);
     const ndc = this._ndc.copy(nv).project(this.camera);

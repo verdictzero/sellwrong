@@ -345,10 +345,20 @@ export class Scope {
    *                  a flat black texture, which is exactly what the
    *                  sprite fallback wants anyway
    */
-  constructor(renderer = null, { size = SIZE, panel = PANEL, every = EVERY } = {}) {
+  constructor(renderer = null, { size = SIZE, panel = PANEL, every = EVERY,
+                                 zooms = ZOOMS, viewZooms = VIEW_ZOOM, aimAt = AIM_AT, aspect = 1 } = {}) {
     this.renderer = renderer;
     this.size = size;
     this.every = every;
+    /* THE STEPS ARE THE SCOPE'S OWN, and the lance's are the defaults. A
+       second gun with a screen (js/thermal.js) brings its own three
+       rows, and a screen that is not square its own aspect: the target,
+       the gauge canvas and the camera are all that much wider than they
+       are tall, so the picture is not stretched to fit the glass. */
+    this.zooms = zooms;
+    this.viewZooms = viewZooms;
+    this.aimAt = aimAt;
+    this.aspect = aspect;
     this.frames = 0;
     this.renders = 0;               // how many feed frames have actually been drawn
     this.zoomIndex = 0;
@@ -356,7 +366,7 @@ export class Scope {
     this.tics = 0;
 
     /* the feed: a square target and a camera to fill it */
-    this.target = new THREE.WebGLRenderTarget(size, size, {
+    this.target = new THREE.WebGLRenderTarget(Math.round(size * aspect), size, {
       format: THREE.RGBAFormat, type: THREE.UnsignedByteType,
       depthBuffer: true, stencilBuffer: false,
     });
@@ -369,7 +379,7 @@ export class Scope {
 
     /* the gauges: a canvas, redrawn only when a number on it moves */
     this.canvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
-    if (this.canvas) { this.canvas.width = panel; this.canvas.height = panel; }
+    if (this.canvas) { this.canvas.width = Math.round(panel * aspect); this.canvas.height = panel; }
     this.ctx = this.canvas ? this.canvas.getContext('2d') : null;
     this.panelTexture = this.canvas ? new THREE.CanvasTexture(this.canvas) : null;
     if (this.panelTexture) {
@@ -384,17 +394,21 @@ export class Scope {
     this.optic = null;
   }
 
-  get magnification() { return ZOOMS[this.zoomIndex] || 1; }
+  /* the rows, falling back to the lance's for a Scope that was made
+     without its constructor — which the suite does, to draw the gauges
+     into a context that measures them */
+  get _zooms() { return this.zooms || ZOOMS; }
+  get magnification() { return this._zooms[this.zoomIndex] || 1; }
   /** How far the weapon is raised toward the eye at this step — what
    *  js/weapon3d.js blends its second hold by. See AIM_AT. */
-  get aim() { return AIM_AT[this.zoomIndex] ?? 0; }
+  get aim() { return (this.aimAt || AIM_AT)[this.zoomIndex] ?? 0; }
   /** What the WORLD camera's field of view should be multiplied by while
    *  the scope is at this step — see VIEW_ZOOM. */
-  get viewScale() { return VIEW_ZOOM[this.zoomIndex] ?? 1; }
+  get viewScale() { return (this.viewZooms || VIEW_ZOOM)[this.zoomIndex] ?? 1; }
   get zoomed() { return this.zoomIndex > 0; }
 
-  setZoom(i) { this.zoomIndex = Math.max(0, Math.min(ZOOMS.length - 1, i | 0)); }
-  cycleZoom() { this.setZoom((this.zoomIndex + 1) % ZOOMS.length); }
+  setZoom(i) { this.zoomIndex = Math.max(0, Math.min(this._zooms.length - 1, i | 0)); }
+  cycleZoom() { this.setZoom((this.zoomIndex + 1) % this._zooms.length); }
 
   /* ------------------------------------------------------------------
      The two materials the model's own two untextured meshes wear
@@ -463,7 +477,7 @@ export class Scope {
     c.quaternion.copy(worldCamera.quaternion);
     c.near = worldCamera.near;
     c.far = worldCamera.far;
-    c.aspect = 1;
+    c.aspect = this.aspect || 1;
     /* THE MAGNIFICATION IS OFF THE WORLD'S OWN FIELD OF VIEW, not off a
        number of its own, so the scope stays a multiple of what you can
        see however the main view is set — and the world camera is already
@@ -654,7 +668,7 @@ export class Scope {
     /* ---- AND THE ONE CHARACTER --------------------------------------- */
     label(ctx, firing ? '\u25b2' : stage > 0 ? String(stage) : '\u00b7',
           cx, N * 0.245, N * 0.125, firing ? HOT : stage > 0 ? stageInk : INK_DIM);
-    label(ctx, `${ZOOMS[this.zoomIndex]}\u00d7`, cx, N * 0.675, N * 0.078,
+    label(ctx, `${this.magnification}\u00d7`, cx, N * 0.675, N * 0.078,
           this.zoomIndex ? INK : INK_DIM);
 
     /* ---- AND THE LAST SECOND OF THE WINDOW ---------------------------

@@ -43,6 +43,7 @@ import { setDisplayPalette, displayName, setArtPalette, artName } from './palett
 import { Weather, WEATHERS, WEATHER_ORDER, HOUR_STOPS } from './weather.js';
 import { Weapon3D } from './weapon3d.js';
 import { Scope } from './scope.js';
+import { ThermalScope } from './thermal.js';
 import { KINDS } from './forest.js';
 import { Music } from './music.js';
 import { VERSION } from './version.js';
@@ -465,7 +466,12 @@ async function boot() {
      gun is handed the scope so that when the loader meets the model's
      own `dynamic_display_surface_mat` it has something to put there. */
   const scope = new Scope(renderer);
-  const weapon3d = new Weapon3D({ aspect: 1.6, scope });
+  /* AND THE THERMAL SIGHT ON THE SIDE OF THE QUAD LAUNCHER, which is the
+     same kind of thing for the same reason (js/thermal.js) and needs the
+     game as well, for what is warm and what the seeker has locked */
+  const thermal = new ThermalScope(renderer);
+  thermal.game = game;
+  const weapon3d = new Weapon3D({ aspect: 1.6, scope, scopes: { LANCE: scope, LAUNCHER: thermal } });
   await weapon3d.load(flameAtlas);
   game.weapon3d = weapon3d.ready ? weapon3d : null;
   hud.showWeaponSprite = !weapon3d.ready;
@@ -961,21 +967,33 @@ async function boot() {
        The look sensitivity comes down by the same factor, so a zoomed
        sweep is as fine as the picture it is moving. See VIEW_ZOOM in
        js/scope.js for why the two numbers are not the same number. */
+    /* TWO GUNS HAVE ONE NOW — the lance's screen and the launcher's
+       thermal sight — and they are the same kind of thing: whichever is
+       in hand takes the zoom, the other is put down and zeroed. */
     if (started) {
       const lance = p.weapon === 'LANCE' && !p.dead;
+      const launcher = p.weapon === 'LAUNCHER' && !p.dead;
       scope.held = lance && weapon3d.ready;
+      thermal.held = launcher && weapon3d.ready;
       if (!lance && scope.zoomIndex) scope.setZoom(0);
       else if (lance && input.zoomPressed) scope.cycleZoom();
+      if (!launcher && thermal.zoomIndex) thermal.setZoom(0);
+      else if (launcher && input.zoomPressed) thermal.cycleZoom();
       /* once, not every frame: the stage marks are a constant of the
          weapon and the getter that hands them over allocates */
       if (!scope.stageMarks) scope.setStages(p.stageMarks);
-      const want = BASE_FOV * (lance ? scope.viewScale : 1);
+      const sighted = lance ? scope : launcher ? thermal : null;
+      const want = BASE_FOV * (sighted ? sighted.viewScale : 1);
       if (Math.abs(camera.fov - want) > 0.01) { camera.fov = want; camera.updateProjectionMatrix(); }
-      input.zoomScale = lance ? scope.viewScale : 1;
-      /* and the phone gets a button for it, only while the lance is in
-         hand — see TouchControls.setScope */
-      touch.setScope(lance && input.mode === 'touch', scope.magnification + '\u00d7');
-    } else { scope.held = false; scope.setZoom(0); touch.setScope(false); }
+      input.zoomScale = sighted ? sighted.viewScale : 1;
+      /* and the phone gets a button for it, only while a gun with a
+         screen is in hand — see TouchControls.setScope */
+      touch.setScope(!!sighted && input.mode === 'touch', (sighted || scope).magnification + '\u00d7');
+    } else {
+      scope.held = false; scope.setZoom(0);
+      thermal.held = false; thermal.setZoom(0);
+      touch.setScope(false);
+    }
     game.render(now);
     /* the sky, again, when the hour or the cloud has moved enough */
     skyBaker.update(game.weather.frame, now / 1000);
@@ -992,7 +1010,8 @@ async function boot() {
        to take the render target away; the gauges after it, because they
        are a canvas and cost nothing when nothing on them has moved. */
     scope.render(scene, camera);
-    if (started) scope.update(p, game.tics);
+    thermal.render(scene, camera);
+    if (started) { scope.update(p, game.tics); thermal.update(p, game.tics); }
     overlays[0].visible = started && weapon3d.ready && !p.dead;
     overlays[1].visible = started;
     pipeline.render(scene, camera, overlays);
@@ -1116,7 +1135,7 @@ async function boot() {
   }
 
   /* let the console poke at it */
-  window.SELLWRONG = { game, pipeline, renderer, scene, camera, textures, sprites, world, level, input, touch, weapon3d, scope, music, weather: game.weather, skyBaker, applyPalette, applyTone,
+  window.SELLWRONG = { game, pipeline, renderer, scene, camera, textures, sprites, world, level, input, touch, weapon3d, scope, thermal, music, weather: game.weather, skyBaker, applyPalette, applyTone,
                        responders: game.responders, giblets: game.giblets };
 }
 

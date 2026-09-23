@@ -133,12 +133,17 @@ export class Standees {
    * minus z and every caller was already doing that conversion when it
    * set a mesh's position, so it keeps doing it. `w, h` are the world
    * size of the quad, `light` and `sky` what the region it stands in is
-   * lit to and how much of that is the sky's, and the last four are the
-   * flags the fragment shader reads per sprite.
+   * lit to and how much of that is the sky's, the next four are the
+   * flags the fragment shader reads per sprite, and `warm` says the
+   * thing is a living body, which only the thermal sight asks.
    */
-  add(tex, x, y, z, w, h, light, sky, fullbright, frost, ash, alight) {
+  add(tex, x, y, z, w, h, light, sky, fullbright, frost, ash, alight, warm = 0) {
     if (!tex || !this.scene) return false;
     const b = this._batch(tex);
+    /* A BODY'S PICTURE IS A BODY'S, for the thermal sight: once a person
+       has been drawn with it the batch is warm for good, and a trolley's
+       never is — see `warm` in js/material.js */
+    if (warm && !b.warm) { b.warm = true; b.mesh.material.uniforms.warm.value = 1; }
     if (b.n >= b.cap) {
       if (b.cap >= MAX) return false;
       this._grow(b, Math.min(MAX, b.cap * 2));

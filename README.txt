@@ -159,7 +159,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         2467 checks, no install and no browser
+  the smoke test         2501 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -220,7 +220,10 @@ THE PICTURE.
   SHIFT         run             LMB/CTRL  fire
   SPACE         jump            WHEEL     cycle weapons
   F             open, use
-  1 2 3 4       flamer / extinguisher / bore / minigun
+  1 - 6         flamer / extinguisher / bore / minigun / lance /
+                quad launcher
+  Z  C  RMB     put the scope to your eye: the lance's screen, or the
+                launcher's thermal sight
   [  ]          render size     SHIFT [ ] pixel size
   N             palette on / off          ESC       pause
   IN THE MENU:  arrows turn the page, or move an open window's slider;
@@ -5227,6 +5230,173 @@ with it in your hands — stops the loop through one line, and none of
 them has to remember to.
 
 
+THE QUAD LAUNCHER
+-----------------
+
+THE SIXTH WEAPON, at the user's request, and the request was one
+sentence: "a quad missile launcher — use the same method as the sniper
+rifle display to put a thermal scope live view on a plane in the scope
+— has a heat-seeking quad shot function, can fire up to four at once
+with four locks". Every part of what follows is one clause of that.
+
+  js/missiles.js        the seeker, the salvo, the flight and the warhead
+  js/thermal.js         the sight: a Scope, drawn in heat
+  tools/decimate-model.mjs   what made the model fit to ship
+
+
+THE MODEL WAS A SCULPT
+
+The file came out of Nomad Sculpt: one watertight surface of 461,088
+triangles and 230,516 vertices, fourteen megabytes, painted in its
+VERTICES — no texture and no UVs, COLOR_0 the paint and COLOR_1 Nomad's
+own roughness and metalness. Every other gun in the rack is a modelled
+mesh on a painted sheet, and tools/prep-model.mjs, which strips those,
+says in its own header that it never resamples. There is nothing in a
+sculpt to strip; the triangles ARE the model. So it went through a new
+tool, tools/decimate-model.mjs, and came out at 40,000 triangles and
+19,970 vertices in 782 kilobytes, still one closed surface of the same
+genus, every edge between exactly two faces.
+
+QUADRIC EDGE COLLAPSE, WITH THE PAINT AND THE SHADING IN THE QUADRIC.
+Garland and Heckbert's, in nine dimensions: position, colour and normal.
+The colour is in there because vertex paint is exactly as sharp as the
+mesh under it, and a decimator that only looks at shape throws the paint
+away first — a flat panel in one green collapses to nothing, a smudge of
+grime across the same panel keeps the vertices that draw it. The normal
+is in there because the first cut left it out and the picture said so:
+the silhouette was right to the pixel and every flat panel was crumpled
+like foil, because the bevels' steep normals had been smeared across the
+triangles next to them.
+
+EVERY POSITION IS THE ARTIST'S, EVERY NORMAL AND COLOUR IS A PATCH'S.
+The kept vertex is always one of the two ends of the edge, never a point
+between, so the model cannot drift or swell; but its normal and paint are
+the AVERAGE of every vertex collapsed into it, because a single sculpt
+vertex is noisy — the brush's grain in its normal, one fleck of a smudge
+in its colour — and stretched over a triangle forty times its old size
+that noise was blotches. The average over the patch is the low-pass
+filter that matches the new spacing, which is what a smaller texture is
+to a bigger one.
+
+AND TWO THINGS IN THE GAME HAD NEVER MET A MODEL LIKE IT. js/glb.js did
+not read the `normalized` flag, which nothing had shipped until now, and
+a byte of colour read as an integer is two hundred and fifty times too
+bright; it does now. And the gun shader took its colour from a texture;
+it has a PAINT path now (see GUN_FRAG), where the colour arrives in the
+vertices already linear — which is what an sRGB texture is decoded to —
+so the lighting after it serves both.
+
+
+HOW IT IS HELD
+
+On the right shoulder, the way the M202 it is plainly modelled on is: the
+tubes running away from you in the lower right quarter and the sight on
+the near edge of the box. Every number was measured, not guessed. The
+four tube mouths are square recesses four centimetres into the front
+face, and `tubes` in GUNS is their four centres, in the order they fire.
+The sight's back is flat — forty-five vertices within three millimetres
+of one plane — and the hip hold was picked in the running game, off a dozen
+tried side by side.
+
+THE HOLD AT THE EYE WAS SOLVED, as the lance's was. Its turn cancels the
+view's own cant, so the sight's face looks straight back at you; its
+position is the screen's middle in the gun's own frame subtracted from a
+point 0.108 in front of the eye; and the screen then fills 54 per cent
+of the picture's height, measured off its four corners through the
+weapon camera. The box is a hand's breadth to the right of your cheek,
+which is where a launcher you are sighting is.
+
+
+THE THERMAL SIGHT, BY THE LANCE'S METHOD
+
+The lance's screen is a second camera at the eye rendering the one scene
+into a small target, laid over a mesh the file named for a display (see
+THE POSITRON SNIPER LANCE, and js/scope.js). The thermal sight is that —
+ThermalScope extends Scope — with three differences.
+
+THE PLANE IS THE GAME'S. The launcher's file has a flat face on the back
+of its sight and no mesh on it, so `screen` in GUNS builds a quad on the
+face, in the model's own units, hung off the model's own root so the fit
+carries it, and from there it is measured and mapped exactly like the
+lance's panel, u flip and all. It is four to three, not square, so the
+feed, the canvas and the camera are too; the suite holds the two numbers
+to each other.
+
+THE PICTURE IS HEAT. For the one render call the sight makes a frame, a
+shared uniform — world.thermal, in js/material.js — is on, and every
+wall, floor, tree, car, puff and person that shades through the world's
+GLSL answers how WARM it is instead of what colour it is. The night sits
+in one narrow cold band, a little warmer for dark paint and for lamp
+light; people are warm whatever they are wearing, the drawing's own
+light and dark only giving the figure its shape; a frozen shopper is the
+coldest thing in the picture; somebody on fire, a flame, a lamp are
+white; a running engine is warm and a parked car is not; the sky is
+black; smoke is almost gone, because seeing through smoke is what the
+thing is for. A standee batch says whether its picture is a BODY, since
+the crowd shares its draw calls with the trolleys and the headstones.
+The screen runs the number up IRONBOW — black, indigo, magenta, red,
+orange, yellow, white — in bands, with the lance's scan lines and curved
+glass, and a missile leaving the tube beside it whites it out.
+
+THE GLASS SAYS WHAT THE SEEKER IS DOING. Four things, since the panel is
+a few dozen chunky pixels once the lo-fi pass has it: the seeker circle,
+drawn at the true size of the cone for the magnification it is at; an
+amber bracket on every locked target, with a pip in the corner for every
+lock past the first; a white one closing in, blinking, on what is being
+acquired; four tube pips — loaded, empty, or spoken for by a lock — and
+the lock count, big, at the top.
+
+
+THE SEEKER AND THE QUAD SHOT
+
+HOLD THE TRIGGER and the seeker looks for heat within six degrees of the
+middle of the view, out to the far side of the town. What is warm, in
+plain sight and nearest the middle is acquired — sixteen tics of dwell
+for the first lock and eleven for each after — and then locked, and it
+goes on to the next warm thing in the circle, up to four, one per loaded
+tube. With fewer warm things in the circle than tubes it locks the same
+one again, so four locks on one gunship is four missiles into one
+gunship. Once the dwell has started it follows the target through a
+circle twice as wide, because an aircraft crossing the sight leaves a
+six-degree circle between two corrections of your hand. A lock survives
+half a second out of a much wider cone or out of sight, and not at all
+if its target dies or goes cold. WHAT IS WARM is answered in one place,
+MissileSystem.isHot, and the thermal sight asks the same function, so
+the screen cannot glow on anything the seeker would refuse.
+
+LET GO and one missile leaves per lock, a tube at a time, four tics
+apart — top left, top right, bottom left, bottom right — kicked outward
+by where its tube sits in the box, so a salvo fans out before it turns.
+With nothing locked, letting go fires one straight down the sight: a
+launcher that did nothing without a lock would be the bore.
+
+THE FLIGHT. Twelve units a tic out of the tube to fifty-eight, over
+twice the gunship's best; five tics before it steers, then no more than
+0.085 radians a tic at where the target WILL BE, led by its own velocity
+over the time left to fly. It stops for walls, floors, ceilings, its
+target and anybody standing in the way, and after seven seconds wherever
+it is. A lick of flame every tic off the fireball pool is the streak you
+watch it by — the smoke alone was invisible at night — and the motor
+pulls the one fire light along with it.
+
+THE WARHEAD. 420 to what it flew into, up to 150 to anything within 190
+units, as a BLAST and never as fire: Game.explode deals fire, and the
+SWAT and the army are fireproof, so a warhead built on it would have
+walked through a trooper. 420 is a quarter of the gunship and a little
+over, so a full salvo of four locks brings it down, which was checked in
+the running game against one hovering two and a half thousand units
+out. It starts a fire where it goes off, and it reaches you too if you
+are standing in it.
+
+THE TUBES LOAD THEMSELVES, one every two seconds, so a full salvo is back
+in eight — fast, because what rations this weapon is the second and a
+half of standing still with it up while the seeker works.
+
+The sounds — the seeker's growl, the lock pips, the launch — are in the
+synthesised table and so are silent while MUTED is on, like everything
+else in it; a recording under the same name would take over.
+
+
 A HOLE BLOWN THROUGH A WALL
 ---------------------------
 
@@ -7497,7 +7667,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-2467 checks. Every one of them earns its place by having caught something
+2501 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

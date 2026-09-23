@@ -528,6 +528,37 @@ export function bakeSprites(bank = new SpriteBank()) {
     }, 14, 14, 73 + f), { fullbright: true });
   }
 
+  /* --- THE QUAD LAUNCHER'S PARTS ---------------------------------
+     Two things js/missiles.js draws in the world. The LOCK is a square
+     bracket, four corners and nothing between them, so it can never be
+     mistaken for the bore's round red reticle — amber, because amber is
+     what a seeker head's symbology is, and fullbright for the bore's
+     reason. Frame B is the same bracket broken and dimmer, for a source
+     the seeker is still dwelling on. The MISSILE is its motor and not
+     its body: at the speed it goes and the size it is, what the eye has
+     of a rocket in flight is the flare, so three frames of it flicker
+     and the smoke behind it (Effects.puff) is the rest of the picture. */
+  for (const [f, lit] of [['A', 0.93], ['B', 0.62]]) {
+    bank.addFrame('TLCK', f, radial(p => {
+      const lo = 1, hi = 17, arm = f === 'A' ? 5 : 3;
+      for (let k = 0; k < arm; k++) {
+        for (const [x, y, dx, dy] of [[lo, lo, 1, 1], [hi, lo, -1, 1], [lo, hi, 1, -1], [hi, hi, -1, -1]]) {
+          p.ink(x + dx * k, y, 'yellow', lit);
+          p.ink(x, y + dy * k, 'yellow', lit);
+        }
+      }
+      if (f === 'A') p.disc(9, 9, 1.2, 'yellow', 0.97);
+    }, 19, 19, 81 + (f === 'A' ? 0 : 1)), { fullbright: true });
+  }
+  ['A', 'B', 'C'].forEach((L, i) => {
+    bank.addFrame('MISL', L, radial(p => {
+      const r = [3.6, 4.2, 3.2][i];
+      p.disc(6, 6, r, 'fire', 0.62);
+      p.disc(6, 6, r * 0.62, 'fire', 0.86);
+      p.disc(6, 6, r * 0.3, 'yellow', 0.99);
+    }, 12, 12, 84 + i), { fullbright: true });
+  });
+
   bank.addFrame('MOLO', 'A', radial(p => {
     for (let y = 12; y < 26; y++) for (let x = 11; x < 19; x++)
       p.ink(x, y, 'green', 0.26 + (x < 15 ? 0.12 : -0.04));
