@@ -4209,16 +4209,20 @@ await (async () => {
     for (const c of s) { h ^= c.codePointAt(0); h = Math.imul(h, 0x01000193) >>> 0; }
     return h.toString(16).padStart(8, '0');
   };
-  const WORD = 'gss-tangram.exe';
-  const key = (term.match(/const KEY = '([0-9a-f]{8})'/) || [])[1];
-  check('the terminal holds the hash of the word', key === fnv(WORD.toUpperCase()), `${key} vs ${fnv(WORD.toUpperCase())}`);
+  const WORD = 'gss-tangram.exe', SHORT = 'qweasdzxc';
+  const keys = ((term.match(/const KEYS = \[([^\]]*)\]/) || [])[1] || '').match(/[0-9a-f]{8}/g) || [];
+  check('the terminal holds the hash of the word', keys.includes(fnv(WORD.toUpperCase())), `${keys} vs ${fnv(WORD.toUpperCase())}`);
+  check('and of the shortcut, which opens it too, and of nothing else',
+    keys.includes(fnv(SHORT.toUpperCase())) && keys.length === 2 && /KEYS\.includes\(hash\(entry\)\)/.test(term));
+  check('and it refuses everything else as an undefined command',
+    /'UNDEFINED COMMAND \/ SYNTAX ERROR'/.test(term) && !/UNABLE TO COMPUTE/.test(term));
   check('the page loads the terminal, not the game',
     /src="js\/terminal\.js"/.test(html) && !/src="js\/main\.js"/.test(html));
   check('and the terminal loads the game', /import\('\.\/main\.js'\)/.test(term));
   check('the prompt says INTERFACE 2037', /const PROMPT = 'INTERFACE 2037/.test(term));
   /* no hints: the word is in none of the three files the page is made of */
   const shipped = (html + css + term).toLowerCase();
-  check('and the word is nowhere the site ships', !shipped.includes('tangram'));
+  check('and neither is anywhere the site ships', !shipped.includes('tangram') && !shipped.includes(SHORT));
   check('the terminal is red on black', /#term \{[^}]*background: #000;[^}]*color: #ff2a1c/s.test(css));
 })();
 

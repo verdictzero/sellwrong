@@ -18,7 +18,8 @@
    types silently if nothing has been pressed yet; the hum starts on
    the first key or tap.
 
-   The one that is not refused is the name of a program. It is not
+   The one that is not refused is the name of a program — or, at the
+   user's request, a shortcut typed along the keyboard. It is not
    written anywhere in the site — not here, not in the page, not in the
    stylesheet. What is here is a hash of it, and what you type is hashed
    the same way and compared, so reading the source gets you as far as
@@ -40,8 +41,11 @@
 
 const $ = id => document.getElementById(id);
 
-/* THE ANSWER, hashed. See the top of the file. */
-const KEY = '30af7bc7';
+/* THE ANSWERS, hashed. See the top of the file. The first is the name
+   of the program; the second, at the user's request, is a shortcut — a
+   run along three rows of the keyboard — and it is kept out of view the
+   same way. */
+const KEYS = ['30af7bc7', '8ce4dd6b'];
 const hash = s => {
   let h = 0x811c9dc5;
   for (const c of s) { h ^= c.codePointAt(0); h = Math.imul(h, 0x01000193) >>> 0; }
@@ -72,7 +76,7 @@ const BANNER = [];
    there is nothing to learn from trying things, and nothing in them
    about where you are. */
 const REFUSED = entry => [
-  'ERROR  —  UNABLE TO COMPUTE',
+  'UNDEFINED COMMAND / SYNTAX ERROR',
   `ENTRY "${entry.slice(0, 48)}" REFUSED`,
   '',
 ];
@@ -305,7 +309,7 @@ class Terminal {
     if (entry === '') { await this.prompt(); return; }
     this.history.push(raw.trim());
     this.hist = this.history.length;
-    if (hash(entry) === KEY) { await this.open(); return; }
+    if (KEYS.includes(hash(entry))) { await this.open(); return; }
     this.sfx.error();
     await this.tell(REFUSED(entry));
     await this.prompt();

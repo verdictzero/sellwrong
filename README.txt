@@ -25,13 +25,19 @@ typed out a character at a time, the way the ship's computer in ALIEN
 talks, with a teletype tick under each character, a click under each
 key you press, a buzz when it refuses you, a chime when it lets you
 in and a hum under all of it, every sound synthesised in the page.
-Every entry is refused with the same two lines but one. The one is
+Every entry is refused with the same two lines — UNDEFINED COMMAND /
+SYNTAX ERROR, and the entry REFUSED — but two. The one is
 
   gss-tangram.exe
 
-in any case, and that word is written here and in the smoke test and
-nowhere the site ships: js/terminal.js holds a hash of it and compares
-what is typed against that, so view-source is no help. On the match it
+in any case, and the other, at the user's request, is a shortcut along
+three rows of the keyboard:
+
+  qweasdzxc
+
+and both are written here and in the smoke test and nowhere the site
+ships: js/terminal.js holds a hash of each and compares what is typed
+against those, so view-source is no help. On the match it
 imports js/main.js, which boots the game exactly as the page used to,
 and the terminal fades off in front of the loading screen. Nothing
 under js/main.js knows the terminal exists.
@@ -159,7 +165,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         2540 checks, no install and no browser
+  the smoke test         2542 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -7902,7 +7908,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-2540 checks. Every one of them earns its place by having caught something
+2542 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
