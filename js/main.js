@@ -975,10 +975,14 @@ async function boot() {
       const launcher = p.weapon === 'LAUNCHER' && !p.dead;
       scope.held = lance && weapon3d.ready;
       thermal.held = launcher && weapon3d.ready;
+      /* taken every frame, whatever is in hand, so a press made while
+         holding something else is not waiting to go off when the scope
+         comes out — see Input.takeScope */
+      const press = input.takeScope();
       if (!lance && scope.zoomIndex) scope.setZoom(0);
-      else if (lance && input.zoomPressed) scope.cycleZoom();
+      else if (lance) scope.work(press);
       if (!launcher && thermal.zoomIndex) thermal.setZoom(0);
-      else if (launcher && input.zoomPressed) thermal.cycleZoom();
+      else if (launcher) thermal.work(press);
       /* once, not every frame: the stage marks are a constant of the
          weapon and the getter that hands them over allocates */
       if (!scope.stageMarks) scope.setStages(p.stageMarks);
@@ -986,12 +990,14 @@ async function boot() {
       const want = BASE_FOV * (sighted ? sighted.viewScale : 1);
       if (Math.abs(camera.fov - want) > 0.01) { camera.fov = want; camera.updateProjectionMatrix(); }
       input.zoomScale = sighted ? sighted.viewScale : 1;
-      /* and the phone gets a button for it, only while a gun with a
+      /* and the phone gets two buttons for it, only while a gun with a
          screen is in hand — see TouchControls.setScope */
-      touch.setScope(!!sighted && input.mode === 'touch', (sighted || scope).magnification + '\u00d7');
+      touch.setScope(!!sighted && input.mode === 'touch', (sighted || scope).magnification + '\u00d7',
+                     !!sighted && sighted.zoomed);
     } else {
       scope.held = false; scope.setZoom(0);
       thermal.held = false; thermal.setZoom(0);
+      input.takeScope();
       touch.setScope(false);
     }
     game.render(now);

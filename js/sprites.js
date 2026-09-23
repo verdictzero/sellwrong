@@ -105,6 +105,154 @@ function radial(draw, w = 32, h = 40, seed = 1) {
   return new Array(8).fill(p);
 }
 
+/* ---------------------------------------------------------------------
+   THE QUAD LAUNCHER'S ROCKET, one view of it
+
+   A little model, splatted: an olive tube with a yellow band and a grey
+   nose, four swept fins in an X at the tail, a dark nozzle, and a cone
+   of flame out of the back that is its own light. Every surface is a
+   cloud of points in the rocket's own frame — `a` along it, nose
+   forward, `b` up, `c` across — turned to the view, dropped onto the
+   sprite with a depth test, and lit by one fixed light from high on the
+   left, the same light the guns in your hands are lit by.
+
+   `rot` is Doom's: which way the rocket is heading, in eighths of a
+   turn, measured from STRAIGHT AT YOU — 0 is its nose, 4 its flame,
+   2 heading off to your right and 6 to your left. js/missiles.js picks
+   the eighth from where it is and where you are.
+   --------------------------------------------------------------------- */
+function rocketView(rot, flame, seed) {
+  const W = 64, H = 18, cx = W / 2, cy = H / 2;
+  const p = new Pix(W, H, seed, false);
+  const th = rot * Math.PI / 4, s = Math.sin(th), c = Math.cos(th);
+  const zbuf = new Float32Array(W * H).fill(-Infinity);
+  const L = [-0.45, 0.75, 0.5], ll = Math.hypot(...L);
+  const splat = (a, b, cc, na, nb, nc, key, t, lit = true) => {
+    /* the rocket's frame into the view's: x right, y up, z at the eye */
+    const X = a * s + cc * c, Y = b, Z = a * c - cc * s;
+    const px = Math.round(cx + X - 0.5), py = Math.round(cy - Y - 0.5);
+    if (px < 0 || py < 0 || px >= W || py >= H) return;
+    const i = py * W + px;
+    if (Z <= zbuf[i]) return;
+    zbuf[i] = Z;
+    let level = t;
+    if (lit) {
+      const nx = na * s + nc * c, ny = nb, nz = na * c - nc * s;
+      const d = Math.max(0, (nx * L[0] + ny * L[1] + nz * L[2]) / ll);
+      level = t * (0.34 + 0.66 * d);
+    }
+    p.ink(px, py, key, Math.max(0.02, Math.min(0.99, level)));
+  };
+  const R = 2.6;
+  /* the tube, the band on it, and the nozzle ring at the back */
+  for (let a = -12; a <= 8; a += 0.25)
+    for (let k = 0; k < 48; k++) {
+      const ph = k / 48 * Math.PI * 2, b = Math.cos(ph), cc = Math.sin(ph);
+      const band = a > 3.5 && a < 5.5;
+      splat(a, b * R, cc * R, 0, b, cc, band ? 'yellow' : a < -11.2 ? 'grey' : 'olive', band ? 0.86 : a < -11.2 ? 0.34 : 0.62);
+    }
+  /* the nose, grey, a cone six long */
+  for (let a = 8; a <= 14; a += 0.2) {
+    const r = R * (1 - (a - 8) / 6.2);
+    for (let k = 0; k < 40; k++) {
+      const ph = k / 40 * Math.PI * 2, b = Math.cos(ph), cc = Math.sin(ph);
+      splat(a, b * r, cc * r, 0.4, b, cc, 'grey', 0.7);
+    }
+  }
+  /* four swept fins in an X */
+  for (const ph of [Math.PI / 4, 3 * Math.PI / 4, 5 * Math.PI / 4, 7 * Math.PI / 4]) {
+    const b = Math.cos(ph), cc = Math.sin(ph);
+    for (let a = -12; a <= -6.5; a += 0.2)
+      for (let r = R; r <= 7 - (a + 12) * 0.62; r += 0.2)
+        for (const side of [-1, 1])
+          splat(a, b * r + side * 0.3 * -cc, cc * r + side * 0.3 * b, 0, -cc * side, b * side, 'olive', 0.5);
+  }
+  /* AND THE FLAME, its own light: white at the nozzle, yellow, then
+     orange and red to a point `flame` long, a little ragged */
+  const rng = makeRng(seed * 7 + flame);
+  for (let d = 0; d <= flame; d += 0.25) {
+    const q = d / flame, r = 2.3 * Math.pow(1 - q, 0.7) * (0.85 + 0.3 * rng());
+    for (let rr = 0; rr <= r; rr += 0.35)
+      for (let k = 0; k < 24; k++) {
+        const ph = k / 24 * Math.PI * 2;
+        const core = rr < r * 0.45 && q < 0.55;
+        splat(-12.2 - d, Math.cos(ph) * rr, Math.sin(ph) * rr, 0, 0, 0,
+              core ? 'yellow' : 'fire', core ? 0.99 : 0.97 - 0.55 * q - 0.2 * (rr / Math.max(r, 0.01)), false);
+      }
+  }
+  p.snap(0.3);
+  return p;
+}
+
+/* ---------------------------------------------------------------------
+   AN EXPLOSION, one frame of eight
+
+   A ball of fire torn at its edge by noise, growing fast and then
+   slowly — the square root of the frame — hottest at the middle; a
+   shock ring and flying sparks in the first frames; and from halfway
+   on the outside turns to smoke and the smoke to holes, so the last
+   frame is a ragged dark ball with a little fire left in it. The noise
+   is a lattice of hashed values, smoothed: the angle round the ball
+   decides the edge and the position the mottling, so every frame is
+   the same explosion further on and not eight different ones.
+   --------------------------------------------------------------------- */
+function blastFrame(k) {
+  /* sixty-four across, the most any sprite is, and drawn in eightieths
+     of it scaled down to fit — see BOOM.scale in js/missiles.js for the
+     size in the world */
+  const W = 64, cx = W / 2, cy = W / 2, t = k / 7, sc = W / 80;
+  const p = new Pix(W, W, 300 + k, false);
+  const hash = (i, j, s) => {
+    let h = (i * 374761393 + j * 668265263 + s * 2147483647) | 0;
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+  };
+  const noise = (x, y, s) => {
+    const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j;
+    const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+    const a = hash(i, j, s), b = hash(i + 1, j, s), c = hash(i, j + 1, s), d = hash(i + 1, j + 1, s);
+    return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
+  };
+  const Rb = (9 + 25 * Math.sqrt(t)) * sc;
+  for (let y = 0; y < W; y++)
+    for (let x = 0; x < W; x++) {
+      const dx = x + 0.5 - cx, dy = y + 0.5 - cy, d = Math.hypot(dx, dy);
+      const ang = Math.atan2(dy, dx);
+      const edge = Rb * (0.74 + 0.36 * noise(ang * 2.2 + 11, 3.3, 7) + 0.12 * noise(ang * 6.1, 1.7, 9));
+      if (d > edge) continue;
+      const q = d / edge;
+      const mottle = noise(x * 0.17 / sc, y * 0.17 / sc + k * 0.6, 3);
+      /* it thins from the outside as it goes: holes where the mottling
+         is lowest, spreading inward over the second half */
+      if (t > 0.45 && mottle < (t - 0.45) * 1.5 * (0.35 + q)) continue;
+      const heat = (1 - q) * (1.15 - 0.95 * t) + 0.3 * (mottle - 0.5) - 0.08;
+      if (heat < 0.18) p.ink(x, y, 'grey', 0.12 + 0.22 * mottle + 0.1 * (1 - t));
+      else if (heat > 0.92 && t < 0.4) p.ink(x, y, 'yellow', 0.99);
+      else p.ink(x, y, 'fire', Math.min(0.99, 0.32 + heat * 0.7));
+    }
+  /* the shock ring, torn, in the first three frames after the flash */
+  if (k >= 1 && k <= 3) {
+    const Rs = Rb * (1.22 + 0.12 * k);
+    for (let a = 0; a < 720; a++) {
+      const ang = a / 720 * Math.PI * 2;
+      if (noise(ang * 5, k, 13) < 0.42) continue;
+      p.ink(Math.round(cx + Math.cos(ang) * Rs), Math.round(cy + Math.sin(ang) * Rs), 'fire', 0.93 - 0.12 * k);
+    }
+  }
+  /* and the sparks thrown clear of it */
+  if (k <= 4) {
+    const rng = makeRng(77);
+    for (let n = 0; n < 14; n++) {
+      const ang = rng() * Math.PI * 2, r = Rb * (1.05 + 0.5 * rng()) + k * 5 * sc;
+      const x = Math.round(cx + Math.cos(ang) * r), y = Math.round(cy + Math.sin(ang) * r);
+      p.ink(x, y, 'fire', 0.95);
+      if (k < 2) p.ink(x + 1, y, 'fire', 0.8);
+    }
+  }
+  p.snap(0.3);
+  return p;
+}
+
 /* ====================================================================
    Bake the lot
    ==================================================================== */
@@ -558,6 +706,19 @@ export function bakeSprites(bank = new SpriteBank()) {
       p.disc(6, 6, r * 0.3, 'yellow', 0.99);
     }, 12, 12, 84 + i), { fullbright: true });
   });
+  /* THE ROCKET ITSELF, at the user's request — "whatever rocket sprites
+     you make need exhaust and smoke trails and an impact explosion" —
+     and MISL above is now only the bloom behind it. Eight rotations,
+     the way a Doom thing has them, because a rocket crossing the street
+     and a rocket coming at you are different pictures: see rocketView,
+     which draws each one off a little model rather than by hand, so the
+     eight agree about where the fins are. Two frames, for the flame. */
+  for (const [f, flame] of [['A', 13], ['B', 17]])
+    bank.addFrame('ROKT', f, [0, 1, 2, 3, 4, 5, 6, 7].map(r => rocketView(r, flame, 90 + r)), { fullbright: true });
+  /* AND WHAT IT DOES WHEN IT ARRIVES: eight frames of a fireball, from
+     a white-hot core with a shock ring round it to a torn ball of smoke
+     with the last of the fire in the middle — see blastFrame */
+  'ABCDEFGH'.split('').forEach((L, k) => bank.addFrame('MEXP', L, new Array(8).fill(blastFrame(k)), { fullbright: true }));
 
   bank.addFrame('MOLO', 'A', radial(p => {
     for (let y = 12; y < 26; y++) for (let x = 11; x < 19; x++)

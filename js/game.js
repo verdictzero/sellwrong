@@ -1473,7 +1473,7 @@ export class Game {
     this.streetLights.render(ex, ey, ez, vx, vy);
     this.renderProjectiles(billboardRot);
     this.bore.render(billboardRot);
-    this.missiles.render(billboardRot);
+    this.missiles.render(billboardRot, ex, ey);
 
     /* the red mist of being nearly dead */
     const hurt = clamp(1 - p.health / 100, 0, 1);

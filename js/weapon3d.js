@@ -119,8 +119,10 @@ export const GUN_LENGTH = 1.4;
              launcher, because both have something on them worth
              putting your eye to
      paint   'vertex' for a model whose colour is in its VERTICES rather
-             than in a texture — a sculpt, painted where it was modelled.
-             Absent means the file's texture, which is every gun but one
+             than in a texture — a sculpt, painted where it was modelled,
+             shipped straight out of tools/decimate-model.mjs. A texture
+             in the file wins over it. No gun in the rack uses it now:
+             the launcher did until it was baked
      screen  a screen the game BUILDS, for a gun whose file has a flat
              face where a screen should be and no mesh to put one on:
              [x0, y0, x1, y1, z] in the model's own units, a quad facing
@@ -333,10 +335,19 @@ export const GUNS = {
   /* THE QUAD LAUNCHER, the user's sixth model, and the first that was
      SCULPTED rather than modelled: a Nomad file of one watertight
      surface and four hundred and sixty thousand triangles, painted in
-     its vertices, with no texture and no UVs. It went through
-     tools/decimate-model.mjs — forty thousand triangles, fourteen
-     megabytes to under one — and comes in here with its colour where
-     the brush left it (`paint`, and GUN_FRAG's PAINT path).
+     its vertices, with no texture and no UVs.
+
+     REMESHED AND BAKED, at the user's request, which is the second way
+     it has come in. The first was the sculpt decimated to forty
+     thousand triangles with the paint left in the vertices (`paint`,
+     and GUN_FRAG's PAINT path, which are still here for a sculpt that
+     wants it). Now tools/decimate-model.mjs cuts a cage of eight
+     thousand triangles that spends nothing on the paint, and
+     tools/bake-model.mjs unwraps it and casts a ray from every texel
+     of a 512 sheet back to the sculpt for its colour: a fifth of the
+     triangles, three quarters of the bytes, and more of the grime,
+     because a texel is finer than a vertex was. Fourteen megabytes to
+     590 kilobytes.
 
      FOUR TUBES IN A GREEN BOX, a pistol grip under the middle and a
      sight on the left, which is an M202 and is held like one: on the
@@ -354,13 +365,12 @@ export const GUNS = {
 
        the sight is a box of its own bolted to the model's +x side,
        which the half turn every gun gets puts on the LEFT of the
-       picture, next to the eye. Its back is flat at z = 0.0893 — forty-
-       five vertices within three millimetres of it — and runs 0.7815
-       to 1.0193 across and 0.0725 to 0.2438 up. It is a face where a
-       screen should be with nothing on it, so `screen` makes one: the
-       same face less its rounded rim, a hair behind it so the two do
-       not fight over the same depth. See js/thermal.js for what is on
-       it. */
+       picture, next to the eye. Its back is flat at z = 0.089, in the
+       sculpt and in the cage both, and runs 0.78 to 1.02 across and
+       0.07 to 0.24 up. It is a face where a screen should be with
+       nothing on it, so `screen` makes one: the same face less its
+       rounded rim, a hair behind it so the two do not fight over the
+       same depth. See js/thermal.js for what is on it. */
   LAUNCHER: {
     url: 'assets/models/launcher.glb',
     /* A LITTLE UNDER THE FLAMETHROWER'S LENGTH, because it is a box and
@@ -382,7 +392,6 @@ export const GUNS = {
     tint: [1.8, 1.25, 0.7],
     cold: true,
     muzzle: { len: 0.30, wid: 0.22, additive: true },
-    paint: 'vertex',
     screen: { at: [0.8045, 0.0880, 0.9963, 0.2283, 0.0862] },
     /* AND THE HOLD AT THE EYE, SOLVED rather than nudged, the way the
        lance's was. `rot` cancels VIEW's own pitch, yaw and roll, so the
@@ -697,6 +706,9 @@ export class Weapon3D {
            of it. It goes through the gun shader like every other gun,
            with the PAINT path on. */
         if (!maps.map && !paint) return new THREE.MeshBasicMaterial({ color: 0x0c1410, toneMapped: false });
+        /* and a picture, when the file has one, wins over the paint:
+           the vertices only carry the colour when nothing else does */
+        const painted = paint && !maps.map;
         const m = new THREE.ShaderMaterial({
           uniforms: {
             map: { value: maps.map || null }, glow: { value: 0 }, glowPos: { value: new THREE.Vector3() },
@@ -706,7 +718,7 @@ export class Weapon3D {
           },
           vertexShader: GUN_VERT, fragmentShader: GUN_FRAG,
           side: mdef?.doubleSided ? THREE.DoubleSide : THREE.FrontSide, toneMapped: false, fog: false,
-          ...(paint ? { defines: { PAINT: '' }, vertexColors: true } : {}),
+          ...(painted ? { defines: { PAINT: '' }, vertexColors: true } : {}),
         });
         /* the file's own name for it, so a table can point at one */
         m.name = mdef?.name || '';

@@ -397,8 +397,10 @@ html.touch .desk-only, html:not(.touch) .touch-only { display: none !important; 
   --arc: calc(var(--btn) * .5 + var(--small) * .5 + 12px);
   --fire-cx: calc(var(--edge-x) + var(--btn) * .5);
   --fire-cy: calc(var(--edge-y) + var(--btn) * .5);
+  /* and a second arc outside the first, for the scope's two — below */
+  --outer: calc(var(--arc) * 1.7);
 }
-.tb-use, .tb-swap, .tb-jump, .tb-zoom {
+.tb-use, .tb-swap, .tb-jump, .tb-zoom, .tb-aim {
   width: var(--small); height: var(--small);
   font-size: 11px;
 }
@@ -420,17 +422,41 @@ html.touch .desk-only, html:not(.touch) .touch-only { display: none !important; 
   border-color: rgba(122, 196, 224, .40);
 }
 
-/* AND THE SCOPE, which only one weapon has: the fourth point of the
-   arc, between SWAP and the top of it, in the lance's own screen green.
-   It is hidden unless the lance is in hand — a button for a thing you
-   are not holding is a button you learn to ignore. */
-.tb-zoom {
-  right: calc(var(--fire-cx) + var(--arc) * .38 - var(--small) * .5);
-  bottom: calc(var(--fire-cy) + var(--arc) * 1.28 - var(--small) * .5);
+/* AND THE SCOPE, which two weapons have — the lance and the quad
+   launcher — and which has two buttons now, at the user's request: AIM,
+   which puts the gun up to the eye and takes it down again, and the
+   magnification, which is only there while it is up. They stand on a
+   second arc outside the first, each in the notch between two of the
+   three — AIM between JUMP and USE, the magnification between USE and
+   SWAP — so neither is in the way of a thumb rolling round the first
+   arc, and both are in the lance's own screen green. Both are hidden
+   unless a gun with a screen is in hand: a button for a thing you are
+   not holding is a button you learn to ignore.
+
+   The one button there used to be stood a third of the way past SWAP
+   and a little above it, which on a phone is half on top of SWAP. It
+   never showed (see TouchControls.setScope), so nobody found out. */
+.tb-aim, .tb-zoom {
   border-color: rgba(150, 255, 138, .46);
   color: rgba(198, 255, 190, .92);
 }
-#touch.lefty .tb-zoom { right: auto; left: calc(var(--fire-cx) + var(--arc) * .38 - var(--small) * .5); }
+.tb-aim {
+  right: calc(var(--fire-cx) + var(--outer) * .9239 - var(--small) * .5);
+  bottom: calc(var(--fire-cy) + var(--outer) * .3827 - var(--small) * .5);
+}
+.tb-zoom {
+  right: calc(var(--fire-cx) + var(--outer) * .3827 - var(--small) * .5);
+  bottom: calc(var(--fire-cy) + var(--outer) * .9239 - var(--small) * .5);
+}
+/* up at the eye: lit, the way the screen on the gun is */
+#touch .tb-aim.on {
+  background: var(--bevel), rgba(150, 255, 138, .26);
+  border-color: #b6ffa8;
+  color: #eaffe4;
+  box-shadow: 0 0 18px rgba(150, 255, 138, .38), var(--bevel-shadow);
+}
+#touch.lefty .tb-aim  { right: auto; left: calc(var(--fire-cx) + var(--outer) * .9239 - var(--small) * .5); }
+#touch.lefty .tb-zoom { right: auto; left: calc(var(--fire-cx) + var(--outer) * .3827 - var(--small) * .5); }
 
 .tb-pause { width: 44px; height: 44px; top: 8px; right: 8px; border-color: rgba(207, 207, 214, .22); }
 .tb-pause i { display: block; width: 4px; height: 14px; margin: 0 2px; background: currentColor; }

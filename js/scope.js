@@ -362,6 +362,7 @@ export class Scope {
     this.frames = 0;
     this.renders = 0;               // how many feed frames have actually been drawn
     this.zoomIndex = 0;
+    this.lastAimed = 0;             // the step AIM goes back up to — see toggleAim
     this.held = false;              // is the lance in hand at all
     this.tics = 0;
 
@@ -407,8 +408,37 @@ export class Scope {
   get viewScale() { return (this.viewZooms || VIEW_ZOOM)[this.zoomIndex] ?? 1; }
   get zoomed() { return this.zoomIndex > 0; }
 
-  setZoom(i) { this.zoomIndex = Math.max(0, Math.min(this._zooms.length - 1, i | 0)); }
+  setZoom(i) {
+    this.zoomIndex = Math.max(0, Math.min(this._zooms.length - 1, i | 0));
+    if (this.zoomIndex) this.lastAimed = this.zoomIndex;
+  }
+  /** Z, C, the right button, the pad's B: hip, up, further, hip. */
   cycleZoom() { this.setZoom((this.zoomIndex + 1) % this._zooms.length); }
+
+  /** THE PHONE'S AIM BUTTON, at the user's request: the gun up to the
+   *  eye, or back down to the hip, and nothing in between. Up is the
+   *  step it was last at while up — the first aimed step the first time
+   *  — so lowering it to walk and raising it again does not lose the
+   *  magnification the player had chosen. */
+  toggleAim() { this.setZoom(this.zoomIndex ? 0 : this.lastAimed || 1); }
+
+  /** AND ITS MAGNIFICATION BUTTON, which is only on the glass while the
+   *  gun is up: the next aimed step, round to the first again, and never
+   *  down to the hip — taking the gun down is what AIM is for, and a
+   *  magnification button that sometimes lowers the gun is two buttons
+   *  that do the same thing. */
+  stepAimed() {
+    const n = this._zooms.length;
+    if (n < 2) return;
+    this.setZoom(this.zoomIndex ? 1 + this.zoomIndex % (n - 1) : this.lastAimed || 1);
+  }
+
+  /** One press, as js/input.js's takeScope names it. */
+  work(press) {
+    if (press === 'aim') this.toggleAim();
+    else if (press === 'step') this.stepAimed();
+    else if (press === 'cycle') this.cycleZoom();
+  }
 
   /* ------------------------------------------------------------------
      The two materials the model's own two untextured meshes wear

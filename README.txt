@@ -159,7 +159,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         2501 checks, no install and no browser
+  the smoke test         2519 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -998,6 +998,16 @@ were designed rather than bolted on. Open the page, tap, and:
                 the newest, at the user's request, and took the spot
                 beside FIRE because jumping and firing are the two
                 things you do without looking.
+  AIM  2.1x     the scope, for the two guns that have one — the lance
+                and the quad launcher — and only while one of them is
+                in hand, on a second arc outside the first, each in the
+                notch between two of the three. AIM, at the user's
+                request, puts the gun up to your eye and takes it down,
+                and is lit while it is up. The magnification shows only
+                while it is up, with its step written on it, and steps
+                between the aimed steps without ever dropping the gun to
+                the hip; up again after AIM has taken it down is the
+                step you left it on.
   PAUSE         top corner. Four tabbed pages of square tiles, which
                 is a layout that fits a window this shape — look speed,
                 invert, a left-handed mirror of the whole layout,
@@ -1069,6 +1079,32 @@ this frame — so an || that short-circuits past it leaves that record a
 frame stale and swallows the NEXT press off the pad. Pressing Z while
 resting a thumb on B was enough to do it, and jumping had the same
 shape. Sampled into a local first, every time.
+
+AND THE SCOPE HAD A BUTTON THAT NEVER SHOWED. It went in with the lance,
+styled and placed, and TouchControls.setScope changed its `hidden` only
+when it was already what it was being changed to — so from the day it
+was written it sat hidden in the page, and on a phone there was no way
+to raise a scope at all. Which is what the user found, and asked for a
+button for. It was also placed a third of the way past SWAP and a little
+above it, which on a phone is half on top of SWAP, and its thumb never
+came off it — nothing released a held 'zoom'. Nobody saw any of that,
+because nobody saw the button. AIM and the magnification replace it,
+the suite lays the arc out off the style sheet at the smallest, a
+phone's and the largest size the fire button comes in and checks that
+nothing is on top of anything, and
+setScope is checked on a stand-in page for showing what it says it
+shows.
+
+AND A PRESS OF THE SCOPE IS KEPT UNTIL IT IS TAKEN. The input is sampled
+once a tic, thirty-five times a second, and the scope is worked once a
+FRAME, and the two are not the same clock: at sixty frames a second four
+frames in ten have no tic in them, and the flag the zoom read was simply
+left standing between samples — so one press of Z stepped the scope
+twice about as often as that, and a toggle would have gone up and
+straight back down, which is a button that does nothing. The presses
+are latched now, and taken exactly once by the frame (Input.takeScope),
+whatever is in hand, so a press made holding something else is not
+waiting to go off when the scope comes out.
 
 
 THE PARADE
@@ -5118,7 +5154,8 @@ climbs with the heat. It imports nothing from js/palette.js: it is a
 screen and not a painting, and the earth box must not mute it.
 
 THE ZOOM IS NOT A ZOOM. It is a press — the right mouse button, Z or C,
-or B on a pad — and what it does, at the user's request, is BRING THE
+or B on a pad, and on a phone the AIM button and the magnification (see
+ON A PHONE) — and what it does, at the user's request, is BRING THE
 GUN TO YOUR EYE. The first cut magnified: 1x, 4x, 12x on the panel with
 the main view narrowing to match, and twelve times on a forty-pixel
 screen is a smear. "Less zoom and more just looking through the gun
@@ -5241,7 +5278,8 @@ with four locks". Every part of what follows is one clause of that.
 
   js/missiles.js        the seeker, the salvo, the flight and the warhead
   js/thermal.js         the sight: a Scope, drawn in heat
-  tools/decimate-model.mjs   what made the model fit to ship
+  tools/decimate-model.mjs   what cut the sculpt down to a cage
+  tools/bake-model.mjs       and what laid its paint on a sheet over it
 
 
 THE MODEL WAS A SCULPT
@@ -5287,6 +5325,57 @@ vertices already linear — which is what an sRGB texture is decoded to —
 so the lighting after it serves both.
 
 
+AND THEN IT WAS REMESHED AND BAKED
+
+At the user's request, and it is what ships. Forty thousand vertex-
+painted triangles were a good copy of the sculpt and a poor use of the
+bytes: vertex paint is only as fine as the triangles under it, so the
+model could not get any smaller than the grime on it. A bake pulls the
+two apart — the shape on a CAGE of a few thousand triangles, the paint
+on a picture laid over it — which is what every other gun in the rack
+already was.
+
+  node tools/decimate-model.mjs sculpt.glb cage.glb --triangles 8000 --colour 0 --normal 0.02
+  node tools/bake-model.mjs sculpt.glb cage.glb launcher.glb --size 512
+
+THE CAGE is the same decimator asked a different question: eight
+thousand triangles, the paint's weight at nothing and the normal's at a
+fiftieth of what it was, because the shape is all it has to keep now.
+It is still one closed surface — every edge between exactly two faces,
+once the vertices the sheet's seams split are welded back — and the
+suite says so.
+
+THE SHEET is tools/bake-model.mjs, and its header is the long version.
+The cage is cut into pieces by which of six ways each triangle faces,
+after three rounds of every triangle taking the way most of its
+neighbours take — a bevel otherwise comes out as a ribbon of one-
+triangle pieces, each with a gutter round it — and the thin pieces and
+the small ones are then folded into the neighbour they face most nearly
+like. Two hundred and fifty-eight pieces, each laid flat by the way it
+faces, packed in shelves onto a sheet of 512 as large as they will all
+go: seventy-seven texels to the unit. Every corner sharper than thirty-
+eight degrees keeps a normal each side of it, which is what makes the
+box read as a box; the rest are smoothed.
+
+THEN EVERY TEXEL ASKS THE SCULPT WHAT COLOUR IT IS. From its place on
+the cage, along the cage's normal there, both ways, a ray into the
+sculpt's four hundred and sixty thousand triangles, and the hit NEAREST
+THE CAGE is the paint — not the first one along the ray, because the
+cage cuts through the sculpt, and the surface it stands in for is the
+one it cuts. Four rays to a texel, averaged, half a million in all, in
+two and a half seconds, because the triangles are in a bounding volume
+tree. Then the gaps round every piece are grown out from its edge, so a
+seam samples the piece's own colour and not the black round it.
+
+590 kilobytes, down from 782, for a model that shows more of the grime
+than the forty thousand did — a texel is smaller than any triangle the
+vertex paint could afford. A sheet of 1024 was baked beside it: a
+megabyte and more, and through the lo-fi pass it could not be told from
+the 512. Both steps run again from the sculpt come out byte for byte
+the file in the repo. The gun shader keeps its PAINT path for the next
+sculpt; a texture wins over it, and no gun wears vertex paint now.
+
+
 HOW IT IS HELD
 
 On the right shoulder, the way the M202 it is plainly modelled on is: the
@@ -5294,9 +5383,9 @@ tubes running away from you in the lower right quarter and the sight on
 the near edge of the box. Every number was measured, not guessed. The
 four tube mouths are square recesses four centimetres into the front
 face, and `tubes` in GUNS is their four centres, in the order they fire.
-The sight's back is flat — forty-five vertices within three millimetres
-of one plane — and the hip hold was picked in the running game, off a dozen
-tried side by side.
+The sight's back is flat — forty-five of the sculpt's vertices within
+three millimetres of one plane, and five of the cage's — and the hip
+hold was picked in the running game, off a dozen tried side by side.
 
 THE HOLD AT THE EYE WAS SOLVED, as the lance's was. Its turn cancels the
 view's own cant, so the sight's face looks straight back at you; its
@@ -5376,8 +5465,37 @@ twice the gunship's best; five tics before it steers, then no more than
 over the time left to fly. It stops for walls, floors, ceilings, its
 target and anybody standing in the way, and after seven seconds wherever
 it is. A lick of flame every tic off the fireball pool is the streak you
-watch it by — the smoke alone was invisible at night — and the motor
-pulls the one fire light along with it.
+watch it by, and the motor pulls the one fire light along with it.
+
+AND IT IS A ROCKET YOU CAN SEE, at the user's request: "whatever rocket
+sprites you make need exhaust and smoke trails and an impact
+explosion". The body is ROKT, drawn by the program like everything else
+in the rack — an olive tube with a yellow band, a grey nose, four swept
+fins, a flame out of the nozzle in two flickers — and drawn from eight
+sides, like a Doom thing, because a rocket crossing the view is a long
+thing and one coming at you is a nose and a ring of fins. Which of the
+eight is where it is heading against where you are standing
+(rocketFacing). The motor's bloom, MISL, rides behind it, additive.
+
+THE TRAIL is its own pool of puffs and not the store's smoke, which is
+dark — it is the smoke of a burning aisle — and at night could not be
+seen at all. This one is born pale and warm, lit well above the street,
+goes grey as it spreads, and drifts off on the wind. It is laid along
+the leg the rocket flew each tic, a puff every fourteen units, rather
+than where the rocket ended up: at fifty-eight units a tic, a puff a tic
+is a dotted line.
+
+THE BANG is MEXP, eight frames of fireball, three tics each and three
+metres across — a white core going orange, a torn shock ring in the
+first three frames, sparks thrown clear, and then holes eating in from
+the edge as it burns out — with four of the aircraft's fireballs in it
+for the glow, and embers. THE SMOKE COMES AFTER THE FIRE: the first cut
+put the whole cloud down at the instant it went off, and smoke is drawn
+after anything solid, so eight dark puffs sat in front of the fireball
+and all that showed of the explosion was its shock ring. The cloud now
+starts as the ball starts to burn out, a puff a tic, each higher than
+the last. And what it hit is marked: the hot spot a flame leaves on a
+wall or a floor, at its hottest, cooling to a scorch.
 
 THE WARHEAD. 420 to what it flew into, up to 150 to anything within 190
 units, as a BLAST and never as fire: Game.explode deals fire, and the
@@ -7667,7 +7785,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-2501 checks. Every one of them earns its place by having caught something
+2519 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

@@ -101,6 +101,14 @@ export function lookDelta(dx, dy, sens = 1) {
   return { x: dx * LOOK_BASE * sens, y: dy * LOOK_BASE * sens * LOOK_Y_RATIO };
 }
 
+/* a button on the glass or off it — and not left looking pressed when
+   it comes back, if it went while a thumb was on it */
+function show(el, on) {
+  if (!el || el.hidden === !on) return;
+  el.hidden = !on;
+  if (!on) el.classList.remove('held');
+}
+
 /* what fraction of the screen, from the stick's side, belongs to the
    stick; the rest is for looking */
 const MOVE_SHARE = 0.45;
@@ -127,23 +135,39 @@ export class TouchControls {
     this._idle = 0; this._hint = 0;
 
     const $ = sel => this.root.querySelector(sel);
-    this.el = { stick: $('.stick'), knob: $('.stick .knob'), zoom: $('.tb-zoom') };
+    this.el = { stick: $('.stick'), knob: $('.stick .knob'), zoom: $('.tb-zoom'), aim: $('.tb-aim') };
     this._bind();
     this.applyPrefs();
     this.resize();
   }
 
-  /** THE SCOPE BUTTON IS THE ONE CONTROL THAT COMES AND GOES, because it
-   *  is the only one that belongs to particular weapons — the lance and
+  /** THE SCOPE BUTTONS ARE THE CONTROLS THAT COME AND GO, because they
+   *  are the only ones that belong to particular weapons — the lance and
    *  the quad launcher, the two with a screen on them. js/main.js says
-   *  what is in hand and what step the scope is on; this puts the
-   *  button on the glass or takes it off, and writes the step on it so
-   *  the player can see what tapping it did. */
-  setScope(on, label) {
-    const el = this.el.zoom;
-    if (!el) return;
-    if (el.hidden === !on) { el.hidden = !on; if (!on) el.classList.remove('held'); }
-    if (on && el.textContent !== label) el.textContent = label;
+   *  what is in hand, what step the scope is on and whether that step is
+   *  up at the eye; this puts the buttons on the glass or takes them off.
+   *
+   *  AIM, at the user's request, is there whenever one of the two is in
+   *  hand, and is lit while the gun is up. The magnification is there
+   *  only while it is up, with the step written on it so the player can
+   *  see what tapping it did — at the hip there is nothing for it to
+   *  magnify.
+   *
+   *  AND THEY SHOW NOW, which the one button never did: this used to
+   *  change `hidden` only when it was ALREADY what it was being changed
+   *  to, so the button that went in with the lance sat hidden in the
+   *  page from the day it was written, and on a phone there was no way
+   *  to raise a scope at all. */
+  setScope(on, label = '', aimed = false) {
+    const { aim, zoom } = this.el;
+    const up = on && aimed;
+    show(aim, on);
+    if (aim && aim.classList.contains('on') !== up) {
+      aim.classList.toggle('on', up);
+      aim.setAttribute('aria-pressed', up ? 'true' : 'false');
+    }
+    show(zoom, up);
+    if (zoom && up && zoom.textContent !== label) zoom.textContent = label;
   }
 
   _bind() {
@@ -214,8 +238,10 @@ export class TouchControls {
       /* a TAP and not a hold: it fires on the way down and the input
          layer clears it, the same way the use pulse works */
       if (kind === 'swap') t.cycle = 1;
-      /* the same tap, for the one weapon that has a scope — see ZOOMS
-         in js/scope.js. The input layer clears it. */
+      /* the same tap, for the two weapons that have a scope: AIM puts
+         the gun up or down, and the magnification steps it while it is
+         up — see Scope.toggleAim. The input layer clears both. */
+      if (kind === 'aim') t.aimPulse = true;
       if (kind === 'zoom') t.zoomPulse = true;
       /* AND THE PAUSE BUTTON, which was in the page and went nowhere:
          the two bars have been sitting in the corner since the touch
@@ -271,6 +297,9 @@ export class TouchControls {
       case 'use': t.use = false; p.el.classList.remove('held'); break;
       case 'swap': p.el.classList.remove('held'); break;
       case 'jump': p.el.classList.remove('held'); break;
+      /* the two scope buttons, which stayed pressed-looking after the
+         thumb had gone, because they had no line here */
+      case 'aim': case 'zoom': p.el.classList.remove('held'); break;
       case 'pause': p.el.classList.remove('held'); if (deliberate) this.onPause(); break;
       default: break;
     }

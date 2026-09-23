@@ -2306,6 +2306,119 @@ section('touch');
       /if \(this\.input\.pausePressed\) this\.setPaused\(false\);/.test(gameSrc) &&
       /if \(this\.input\.pausePressed && this\.state === 'play'\) this\.setPaused\(true\);/.test(gameSrc));
   }
+
+  /* ---- AND A BUTTON TO AIM WITH ---------------------------------------
+     At the user's request, for the lance and the quad launcher, and it
+     was a nothing like the pause button: the scope's one button went in
+     with the lance and never showed, because setScope only changed
+     `hidden` when it was already what it was being changed to. There are
+     two now. AIM puts the gun up to the eye and takes it down, and is
+     lit while it is up; the magnification is on the glass only while the
+     gun is up, and steps between the aimed steps without ever dropping
+     it to the hip.
+     --------------------------------------------------------------------- */
+  {
+    const fsT = await import('node:fs');
+    const html = fsT.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+    const touchSrc = fsT.readFileSync('js/touch.js', 'utf8');
+    const inputSrc = fsT.readFileSync('js/input.js', 'utf8');
+    const mainSrc = fsT.readFileSync('js/main.js', 'utf8');
+    const cssSrc = fsT.readFileSync('css/style.css', 'utf8');
+    check('AIM is in the page, hidden until a gun with a screen is in hand, and says whether it is pressed',
+      /class="tb tb-aim" data-btn="aim" role="button" aria-label="[^"]+" aria-pressed="false" hidden>AIM</.test(html) &&
+      /class="tb tb-zoom" data-btn="zoom"[^>]* hidden>/.test(html));
+    check('and tapping it says so, and the input layer clears it like the other taps',
+      /if \(kind === 'aim'\) t\.aimPulse = true;/.test(touchSrc) && /aimPulse: false/.test(inputSrc) &&
+      /this\.touch\.aimPulse = false;/.test(inputSrc) && /case 'aim': case 'zoom': p\.el\.classList\.remove\('held'\)/.test(touchSrc));
+
+    /* the buttons, on a stand-in for the page */
+    const el = () => {
+      const on = new Set(), attr = {};
+      return { hidden: true, textContent: '', on, attr,
+        classList: { contains: c => on.has(c), add: c => on.add(c), remove: c => on.delete(c), toggle: (c, v) => (v ? on.add(c) : on.delete(c)) },
+        setAttribute(k, v) { attr[k] = v; } };
+    };
+    const tc = Object.create(t.TouchControls.prototype);
+    tc.el = { aim: el(), zoom: el() };
+    tc.setScope(true, '1×', false);
+    check('with a scope in hand AIM shows, which the one button never did, and the magnification waits for it',
+      !tc.el.aim.hidden && tc.el.zoom.hidden && !tc.el.aim.on.has('on'));
+    tc.setScope(true, '2.1×', true);
+    check('up at the eye AIM is lit and pressed, and the magnification shows with its step on it',
+      tc.el.aim.on.has('on') && tc.el.aim.attr['aria-pressed'] === 'true' && !tc.el.zoom.hidden && tc.el.zoom.textContent === '2.1×');
+    tc.el.zoom.on.add('held');
+    tc.setScope(false);
+    check('and put away, both go, and neither comes back looking pressed',
+      tc.el.aim.hidden && tc.el.zoom.hidden && !tc.el.zoom.on.has('held') && !tc.el.aim.on.has('on') &&
+      tc.el.aim.attr['aria-pressed'] === 'false');
+
+    /* what the presses do to a scope */
+    const SC = await import('../js/scope.js');
+    const TH = await import('../js/thermal.js');
+    const sc = new SC.Scope(null), steps = [];
+    for (const press of ['aim', 'step', 'step', 'step', 'aim', 'aim', 'cycle', 'cycle', null]) { sc.work(press); steps.push(sc.zoomIndex); }
+    check('AIM goes up and down, the magnification steps round the aimed steps and never to the hip, and up again is where it was',
+      steps.join() === '1,2,1,2,0,2,0,1,1', steps.join());
+    check('and the launcher\'s sight does the same, being the same kind of thing',
+      !Object.hasOwn(TH.ThermalScope.prototype, 'work') && !Object.hasOwn(TH.ThermalScope.prototype, 'toggleAim'));
+
+    /* A PRESS IS KEPT UNTIL IT IS TAKEN. The input is sampled a tic at a
+       time and the scope reads it a frame at a time; a flag that was just
+       left standing was read twice when a frame had no tic in it — a zoom
+       that stepped two for one, and a toggle that went up and straight
+       back down — and lost when a frame had two. */
+    const I = await import('../js/input.js');
+    const inp = Object.assign(Object.create(I.Input.prototype), {
+      keys: new Set(), prev: new Set(), latch: new Set(), _padPrev: [], wheel: 0, mouseDX: 0, mouseDY: 0,
+      sensitivity: 0, zoomScale: 1, invertY: false, mouseDown: false, mouseRightPulse: false,
+      zoomPressed: false, zoomStep: false, aimToggle: false,
+      touch: { move: { x: 0, y: 0 }, look: { x: 0, y: 0 }, attack: false, use: false, usePulse: false, jumpPulse: false,
+               zoomPulse: false, aimPulse: false, pausePulse: false, run: false, weapon: 0 },
+    });
+    const took = [];
+    inp.touch.aimPulse = true; inp.sample(1 / 35); inp.sample(1 / 35);   // two tics before the frame
+    took.push(inp.takeScope(), inp.takeScope());                          // and two frames after them
+    inp.touch.zoomPulse = true; inp.sample(1 / 35);
+    took.push(inp.takeScope());
+    inp.latch.add('zoom'); inp.sample(1 / 35); inp.sample(1 / 35);
+    took.push(inp.takeScope(), inp.takeScope());
+    check('a scope press waits for the frame to take it, and is taken once: not lost to a second tic, not counted on a second frame',
+      took.join() === 'aim,,step,cycle,', took.join());
+    check('and the frame takes it every time, whatever is in hand, and hands it to whichever sight is',
+      /const press = input\.takeScope\(\);/.test(mainSrc) && /else if \(lance\) scope\.work\(press\);/.test(mainSrc) &&
+      /else if \(launcher\) thermal\.work\(press\);/.test(mainSrc) && !/input\.zoomPressed/.test(mainSrc) &&
+      /!!sighted && sighted\.zoomed\);/.test(mainSrc));
+
+    /* AND NOTHING ON THE GLASS IS ON TOP OF ANYTHING ELSE. The one scope
+       button there used to be was placed half over SWAP on a phone; the
+       places are read off the style sheet and laid out at the smallest,
+       a phone's and the largest size the fire button comes in. */
+    const outerK = +(cssSrc.match(/--outer: calc\(var\(--arc\) \* ([\d.]+)\);/) || [])[1];
+    const at = cls => {
+      const rule = (cssSrc.match(new RegExp('\\n\\.tb-' + cls + ' \\{([^}]*)\\}')) || [])[1] || '';
+      const axis = side => {
+        const m = rule.match(new RegExp(side + ': calc\\(var\\(--fire-c[xy]\\)(?: \\+ var\\(--(arc|outer)\\)(?: \\* ([\\d.]+))?)? - var\\(--small\\) \\* \\.5\\);'));
+        return m ? { ring: m[1], k: m[1] ? (m[2] ? +m[2] : 1) : 0 } : null;
+      };
+      return { x: axis('right'), y: axis('bottom') };
+    };
+    const small = ['jump', 'use', 'swap', 'aim', 'zoom'];
+    const spots = Object.fromEntries(small.map(c => [c, at(c)]));
+    let worst = Infinity, found = outerK > 1 && small.every(c => spots[c].x && spots[c].y);
+    for (const B of found ? [64, 70, 84] : []) {
+      const sm = B * 0.72, arc = B * 0.5 + sm * 0.5 + 12, R = { arc, outer: arc * outerK };
+      const c = small.map(k => { const q = spots[k]; return [q.x.k * (R[q.x.ring] || 0), q.y.k * (R[q.y.ring] || 0)]; });
+      for (let i = 0; i < c.length; i++) {
+        worst = Math.min(worst, Math.hypot(c[i][0], c[i][1]) - (B + sm) / 2);
+        for (let j = 0; j < i; j++) worst = Math.min(worst, Math.hypot(c[i][0] - c[j][0], c[i][1] - c[j][1]) - sm);
+      }
+    }
+    check('no two buttons round the fire button overlap, at any size it comes in, AIM and the magnification included',
+      found && worst > 0, `${worst.toFixed(1)}px between the nearest two`);
+    check('and the left-handed layout has them too, in the mirror',
+      /#touch\.lefty \.tb-aim +\{ right: auto; left: calc\(var\(--fire-cx\) \+ var\(--outer\) \* \.9239/.test(cssSrc) &&
+      /#touch\.lefty \.tb-zoom \{ right: auto; left: calc\(var\(--fire-cx\) \+ var\(--outer\) \* \.3827/.test(cssSrc));
+  }
   const past = t.stickVector(0, -3 * R, R);
   check('past the rim is still exactly one', past.mag === 1 && Math.abs(past.y - 1) < 1e-9);
   const diag = t.stickVector(R, R, R);
@@ -10226,42 +10339,74 @@ section('the quad launcher');
 
   /* ---- THE MODEL, AS IT SHIPS ----------------------------------------
      A Nomad sculpt of four hundred and sixty thousand triangles and
-     fourteen megabytes, decimated by tools/decimate-model.mjs. What is
-     checked is what the game depends on: that it is small, that its
-     paint came through as a normalised colour the loader honours, and
-     that the surface is still one closed skin — a decimator that tore
-     it would show daylight through the box. */
+     fourteen megabytes, REMESHED AND BAKED, at the user's request: cut
+     down to a cage of eight thousand by tools/decimate-model.mjs, laid
+     flat on one sheet, and the sculpt's paint cast onto the sheet from
+     the cage by tools/bake-model.mjs. What is checked is what the game
+     depends on: that it is small, that the paint came through as a
+     texture the loader wears, and that the surface is still one closed
+     skin — a remesh that tore it would show daylight through the box. */
   const file = fs.readFileSync(L.url);
   const { json, bin } = parseGLB(file.buffer.slice(file.byteOffset, file.byteOffset + file.length));
   const prims = json.meshes.flatMap(m => m.primitives);
   const tris = prims.reduce((n, p) => n + json.accessors[p.indices].count / 3, 0);
-  note('the launcher', `${(file.length / 1024).toFixed(0)}K, ${tris} triangles from ${json.asset.extras?.decimated?.from}`);
-  check('the launcher ships as a model of under a megabyte, from a sculpt nearly twelve times the triangles',
-    file.length < 1024 * 1024 && tris <= 50000 && (json.asset.extras?.decimated?.from || 0) >= 11 * tris);
+  const baked = json.asset.extras?.baked || {};
+  note('the launcher', `${(file.length / 1024).toFixed(0)}K, ${tris} triangles from ${baked.from}, a ${baked.size}-texel sheet of ${baked.charts} pieces`);
+  check('the launcher ships as a model of under a megabyte: a cage of at most ten thousand triangles, from a sculpt over forty times that',
+    file.length < 1024 * 1024 && tris <= 10000 && (baked.from || 0) >= 40 * tris && baked.cage === tris);
   const pr = prims[0];
-  const col = json.accessors[pr.attributes.COLOR_0];
-  check('its paint is in its vertices, as normalised bytes, and there is no texture at all',
-    prims.length === 1 && col && col.componentType === 5121 && col.normalized === true &&
-    !json.images?.length && !json.textures?.length && pr.attributes.NORMAL !== undefined && L.paint === 'vertex');
-  check('and the loader hands the normalised flag to the attribute, or the paint comes out white',
-    readAccessor(json, bin, pr.attributes.COLOR_0).normalized === true &&
-    readAccessor(json, bin, pr.attributes.POSITION).normalized === false);
+  const mat = json.materials?.[pr.material];
+  const img = json.images?.[json.textures?.[mat?.pbrMetallicRoughness?.baseColorTexture?.index]?.source];
+  check('its paint is baked onto one texture on the one mesh, and there is none left in its vertices',
+    prims.length === 1 && pr.attributes.TEXCOORD_0 !== undefined && pr.attributes.COLOR_0 === undefined &&
+    pr.attributes.NORMAL !== undefined && json.images?.length === 1 && !!img && !L.paint);
   {
+    /* the sheet is a PNG of the size the bake says, square, and clamped
+       at its edges — a wrapping sampler bleeds the far side of the sheet
+       into every chart that touches the near one */
+    const bv = json.bufferViews[img.bufferView];
+    const png = bin.subarray(bv.byteOffset || 0, (bv.byteOffset || 0) + bv.byteLength);
+    const dv = new DataView(png.buffer, png.byteOffset, png.byteLength);
+    const sig = [137, 80, 78, 71, 13, 10, 26, 10].every((b, i) => png[i] === b);
+    const sampler = json.samplers?.[json.textures[0].sampler] || {};
+    check('the sheet is a square PNG of the size it was baked at, clamped at its edges',
+      img.mimeType === 'image/png' && sig && dv.getUint32(16) === baked.size && dv.getUint32(20) === baked.size &&
+      sampler.wrapS === 33071 && sampler.wrapT === 33071, `${dv.getUint32(16)}x${dv.getUint32(20)}`);
+    const UV = readAccessor(json, bin, pr.attributes.TEXCOORD_0).array;
+    let out = 0;
+    for (const u of UV) if (!(u >= 0 && u <= 1)) out++;
+    check('and every corner of the cage lands on the sheet', out === 0, `${out} off it`);
+  }
+  {
+    /* CLOSED ONCE IT IS WELDED. A baked mesh is cut along every seam of
+       the sheet and every hard crease, so the same corner is several
+       vertices with different places on the sheet or different normals;
+       counting edges between VERTICES would find every seam open. Welded
+       by where the corners are, it is the cage again, and the cage is
+       what the decimator kept closed. */
+    const P = readAccessor(json, bin, pr.attributes.POSITION).array;
     const idx = readAccessor(json, bin, pr.indices).array;
-    const V = json.accessors[pr.attributes.POSITION].count;
-    const edges = new Map();
+    const at = new Map(), weld = new Int32Array(P.length / 3);
+    for (let v = 0; v < weld.length; v++) {
+      const k = `${P[3 * v]},${P[3 * v + 1]},${P[3 * v + 2]}`;
+      if (!at.has(k)) at.set(k, at.size);
+      weld[v] = at.get(k);
+    }
+    const W = at.size, edges = new Map();
     for (let f = 0; f < idx.length; f += 3)
-      for (const [a, b] of [[idx[f], idx[f + 1]], [idx[f + 1], idx[f + 2]], [idx[f + 2], idx[f]]]) {
-        const k = a < b ? a * V + b : b * V + a;
+      for (const [a0, b0] of [[idx[f], idx[f + 1]], [idx[f + 1], idx[f + 2]], [idx[f + 2], idx[f]]]) {
+        const a = weld[a0], b = weld[b0], k = a < b ? a * W + b : b * W + a;
         edges.set(k, (edges.get(k) || 0) + 1);
       }
     let open = 0;
     for (const n of edges.values()) if (n !== 2) open++;
-    check('and the decimated surface is still closed: every edge between exactly two faces', open === 0, `${open} edges`);
+    check('and the remeshed surface is still closed: welded, every edge between exactly two faces',
+      open === 0 && W < weld.length, `${open} edges, ${weld.length} vertices on ${W} corners`);
   }
-  check('the decimator needs nothing but node, like every other tool here',
-    (fs.readFileSync('tools/decimate-model.mjs', 'utf8').match(/^import .* from '([^']+)'/gm) || [])
-      .every(l => /'node:/.test(l)));
+  check('the decimator and the baker need nothing but node, like every other tool here',
+    ['tools/decimate-model.mjs', 'tools/bake-model.mjs', 'tools/png-read.mjs'].every(f =>
+      (fs.readFileSync(f, 'utf8').match(/^import .* from '([^']+)'/gm) || [])
+        .every(l => /'node:|'\.\/[\w-]+\.mjs'/.test(l))));
 
   /* ---- WHERE ITS PARTS ARE, in the model's own units ----------------- */
   const P = readAccessor(json, bin, pr.attributes.POSITION).array;
@@ -10362,6 +10507,58 @@ section('the quad launcher');
     g.input.attack = false; g.tic(); g.tic();
     check('with nothing locked, letting go fires one, unguided', M.fired === was + 1 && M.shots.some(s => !s.target));
     for (let t = 0; t < 300 && M.shots.length; t++) g.tic();
+  }
+  /* ---- WHAT A ROCKET LOOKS LIKE, at the user's request: a body that
+     turns to the eye with a flame on its tail, a trail of smoke behind
+     it, and a bang where it lands ---------------------------------------- */
+  {
+    const opaque = v => { let n = 0; for (let i = 3; i < v.data.length; i += 4) if (v.data[i]) n++; return n; };
+    const R = g.sprites.frames.get('ROKTA');
+    check('the rocket is baked in eight turns and two flames, and the bang in eight frames',
+      !!R && R.views.length === 8 && new Set(R.views).size === 8 && g.sprites.frames.has('ROKTB') &&
+      'ABCDEFGH'.split('').every(f => g.sprites.frames.has('MEXP' + f)));
+    check('side on it is a long thing and nose on a small one, so the turns are in the order they are used',
+      opaque(R.views[2]) > 2 * opaque(R.views[0]) && opaque(R.views[6]) > 2 * opaque(R.views[0]),
+      `${opaque(R.views[0])} nose on, ${opaque(R.views[2])} side on`);
+    /* the eye at the origin, the rocket due north of it */
+    check('and which turn is seen is where it is heading against where the eye is: nose, right, tail, left',
+      [[0, -1], [1, 0], [0, 1], [-1, 0]].map(([dx, dy]) => MS.rocketFacing(dx, dy, 0, 500, 0, 0)).join() === '0,2,4,6');
+
+    /* THE TRAIL: a puff every TRAIL.step of the way, laid along the leg
+       it flew, so it is a line and not a string of beads */
+    M.trail.killAll();
+    const n0 = M.fired;
+    p.ammo.rockets = 4;
+    g.input.attack = true; g.tic(); g.tic();
+    g.input.attack = false;
+    let shot = null, path = 0, px = 0, py = 0, pz = 0;
+    for (let t = 0; t < 30; t++) {
+      g.tic();
+      if (!shot) { shot = M.shots.find(q => !q.target) || null; if (shot) ({ x: px, y: py, z: pz } = shot); continue; }
+      if (!M.shots.includes(shot)) break;
+      path += Math.hypot(shot.x - px, shot.y - py, shot.z - pz);
+      ({ x: px, y: py, z: pz } = shot);
+      if (path > 400) break;
+    }
+    const puffs = M.trail.count;
+    check('it lays a trail as it goes, a puff every few units of the way',
+      M.fired === n0 + 1 && path > 100 && puffs >= path / MS.TRAIL.step * 0.9, `${Math.round(path)} units, ${puffs} puffs`);
+    /* and down, and its own bang over, before the one this watches */
+    for (let t = 0; t < 400 && (M.shots.length || M.booms.length); t++) g.tic();
+
+    /* THE BANG: eight frames of fireball, and the smoke after it rather
+       than in front of it — the first cut put the cloud down at the
+       instant it went off, and smoke drawn over a fireball hides it */
+    M.trail.killAll();
+    const b0 = M.booms.length;
+    M.detonate({ x: p.x + Math.cos(p.angle) * 300, y: p.y + Math.sin(p.angle) * 300, z: p.z + 60 }, null);
+    const going = M.booms.length;
+    const smoke = [];
+    for (let t = 0; t < MS.BOOM.tics * MS.BOOM.frames + 2; t++) { smoke.push(M.trail.count); g.tic(); }
+    check('where it goes off there is a fireball of eight frames, and then it is gone',
+      going === b0 + 1 && M.booms.length === b0);
+    check('and its smoke rises out of it as it burns out, not in front of it as it goes off',
+      smoke.slice(0, MS.BOOM.tics * 3 + 1).every(n => n === 0) && M.trail.count >= 8, smoke.join(','));
   }
   /* WHAT IS WARM, which the seeker and the screen both ask */
   {

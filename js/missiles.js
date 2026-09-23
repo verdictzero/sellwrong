@@ -61,6 +61,10 @@
 import * as THREE from 'three';
 import { createSpriteMaterial } from './material.js';
 import { pRandom, dist2 } from './util.js';
+import { Particles } from './particles.js';
+import { SMOKE_PUFFS } from './effects.js';
+import { climate } from './weather.js';
+import { wallNormal, UP, DOWN } from './decals.js';
 
 export const SEEKER = {
   range: 4200,          // how far away a heat source can be taken
@@ -96,6 +100,30 @@ export const WARHEAD = {
   self: 0.5,            // the share of it that reaches the player, who is also in reach
 };
 
+/* THE TRAIL AND THE BANG, which are pictures and so numbers of their
+   own, apart from what the warhead does. */
+export const TRAIL = {
+  step: 14,             // units of flight between two puffs of the trail
+  max: 1000,            // the trail's own pool: four missiles' worth and a bang's
+  life: 44,             // tics a puff lasts, and up to half again
+  size0: 6, size1: 34,  // how big it is born and how big it goes
+  light: 0.82,          // what it is lit to: it is pale, and it is meant to be seen
+};
+export const BOOM = {
+  tics: 3,              // tics a frame of the fireball
+  frames: 8,
+  scale: 2.125,         // the frames are sixty-four across; this makes a fireball of about three metres
+};
+
+/** WHICH EIGHTH OF A ROCKET IS SEEN from the eye at (ex, ey): where it
+ *  is heading against where the eye is from it, 0 its nose, 2 heading
+ *  off to the eye's right, 4 its tail and its flame — the order
+ *  rocketView in js/sprites.js draws them in. */
+export function rocketFacing(dx, dy, x, y, ex, ey) {
+  const rel = Math.atan2(dy, dx) - Math.atan2(ey - y, ex - x);
+  return ((Math.round(rel / (Math.PI / 4)) % 8) + 8) % 8;
+}
+
 export class MissileSystem {
   constructor(game) {
     this.game = game;
@@ -114,6 +142,17 @@ export class MissileSystem {
     this._pt = { x: 0, y: 0, z: 0 };
     this._o = { x: 0, y: 0, z: 0 };
     this.reticles = [];         // world markers over the locks, drawn like the bore's
+    /* THE TRAIL'S OWN POOL. The first trail was puffs out of the store's
+       smoke — dark, because the store's smoke is, and shared with every
+       burning aisle — and at night it could not be seen at all. This one
+       is pale, lit well above the street, and the salvo's alone. It
+       borrows the store's puff frames when it is first drawn. */
+    this.trail = new Particles({
+      max: TRAIL.max, texture: null, frames: SMOKE_PUFFS,
+      blend: 'alpha', fullbright: false, light: TRAIL.light, name: 'missile-trail', renderOrder: 14, nearShrink: 90,
+    });
+    this.booms = [];            // fireballs going off: { x, y, z, t, mesh }
+    this._boomMeshes = [];
   }
 
   /** Whether the seeker is on at all: the launcher in hand, and a hand. */
@@ -178,6 +217,15 @@ export class MissileSystem {
     else if (!this.queue.length) this.locks.length = 0;
     this.salvoTic(p);
     this.flyTic();
+    this.trail.tic();
+    for (let i = this.booms.length - 1; i >= 0; i--) {
+      const b = this.booms[i];
+      this.boomTic(b);
+      if (++b.t >= BOOM.tics * BOOM.frames) {
+        this.booms.splice(i, 1);
+        if (b.mesh) { b.mesh.visible = false; this._boomMeshes.push(b.mesh); }
+      }
+    }
     this.shake = Math.max(0, this.shake - 0.035);
   }
 
@@ -369,35 +417,60 @@ export class MissileSystem {
       const body = this.bodyOnLeg(s, nx, ny, nz, t);
       const wall = lv.rayHitWall(s.x, s.y, s.z, nx, ny, nz);
       const sec = lv.sectorAt(nx, ny);
-      let at = null, direct = null;
+      let at = null, direct = null, face = null;
       if (body && (!wall || body.u <= (wall.t ?? 1))) { at = body.at; direct = body.who; }
-      else if (wall) at = wall;
+      else if (wall) { at = wall; face = wall.line ? wallNormal(wall.line, s.x, s.y) : null; }
       else if (!sec || nz <= sec.floor + 2 || nz >= sec.ceil - 2 || --s.life <= 0) {
         at = { x: nx, y: ny, z: sec ? Math.max(sec.floor + 2, Math.min(sec.ceil - 2, nz)) : nz };
+        /* the floor or the ceiling, if that is what stopped it */
+        if (sec && nz <= sec.floor + 2) face = UP;
+        else if (sec && nz >= sec.ceil - 2 && !sec.sky) face = DOWN;
       }
+      /* the trail runs right up to where it went off */
+      this.shed(s, at || { x: nx, y: ny, z: nz });
       if (at) {
         this.shots.splice(i, 1);
         this.discard(s);
-        this.detonate(at, direct);
+        this.detonate(at, direct, face);
         continue;
       }
       s.x = nx; s.y = ny; s.z = nz;
-      /* THE TRAIL, in two parts, because the first cut had one and it
-         could not be seen. Smoke alone is a grey puff lit by the street,
-         and at two in the morning the street is black: the salvo left
-         nothing to watch. So the motor sheds a small lick of flame every
-         tic, off the same pool the fireballs use — white, going orange,
-         gone in a fraction of a second — which is the streak the eye
-         follows; and the smoke, every other tic, is what hangs behind it
-         where there is light to see it by. The pool is shared with every
-         burning shopper, so the smoke is thin: four missiles at a puff a
-         tic would have been most of it. And the motor pulls the one fire
-         light toward itself, so it lights the street it crosses. */
-      g.fx?.fireball(s.x - s.dx * 12, s.y - s.dy * 12, s.z - s.dz * 12, 16, 4);
-      if ((s.tics & 1) === 0) {
-        g.fx?.puff(s.x - s.dx * 18, s.y - s.dy * 18, s.z - s.dz * 18, 8, 24);
-        g.fx?.glowAt(s.x, s.y, 0.7);
-      }
+      /* THE EXHAUST: a small lick of flame every tic off the pool the
+         fireballs use — white, going orange, gone in a fraction of a
+         second — which is the hot end of the streak; the rocket sprite
+         carries its own flame and MISL blooms behind it (see render);
+         and the motor pulls the one fire light toward itself, so it
+         lights the street it crosses. */
+      g.fx?.fireball(s.x - s.dx * 16, s.y - s.dy * 16, s.z - s.dz * 16, 11, 3);
+      if ((s.tics & 1) === 0) g.fx?.glowAt(s.x, s.y, 0.7);
+    }
+  }
+
+  /** THE SMOKE TRAIL, laid down along the leg the rocket has just flown
+   *  rather than where it ended up, a puff every TRAIL.step units: at
+   *  fifty-eight units a tic a puff a tic would be a dotted line. Pale,
+   *  and born warm — lit by the motor it has just come out of — going
+   *  to grey as it spreads and drifts off on the wind. */
+  shed(s, to) {
+    const wind = climate.wind;
+    const ox = s.x - s.dx * 14, oy = s.y - s.dy * 14, oz = s.z - s.dz * 14;
+    const ex = to.x - s.dx * 14, ey = to.y - s.dy * 14, ez = to.z - s.dz * 14;
+    const len = Math.hypot(ex - ox, ey - oy, ez - oz);
+    const n = Math.max(1, Math.ceil(len / TRAIL.step));
+    for (let k = 1; k <= n; k++) {
+      const f = k / n;
+      this.trail.spawn({
+        x: ox + (ex - ox) * f + (pRandom() / 255 - 0.5) * 3,
+        y: oy + (ey - oy) * f + (pRandom() / 255 - 0.5) * 3,
+        z: oz + (ez - oz) * f + (pRandom() / 255 - 0.5) * 3,
+        vx: (pRandom() / 255 - 0.5) * 0.4 + wind.x * 1.2, vy: (pRandom() / 255 - 0.5) * 0.4 + wind.y * 1.2,
+        vz: 0.12 + (pRandom() / 255) * 0.25,
+        life: TRAIL.life + (pRandom() % (TRAIL.life >> 1)),
+        size0: TRAIL.size0, size1: TRAIL.size1,
+        c0: [0.98, 0.9, 0.76], c1: [0.56, 0.56, 0.6], a0: 0.72, a1: 0,
+        frame: pRandom() % SMOKE_PUFFS, frameRate: 0.08,
+        drag: 0.965, gravity: 0.004,
+      });
     }
   }
 
@@ -456,16 +529,22 @@ export class MissileSystem {
   /* ------------------------------------------------------------------
      The warhead
      ------------------------------------------------------------------ */
-  detonate(at, direct = null) {
+  detonate(at, direct = null, face = null) {
     const g = this.game, p = g.player;
     this.blasts++;
     g.sound?.play('explode', at);
-    /* the bang: a knot of the aircraft's fireballs, smaller; the coals;
-       smoke that hangs; the sprite fireball; and the light */
-    for (let k = 0; k < 7; k++) g.fx?.fireball(at.x, at.y, at.z, 62, 16);
+    /* THE BANG, which is a picture now and not only a heap of particles:
+       the eight frames of MEXP where it went off (see render), a few of
+       the aircraft's fireballs in and round it for the glow, the coals,
+       the sparks — and, once the fireball is burning out, a cloud of
+       smoke rising out of it (see boomTic). And the light. */
+    this.booms.push({ x: at.x, y: at.y, z: at.z, t: 0, mesh: null });
+    for (let k = 0; k < 4; k++) g.fx?.fireball(at.x, at.y, at.z, 56, 12);
     g.fx?.ember(at.x, at.y, at.z, 10, 1.3);
-    for (let k = 0; k < 4; k++) g.fx?.puff(at.x, at.y, at.z, 30, 130);
     g.spawnSparks?.(at.x, at.y, at.z, 8);
+    /* AND IT LEAVES A MARK on what it hit — the hot spot a flame leaves,
+       at its hottest, which glows and cools into a scorch (js/decals.js) */
+    if (face) g.decals?.heat(at.x, at.y, at.z, face, 1);
     g.fx?.glowAt(at.x, at.y, 6);
     /* and it starts a fire where it went off, because this is that game */
     g.fire?.ignite(at.x, at.y, WARHEAD.heat, WARHEAD.heatRadius);
@@ -508,8 +587,29 @@ export class MissileSystem {
     }
   }
 
+  /** THE SMOKE OF A BANG, AND IT COMES AFTER THE FIRE. The first cut put
+   *  it all down at the instant it went off, and smoke is drawn after
+   *  anything solid: eight dark puffs sat in front of the fireball and
+   *  all that showed of the explosion was its shock ring. So the cloud
+   *  starts as the ball starts to burn out — the fourth frame — a puff
+   *  a tic, each higher than the last, rising and spreading, dark,
+   *  going grey. */
+  boomTic(b) {
+    const k = b.t - BOOM.tics * 3;
+    if (k < 0 || k >= 8) return;
+    const a = (pRandom() / 255) * Math.PI * 2, r = (pRandom() / 255) * 30;
+    this.trail.spawn({
+      x: b.x + Math.cos(a) * r, y: b.y + Math.sin(a) * r, z: b.z + 18 + k * 7,
+      vx: Math.cos(a) * 0.45 + climate.wind.x, vy: Math.sin(a) * 0.45 + climate.wind.y, vz: 0.6 + (pRandom() / 255) * 0.6,
+      life: 90 + (pRandom() % 50), size0: 36, size1: 120,
+      c0: [0.30, 0.28, 0.26], c1: [0.46, 0.46, 0.5], a0: 0.72, a1: 0,
+      frame: pRandom() % SMOKE_PUFFS, frameRate: 0.06, drag: 0.97, gravity: 0.003,
+    });
+  }
+
   discard(s) {
-    if (s.mesh) { this.game.scene.remove(s.mesh); s.mesh.material.dispose(); s.mesh = null; }
+    for (const k of ['mesh', 'flare'])
+      if (s[k]) { this.game.scene.remove(s[k]); s[k].material.dispose(); s[k] = null; }
   }
 
   /* ------------------------------------------------------------------
@@ -529,11 +629,11 @@ export class MissileSystem {
     return m;
   }
 
-  place(mesh, x, y, z, sprite, frame, billboardRot, scale = 1) {
+  place(mesh, x, y, z, sprite, frame, billboardRot, scale = 1, rot = 0) {
     const g = this.game;
     const e = g.sprites.get(sprite, frame);
     const u = mesh.material.uniforms;
-    u.map.value = g.sprites.texture(e, 0);
+    u.map.value = g.sprites.texture(e, rot);
     u.spriteScale.value.set(e.w * e.scale * scale, e.h * e.scale * scale);
     u.billboardRot.value = billboardRot;
     u.fullbright.value = 1;
@@ -542,8 +642,15 @@ export class MissileSystem {
     mesh.visible = true;
   }
 
-  render(billboardRot) {
+  /** `ex, ey` is the eye, for which way round each rocket is seen. */
+  render(billboardRot, ex = this.game.player?.x ?? 0, ey = this.game.player?.y ?? 0) {
     const g = this.game;
+    /* the trail borrows the store's puffs the first time there are any */
+    if (!this.trail.mesh && g.fx?.smoke?.opts?.texture && g.scene) {
+      this.trail.opts.texture = g.fx.smoke.opts.texture;
+      this.trail.attach(g.scene);
+    }
+    this.trail.render(billboardRot);
     /* one bracket per locked TARGET, bigger for every extra lock on it */
     const marks = [];
     if (this.active) {
@@ -572,9 +679,23 @@ export class MissileSystem {
         this.place(r, pt.x, pt.y, pt.z, 'TLCK', 'B', billboardRot, (2.2 - 1.2 * f) * far);
       } else this.place(r, pt.x, pt.y, pt.z, 'TLCK', 'A', billboardRot, (1 + 0.22 * (m.n - 1)) * far);
     }
+    /* THE ROCKETS: the body, turned to the eye in eighths the way a Doom
+       thing is — which eighth is where it is heading against where you
+       are, 0 its nose and 4 its flame — and the bloom of the motor on
+       top of it, additive, a little behind */
     for (const s of this.shots) {
-      if (!s.mesh) s.mesh = this._sprite(true, 'add');
-      this.place(s.mesh, s.x, s.y, s.z, 'MISL', 'ABC'[(s.tics + (s.seed * 3 | 0)) % 3], billboardRot);
+      if (!s.mesh) s.mesh = this._sprite(true, 'cutout');
+      if (!s.flare) s.flare = this._sprite(true, 'add');
+      this.place(s.mesh, s.x, s.y, s.z, 'ROKT', (s.tics >> 1) & 1 ? 'B' : 'A', billboardRot, 1,
+                 rocketFacing(s.dx, s.dy, s.x, s.y, ex, ey));
+      this.place(s.flare, s.x - s.dx * 16, s.y - s.dy * 16, s.z - s.dz * 16, 'MISL',
+                 'ABC'[(s.tics + (s.seed * 3 | 0)) % 3], billboardRot, 1.8);
+    }
+    /* AND THE FIREBALLS, a frame every BOOM.tics */
+    for (const b of this.booms) {
+      if (!b.mesh) b.mesh = this._boomMeshes.pop() || this._sprite(true, 'cutout');
+      const f = Math.min(BOOM.frames - 1, Math.floor(b.t / BOOM.tics));
+      this.place(b.mesh, b.x, b.y, b.z, 'MEXP', 'ABCDEFGH'[f], billboardRot, BOOM.scale);
     }
   }
 }

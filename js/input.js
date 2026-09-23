@@ -72,11 +72,16 @@ export class Input {
     /* and what the scope multiplies it by while it is narrowed — see
        sample(). Nothing but js/main.js writes it. */
     this.zoomScale = 1;
+    /* the scope's three presses, kept until js/main.js takes them — see
+       sample() and takeScope() */
+    this.zoomPressed = false;
+    this.zoomStep = false;
+    this.aimToggle = false;
     this.invertY = false;
     this.touch = {
       move: { x: 0, y: 0 }, look: { x: 0, y: 0 },
       attack: false, use: false, usePulse: false, jumpPulse: false, zoomPulse: false,
-      pausePulse: false, run: false, weapon: 0,
+      aimPulse: false, pausePulse: false, run: false, weapon: 0,
     };
     /* WHETHER A PAD IS IN CHARGE, which is a different question from
        which MODE the game is in: a phone with a controller paired is
@@ -281,10 +286,26 @@ export class Input {
        and an || that short-circuits past it leaves that record a frame
        stale, so the next press off the pad is swallowed. Pressing Z
        while resting a thumb on B was enough to do it. */
+    /* THE PHONE HAS TWO, at the user's request: AIM, which puts the gun
+       up and takes it down, and the magnification, which is only on the
+       glass while it is up and steps between the aimed steps — see
+       Scope.toggleAim and Scope.stepAimed.
+
+       AND ALL THREE ARE KEPT UNTIL THEY ARE TAKEN. This runs once a
+       tic and js/main.js reads them once a FRAME, and the two clocks are
+       not the same clock: at sixty frames a second four frames in ten
+       have no tic in them, and a flag that was simply left standing
+       stepped the scope twice for one press about as often as that —
+       and a toggle that goes up and straight back down is a button that
+       does nothing. So they are set here and cleared by the one reader
+       (takeScope), and a press can no more be counted twice than lost. */
     const padZoom = padEdge(1);
-    this.zoomPressed = this.pressed('zoom') || this.mouseRightPulse || this.touch.zoomPulse || padZoom;
+    if (this.pressed('zoom') || this.mouseRightPulse || padZoom) this.zoomPressed = true;
+    if (this.touch.zoomPulse) this.zoomStep = true;
+    if (this.touch.aimPulse) this.aimToggle = true;
     this.mouseRightPulse = false;
     this.touch.zoomPulse = false;
+    this.touch.aimPulse = false;
 
     /* AND THE PAUSE MENU OPENS ON START, at the user's request, which it
        did not: pausing was Escape or P and nothing else, so a player on
@@ -309,6 +330,17 @@ export class Input {
 
     this.prev = new Set(this.keys);
     this.latch.clear();
+  }
+
+  /** THE SCOPE'S PRESSES, TAKEN: once a frame, by js/main.js, the one
+   *  thing that works a sight — see Scope.work. Which came in since the
+   *  last time, 'aim', 'step' or 'cycle', or null, and all three are
+   *  cleared either way. A word and not an object, because this is asked
+   *  every frame and the answer is almost always no. */
+  takeScope() {
+    const press = this.aimToggle ? 'aim' : this.zoomStep ? 'step' : this.zoomPressed ? 'cycle' : null;
+    this.aimToggle = this.zoomStep = this.zoomPressed = false;
+    return press;
   }
 
   _gamepad() {
