@@ -62,6 +62,14 @@ export const ARC = {
   damage1: 190,         // and off a full charge
   falloff: 0.92,        // each hop does this much of the one before
   hopTics: 1,           // tics between one strike and the next being revealed
+  /* SUB-BOLTS, at the user's request: thinner branches thrown off a
+     strike at random, which find somebody the chain passed over — bonus
+     kills — or, with nobody near enough, ground into the floor */
+  subChance0: 0.35,     // the chance a strike throws one, off a tap
+  subChance1: 0.8,      // and off a full charge
+  subMost: 3,           // the most one strike can throw
+  subReach: 430,        // how far a branch can reach for somebody
+  subShare: 0.55,       // the share of the strike's damage a branch deals
   life: 16,             // tics a bolt stays lit after its last strike
 };
 
@@ -105,11 +113,13 @@ export class ArcSystem {
     this.fired = 0;
     this.strikes = 0;           // every strike ever, chain and field
     this.lastChain = [];        // the last discharge's chain, for the suite and the HUD
+    this.subs = 0;              // sub-bolts thrown, ever
+    this.bonusKills = 0;        // and the people they killed that the chain never touched
     this.shake = 0;
     this.mesh = null;
     /* the sparks — square, bright, additive: the embers' own texture —
        and the glow of a strike, the smoke's puffs drawn additively blue */
-    this.sparks = new Particles({ max: 1600, texture: null, frames: 1, blend: 'add', fullbright: true,
+    this.sparks = new Particles({ max: 2600, texture: null, frames: 1, blend: 'add', fullbright: true,
                                   name: 'arc-sparks', renderOrder: 13, nearShrink: 120 });
     this.glows = new Particles({ max: 160, texture: null, frames: SMOKE_PUFFS, blend: 'add', fullbright: true,
                                  name: 'arc-glows', renderOrder: 13, nearShrink: 90 });
@@ -204,7 +214,7 @@ export class ArcSystem {
     }
     if (!struck.size) nodes.push({ ...this.sightEnd(p), who: null });
     this.lastChain = [...struck];
-    this.bolts.push({ nodes, reveal: 0, t: 0, charge, struck, seed: (pRandom() << 8) | pRandom(), fields: [] });
+    this.bolts.push({ nodes, reveal: 0, t: 0, charge, struck, seed: (pRandom() << 8) | pRandom(), fields: [], subs: [] });
     g.sound?.play(charge > 0.6 ? 'arcbig' : 'arcfire', from);
     g.noise?.(from, 1400 + 1200 * charge);
     this.shake = Math.max(this.shake, 0.25 + 0.5 * charge);
@@ -241,6 +251,7 @@ export class ArcSystem {
           this.burst(c.x, c.y, c.z, 0.35);
         }
       }
+      this.branch(b, node, dmg);
       g.sound?.play('arczap', node);
     } else if (!node.muzzle) {
       /* a bolt into the scenery leaves a scorch where it grounded */
@@ -248,6 +259,51 @@ export class ArcSystem {
       if (s && node.z <= s.floor + 2) g.decals?.heat?.(node.x, node.y, s.floor, { nx: 0, ny: 0, nz: 1 }, 0.7);
     }
     g.fx?.glowAt?.(node.x, node.y, 2.5 + 3 * b.charge);
+  }
+
+  /** SUB-BOLTS: the branches a strike throws, at random, more of them the
+   *  higher the charge. Each reaches for somebody near the strike that
+   *  the chain has not taken — chosen at random from everybody in reach
+   *  and in view, not the nearest, so they spray — and deals a share of
+   *  the strike; a kill that way is a bonus kill. A branch with nobody to
+   *  reach for grounds into the floor a little way off instead. */
+  branch(b, node, dmg) {
+    const g = this.game, p = g.player;
+    b.subs ||= [];
+    const chance = ARC.subChance0 + (ARC.subChance1 - ARC.subChance0) * b.charge;
+    let n = 0;
+    while (n < ARC.subMost && pRandom() / 256 < chance * (n ? 0.6 : 1)) n++;
+    if (!n) return;
+    const near = [], c = { x: 0, y: 0, z: 0 };
+    for (const o of g.actors) {
+      if (!this.canStrike(o) || b.struck.has(o)) continue;
+      this.chest(o, c);
+      if (Math.hypot(c.x - node.x, c.y - node.y, c.z - node.z) > ARC.subReach) continue;
+      if (g.level.sightBlocked(node.x, node.y, node.z, c.x, c.y, c.z)) continue;
+      near.push(o);
+    }
+    for (let k = 0; k < n; k++) {
+      const from = { x: node.x, y: node.y, z: node.z };
+      this.subs++;
+      if (near.length) {
+        const o = near.splice(pRandom() % near.length, 1)[0];
+        b.subs.push({ a: from, who: o, to: null, t: 0, seed: (pRandom() << 8) | pRandom() });
+        this.strikes++;
+        o.damage(this.lethal(o, dmg * ARC.subShare), p, { shock: true });
+        if (o.dead) this.bonusKills++;
+        this.chest(o, c);
+        this.burst(c.x, c.y, c.z, 0.45);
+      } else {
+        /* nobody: it grounds, somewhere on the floor round the strike */
+        const a = (pRandom() / 256) * Math.PI * 2, r = 50 + (pRandom() / 256) * 150;
+        const x = node.x + Math.cos(a) * r, y = node.y + Math.sin(a) * r;
+        const s = g.level.sectorAt(x, y);
+        if (!s) continue;
+        const to = { x, y, z: s.floor };
+        b.subs.push({ a: from, who: null, to, t: 0, seed: (pRandom() << 8) | pRandom() });
+        this.burst(x, y, s.floor + 2, 0.3);
+      }
+    }
   }
 
   /** A BOLT KILLS AND DOES NOT BURST. Damage far past what a body has
@@ -310,6 +366,14 @@ export class ArcSystem {
       /* the bodies move and the bolt stays on them */
       for (const n of b.nodes) if (n.who && !n.who.removed) this.chest(n.who, n);
       for (const f of b.fields) f.t++;
+      for (const sb of b.subs) {
+        sb.t++;
+        /* and the branches shed their own drips */
+        if (sb.t < ARC.life && (pRandom() & 7) === 0) {
+          const to = sb.who ? this.chest(sb.who) : sb.to, f = pRandom() / 256;
+          this.drip(sb.a.x + (to.x - sb.a.x) * f, sb.a.y + (to.y - sb.a.y) * f, sb.a.z + (to.z - sb.a.z) * f, 1.6);
+        }
+      }
       /* shake sparks off every lit link as it burns */
       for (let i = 1; i <= b.reveal; i++) {
         if ((pRandom() & 3) !== 0) continue;
@@ -456,6 +520,19 @@ export class ArcSystem {
           const F = { x: P[j] + r(11) * L, y: P[j + 1] + r(17) * L, z: P[j + 2] + r(23) * L - L * 0.3 };
           line(this.jag({ x: P[j], y: P[j + 1], z: P[j + 2] }, F, seed + k * 7, 1.4, pts), 3.5 * wide, 0.8 * wide, fl * 0.7);
         }
+      }
+      /* the sub-bolts: thinner, with a fork of their own, and gone sooner */
+      for (const sb of b.subs) {
+        if (sb.t > ARC.life) continue;
+        const to = sb.who ? this.chest(sb.who, { x: 0, y: 0, z: 0 }) : sb.to;
+        const P = this.jag(sb.a, to, sb.seed * 7 + tick * 57, 1.25, pts);
+        const ff = fl * (1 - sb.t / (ARC.life + 1));
+        line(P, 3.6, 0.75, ff);
+        const j = 3 * Math.max(1, Math.floor(P.length / 6));
+        const L = Math.hypot(to.x - sb.a.x, to.y - sb.a.y, to.z - sb.a.z) * 0.3;
+        const q = (sb.seed >>> 3) % 1000 / 1000 - 0.5, r = (sb.seed >>> 9) % 1000 / 1000 - 0.5;
+        line(this.jag({ x: P[j], y: P[j + 1], z: P[j + 2] }, { x: P[j] + q * L, y: P[j + 1] + r * L, z: P[j + 2] - L * 0.4 },
+                      sb.seed + tick, 1.4, pts), 2.2, 0.5, ff * 0.7);
       }
       for (const fd of b.fields) {
         if (fd.t > ARC.life || !fd.who) continue;

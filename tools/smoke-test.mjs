@@ -10745,6 +10745,9 @@ section('the arc maw');
     for (let k = 0; k < 20; k++) g.tic();
     check('and people standing next to a strike are caught in its field',
       A.strikes - s0 > chain.length && b.fields.length > 0, `${A.strikes - s0} strikes for ${chain.length} in the chain`);
+    check('and strikes throw thinner sub-bolts at random, at people the chain passed over — bonus kills',
+      A.subs > 0 && b.subs.length > 0 && b.subs.every(sb => !sb.who || !chain.includes(sb.who)) &&
+      b.subs.some(sb => sb.who) && A.bonusKills > 0, `${A.subs} sub-bolts, ${A.bonusKills} bonus kills`);
     check('and it throws sparks, and sparks that fall with a trail behind them',
       A.sparks.count > 50 && A.drips.length > 0);
     const zs = A.drips.slice(0, 5).map(d => d.z);
@@ -10759,7 +10762,7 @@ section('the arc maw');
     const h0 = sw.health;
     p.angle = 0; p.pitch = Math.atan2(A.chest(sw).z - p.eyeZ, 300);
     p.ammo.volts = pl.VOLTS;
-    const b = { nodes: [{ x: p.x, y: p.y, z: p.eyeZ, who: null, muzzle: true }, { ...A.chest(sw), who: sw }], reveal: 0, t: 0, charge: 1, struck: new Set([sw]), seed: 1, fields: [] };
+    const b = { nodes: [{ x: p.x, y: p.y, z: p.eyeZ, who: null, muzzle: true }, { ...A.chest(sw), who: sw }], reveal: 0, t: 0, charge: 1, struck: new Set([sw]), seed: 1, fields: [], subs: [] };
     A.strike(b, 1);
     check('the bolt hurts a trooper, whose kit shrugs off fire, and never gibs one', (sw.health < h0 || sw.dead) && sw.health >= -8,
       `${h0} -> ${sw.health}`);

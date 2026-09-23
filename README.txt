@@ -159,7 +159,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         2539 checks, no install and no browser
+  the smoke test         2540 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -5596,6 +5596,17 @@ THE FIELD: everybody standing within 150 units of a strike who is not
 in the chain takes up to four tenths of it, less the further out they
 are, with a short arc drawn to each of them to say so.
 
+SUB-BOLTS, at the user's request: "sub bolts too, thinner branches at
+random, might generate bonus kills". Every strike down the chain may
+throw thinner branches off itself — a third of the time off a tap, four
+times in five off a full charge, up to three at once. Each reaches for
+somebody within 430 units the chain passed over, picked AT RANDOM from
+everybody in reach and in view rather than the nearest, so they spray,
+and deals a little over half the strike; a kill that way is a BONUS
+KILL, and ArcSystem counts them. A branch with nobody to reach for
+grounds into the floor a little way off. They are drawn thinner than
+the chain, with a fork of their own, and shed their own drips.
+
 IT IS NOT FIRE. Damage that is not fire is what the fireproof SWAT and
 army feel, and it shatters anybody frozen solid, which is what a bolt
 through a block of ice should do. AND A BOLT KILLS WITHOUT BURSTING: a
@@ -7891,7 +7902,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-2539 checks. Every one of them earns its place by having caught something
+2540 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
