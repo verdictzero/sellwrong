@@ -1660,6 +1660,9 @@ export class ArmyApc extends SwatVan {
 const CANNON_LOOK = 12;          // tics between choosing what to play on
 const CANNON_BEST = 560;         // the distance it would rather work at
 const CANNON_NEAR = 200;         // and closer than this it will not aim
+/* how high over the nozzle the jet's shoulder is, which is the line
+   that decides whether it can reach a fire — see findFire */
+const CANNON_ARC = 160;
 const CANNON_TURN = 0.045;       // radians a tic the turret slews
 const CANNON_LIFT = 0.03;        // and the barrel
 const CANNON_ON = 0.09;          // how close to on target before it pours
@@ -1716,6 +1719,7 @@ export class FireTruck extends SwatVan {
   stillAlight(t) {
     const g = this.fleet.game;
     if (!t) return false;
+    if (t.kind === 'box') return !!t.ref.burning;
     if (t.kind === 'car') return t.ref.whole && t.ref.burning > 0 && t.ref.state !== 'charring';
     if (t.kind === 'person') return !t.ref.dead && !t.ref.removed && t.ref.burning > 0;
     if (t.kind === 'cell') return (g.fire?.heat[t.ref] || 0) > 0;
@@ -1746,6 +1750,16 @@ export class FireTruck extends SwatVan {
       if (a.dead || a.removed || !(a.burning > 0) || a.vehicle) continue;
       add(a.x, a.y, a.z + 20, 'person', a, 350);
     }
+    /* AND THE GRID WORLD'S BOXES, which are the whole of the fire
+       there. Aimed at the FRONT — the height the decay has reached,
+       which comes down the box as it goes — rather than at the middle
+       of it, so the jet lands on what is actually alight. */
+    for (const b of g.boxes?.burningList(this._lit || (this._lit = [])) || []) {
+      /* at the face rather than the middle: the middle of a box is
+         inside a solid and nothing can see it — see Box.aimPoint */
+      const a = b.box.aimPoint(from.x, from.y);
+      add(a.x, a.y, a.z + 16, 'box', b.box, 600);
+    }
     const F = g.fire;
     if (F && F.hotCells > 0) {
       const act = F.active, n = act.length, step = Math.max(1, Math.floor(n / 160));
@@ -1766,10 +1780,16 @@ export class FireTruck extends SwatVan {
       for (const e of out) add(e.x, e.y, (lv.sectorAt(e.x, e.y)?.floor || 0) + Math.min(60, e.h * 0.5), 'tree', null, 100);
     }
     cands.sort((a, b) => a.score - b.score);
-    /* the nearest few that the nozzle can actually see */
-    for (let k = 0; k < cands.length && k < 10; k++) {
+    /* THE ONES THE JET CAN ACTUALLY GET TO. A monitor LOBS — the water
+       leaves at a few degrees up and comes down on the fire (aimPitch in
+       js/water.js integrates the flight) — so the line that matters is
+       not the flat one from the nozzle. Sight is taken from the arc's
+       shoulder instead, a hundred and sixty units over the nozzle,
+       which clears a low thing in the way and is still stopped by a
+       tall one. A wall is a wall; a garden box is not. */
+    for (let k = 0; k < cands.length && k < 12; k++) {
       const c = cands[k];
-      if (!lv.sightBlocked(from.x, from.y, from.z + 8, c.x, c.y, c.z + 10)) return c;
+      if (!lv.sightBlocked(from.x, from.y, from.z + CANNON_ARC, c.x, c.y, c.z + 10)) return c;
     }
     return null;
   }

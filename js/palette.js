@@ -204,9 +204,77 @@ const EARTH_RAMPS = [
       [1.00,[250, 238, 206]] ] },
 ];
 
+/* --------------------------------------------------------------------
+   AND A THIRD BOX: THE GRID
+
+   The world the game boots into is a green wireframe grid on black with
+   green boxes burning on it (see js/maps/grid.js), and neither of the
+   boxes above can paint it. Their green is a POLO SHIRT: sixteen entries
+   topping out at a sage, drawn for produce and a uniform, and their sky
+   is twenty entries of dawn — night blue, violet, rose. In a green world
+   those twenty are the twenty that matter and every one of them is the
+   wrong colour, so a green sky snapped into blue and crosshatched,
+   which is the same thing that happened to the first dawn and is why
+   the sky ramp exists at all.
+
+   So the green goes up and the sky ramp goes green: thirty-six entries
+   between them, which is what a world made of one colour needs.
+
+   THE SAME FIFTEEN, still — same keys, same `n`, same order, same
+   gammas — so entry n means the same MATERIAL here as in the other two
+   and the photographs in js/art-data.js recolour rather than scramble.
+   See the note on EARTH_RAMPS, which is the whole of the reasoning.
+
+   FOUR RAMPS DO NOT GO GREEN, and each is a thing you have to be able to
+   tell from the world it is standing in: `red` and `fire`, which are the
+   burning (see EMBER_RAMP, which does not tone either); `flesh`, because
+   a hundred people in a green field have to read as people; and `rust`,
+   which is what is left of them.
+   ------------------------------------------------------------------ */
+const GRID_RAMPS = [
+  /* the grid's own unlit black, going up through a green-grey */
+  { key:'grey',   n:24, gamma:1.30, stops:[[0,[4,6,5]],[0.5,[58,74,62]],[1,[190,216,198]]] },
+  { key:'bone',   n:16, gamma:1.25, stops:[[0,[6,10,7]],[0.5,[76,104,82]],[1,[208,236,212]]] },
+  { key:'brown',  n:16, gamma:1.20, stops:[[0,[8,10,6]],[0.5,[62,78,40]],[1,[164,186,120]]] },
+  /* red stays red: it is the fire, the blood and the engine */
+  { key:'red',    n:16, gamma:1.20, stops:[[0,[18,4,4]],[0.5,[138,26,20]],[1,[248,120,96]]] },
+  /* and flesh stays flesh, or a hundred people vanish into the field */
+  { key:'flesh',  n:16, gamma:1.20, stops:[[0,[22,16,13]],[0.5,[126,94,74]],[1,[238,204,178]]] },
+  /* THE GREEN. Black at the bottom and a phosphor at the top: this is
+     the grid, the boxes, and everything the world is made of. */
+  { key:'green',  n:16, gamma:1.20, stops:[[0,[2,10,4]],[0.5,[24,152,52]],[1,[150,255,168]]] },
+  { key:'olive',  n:16, gamma:1.20, stops:[[0,[6,12,4]],[0.5,[64,110,36]],[1,[176,230,140]]] },
+  { key:'blue',   n:16, gamma:1.25, stops:[[0,[4,10,12]],[0.5,[30,74,86]],[1,[140,200,212]]] },
+  { key:'cyan',   n:8,  gamma:1.20, stops:[[0,[4,14,12]],[0.5,[36,140,110]],[1,[160,252,214]]] },
+  { key:'yellow', n:16, gamma:1.15, stops:[[0,[16,16,4]],[0.5,[150,160,24]],[1,[236,252,130]]] },
+  /* rust is the other thing that has to stay itself */
+  { key:'rust',   n:16, gamma:1.20, stops:[[0,[16,9,6]],[0.5,[116,62,30]],[1,[222,150,92]]] },
+  { key:'purple', n:8,  gamma:1.20, stops:[[0,[10,8,16]],[0.5,[64,56,104]],[1,[180,172,236]]] },
+  { key:'pink',   n:8,  gamma:1.20, stops:[[0,[22,10,12]],[0.5,[160,84,92]],[1,[250,196,196]]] },
+  /* AND THE SKY, which in this world is the gradient the user asked for:
+     black overhead, down through a dark green, to a green at the
+     horizon. Twenty entries for it, which is what stopped the dawn
+     crosshatching and is what stops this one. The air fades to a texel
+     of this (see js/material.js), so the far edge of the grid goes to
+     the same green the horizon is — which is the horizon being where
+     the world ends rather than a wall standing in front of it. */
+  { key:'sky',    n:20, gamma:1.10, stops:[[0,[0,0,0]],[0.30,[2,14,6]],[0.55,[8,48,20]],[0.78,[16,104,42]],[1,[44,196,84]]] },
+  /* AND THE FIRE, which is the stock box's exactly. A coal is a coal in
+     every world; see EMBER_RAMP. */
+  { key:'fire',   n:44, gamma:1.0, stops:[
+      [0.00,[  0,  0,  0]],
+      [0.10,[ 34,  0,  0]],
+      [0.24,[ 96,  6,  0]],
+      [0.40,[168, 26,  0]],
+      [0.56,[226, 74,  6]],
+      [0.72,[248, 142, 14]],
+      [0.87,[252, 216, 62]],
+      [1.00,[255, 255, 226]] ] },
+];
+
 /** The boxes the ART can be PAINTED in, by the name the setting uses.
  *  Which one is current is a live value — see setArtPalette. */
-export const ART_PALETTES = { stock: STOCK_RAMPS, earth: EARTH_RAMPS };
+export const ART_PALETTES = { stock: STOCK_RAMPS, earth: EARTH_RAMPS, grid: GRID_RAMPS };
 /* AND EARTH IS THE ONE THE GAME IS IN, at the user's request. STOCK is
    the box every texture in this game was originally drawn in and is
    still what `stock` means; it is also the box the two photographs in

@@ -250,15 +250,33 @@ check('ramps are monotonic in luma', ['grey', 'red', 'blue', 'fire'].every(k => 
      ------------------------------------------------------------------ */
   {
     const shape = t => pal.ART_PALETTES[t].map(r => `${r.key}:${r.n}`).join(' ');
-    /* THE EARTH BOX IS THE ONE THE GAME IS IN, at the user's request,
-       and STOCK is the one it was drawn in and the one the two pictures
-       in art/ are baked against — see the note at the top of
-       tools/bake-art.mjs, which pins itself to it. */
-    check('there are two boxes to paint in and the game starts in the earth one',
-      Object.keys(pal.ART_PALETTES).join(',') === 'stock,earth' && pal.artName === 'earth' &&
+    /* THREE BOXES NOW. STOCK is the one the game was drawn in and the
+       one the two pictures in art/ are baked against — see the note at
+       the top of tools/bake-art.mjs, which pins itself to it. EARTH is
+       the superstore's. GRID is the world the game boots into, and is
+       the one the MENU starts on (TONE_SET in js/main.js); palette.js
+       itself still defaults to earth, because that is the box the
+       photographs were recoloured through and changing it would move
+       what `DEFAULT_ART` means to tools/bake-art.mjs. */
+    check('there are three boxes to paint in, and the library default is still earth',
+      Object.keys(pal.ART_PALETTES).join(',') === 'stock,earth,grid' && pal.artName === 'earth' &&
       pal.DEFAULT_ART === 'earth');
-    check('and the two have the same fifteen ramps, same lengths, same order',
-      shape('stock') === shape('earth'), `${shape('earth')}`);
+    check('and all three have the same fifteen ramps, same lengths, same order',
+      shape('stock') === shape('earth') && shape('stock') === shape('grid'), `${shape('grid')}`);
+    /* AND THE GRID BOX HAS GREEN TO SPEND, which is the whole reason it
+       exists: a world of green lines on black painted out of the earth
+       box gets sixteen entries of sage and a sky ramp full of dawn. */
+    {
+      const greens = t => {
+        pal.setArtPalette(t);
+        const n = pal.PALETTE.filter(c => c[1] > c[0] + 8 && c[1] > c[2] + 8).length;
+        return n;
+      };
+      const g = greens('grid'), e = greens('earth');
+      pal.setArtPalette('earth');
+      note('greens to paint a green world with', `grid ${g} of 256, against earth's ${e}`);
+      check('the grid box has several times the green the others do', g > e * 3, `${g} against ${e}`);
+    }
     check('which is what keeps a palette index meaning the same material in both',
       pal.ART_PALETTES.stock.reduce((a, r) => a + r.n, 0) === 256);
 
@@ -389,11 +407,11 @@ check('ramps are monotonic in luma', ['grey', 'red', 'blue', 'fire'].every(k => 
     const fs3 = await import('node:fs');
     const html = fs3.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
     const main = fs3.readFileSync(new URL('../js/main.js', import.meta.url), 'utf8');
-    check('the tone is a ladder in the pause menu, EARTH by default and remembered',
-      /id="opt-tone"/.test(html) && /TONE_SET = \[\{ v: 'earth'/.test(main) &&
+    check('the tone is a ladder in the pause menu, GRID by default and remembered',
+      /id="opt-tone"/.test(html) && /TONE_SET = \[\{ v: 'grid'/.test(main) &&
       /tone: 0,/.test(main) && /ladder\('opt-tone', 'tone', TONE_SET/.test(main));
     check('and a saved tone from before the default moved is not kept alive',
-      /delete saved\.tone/.test(main) && /PREF_VERSION = 8/.test(main));
+      /if \(was < 9\) delete saved\.tone/.test(main) && /PREF_VERSION = 9/.test(main));
     check('and a game that starts in the other one paints itself once, not twice',
       /setArtPalette\(TONE_SET\[prefs\.tone\]\.v\)/.test(main) &&
       main.indexOf('setArtPalette(TONE_SET') < main.indexOf('const textures = bakeTextures()'));
@@ -13040,7 +13058,7 @@ section('the box the screen can hold');
     /const wanted = PALETTE_SET\[prefs\.palette\]\?\.v;/.test(mainSrc) &&
     /if \(wanted && wanted !== displayName\) applyPalette\(wanted\);/.test(mainSrc));
   check('and the saved settings were versioned up, so an old one does not come back without it',
-    /const PREF_VERSION = 8;/.test(mainSrc) &&
+    /const PREF_VERSION = 9;/.test(mainSrc) &&
     /if \(was < 7\) \{ delete saved\.detail;/.test(mainSrc));
   const htmlQ = fsQ.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   check('and there is a button for it', /id="opt-palette"/.test(htmlQ));
@@ -13107,6 +13125,207 @@ section('the box the screen can hold');
      as it was drawn is exactly the game as it was drawn. */
   check('and after everything above, the art is still in its own box and the screen in the default',
     palQ.displayName === 'ramps' && palQ.PALETTE === palQ.RAMP_PALETTE);
+}
+
+/* =====================================================================
+   THE GRID
+
+   The world the game boots into, at the user's request, and the one the
+   burning was rewritten for: a finite field of green lines on black,
+   boxes two to seven cells a side standing on it, and a decay that is a
+   SHADER over one number per box rather than a simulation over a grid
+   of cells. js/maps/grid.js, js/boxes.js, and the switch in js/fire.js
+   that turns the old one off.
+
+   The superstore and the town are archived rather than deleted — every
+   test above this one still builds them — so what these check is that
+   the new world is a world: that you can stand in it, that the boxes
+   are solid, that they burn from the cap down, that the fire crosses
+   the field by itself and stops at a street, and that the brigade is
+   the only thing that comes.
+   ===================================================================== */
+section('the grid');
+{
+  const GRID = await import('../js/maps/grid.js');
+  const BOX = await import('../js/boxes.js');
+  const THREEG = await import('three');
+  const { Game } = await import('../js/game.js');
+  const fsG = await import('node:fs');
+  const gridSrc = fsG.readFileSync('js/boxes.js', 'utf8');
+
+  /* the fixtures this section needs of its own: the bank the world is
+     painted out of, and the fire truck, which is the only vehicle that
+     comes here */
+  const gtex = tex.bakeTextures();
+  const gsprites = spr.bakeSprites();
+  const truckDef = await (async () => {
+    const glb = await import('../js/glb.js');
+    const carM = await import('../js/car.js');
+    const bytes = fsG.readFileSync('assets/models/firetruck.glb');
+    const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    const { json, bin } = glb.parseGLB(ab);
+    return carM.modelVehicle(json, bin, { length: carM.FIRE_LENGTH, id: 'firetruck', name: 'Fire truck', use: 'fire', lamp: 'fire' });
+  })();
+
+  const lv = GRID.buildGrid();
+  note('the field', `${GRID.FIELD} units square, ${lv.sectors.length} sectors, ` +
+    `${lv.boxes.length} boxes, ${lv.things.filter(t => t.type === 'SHOPPER').length} people`);
+
+  /* ---- THE FIELD ---- */
+  check('it is large, finite, and square', GRID.FIELD >= 8192 && lv.field.x1 - lv.field.x0 === GRID.FIELD &&
+    lv.field.y1 - lv.field.y0 === GRID.FIELD);
+  check('and you start in it, on the floor, with a sky over you',
+    lv.things.some(t => t.type === 'START') &&
+    lv.sectorAt(lv.viewpoint.x, lv.viewpoint.y)?.ceilTex === 'SKY');
+  check('the floor is the green grid, anchored so a line lands on every cell edge',
+    lv.sectors.filter(s => s.name === 'field').every(s => s.floorTex === 'GRID' &&
+      s.floorAnchor && s.floorAnchor[0] === lv.field.x0 && s.floorAnchor[1] === lv.field.y0));
+  check('and one repeat of it is one cell, which is what makes that true',
+    tex.bakeTextures !== undefined && GRID.CELL === 64);
+  check('a hundred people stand in it, and none of them inside a box',
+    lv.things.filter(t => t.type === 'SHOPPER').length === GRID.CROWD &&
+    lv.things.filter(t => t.type === 'SHOPPER').every(t =>
+      !lv.boxes.some(b => t.x > b.x0 && t.x < b.x1 && t.y > b.y0 && t.y < b.y1)));
+  check('and you cannot walk out of it: the edge is a wall, not an ending',
+    lv.sightBlocked(lv.field.x0 + 100, lv.field.y0 + 4000, 40, lv.field.x0 - 400, lv.field.y0 + 4000, 40));
+
+  /* ---- THE BOXES, AS GEOMETRY ---- */
+  {
+    const sizes = new Set(lv.boxes.map(b => b.cells));
+    check('the boxes come in the six sizes asked for, two cells to seven, and are cubes',
+      [2, 3, 4, 5, 6, 7].every(k => sizes.has(k)) && sizes.size === 6 &&
+      lv.boxes.every(b => b.x1 - b.x0 === b.cells * GRID.CELL && b.height === b.x1 - b.x0),
+      [...sizes].sort().join(','));
+    check('and every one of them is solid: you cannot walk into it and cannot see through it',
+      lv.boxes.slice(0, 20).every(b => {
+        const mid = { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 };
+        const sec = lv.sectorAt(mid.x, mid.y);
+        return sec && sec.name === 'box' && sec.floor === sec.ceil &&
+          lv.sightBlocked(b.x0 - 150, mid.y, 40, b.x1 + 150, mid.y, 40);
+      }));
+    check('and draws nothing, because js/boxes.js draws all of them in one mesh',
+      lv.sectors.filter(s => s.name === 'box').every(s =>
+        s.floorTex === 'NONE' && s.ceilTex === 'NONE' && s.wallTex === 'NONE' && s.lowerTex === 'NONE'));
+    /* THE STREETS. A field with no way into it is a field a fire engine
+       stops at the edge of — which is what it did. */
+    const gaps = [];
+    for (let i = 0; i < GRID.PLOTS; i++) if (i % GRID.STREET_EVERY === 0) gaps.push(i);
+    check('and there are streets between the blocks, clear of boxes all the way across',
+      gaps.length >= 3 && gaps.every(i => !lv.boxes.some(b =>
+        Math.floor(b.x0 / GRID.PLOT) === i || Math.floor(b.y0 / GRID.PLOT) === i)));
+    check('which the map hands over as driving lines for the brigade',
+      Array.isArray(lv.lanes) && lv.lanes.length >= 6 &&
+      lv.lanes.every(L => (L.axis === 'x' || L.axis === 'y') && L.to > L.from));
+  }
+
+  /* ---- WHAT THE WORLD SAYS ABOUT ITSELF ---- */
+  check('the cell fire is off in this world, and the squads are not sent',
+    lv.noCellFire === true && lv.noSquads === true);
+  check('and it still gives the brigade a road: a ring, two ways in, and bays',
+    lv.swatRing.length === 4 && Object.keys(lv.swatRoutes).join() === 'west,east' &&
+    lv.roadEnds.length === 2 && lv.roadEnds.every(e => lv.swatRoutes[e.side]) && lv.swatBays.length > 0);
+
+  /* ---- THE BURN, WHICH IS THE WHOLE POINT ---- */
+  {
+    /* THE SHADER IS A HEIGHT AND A NUMBER, and the test is against the
+       source because there is no GPU here. What it pins is the shape of
+       the thing: the front is in the box's OWN space, it comes DOWN,
+       and the coals are off the one ramp every fire in this game uses. */
+    check('the decay is driven by the height up the box in its own space, not by anything in the world',
+      /attribute float localH/.test(gridSrc) && /varying float vLight, vLocalH/.test(gridSrc) &&
+      /float above = vLocalH - front;/.test(gridSrc));
+    check('and the front comes DOWN from the cap, at the user\'s request',
+      /float front = 1\.0 - vBurn \* \(1\.0 \+ 2\.0 \* soft\) \+ soft \+ tear;/.test(gridSrc));
+    check('and it is torn rather than ruled, off a hash of the face\'s own uv at two scales',
+      /float tearAt\(vec2 uv\)/.test(gridSrc) && /vec2\(11\.0, 17\.0\)/.test(gridSrc) && /vec2\(27\.0, 39\.0\)/.test(gridSrc));
+    check('and the coals are EMBER_RAMP, the same eight a burning fir and a burnt aisle use',
+      /emberRamp\[int\(floor\(idx \* 7\.0 \+ 0\.5\)\)\]/.test(gridSrc) && /WORLD_SHADE_GLSL/.test(gridSrc));
+    check('and there is no cell grid anywhere in it',
+      !/burnAt\(/.test(gridSrc) && !/burnGrid/.test(gridSrc));
+  }
+
+  /* ---- AND IN A RUNNING GAME ---- */
+  {
+    (await import('../js/util.js')).pSeed();
+    const gg = new Game({
+      level: GRID.buildGrid(), scene: new THREEG.Scene(), camera: {},
+      textures: gtex, sprites: gsprites,
+      hud: { message() {}, ticMessages() {} }, audio: null,
+      input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
+               attack: false, use: false, run: false, jump: false, sample() {}, sensitivity: 0 },
+      firetruck: { texture: {}, def: truckDef },
+    });
+    const B = gg.boxes;
+    check('the game builds the boxes, one for every one the map put down',
+      B.count === gg.level.boxes.length && B.count > 60, `${B.count}`);
+    check('and the fire system is off in here, and says so',
+      gg.fire.off === true && gg.fire.tic() === undefined && gg.fire.burningCells === 0);
+
+    /* A BOX CATCHES. The flamethrower and every other weapon call
+       fire.ignite; the boxes are lit from inside it, which is why not
+       one weapon had to learn what a box is. */
+    const one = B.list.find(b => b.cells >= 4);
+    gg.fire.ignite(one.x, one.y, 200, 90);
+    check('a call to the fire system lights the box that is standing there',
+      one.burning === true && B.lit === 1);
+    const at0 = one.front;
+    for (let k = 0; k < 40; k++) B.tic();
+    check('and the front comes down it, a little every tic', one.front > at0 && one.front < 1);
+    /* IT CANNOT BE UNBURNT. Water stops the front where it stands; what
+       has gone has gone, which is the promise FireSystem.douse makes
+       about a charred aisle and this makes about a box. */
+    const held = one.front;
+    for (let k = 0; k < 6; k++) gg.fire.douse(one.x, one.y, 200, 100);
+    check('water stops it where it stands, and does not put the box back',
+      one.burning === false && one.front === held && one.front > 0);
+    for (let k = 0; k < 20; k++) B.tic();
+    check('and a box that is out stays out', one.front === held);
+
+    /* IT SPREADS, BY ITSELF, WITH NO GRID UNDER IT */
+    const pair = B.list.filter(b => b !== one).sort((a, b) =>
+      a.near2(one.x, one.y) - b.near2(one.x, one.y));
+    const seed = pair[0];
+    B.light(seed);
+    let caught = 0;
+    for (let k = 0; k < 900 && caught < 2; k++) { B.tic(); caught = B.lit - 2; }
+    note('the fire crossing the field', `${B.lit} boxes alight or spent after ${B.spentCount} went`);
+    check('one burning box lights the ones near it, with no cell grid to carry it',
+      B.lit > 2, `${B.lit} lit`);
+    /* AND IT BURNS OUT. A box is gone when its front reaches the foot,
+       and a gone box does not light anything. */
+    for (let k = 0; k < 3000 && B.burningCount > 0; k++) B.tic();
+    check('and every fire in the field goes out on its own once there is nothing left',
+      B.burningCount === 0 && B.spentCount > 0 &&
+      B.list.every(b => !b.burning && (b.front === 0 || b.front > 0)), `${B.spentCount} spent`);
+    check('a spent box is spent: its front is at the foot and it never burns again',
+      B.list.filter(b => b.spent).every(b => b.front >= 1 && !b.burning));
+  }
+
+  /* ---- AND NOBODY COMES BUT THE BRIGADE ---- */
+  {
+    (await import('../js/util.js')).pSeed();
+    const gq = new Game({
+      level: GRID.buildGrid(), scene: new THREEG.Scene(), camera: {},
+      textures: gtex, sprites: gsprites,
+      hud: { message() {}, ticMessages() {} }, audio: null,
+      input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
+               attack: false, use: false, run: false, jump: false, sample() {}, sensitivity: 0 },
+      firetruck: { texture: {}, def: truckDef },
+    });
+    gq.player.shotsFired = 99;              // which in any other world is the sirens
+    const lit = gq.boxes.list.find(b => b.cells >= 5);
+    gq.boxes.light(lit);
+    for (let k = 0; k < 900; k++) { gq.player.health = 100; gq.tic(); }
+    note('who came', `${gq.brigade.trucks.length} fire trucks, ` +
+      `${gq.responders.vans.filter(v => v.force !== gq.brigade.force).length} of everybody else`);
+    check('a hundred shots fired and the SWAT do not come, because this world sends nobody',
+      gq.responders.called === false &&
+      gq.responders.vans.every(v => v.force === gq.brigade.force));
+    check('and the army stays home, and so does the gunship',
+      gq.responders.army.called === false && (gq.gunships?.ships?.length || 0) === 0);
+    check('but the fire brings the brigade, off the fire and not off you',
+      gq.brigade.called === true && gq.brigade.trucks.length >= 1);
+  }
 }
 
 section('what it costs to draw');

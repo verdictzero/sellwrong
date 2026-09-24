@@ -165,7 +165,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         2576 checks, no install and no browser
+  the smoke test         2611 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -5273,6 +5273,101 @@ with it in your hands — stops the loop through one line, and none of
 them has to remember to.
 
 
+THE GRID
+
+The world the game boots into, and the superstore is not in it. At the
+user's request the town and the store are ARCHIVED rather than removed:
+js/maps/sellwrong.js and js/maps/town.js are still here, still exported
+and still tested, and nothing calls them. js/main.js builds this
+instead.
+
+  js/maps/grid.js    the field, the boxes' footprints, the streets
+  js/boxes.js        the boxes themselves, and how they burn
+  js/palette.js      GRID_RAMPS, the box of crayons it is painted in
+
+WHY. The burning was the expensive half of this game and the least
+controllable: a grid of fuel and heat 32 units a cell, spreading between
+neighbours, cooking the structure over it, repainting the world's
+textures as it went. It is a good simulation and it costs what a
+simulation costs. What you actually WATCH when a thing burns is a front
+crossing it, coals behind the front and a husk after — which is a
+SHADER over one number, not a grid over the world. So the cell fire is
+switched off here (`noCellFire`, read by FireSystem) and the boxes burn
+instead.
+
+THE FIELD is 10,240 units square — 160 cells of 64, which is Doom's own
+grid and the ruler the rest of the game is already cut to. Green lines
+on black, a green lattice wall round it you cannot walk out of, and a
+sky that is green at the horizon, dark green through the middle and
+black overhead. The air fades to a texel of that sky (js/material.js),
+so the far edge of the field goes to the same green the horizon is:
+the world ends rather than stopping at a wall.
+
+THE BOXES are cubes, two cells to seven cells a side — 128 to 448 units,
+knee-high to a small building. One to a PLOT of eight cells, jittered
+inside it, which is what spaces them out and what lets the floor be cut
+around them: a sector here is one ring of points and cannot have an
+island in the middle, so a plot with a box in it is four strips in a
+picture frame. Every fourth plot each way carries no box, which makes
+streets — and a street is both the way a fire engine gets in and a
+firebreak the fire will not cross.
+
+Their sectors are in the map for collision and for sight and draw
+NOTHING. All 146 of them are one mesh and one draw call, built in
+js/boxes.js.
+
+HOW THEY BURN. A box carries one number, `front`: how far the decay has
+swept down it. Everything you see comes off that number and the height
+of the fragment in the box's own space —
+
+  above the front   burnt: the paint gone, the light gone, and coals
+                    that cool the further above the front they are,
+                    because further above means it burnt longer ago
+  at the front      the fire, a narrow band off EMBER_RAMP, torn by a
+                    hash of the face's own uv so it is a burn line and
+                    not a ruler
+  below the front   untouched
+
+TOP TO BOTTOM, at the user's request, and it is the one thing in here
+that is a choice rather than a consequence: the front starts at the cap
+and descends. Turning it over is the sign of `front` in the fragment
+shader and nothing else.
+
+It costs one vertex attribute the CPU writes — thirty floats a box, and
+only for the boxes actually alight. No cells, no texture swap, no
+geometry rebuild. The shader splices the same two GLSL strings the walls
+use (js/material.js), so a burning box stands in the same light as
+everything else and its coals are the same eight colours and the same
+clock as a burning fir.
+
+A box keeps about a quarter of itself when it has gone. Taken all the
+way down it was black on a black sky, so a burning box read as one being
+DELETED from the top rather than one turning to charcoal — and the thing
+is still standing there, still solid, still in the way.
+
+HOW THE FIRE MOVES, since there is no grid to carry it: a box properly
+alight lights its neighbours within 300 units of its FOOTPRINT, so a
+seven-cell box reaches as far past its own wall as a two-cell one does.
+A box that has nearly finished stops recruiting, because a husk does not
+light anything. Nothing crosses a street.
+
+WHAT PUTS IT OUT is water from the fire truck's cannon and CO2 from the
+extinguisher, both through FireSystem.douse, which hands every call to
+the boxes before it does anything of its own — which is also how every
+weapon in the game lights one without knowing boxes exist. Neither
+unburns anything: `front` only ever goes up. What they save is the
+bottom of the box the fire has not reached yet.
+
+AND NOBODY COMES BUT THE BRIGADE. `noSquads` keeps the SWAT and the army
+off the road, and with the army never called the gunship never flies.
+The fire brigade still answers the fire, drives in along the streets and
+plays its cannon on what it can see — see THE FIRE TRUCK. Two things
+were wrong with it in a field of solid boxes and both are fixed here: it
+was aiming at the MIDDLE of a box, which is inside a solid and can never
+be seen, and it only ever drove at a fire in a straight line from the
+ring, which stops at the first box. It aims at the burning face now, and
+the map hands it the streets.
+
 THE FIRE TRUCK
 
 The user's fire variant of the police van: the same body and wheels on
@@ -7933,7 +8028,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-2576 checks. Every one of them earns its place by having caught something
+2611 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

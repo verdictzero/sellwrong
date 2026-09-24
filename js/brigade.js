@@ -51,7 +51,10 @@ export const BRIGADE = {
   /* the stand, in the units Responders.chaseStand takes: how far apart
      two trucks park, how far off the road they will drive, and how far
      short of the fire they stop */
-  stand: 620, push: 2600, stop: 520,
+  stand: 620, push: 6000, stop: 520,
+  /* and how far the cannon can actually work, which is what makes a
+     stand worth having — see hoseReach in js/water.js */
+  reach: 1150,
 };
 
 /* The row the rest of the responders' machinery reads a force by. */
@@ -75,6 +78,10 @@ export class FireBrigade {
     const g = this.game;
     let n = (g.fire?.burningCells || 0) + (g.forest?.burningCells || 0);
     for (const v of g.vehicles?.all || []) if (v.whole && v.burning > 0) n += 12;
+    /* and the grid world's boxes, which are the only fuel it has — a
+       burning box counts for about what a burning car does, so the
+       same numbers below mean the same size of fire in both worlds */
+    n += (g.boxes?.burningCount || 0) * 12;
     return n;
   }
 
@@ -124,6 +131,7 @@ export class FireBrigade {
       for (const e of out) pts.push({ x: e.x, y: e.y });
     }
     for (const v of g.vehicles?.all || []) if (v.whole && v.burning > 0) for (let k = 0; k < 4; k++) pts.push({ x: v.x, y: v.y });
+    for (const b of g.boxes?.burningList(this._lit || (this._lit = [])) || []) for (let k = 0; k < 3; k++) pts.push({ x: b.x, y: b.y });
     if (!pts.length) return null;
     let best = pts[0], bn = -1;
     for (const a of pts) {
@@ -134,10 +142,87 @@ export class FireBrigade {
     return best;
   }
 
+  /**
+   * THE FIRES IT COULD GO TO, best first.
+   *
+   * The thickest of it is the right answer when a truck can reach the
+   * thickest of it. In a field of solid boxes (js/maps/grid.js) it
+   * often cannot: the middle of a block is behind three other boxes and
+   * a truck that drives at it stops at the first one, half the field
+   * out, and then stands there with nothing in its reach — which is
+   * what it did. So the thickest is only the FIRST thing tried, and
+   * behind it come the burning boxes nearest the road, which is the
+   * fire a real brigade takes first for the same reason: it is the one
+   * they can get a truck to.
+   */
+  targets() {
+    const g = this.game, R = g.responders, out = [];
+    const hot = this.hotspot();
+    if (hot) out.push(hot);
+    if (R?.ring) {
+      const lit = g.boxes?.burningList(this._lit || (this._lit = [])) || [];
+      lit.slice()
+        .sort((a, b) => this._toRoad(a) - this._toRoad(b))
+        .slice(0, 5)
+        .forEach(b => out.push({ x: b.x, y: b.y, box: b.box }));
+    }
+    return out;
+  }
+
+  /** How far a point is from the ring, which is how hard it is to
+   *  get a truck to. */
+  _toRoad(p) {
+    const R = this.game.responders;
+    const on = R.ringAt(R.ringNearest(p.x, p.y));
+    return Math.hypot(on.x - p.x, on.y - p.y);
+  }
+
+  /**
+   * A STAND ON ONE OF THE MAP'S OWN STREETS, for a map that has them —
+   * see `lanes` in js/maps/grid.js. The nearest point on any street to
+   * the fire that a truck can work from: nothing else standing there,
+   * the fire inside the cannon's reach, and the fire visible over the
+   * jet's shoulder. The truck drives the ring to the near end of that
+   * street and then down it, which is `lead`.
+   */
+  laneStand(at) {
+    const R = this.game.responders, lv = this.game.level;
+    const lanes = lv.lanes;
+    if (!lanes || !lanes.length) return null;
+    const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+    let best = null, bd = Infinity;
+    for (const L of lanes) {
+      const x = L.axis === 'y' ? L.at : clamp(at.x, L.from, L.to);
+      const y = L.axis === 'y' ? clamp(at.y, L.from, L.to) : L.at;
+      const d = Math.hypot(at.x - x, at.y - y);
+      if (d > BRIGADE.reach || d < 120) continue;
+      if (d >= bd) continue;
+      const s = { x, y, ring: 0, angle: Math.atan2(at.y - y, at.x - x), lead: [], works: true };
+      if (!R.standClear(s, BRIGADE)) continue;
+      /* what a hose is actually pointed at — the burning FACE, which is
+         outside the solid; a box's middle is inside one and can never
+         be seen. See Box.aimPoint in js/boxes.js. */
+      const aim = at.box ? at.box.aimPoint(x, y) : { x: at.x, y: at.y, z: 0 };
+      const fz = (lv.sectorAt(x, y)?.floor ?? 0) + 110;
+      if (lv.sightBlocked(x, y, fz, aim.x, aim.y, (lv.sectorAt(aim.x, aim.y)?.floor ?? 0) + aim.z + 20)) continue;
+      /* in at whichever end of the street is nearer, and down it */
+      const ends = L.axis === 'y'
+        ? [{ x: L.at, y: L.from }, { x: L.at, y: L.to }]
+        : [{ x: L.from, y: L.at }, { x: L.to, y: L.at }];
+      const mouth = Math.hypot(ends[0].x - x, ends[0].y - y) <= Math.hypot(ends[1].x - x, ends[1].y - y) ? ends[0] : ends[1];
+      s.ring = R.ringNearest(mouth.x, mouth.y);
+      s.lead = [mouth, { x, y }];
+      bd = d; best = s;
+    }
+    return best;
+  }
+
   /** Where the next truck stands, for a fire at `at`. */
   standFor(at) {
     const R = this.game.responders, lv = this.game.level;
     if (!R?.ring) return null;
+    const onLane = this.laneStand(at);
+    if (onLane) return onLane;
     const sec = lv.sectorAt(at.x, at.y);
     if (sec && !sec.outdoor) {
       /* INDOORS: the fire lane. A bay first, and when they are gone,
@@ -146,16 +231,27 @@ export class FireBrigade {
       if (bay) return R.bayStand(bay);
       at = R.doorsPoint() || at;
     }
-    let best = null, bd = Infinity;
-    for (let k = 0; k <= 12; k++) {
+    /* THE ONE IT CAN WORK FROM, not simply the nearest. A stand is no
+       use to a fire truck if the fire is not in the water's reach or is
+       behind something solid — and in a field of boxes (js/maps/grid.js)
+       most of the ring is behind something. So every slot is walked, a
+       stand that can SEE the fire and reach it beats one that cannot,
+       and among those the nearest wins. A world with nothing in the way
+       is unchanged by this: every stand sees the fire and the nearest
+       is still the answer. */
+    let best = null, bd = Infinity, bw = false;
+    for (let k = 0; k <= 16; k++) {
       const slot = k === 0 ? 0 : (k & 1 ? (k + 1) >> 1 : -(k >> 1));
       const s = R.chaseStand(at, slot, BRIGADE);
       if (!R.standClear(s, BRIGADE)) continue;
       /* and never ON the fire: a truck parked in it is a second fire */
       if ((this.game.fire?.heatAt(s.x, s.y) || 0) > 0) continue;
       const d = Math.hypot(s.x - at.x, s.y - at.y);
-      if (d < bd) { bd = d; best = s; }
-      if (bd <= BRIGADE.stop + 36) break;
+      const works = d < BRIGADE.reach && !lv.sightBlocked(s.x, s.y, (lv.sectorAt(s.x, s.y)?.floor || 0) + 110, at.x, at.y, (lv.sectorAt(at.x, at.y)?.floor || 0) + 40);
+      if (bw && !works) continue;
+      if (works && !bw) { bw = true; bd = Infinity; }
+      if (d < bd) { bd = d; best = s; s.works = works; }
+      if (bw && bd <= BRIGADE.stop + 36) break;
     }
     return best;
   }
@@ -164,9 +260,15 @@ export class FireBrigade {
   send() {
     const g = this.game, R = g.responders, model = g.firetruck;
     if (!model || !R) return null;
-    const at = this.hotspot();
-    if (!at) return null;
-    const stand = this.standFor(at);
+    /* the thickest of it first, and then the fires a truck can
+       actually get to — see targets() */
+    let at = null, stand = null;
+    for (const t of this.targets()) {
+      const s = this.standFor(t);
+      if (!s) continue;
+      at = t; stand = s;
+      if (s.works) break;
+    }
     if (!stand) return null;
     const side = R.sideFor(stand.ring);
     const route = R.routeTo(stand, side, 0, true);

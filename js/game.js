@@ -42,6 +42,7 @@ import { BreachSystem } from './breach.js';
 import { FrostStream } from './frost.js';
 import { WaterStream } from './water.js';
 import { FireBrigade } from './brigade.js';
+import { Boxes } from './boxes.js';
 import { Effects, SMOKE_PUFFS } from './effects.js';
 import { Giblets } from './people.js';
 import { Responders } from './responders.js';
@@ -212,6 +213,14 @@ export class Game {
        user's fire truck and its water cannon — see js/brigade.js */
     this.firetruck = firetruck || null;
     this.brigade = new FireBrigade(this);
+    /* AND THE THINGS THAT BURN, in the world that has them: the grid's
+       boxes (js/boxes.js), which are the only fuel there is when the
+       cell grid is switched off. The fire system is handed them so that
+       every weapon in the game lights one without knowing they exist —
+       see the top of FireSystem.ignite. */
+    this.boxes = new Boxes(this, this.textures?.get('GRIDBOX')?.texture || null);
+    this.fire.boxes = this.boxes;
+    this.boxes.attach(scene);
     /* AND THE AIR SUPPORT THAT COMES WITH THE ARMY: the user's VTOL
        gunship, sent by the wing the tic the army is called — see
        js/vtol.js. Without the model there is no air support, which is
@@ -512,6 +521,7 @@ export class Game {
     for (let i = this.actors.length - 1; i >= 0; i--)
       if (this.actors[i].removed) this.actors.splice(i, 1);
 
+    this.boxes.tic();
     this.responders.tic();
     this.brigade.tic();
     this.gunships.tic();

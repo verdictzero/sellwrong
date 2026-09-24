@@ -362,6 +362,21 @@ export class FireSystem {
   constructor(game) {
     this.game = game;
     const lv = game.level;
+    /* THE WHOLE SIMULATION, ON A SWITCH, at the user's request — and it
+       is a fact about the WORLD rather than a setting, so the map says
+       it. The grid world (js/maps/grid.js) has no fuel in its floor and
+       nothing in it that spreads: its boxes burn one at a time, off one
+       number each, in js/boxes.js. Running a cell grid over ten
+       thousand units of field so that every cell of it can report
+       nothing is the cost the user asked to stop paying.
+
+       The grid is still ALLOCATED, because half the game reads these
+       arrays — the shader is handed the burn grid as a picture every
+       tic, the thermal sight samples it, the structure asks which
+       region it is in — and a system that answers "no fire anywhere" to
+       all of them is worth more than one that is not there. What stops
+       is the seeding, the linking and the stepping. */
+    this.off = !!lv.noCellFire;
     const [minx, miny, maxx, maxy] = lv.fireBounds || lv.bounds;
     this.originX = Math.floor(minx / CELL) * CELL - CELL;
     this.originY = Math.floor(miny / CELL) * CELL - CELL;
@@ -504,6 +519,7 @@ export class FireSystem {
    * sectorAt gives because it is the same order and the polygons do not
    * overlap. The smoke test runs both and compares, cell for cell. */
   _seed() {
+    if (this.off) return;
     const lv = this.game.level;
     for (const s of lv.sectors) {
       /* EVERY STOREY, each into its own plane. A column of one — which
@@ -549,6 +565,7 @@ export class FireSystem {
   }
 
   _linkCells() {
+    if (this.off) return;
     const lv = this.game.level;
     const DIRS = [[1, 0, 1, 4], [0, 1, 2, 8], [-1, 0, 4, 1], [0, -1, 8, 2]];
     /* WHERE FIRE CAN CLIMB. Not a bit but a list, because the cell it
@@ -691,6 +708,14 @@ export class FireSystem {
   /** Put heat into the world at a point. `strength` is roughly how much
    *  fuel is being dumped there too — a fuel can makes its own. */
   ignite(x, y, strength = 60, radius = CELL) {
+    /* WHATEVER ELSE BURNS IN THIS WORLD gets the same call first. The
+       grid world's boxes are not cells and are not in this grid, and
+       every weapon in the game already calls THIS — the flamethrower,
+       the bottles, a bang, a burning body, a car going up. Routing them
+       from here is what means not one of those had to learn what a box
+       is. js/game.js hands them over. */
+    this.boxes?.ignite(x, y, strength, radius);
+    if (this.off) return 0;
     const cx0 = this.cellX(x - radius), cx1 = this.cellX(x + radius);
     const cy0 = this.cellY(y - radius), cy1 = this.cellY(y + radius);
     let lit = 0;
@@ -752,6 +777,8 @@ export class FireSystem {
      @param strength  roughly how much heat comes off, 0..255
      @returns how many cells it actually cooled */
   douse(x, y, strength = 90, radius = CELL) {
+    this.boxes?.douse(x, y, strength, radius);
+    if (this.off) return 0;
     const cx0 = this.cellX(x - radius), cx1 = this.cellX(x + radius);
     const cy0 = this.cellY(y - radius), cy1 = this.cellY(y + radius);
     const r2 = radius * radius;
@@ -810,6 +837,7 @@ export class FireSystem {
      as much and looks identical.
      ------------------------------------------------------------------ */
   tic() {
+    if (this.off) return;
     this.tics++;
     if (this.tics % FIRE_INTERVAL) return;
 

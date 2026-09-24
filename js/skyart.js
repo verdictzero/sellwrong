@@ -137,6 +137,8 @@ void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }
 const FRAG = (W, H, cell, starCell) => /* glsl */`
 precision highp float;
 uniform vec3  uZenith, uHorizon, uGround;
+uniform vec3  uMid;
+uniform float uMidAmt, uMidPow;
 uniform vec3  uSunDir, uSunCol, uGlow;
 uniform float uGlowAmt, uSunUp;
 uniform vec3  uMoonDir;
@@ -202,6 +204,19 @@ void main() {
      few degrees and then the ground. In mist the sky is one colour. */
   float up = clamp(e, 0.0, 1.0);
   vec3 col = mix(uHorizon, uZenith, pow(up, 0.55));
+  /* AND A MIDDLE, for a sky that was given three colours rather than
+     two — see the sky override in js/weather.js. Two stops can only ever be a
+     fade from one colour to another, and a green horizon under a black
+     zenith wants to spend most of its height being DARK GREEN, which is
+     a third colour and not a point on the line between the other two.
+     uMidAmt is 0 for every sky that did not ask, and then this is the
+     two-stop ramp above, unchanged, to the bit. */
+  if (uMidAmt > 0.0) {
+    float t3 = pow(up, uMidPow);
+    vec3 three = t3 < 0.5 ? mix(uHorizon, uMid, t3 * 2.0)
+                          : mix(uMid, uZenith, t3 * 2.0 - 1.0);
+    col = mix(col, three, uMidAmt);
+  }
   col = mix(col, uHorizon, uFlat);
   col = mix(col, uGround, smoothstep(0.0, 0.08, -e));
 
@@ -336,6 +351,7 @@ export class SkyBaker {
         uDitherLevels: { value: new V3(...displayDither()) },
         uSeed: { value: opts.seed ?? 0.0 },
         uZenith: { value: new V3() }, uHorizon: { value: new V3() }, uGround: { value: new V3() },
+        uMid: { value: new V3() }, uMidAmt: { value: 0 }, uMidPow: { value: 1 },
         uSunDir: { value: new V3(1, 0, 0) }, uSunCol: { value: new V3() }, uGlow: { value: new V3() },
         uGlowAmt: { value: 0 }, uSunUp: { value: 0 },
         uMoonDir: { value: new V3(0, 1, 0) }, uMoonAmt: { value: 1 },
@@ -369,6 +385,9 @@ export class SkyBaker {
     const u = this.material.uniforms;
     const set3 = (k, c) => u[k].value.set(c[0], c[1], c[2]);
     set3('uZenith', f.zenith); set3('uHorizon', f.horizon); set3('uGround', f.ground);
+    set3('uMid', f.mid || f.horizon);
+    u.uMidAmt.value = f.mid ? (f.midAmt ?? 1) : 0;
+    u.uMidPow.value = f.midPow ?? 1;
     set3('uSunCol', f.sunCol); set3('uGlow', f.glow);
     u.uSunDir.value.copy(dirOf(f.sunAz, f.sunAlt));
     u.uGlowAmt.value = f.glowAmt;

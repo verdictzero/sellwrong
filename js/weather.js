@@ -263,8 +263,42 @@ export class Weather {
     /* AND WHETHER IT HAS ANY, which is a debug switch and not a
        setting: see setFireHaze. */
     this.fireHaze = opts.fireHaze !== false;
-    this.frame = sampleFrame(this.hour, this.kind, 0, 0);
+    /* A SKY OF ITS OWN, for a world that is not this one. The keyframes
+       above are a night over a car park and every colour in them is a
+       blue; the grid world (js/maps/grid.js) is green from the horizon
+       up and has to say so somewhere. Rather than bend the table — which
+       is a table about an HOUR, and the hours are still true — a world
+       may hand over the three colours the sky is made of, and the
+       middle one the ramp bends through.
+
+         { horizon, mid, zenith, ground, midAmt, midPow }
+
+       Hex strings, and every one of them optional. What it does not
+       touch is the light, the air or the clock, which are the hour's
+       and stay the hour's. See skin(). */
+    this.sky = opts.sky || null;
+    this.frame = this.skin(sampleFrame(this.hour, this.kind, 0, 0));
     this._sync();
+  }
+
+  /** The world's own sky colours over the hour's, if it gave any — see
+   *  `sky` in the constructor. The frame is otherwise untouched. */
+  skin(f) {
+    const k = this.sky;
+    if (!k) return f;
+    if (k.zenith) f.zenith = hex(k.zenith);
+    if (k.horizon) f.horizon = hex(k.horizon);
+    if (k.ground) f.ground = hex(k.ground);
+    if (k.mid) { f.mid = hex(k.mid); f.midAmt = k.midAmt ?? 1; f.midPow = k.midPow ?? 1.0; }
+    /* AND NOTHING ELSE IN IT. A sky over a void has no cloud to drift,
+       no town under it to glow, no stars and no dawn — and, because
+       SkyBaker.update re-bakes for as long as there is cover, no cloud
+       is also what makes this sky bake ONCE and never again. */
+    if (k.bare) {
+      f.cover = 0; f.cloudDark = 1; f.stars = 0; f.milky = 0;
+      f.glowAmt = 0; f.town = 0; f.moonAlt = -90;
+    }
+    return f;
   }
 
   setHour(h) { this.hour = nightHour(h); this.hour = this.hour > 24 ? this.hour - 24 : this.hour; this._sync(); }
@@ -297,7 +331,7 @@ export class Weather {
     const want = !!on;
     if (want === this.fireHaze) return false;
     this.fireHaze = want;
-    if (!want) { this.smoke = 0; this.frame = sampleFrame(this.hour, this.kind, this.cloudTime, 0); this._sync(); }
+    if (!want) { this.smoke = 0; this.frame = this.skin(sampleFrame(this.hour, this.kind, this.cloudTime, 0)); this._sync(); }
     return true;
   }
 
@@ -333,7 +367,7 @@ export class Weather {
       this.smoke += (target - this.smoke) * Math.min(1, dt / tau);
       if (target === 0 && this.smoke < 0.003) this.smoke = 0;
     }
-    this.frame = sampleFrame(this.hour, this.kind, this.cloudTime, this.smoke);
+    this.frame = this.skin(sampleFrame(this.hour, this.kind, this.cloudTime, this.smoke));
     const f = this.frame;
 
     world.airNear.value = f.airNear;

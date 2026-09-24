@@ -523,6 +523,13 @@ export class Responders {
   squadTic() {
     const g = this.game, p = g.player;
     if (!p) return;
+    /* AND SOME WORLDS SEND NOBODY. The grid (js/maps/grid.js) is a test
+       bed for the burning and the user asked for the brigade in it and
+       nothing else: no SWAT, no army, and — since the gunship flies
+       when the army is called and the army never is — no air support
+       either. The brigade is not in here; it runs off the fire, on its
+       own clock, in js/brigade.js. */
+    if (g.level.noSquads) return;
     /* THE CALL. One pull of the trigger and the first convoy is on the
        road that tic — or one death, if somebody has managed to die
        without a shot being fired, which the fire can do on its own once

@@ -28,7 +28,10 @@ import { loadVehicleModel, POLICE_LENGTH, APC_LENGTH, FIRE_LENGTH } from './car.
 import { loadVtolModel } from './vtol.js';
 import { addStrip, imageData } from './spriteload.js';
 import { CELLS, GIBLETS, BLAST_SPRITE, addStandees, addSplats, addTroops } from './people.js';
-import { buildSellWrong } from './maps/sellwrong.js';
+/* THE GRID, which is the world the game boots into — see js/maps/grid.js.
+   js/maps/sellwrong.js and js/maps/town.js are still in the repository,
+   still exported and still tested; nothing builds them any more. */
+import { buildGrid } from './maps/grid.js';
 import { Game } from './game.js';
 import { Hud } from './hud.js';
 import { Audio } from './audio.js';
@@ -157,11 +160,16 @@ const PALETTE_SET = [{ v: 'ramps', n: 'RAMPS' }, { v: 'uzebox', n: 'UZEBOX' }];
    made in; EARTH is the same fifteen, muted and warmed — see
    EARTH_RAMPS in js/palette.js and applyTone below.
 
-   EARTH IS FIRST because it is the default, at the user's request. AS
-   DRAWN is still there and is one press of the same button away; it is
-   also still what tools/bake-art.mjs quantises the photographs against,
-   which is a different question and is answered where it is asked. */
-const TONE_SET = [{ v: 'earth', n: 'EARTH' }, { v: 'stock', n: 'AS DRAWN' }];
+   GRID IS FIRST because the world the game boots into is the grid
+   (js/maps/grid.js) and neither of the other two can paint it: their
+   green is sixteen entries of polo shirt and their sky is twenty
+   entries of dawn, and a green world needs both of those to be green.
+   See GRID_RAMPS in js/palette.js. EARTH is the box the superstore was
+   in and is one press of the same button away; AS DRAWN is the fifteen
+   ramps the game was made in, and is still what tools/bake-art.mjs
+   quantises the photographs against, which is a different question and
+   is answered where it is asked. */
+const TONE_SET = [{ v: 'grid', n: 'GRID' }, { v: 'earth', n: 'EARTH' }, { v: 'stock', n: 'AS DRAWN' }];
 const FX     = [{ v: 1, n: 'FULL' }, { v: 0.5, n: 'FEWER' }, { v: 0.25, n: 'LEAST' }];
 const WOOD   = [{ v: 1, n: 'ALL OF IT' }, { v: 0.6, n: 'NEARER' }, { v: 0.35, n: 'NEAREST' }];
 
@@ -182,15 +190,15 @@ const PREF_KEY = 'sellwrong.prefs';
    so a saved 0 meant AS DRAWN and now means EARTH, which is the right
    answer for anybody who never touched it and the wrong one for
    anybody who did. Dropped rather than reinterpreted. */
-const PREF_VERSION = 8;
+const PREF_VERSION = 9;
 const DEFAULT_PREFS = { v: PREF_VERSION, sens: 1, invert: false, lefty: false, haptics: true,
                         detail: DEFAULT_DETAIL, pixels: DEFAULT_PIXELS, pixar: DEFAULT_PIXAR,
                         crowd: 0, fx: 0, wood: 0, fps: false,
                         /* the box of crayons: 0 is RAMPS, which is the game as
                            it was drawn. See PALETTE_SET and applyPalette. */
                         palette: 0,
-                        /* and the box it is PAINTED in: 0 is EARTH, which is
-                           what the game looks like now. See TONE_SET and
+                        /* and the box it is PAINTED in: 0 is GRID, which is
+                           the world the game boots into. See TONE_SET and
                            applyTone. */
                         tone: 0,
                         /* the night's weather — see js/weather.js; the hour is not
@@ -226,6 +234,9 @@ function loadPrefs() {
          nothing that is not actually stale. */
       if (was < 7) { delete saved.detail; delete saved.pixels; delete saved.pixar; delete saved.bright; }
       if (was < 8) delete saved.tone;
+      /* and again at 9, when the grid became the world and GRID became
+         the box it is painted in: a saved 0 from before meant EARTH */
+      if (was < 9) delete saved.tone;
       saved.v = PREF_VERSION;
     }
     return { ...DEFAULT_PREFS, ...saved };
@@ -440,13 +451,38 @@ async function boot() {
     pixelAspect: PIXEL_ASPECT[pixarIndex].v,
     dither: 1.0, snap: 1.0,
   });
-  const weather = new Weather({ hour: 2.0, kind: WEATHER_ORDER[prefs.weather] || 'clear' });
+  /* THE SKY OVER THE GRID: green at the horizon, dark green through the
+     middle of it and black overhead, at the user's request — and the
+     air fades to a texel of it (js/material.js), so the far edge of the
+     field goes to the same green the horizon is rather than to a wall.
+     It is FIXED: the clock does not run, because this world has no
+     night to get through, and the fire makes no haze, because the haze
+     is a lid over a burning town and this is a field with boxes on it.
+     Between them they also mean the sky is baked exactly once — see
+     SkyBaker.update, which re-bakes for a moved hour or a drifting
+     cloud and now has neither. */
+  const weather = new Weather({
+    hour: 2.0, kind: WEATHER_ORDER[prefs.weather] || 'clear',
+    running: false, fireHaze: false,
+    sky: { horizon: '#1d9a48', mid: '#06301a', zenith: '#000000', ground: '#05180c',
+           /* WHERE THE DARK GREEN SITS, and it is the one number that
+              decides whether this reads as a sky or as a green ceiling.
+              The ramp runs in the SINE of the elevation, so the power
+              moves the middle colour up and down the dome: at 0.62 the
+              dark green arrived ten degrees up and the green band the
+              user asked for was a line, and at 1.7 the green had the
+              first forty degrees and filled the frame. Just under 1
+              puts the dark green thirty degrees up — the top of the
+              picture when you are looking level — and leaves the rest
+              of the sky to the black. */
+           midAmt: 1, midPow: 0.95, bare: true },
+  });
   const skyBaker = new SkyBaker(renderer, pipeline.lut, { seed: 11 });
   skyBaker.bake(weather.frame);
   world.skyTex.value = skyBaker.texture;
 
-  status('BUILDING SELLWRONG', 0.68); await breathe();
-  const level = buildSellWrong();
+  status('BUILDING THE GRID', 0.68); await breathe();
+  const level = buildGrid();
   const fleet = await fleetP;
   const police = await policeP;
   const apc = await apcP;

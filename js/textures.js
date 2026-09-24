@@ -253,6 +253,58 @@ T.KERB = () => {
   return p.snap(0.5);
 };
 
+/* ---------- the grid world ----------
+   The floor, the boundary and the boxes of js/maps/grid.js, which is
+   the world the game boots into: green lines on black, and nothing
+   else. Every one of these is drawn in the `green` ramp, which in the
+   GRID box of js/palette.js is a phosphor rather than a polo shirt.
+
+   THE LINE IS THREE TEXELS AND NOT ONE, which is the whole of what
+   there is to get wrong here. A texture in this bank is mipmapped
+   (TextureBank.add) and a one-texel line on black averages to black by
+   the second mip, so a grid drawn a texel wide is a grid that is there
+   when you stand on it and gone at the far end of the field. Three
+   texels over a 64-unit repeat is a three-unit painted line, which is
+   what the car park's bay lines are and they survive the same walk. */
+T.GRID = () => {
+  const p = new Pix(64, 64, 411);
+  p.fill('fire', 0.0);                                  // the one true black in the box
+  /* the cell's own edge, brightest at its centre */
+  for (const [k, t] of [[0, 0.62], [1, 0.95], [2, 0.62]]) {
+    p.hline(0, 63, k, 'green', t);
+    p.vline(k, 0, 63, 'green', t);
+  }
+  /* and a half-cell line, dim, so the floor has something to read at a
+     distance the cell lines are too far apart to give it */
+  p.hline(0, 63, 32, 'green', 0.30);
+  p.vline(32, 0, 63, 'green', 0.30);
+  /* the faintest wash inside the cell, so the black is a surface rather
+     than a hole — a floor you cannot see at all reads as the void */
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
+    if (((x * 7 + y * 13) & 31) === 0) p.ink(x, y, 'green', 0.10);
+  return p.snap(0);                                     // a hard line stays hard
+};
+
+/* The boxes' own skin: a green face with its edges lit, so a box reads
+   as a solid thing in the same lattice the floor is drawn in. What the
+   burn eats — see js/boxes.js, where the decay is a height in the
+   object's own space rather than anything in this picture. */
+T.GRIDBOX = () => {
+  const p = new Pix(64, 64, 412);
+  p.fill('green', 0.16);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+    const n = ((x * 13 + y * 29) % 17) / 17;
+    p.wash(x, y, 'green', 0.10 + n * 0.14, 0.5);
+  }
+  /* the panel: a frame inside the face and a cross through it */
+  p.frame(0, 0, 64, 64, 'green', 0.72);
+  p.frame(1, 1, 62, 62, 'green', 0.44);
+  p.hline(0, 63, 32, 'green', 0.30);
+  p.vline(32, 0, 63, 'green', 0.30);
+  p.grime(0.18, 'green', 0.08, 9);
+  return p.snap(0.35);
+};
+
 T.CONCRETE = () => {
   const p = new Pix(64, 64, 14);
   aggregate(p, 14, { baseKey: 'bone', baseLo: 0.30, baseHi: 0.44,
@@ -4205,6 +4257,11 @@ const SIZES = {
   KERBSTON: { w: 64, h: 12 },   // one repeat is one kerb, which is 12
   DRAIN:    { w: 48, h: 24 },   // one repeat is one grate
   ASPHPARK: { w: 192, h: 64 },  // one repeat is one parking bay, along x
+  /* the grid world: one repeat is one CELL, which is what lets the
+     floor's anchor put a line on every cell edge exactly — see
+     floorAnchor in js/level.js and CELL in js/maps/grid.js */
+  GRID:     { w: 64, h: 64 },
+  GRIDBOX:  { w: 64, h: 64 },   // and one repeat is one cell up a box's face
   ASPHPARV: { w: 64, h: 192 },  // and along y
   STAIRTRD: { w: 64, h: 16 },   // one repeat is one step
   SKIRTING: { w: 64, h: 16 },
