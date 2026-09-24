@@ -155,9 +155,15 @@ export function buildGrid(opts = {}) {
       if (rnd() > 0.9) continue;
       const cells = BOX_MIN + Math.floor(rnd() * (BOX_MAX - BOX_MIN + 1));
       const side = cells * CELL;
-      const room = PLOT - side - CELL;               // half a cell clear either end
-      const bx = X0 + px * PLOT + CELL / 2 + Math.floor(rnd() * (room / CELL + 1)) * CELL;
-      const by = Y0 + py * PLOT + CELL / 2 + Math.floor(rnd() * (room / CELL + 1)) * CELL;
+      /* ON THE GRID, at the user's request, and it is the grid you can
+         SEE: a box stands on a whole number of cells from the field's
+         own corner, so its foot follows the green lines on the floor
+         and its faces — which wear one repeat of GRIDBOX a cell — line
+         up with them. It used to sit half a cell off, which put every
+         box a hair out of step with the floor it was standing on. */
+      const room = PLOT_CELLS - cells;               // in whole cells
+      const bx = X0 + px * PLOT + Math.floor(rnd() * (room + 1)) * CELL;
+      const by = Y0 + py * PLOT + Math.floor(rnd() * (room + 1)) * CELL;
       boxes.push({ x0: bx, y0: by, x1: bx + side, y1: by + side, cells, side, height: side });
     }
   }
@@ -174,20 +180,36 @@ export function buildGrid(opts = {}) {
       const x0 = X0 + px * PLOT, y0 = Y0 + py * PLOT, x1 = x0 + PLOT, y1 = y0 + PLOT;
       const b = boxAt.get(`${px},${py}`);
       if (!b) { rm.add(x0, y0, x1, y1, floor('field')); n++; continue; }
-      rm.add(x0, y0, x1, b.y0, floor('field'));            // south of it
-      rm.add(x0, b.y1, x1, y1, floor('field'));            // north
-      rm.add(x0, b.y0, b.x0, b.y1, floor('field'));        // west
-      rm.add(b.x1, b.y0, x1, b.y1, floor('field'));        // east
-      n += 4;
-      /* THE BOX ITSELF IS A SHUT COLUMN and draws NOTHING. floor and
-         ceiling at the same height is what this engine calls solid —
-         you cannot walk into it and you cannot see through it — and
-         every texture on it is NONE because js/boxes.js draws all of
-         them, in one mesh, with a shader that can burn. */
-      rm.add(b.x0, b.y0, b.x1, b.y1, {
-        floor: b.height, ceil: b.height,
-        floorTex: 'NONE', ceilTex: 'NONE', wallTex: 'NONE', lowerTex: 'NONE', upperTex: 'NONE',
-        light: BOX_LIGHT, ambient: BOX_LIGHT, outdoor: true, sky: 0, fuel: 0, name: 'box',
+      /* the four strips round it — and only the ones with floor in
+         them, because a box on the grid may sit flush against the edge
+         of its plot and a strip of nothing is not a rectangle */
+      const strip = (ax, ay, bx2, by2) => {
+        if (bx2 - ax < 1 || by2 - ay < 1) return;
+        rm.add(ax, ay, bx2, by2, floor('field'));
+        n++;
+      };
+      strip(x0, y0, x1, b.y0);            // south of it
+      strip(x0, b.y1, x1, y1);            // north
+      strip(x0, b.y0, b.x0, b.y1);        // west
+      strip(b.x1, b.y0, x1, b.y1);        // east
+      /* THE BOX ITSELF IS A FLOOR AT ITS OWN HEIGHT, and it draws
+         NOTHING: every texture on it is NONE because js/boxes.js draws
+         all of them, in one mesh, with a shader that can burn.
+
+         A RAISED FLOOR RATHER THAN A SHUT COLUMN, which is the idiom
+         this engine already uses for a shelf you can shoot over. Both
+         stop you walking in — the step up is bigger than a step — but a
+         shut column stops SIGHT at every height, so a two-cell box
+         would have hidden what was behind it from a man standing on a
+         seven-cell one. It also gives the burning somewhere to go: as a
+         box goes, js/boxes.js lowers this floor to what is left of it,
+         and puts it on the ground when there is nothing left. It is
+         NOT `outdoor` — a fire engine may drive on the field and not
+         through a box; the ash it leaves is outdoor again. */
+      b.rect = rm.add(b.x0, b.y0, b.x1, b.y1, {
+        floor: b.height, ceil: WALL_H,
+        floorTex: 'NONE', ceilTex: 'SKY', wallTex: 'NONE', lowerTex: 'NONE', upperTex: 'NONE',
+        light: BOX_LIGHT, ambient: BOX_LIGHT, outdoor: false, sky: 0, fuel: 0, name: 'box',
       });
     }
   }
@@ -202,6 +224,10 @@ export function buildGrid(opts = {}) {
   rm.add(X1, gy0, X1 + GATE_LEN, gy1, floor('gate east'));
 
   rm.build();
+  /* WHICH SECTOR EACH BOX IS, so that a box which has burnt away can
+     stop being in the way — js/boxes.js opens it to the field's own
+     floor and ceiling the moment nothing of it is left to draw. */
+  for (const b of boxes) { b.sector = b.rect.sector; delete b.rect; }
   const level = mb.build();
 
   /* ------------------------------------------------------------------
@@ -310,7 +336,8 @@ export function buildGrid(opts = {}) {
      sectors are in the map for collision and for sight and draw
      nothing; this is the list of the things themselves. */
   level.boxes = boxes;
-  level.field = { x0: X0, y0: Y0, x1: X1, y1: Y1, cell: CELL, plot: PLOT };
+  /* and what a box's sector is opened UP to when it has gone */
+  level.field = { x0: X0, y0: Y0, x1: X1, y1: Y1, cell: CELL, plot: PLOT, floor: 0, ceil: WALL_H };
   level.floorRects = n;
 
   return level;

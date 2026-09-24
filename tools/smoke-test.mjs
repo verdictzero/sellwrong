@@ -13196,16 +13196,33 @@ section('the grid');
       [2, 3, 4, 5, 6, 7].every(k => sizes.has(k)) && sizes.size === 6 &&
       lv.boxes.every(b => b.x1 - b.x0 === b.cells * GRID.CELL && b.height === b.x1 - b.x0),
       [...sizes].sort().join(','));
-    check('and every one of them is solid: you cannot walk into it and cannot see through it',
+    /* ON THE GRID, at the user's request: a box stands on whole cells
+       from the field's corner, so its foot follows the lines on the
+       floor and its faces line up with them. */
+    check('every box stands on the grid it is drawn on, to the cell',
+      lv.boxes.every(b => b.x0 % GRID.CELL === 0 && b.y0 % GRID.CELL === 0 &&
+        (b.x0 - lv.field.x0) % GRID.CELL === 0 && (b.y0 - lv.field.y0) % GRID.CELL === 0));
+    check('and every one of them is in the way: a floor at its own height you cannot step up',
       lv.boxes.slice(0, 20).every(b => {
         const mid = { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 };
         const sec = lv.sectorAt(mid.x, mid.y);
-        return sec && sec.name === 'box' && sec.floor === sec.ceil &&
+        return sec && sec.name === 'box' && sec.floor === b.height && sec.ceil > sec.floor &&
           lv.sightBlocked(b.x0 - 150, mid.y, 40, b.x1 + 150, mid.y, 40);
       }));
+    /* A RAISED FLOOR AND NOT A SHUT COLUMN, so a short box does not
+       hide what is behind it from somebody standing on a tall one —
+       and so the burning has somewhere to lower it to. */
+    check('but not a wall to the sky: you can see over a box from above it',
+      lv.boxes.slice(0, 10).every(b => {
+        const mid = (b.y0 + b.y1) / 2;
+        return !lv.sightBlocked(b.x0 - 150, mid, b.height + 90, b.x1 + 150, mid, b.height + 90);
+      }));
+    check('and a fire engine may drive on the field but not through a box',
+      lv.sectors.filter(s => s.name === 'box').every(s => !s.outdoor) &&
+      lv.sectors.filter(s => s.name === 'field').every(s => s.outdoor));
     check('and draws nothing, because js/boxes.js draws all of them in one mesh',
       lv.sectors.filter(s => s.name === 'box').every(s =>
-        s.floorTex === 'NONE' && s.ceilTex === 'NONE' && s.wallTex === 'NONE' && s.lowerTex === 'NONE'));
+        s.floorTex === 'NONE' && s.wallTex === 'NONE' && s.lowerTex === 'NONE' && s.upperTex === 'NONE'));
     /* THE STREETS. A field with no way into it is a field a fire engine
        stops at the edge of — which is what it did. */
     const gaps = [];
@@ -13235,7 +13252,16 @@ section('the grid');
       /attribute float localH/.test(gridSrc) && /varying float vLight, vLocalH/.test(gridSrc) &&
       /float above = vLocalH - front;/.test(gridSrc));
     check('and the front comes DOWN from the cap, at the user\'s request',
-      /float front = 1\.0 - vBurn \* \(1\.0 \+ 2\.0 \* soft\) \+ soft \+ tear;/.test(gridSrc));
+      /float front = 1\.0 \+ soft \+ tear - vBurn \* /.test(gridSrc));
+    /* IT GOES AWAY, at the user's request, and the alpha channel is how:
+       the burnt part crumbles in flecks off the same hash that tore the
+       front, and the last of them fade rather than popping. */
+    check('and what has burnt DISINTEGRATES: an alpha channel, and flecks discarded as they go',
+      /float gone = smoothstep\(/.test(gridSrc) && /if \(grain < gone \+ 0\.002\) discard;/.test(gridSrc) &&
+      /float alpha = smoothstep\(gone, gone \+ /.test(gridSrc) &&
+      /transparent: true/.test(gridSrc) && /gl_FragColor = vec4\(c \+ hue \* ember, alpha\);/.test(gridSrc));
+    check('and the front travels further than the box is tall, or the foot of it would never go',
+      BOX.SWEEP > 1 + BOX.DISS * 0.9 && BOX.standing(0) === 1 && BOX.standing(1) === 0);
     check('and it is torn rather than ruled, off a hash of the face\'s own uv at two scales',
       /float tearAt\(vec2 uv\)/.test(gridSrc) && /vec2\(11\.0, 17\.0\)/.test(gridSrc) && /vec2\(27\.0, 39\.0\)/.test(gridSrc));
     check('and the coals are EMBER_RAMP, the same eight a burning fir and a burnt aisle use',
@@ -13299,6 +13325,29 @@ section('the grid');
       B.list.every(b => !b.burning && (b.front === 0 || b.front > 0)), `${B.spentCount} spent`);
     check('a spent box is spent: its front is at the foot and it never burns again',
       B.list.filter(b => b.spent).every(b => b.front >= 1 && !b.burning));
+    /* AND IT IS NOT THERE ANY MORE. A box that has burnt away leaves
+       nothing: not a husk to look at and not a thing to walk into. */
+    {
+      const dead = B.list.filter(b => b.spent);
+      const lvv = gg.level;
+      check('and a box that has burnt away is GONE: the floor is back, and you can walk and see through it',
+        dead.length > 0 && dead.every(b => {
+          const sec = lvv.sectors[b.def.sector];
+          const mid = { x: b.x, y: b.y };
+          return sec.floor === lvv.field.floor && sec.outdoor === true &&
+            !lvv.sightBlocked(b.def.x0 - 150, mid.y, 40, b.def.x1 + 150, mid.y, 40);
+        }), `${dead.length} gone`);
+      /* and one part way through is part way down: the sector follows
+         what is left of it rather than jumping at the end */
+      const half = B.list.find(b => b.front > 0.2 && b.front < 0.7);
+      if (half) {
+        const sec = lvv.sectors[half.def.sector];
+        check('and one caught half way down stands half way up, and is in the way that far',
+          sec.floor > 0 && sec.floor < half.height &&
+          Math.abs(sec.floor - half.height * BOX.standing(half.front)) <= 1,
+          `${sec.floor} of ${half.height}`);
+      }
+    }
   }
 
   /* ---- AND NOBODY COMES BUT THE BRIGADE ---- */

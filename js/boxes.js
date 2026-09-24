@@ -82,6 +82,39 @@ export const SOAK_OUT = 260;
 const FX_NEAR = 3000, FX_MOST = 10;
 
 /* ---------------------------------------------------------------------
+   THE SWEEP, in the box's own height, and the two numbers the shader
+   and the collision BOTH have to agree about.
+
+   SOFT is how blurred the front is. DISS is how far above the front the
+   burnt stuff takes to crumble away to nothing, at the user's request:
+   the box does not leave a husk, it GOES. Which means the front has to
+   travel further than the box is tall — its own height, plus the
+   crumble — or the last handful of texels at the foot would never get
+   far enough above the front to disappear, and a burnt-out box would be
+   a doormat that stood there for the rest of the night.
+   --------------------------------------------------------------------- */
+export const SOFT = 0.085;
+export const DISS = 0.62;
+/* what the front covers over a whole burn: the box, and then the
+   crumble past the bottom of it */
+export const SWEEP = 1 + 2 * SOFT + DISS;
+
+/**
+ * How much of a box is left STANDING, 0..1 of its height, at burn `t`.
+ * The collision reads this; the shader draws the same box.
+ *
+ * It is not the front. Below the front the box is whole; from the front
+ * to a crumble above it the box is flecks with more and more missing;
+ * above that there is nothing. Putting the collision at the front would
+ * let you walk through something plainly still there, and putting it at
+ * the top of the flecks would have the last few specks of ash holding a
+ * fire engine up. It sits most of the way through the crumble.
+ */
+export function standing(t) {
+  return Math.max(0, Math.min(1, 1 + SOFT - t * SWEEP + DISS * 0.7));
+}
+
+/* ---------------------------------------------------------------------
    THE SHADER
 
    Its own material rather than createWallMaterial's, which is the shape
@@ -135,9 +168,12 @@ void main() {
   /* WHERE THE FRONT IS. It starts a hair above the cap at burn 0 and
      ends a hair below the foot at burn 1, so that neither end of the
      sweep leaves a band that never quite goes. */
-  float soft = 0.085;
+  float soft = ${SOFT.toFixed(3)};
   float tear = (tearAt(vUv) - 0.5) * 0.13;
-  float front = 1.0 - vBurn * (1.0 + 2.0 * soft) + soft + tear;
+  /* THE FRONT GOES PAST THE FOOT — see SWEEP. By the time the burn is 1
+     the front is a whole crumble-length below the bottom of the box, so
+     there is nothing anywhere on it that has not had time to go. */
+  float front = 1.0 + soft + tear - vBurn * ${SWEEP.toFixed(4)};
   /* how far ABOVE the front this fragment is: positive is burnt, and
      the bigger it is the longer ago it burnt, because the front came
      down past it first */
@@ -148,6 +184,18 @@ void main() {
      which is the order soot goes on in js/material.js, and it keeps a
      little of itself for ever — a burnt green box is still a box. */
   float age = clamp(above / 0.55, 0.0, 1.0);
+
+  /* AND IT DISINTEGRATES, at the user's request. How much of this
+     fragment has gone: none of it at the front, all of it a crumble
+     above. Speckled by the same hash that tore the front, at a finer
+     pitch, so the box comes apart in FLECKS — a wall of ash eaten from
+     the top rather than a clean line retreating down it. The last of
+     them fade rather than popping, which is what the alpha is for. */
+  float gone = smoothstep(0.06, ${DISS.toFixed(3)}, above);
+  float grain = tearAt(vUv * 2.7 + 4.0);
+  if (grain < gone + 0.002) discard;
+  float alpha = smoothstep(gone, gone + 0.20, grain);
+
   vec3 albedo = t.rgb;
   float lum = dot(albedo, vec3(0.2126, 0.7152, 0.0722));
   albedo = mix(albedo, vec3(lum), swept * 0.75);
@@ -187,10 +235,10 @@ void main() {
   if (thermal > 0.5) {
     /* what the scope sees: the front is the hottest thing in the world
        and the husk above it is still warm */
-    gl_FragColor = vec4(vec3(max(c.r, clamp(flame * 0.95 + coal * 0.45, 0.0, 1.0))), 1.0);
+    gl_FragColor = vec4(vec3(max(c.r, clamp(flame * 0.95 + coal * 0.45, 0.0, 1.0))), alpha);
     return;
   }
-  gl_FragColor = vec4(c + hue * ember, 1.0);
+  gl_FragColor = vec4(c + hue * ember, alpha);
 }
 `;
 
@@ -268,8 +316,10 @@ export class Boxes {
 
   get count() { return this.list.length; }
   get burningCount() { let n = 0; for (const b of this.list) if (b.burning) n++; return n; }
-  /** Everything still with paint on it, which is what the brigade is for. */
-  get standingCount() { let n = 0; for (const b of this.list) if (!b.spent) n++; return n; }
+  /** Everything still standing, which is what the brigade is for. A box
+   *  the fire has taken all of is not one, whether it finished burning
+   *  or was put out with nothing left. */
+  get standingCount() { let n = 0; for (const b of this.list) if (!b.gone) n++; return n; }
 
   /* ------------------------------------------------------------------
      THE MESH: five faces a box — four sides and a cap, and no
@@ -348,6 +398,12 @@ export class Boxes {
       vertexShader: BOX_VERT,
       fragmentShader: BOX_FRAG,
       side: THREE.FrontSide,
+      /* IT HAS AN ALPHA CHANNEL because it disintegrates — see the
+         fragment shader. Depth is still written: what is left of a box
+         is solid and has to occlude what is behind it, and the flecks
+         that are on their way out are a texel or two wide. */
+      transparent: true,
+      depthWrite: true,
       toneMapped: false,
       fog: false,
     });
@@ -431,9 +487,14 @@ export class Boxes {
       }
       b.front = Math.min(1, b.front + b.rate);
       this._write(b);
-      /* `spent` is front >= 1 and is asked rather than set — the front
-         is the one number a box has and everything else reads off it */
-      if (b.spent) { b.burning = false; this.spentCount++; }
+      /* AND IT IS IN THE WAY ONLY AS LONG AS IT IS THERE. The sector
+         under a box is a floor at the height of it (js/maps/grid.js);
+         as the box goes, that floor comes down with it, so a thing
+         burnt to a stub is a stub you can see over and then step on.
+         `spent` is front >= 1 and is asked rather than set — the front
+         is the one number a box has and everything else reads off it. */
+      this._stand(b);
+      if (b.spent) { b.burning = false; this.spentCount++; this._vanish(b); }
 
       /* IT LIGHTS ITS NEIGHBOURS, which is the only way fire crosses
          this field: there is no grid under it to carry one. */
@@ -464,6 +525,39 @@ export class Boxes {
       /* a burning box is a thing that hurts to stand next to */
       if ((b.tick % 9) === 0) this._scorch(b);
     }
+  }
+
+  /** The sector under a box, or null for a world that never said. */
+  _sector(b) {
+    const i = b.def.sector;
+    return i === undefined ? null : (this.game.level.sectors[i] || null);
+  }
+
+  /** What is left of it, as a floor you cannot step over. */
+  _stand(b) {
+    const sec = this._sector(b);
+    if (!sec) return;
+    const h = Math.round(b.height * standing(b.front));
+    if (h !== sec.floor) { sec.floor = h; sec.baseFloor = h; }
+    /* AND WHEN THERE IS NOTHING LEFT it stops being a box, whether it
+       burnt all the way or the brigade caught it a hair short: what
+       decides is what is STANDING, not whether the front reached the
+       bottom. A box put out with nothing left of it is still nothing
+       left of it, and a fire engine may drive over the ash. */
+    if (h === 0) this._vanish(b);
+  }
+
+  /** NOTHING IS LEFT OF IT. The floor goes back to the field's, so you
+   *  may walk over where it stood and see across it — and a fire engine
+   *  may drive over the ash, which it could not over the box. */
+  _vanish(b) {
+    const sec = this._sector(b);
+    if (!sec || b.gone) return;
+    const f = this.game.level.field || {};
+    sec.floor = sec.baseFloor = f.floor ?? 0;
+    sec.outdoor = true;
+    sec.sky = 0;
+    b.gone = true;
   }
 
   /** What a burning box does to whoever is beside it. */

@@ -165,7 +165,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         2611 checks, no install and no browser
+  the smoke test         2617 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -5304,17 +5304,24 @@ so the far edge of the field goes to the same green the horizon is:
 the world ends rather than stopping at a wall.
 
 THE BOXES are cubes, two cells to seven cells a side — 128 to 448 units,
-knee-high to a small building. One to a PLOT of eight cells, jittered
-inside it, which is what spaces them out and what lets the floor be cut
-around them: a sector here is one ring of points and cannot have an
-island in the middle, so a plot with a box in it is four strips in a
-picture frame. Every fourth plot each way carries no box, which makes
-streets — and a street is both the way a fire engine gets in and a
-firebreak the fire will not cross.
+knee-high to a small building. One to a PLOT of eight cells, and ON THE
+GRID: a box stands on a whole number of cells from the field's own
+corner, so its foot follows the green lines on the floor and its faces,
+which wear one repeat of GRIDBOX a cell, line up with them. Where in its
+plot it stands is the only thing rolled for, which is what spaces them
+out and what lets the floor be cut around them: a sector here is one
+ring of points and cannot have an island in the middle, so a plot with a
+box in it is the box and the strips of floor left round it. Every fourth
+plot each way carries no box, which makes streets — and a street is both
+the way a fire engine gets in and a firebreak the fire will not cross.
 
-Their sectors are in the map for collision and for sight and draw
-NOTHING. All 146 of them are one mesh and one draw call, built in
-js/boxes.js.
+A box's sector is a FLOOR AT ITS OWN HEIGHT and draws nothing. A raised
+floor rather than a shut column, which is the idiom this engine already
+uses for a shelf you can shoot over: both stop you walking in, but a
+shut column stops sight at every height, so a two-cell box would have
+hidden what was behind it from a man standing on a seven-cell one. It
+also gives the burning somewhere to go. All 146 of them are one mesh and
+one draw call, built in js/boxes.js.
 
 HOW THEY BURN. A box carries one number, `front`: how far the decay has
 swept down it. Everything you see comes off that number and the height
@@ -5340,10 +5347,26 @@ use (js/material.js), so a burning box stands in the same light as
 everything else and its coals are the same eight colours and the same
 clock as a burning fir.
 
-A box keeps about a quarter of itself when it has gone. Taken all the
-way down it was black on a black sky, so a burning box read as one being
-DELETED from the top rather than one turning to charcoal — and the thing
-is still standing there, still solid, still in the way.
+AND THEN IT DISINTEGRATES, at the user's request: a box does not leave a
+husk, it GOES. Above the front the paint is already gone; from there to
+a crumble-length higher the surface comes apart in FLECKS, speckled off
+the same hash that tore the front, with the last of them fading on an
+alpha channel rather than popping. By the end there is nothing on the
+grid where it stood.
+
+Which is why the front travels FURTHER than the box is tall — its own
+height plus the crumble (SWEEP in js/boxes.js). Sweeping only the height
+left the last handful of texels at the foot with nowhere to have gone,
+and a burnt-out box was a doormat that stood there for the rest of the
+night.
+
+AND IT STOPS BEING IN THE WAY AS IT GOES. The floor under a box comes
+down with what is left of it, so a thing burnt to a stub is a stub you
+can see over and then step on; when there is nothing left the floor is
+the field's again and a fire engine may drive over the ash. What decides
+is what is STANDING rather than whether the front reached the bottom —
+a box the brigade puts out with nothing left of it is still nothing left
+of it.
 
 HOW THE FIRE MOVES, since there is no grid to carry it: a box properly
 alight lights its neighbours within 300 units of its FOOTPRINT, so a
@@ -8028,7 +8051,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-2611 checks. Every one of them earns its place by having caught something
+2617 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
