@@ -165,7 +165,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         2556 checks, no install and no browser
+  the smoke test         2576 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -5273,6 +5273,49 @@ with it in your hands — stops the loop through one line, and none of
 them has to remember to.
 
 
+THE FIRE TRUCK
+
+The user's fire variant of the police van: the same body and wheels on
+a red sheet, with a water cannon on the roof. It is the first responder
+on the side of the building. It does not put firefighters on the ground
+yet; the truck is the whole brigade for now.
+
+  assets/models/firetruck.glb   the game's copy, made by the same script:
+    blender -b -P tools/blender/prep_swatvan.py -- fireTruckVariant.glb assets/models/firetruck.glb 1024 0.5 0.5
+  js/brigade.js                 who calls it, how many come, where they stand
+  js/water.js                   the jet
+  FireTruck in js/vehicles.js   the cannon
+
+THE FIRE CALLS IT, not you. After eight seconds of anything alight (the
+store, the wood, a car), one truck is sent. Another follows every forty
+seconds while the fire lasts, up to one per sixty cells alight and never
+more than four. It comes up the same road and round the same ring as the
+SWAT, stands as near the thickest part of the fire as the tarmac allows,
+and stops 520 short of it, never on burning ground. A fire inside the
+building is fought from a bay in the fire lane. Its siren is lower than
+the police's, and its light bar flashes red and white.
+
+THE CANNON LOOKS, TURNS AND POURS. About three times a second it looks for a
+target. A burning vehicle comes first, because those go up; then a
+burning person; then the part of the store's fire or the wood's that it
+can see and that is nearest its working distance of 560, hottest first.
+It avoids the patch at its own wheels. The turret slews, and the barrel
+lifts to the angle that lands a jet there: aimPitch runs the jet's own
+flight backwards. Once it is on target it pours, walking the jet a
+little either side the way a crew plays a monitor over a fire.
+
+THE WATER is a liquid jet: thrown fast, holding its speed, and coming
+down in an arc about 1,270 units long on the flat. Where it lands it
+takes heat out of the fire grid (more, over a wider patch, than the
+extinguisher) and puts out trees, with steam coming off what it
+cools. A drop landing by a burning car puts the car out, unless it is
+already charring. Anybody it passes through is put out (Actor.soak) and
+pushed along it, including you. Like the extinguisher, it cannot unburn
+anything.
+
+The truck stands in fire well: three times the squad van's fire armour
+and half again its fuse.
+
 THE POLICE VAN, AGAIN
 
 The user's second assault van replaced the first, and it came in pieces
@@ -7890,7 +7933,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-2556 checks. Every one of them earns its place by having caught something
+2576 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

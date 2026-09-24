@@ -142,6 +142,9 @@ export const POLICE_LENGTH = 240;
    of it is the right amount: it fits, and it looks like it only just
    does. */
 export const APC_LENGTH = 260;
+/* AND THE FIRE TRUCK, which is the police van's own body repainted and
+   so exactly its length: the same file under a different coat. */
+export const FIRE_LENGTH = POLICE_LENGTH;
 
 /* glTF's own axes: +Y is up and the front of an asset faces +Z, so the
    left flank is +X. (Spec, "Coordinate System and Units".) The game's
@@ -301,6 +304,8 @@ export function carGeometry(v, opts = {}) {
    — has none, and nothing here is asked.
    --------------------------------------------------------------------- */
 const WHEEL_NODE = /^wheel/i;
+const CANNON_NODE = /^cannon$/i;
+const MOUNT_NODE = /^cannon_base$/i;
 const LAMP_MATERIAL = /^DynamicPoliceLight/i;
 
 /** One wheel's triangles, about its own axle. */
@@ -308,6 +313,19 @@ export function wheelGeometry(v, w, opts = {}) {
   const P = pen(v, { ...opts, origin: w.axle });
   for (const t of w.tris) P.tri(t.a, t.b, t.c, t.n, t.ta, t.tb, t.tc, t.ink);
   return P.arrays;
+}
+
+/** The water cannon's triangles, about its pivot. */
+export function cannonGeometry(v, opts = {}) {
+  const c = v.model.cannon;
+  const P = pen(v, { ...opts, origin: c.pivot });
+  for (const t of c.tris) P.tri(t.a, t.b, t.c, t.n, t.ta, t.tb, t.tc, t.ink);
+  return P.arrays;
+}
+
+/** Any point of the model in the body mesh's own frame. */
+export function meshAt(v, p, origin = [0, 0, 0], length = v.length) {
+  return [(p[0] - origin[0]) * length, (p[2] - origin[2]) * length, -(p[1] - origin[1]) * length];
 }
 
 /** Where a wheel's axle is in the body mesh's own frame. */
@@ -555,7 +573,7 @@ export function modelVehicle(json, bin, opts = {}) {
        its body; a node called wheel_* turns, and the surface on the
        user's dynamic light material flashes. */
     const role = LAMP_MATERIAL.test(mat?.name || '') ? 'lamp'
-      : WHEEL_NODE.test(node) ? 'wheel' : 'body';
+      : WHEEL_NODE.test(node) ? 'wheel' : CANNON_NODE.test(node) ? 'cannon' : 'body';
     return { pos, idx, uv, ink, role, node };
   });
   if (!prims.length) throw new Error('the model has no meshes in its scene');
@@ -585,9 +603,10 @@ export function modelVehicle(json, bin, opts = {}) {
   ];
 
   /* ---- and every triangle in it ------------------------------------ */
-  const tris = [], wheels = [], lamps = [];
+  const tris = [], wheels = [], lamps = [], cannon = [], mount = [];
   for (const q of prims) {
-    const into = q.role === 'lamp' ? lamps
+    const into = q.role === 'lamp' ? lamps : q.role === 'cannon' ? cannon
+      : MOUNT_NODE.test(q.node) ? mount
       : q.role === 'wheel' ? (wheels.push({ name: q.node, tris: [] }), wheels[wheels.length - 1].tris)
       : tris;
     /* THE MODEL'S OWN v, UNTOUCHED — see carTexture. The sheet is
@@ -611,6 +630,8 @@ export function modelVehicle(json, bin, opts = {}) {
       into.push({ a, b, c, n, ta: uvAt(ia), tb: uvAt(ib), tc: uvAt(ic), ink: q.ink });
     }
   }
+  /* the mount is body, and is measured apart only to find the pivot */
+  for (const t of mount) tris.push(t);
   if (!tris.length) throw new Error('the model has no triangles in it');
   /* each wheel's middle, which is its axle, and how far that is off the
      tarmac, which is its radius: the bounding box of the wheel's own
@@ -623,6 +644,28 @@ export function modelVehicle(json, bin, opts = {}) {
     }
     w.axle = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2];
     w.radius = Math.max(hi[0] - lo[0], hi[2] - lo[2]) / 2;
+  }
+  /* THE CANNON turns about the middle of the top of its mount, and its
+     muzzle is the furthest forward point of it: the barrel is modelled
+     pointing at the nose */
+  let gun = null;
+  if (cannon.length) {
+    const box = ts => {
+      const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+      for (const t of ts) for (const p of [t.a, t.b, t.c]) for (let k = 0; k < 3; k++) {
+        if (p[k] < lo[k]) lo[k] = p[k];
+        if (p[k] > hi[k]) hi[k] = p[k];
+      }
+      return { lo, hi };
+    };
+    const c = box(cannon), m = mount.length ? box(mount) : c;
+    const pivot = [(m.lo[0] + m.hi[0]) / 2, (m.lo[1] + m.hi[1]) / 2, mount.length ? m.hi[2] : c.lo[2]];
+    let n = 0; const tip = [c.hi[0], 0, 0];
+    for (const t of cannon) for (const p of [t.a, t.b, t.c]) {
+      if (p[0] > c.hi[0] - 0.004) { tip[1] += p[1]; tip[2] += p[2]; n++; }
+    }
+    tip[1] /= n; tip[2] /= n;
+    gun = { tris: cannon, pivot, tip };
   }
 
   /* ------------------------------------------------------------------
@@ -657,7 +700,7 @@ export function modelVehicle(json, bin, opts = {}) {
      ------------------------------------------------------------------ */
   const c3 = [0, 0, box.height / 2];
   let normalsTurned = 0;
-  for (const t of [...tris, ...wheels.flatMap(w => w.tris), ...lamps]) {
+  for (const t of [...tris, ...wheels.flatMap(w => w.tris), ...lamps, ...cannon]) {
     const mx = (t.a[0] + t.b[0] + t.c[0]) / 3 - c3[0];
     const my = (t.a[1] + t.b[1] + t.c[1]) / 3 - c3[1];
     const mz = (t.a[2] + t.b[2] + t.c[2]) / 3 - c3[2];
@@ -669,9 +712,11 @@ export function modelVehicle(json, bin, opts = {}) {
 
   return {
     id: opts.id || 'van', name: opts.name || 'Van', use: 'civil',
+    /* which colours its light bar flashes, if it has one — see js/bloom.js */
+    lamp: opts.lamp || 'police',
     length,
     box,
-    model: { tris, wheels, lamps, normalsTurned },
+    model: { tris, wheels, lamps, cannon: gun, normalsTurned },
   };
 }
 

@@ -1,5 +1,8 @@
-# The police van's game copy -- see THE POLICE VAN in README.txt.
+# The police van's game copy -- see THE POLICE VAN in README.txt -- and the
+# fire truck's, which is the same van repainted with a water cannon on its
+# roof (THE FIRE TRUCK).
 #   blender -b -P prep_swatvan.py -- <newSWATvan.glb> <out.glb> [texsize] [body ratio] [wheel ratio]
+#   blender -b -P prep_swatvan.py -- <fireTruckVariant.glb> <out.glb> [texsize] [body ratio] [wheel ratio]
 #
 # 1. bake the file's node transforms into its vertices
 # 2. half a turn about glTF y: the file faces -z (its front wheels and its
@@ -14,7 +17,10 @@
 #    to match -- a vehicle in this game is drawn off one picture; normal
 #    and metal-rough maps dropped, since nothing reads them
 # 5. the body and wheels decimated to [ratio]s of their triangles
-# 6. exported with one UV set, no normals' tangents, JPEG
+# 6. the fire truck's water cannon: turret and barrel joined as `cannon`,
+#    which the game turns about the middle of `cannon_base`; both keep their
+#    flat colours and lose the photo their metal-rough slot pointed at
+# 7. exported with one UV set, no normals' tangents, JPEG
 import bpy, bmesh, sys, os, math
 from mathutils import Matrix
 
@@ -42,8 +48,34 @@ for o in list(bpy.context.scene.objects):
 NAMES = {'newSWATvanChassis': 'body', 'newSWATvanLightDynamic': 'lightbar',
          'wheelFrontRight': 'wheel_fr', 'wheelFrontLeft': 'wheel_fl',
          'wheelMidPairSameAxle': 'wheel_mid', 'wheelRearPairSameAxle': 'wheel_rear'}
+NAMES.update({'waterGunTurret': 'cannon', 'Sphere': 'cannon_barrel', 'waterGunBase': 'cannon_base'})
 for o in meshes:
     o.name = o.data.name = NAMES[o.name]
+# 6: the barrel rides on the turret
+if 'cannon_barrel' in bpy.data.objects:
+    bpy.ops.object.select_all(action='DESELECT')
+    tur, bar_ = bpy.data.objects['cannon'], bpy.data.objects['cannon_barrel']
+    tur.select_set(True); bar_.select_set(True)
+    bpy.context.view_layer.objects.active = tur
+    bpy.ops.object.join()
+    tur.name = tur.data.name = 'cannon'
+    meshes = [o for o in bpy.context.scene.objects if o.type == 'MESH']
+    for o in meshes:
+        if not o.name.startswith('cannon'): continue
+        uvs = o.data.uv_layers
+        while len(uvs) > 1: uvs.remove(uvs[-1])
+        for i, m in enumerate(o.data.materials):
+            col = (0.2, 0.2, 0.2, 1)
+            for n in m.node_tree.nodes:
+                if n.type == 'BSDF_PRINCIPLED': col = tuple(n.inputs['Base Color'].default_value)
+            if m.name.endswith('_flat'): continue
+            flat = bpy.data.materials.get(m.name + '_flat')
+            if not flat:
+                flat = bpy.data.materials.new(m.name + '_flat'); flat.use_nodes = True
+                b_ = flat.node_tree.nodes['Principled BSDF']
+                b_.inputs['Base Color'].default_value = col
+                b_.inputs['Metallic'].default_value = 0; b_.inputs['Roughness'].default_value = 0.6
+            o.data.materials[i] = flat
 body = bpy.data.objects['body']
 wheels = [o for o in meshes if o.name.startswith('wheel_')]
 bar = bpy.data.objects['lightbar']
@@ -99,7 +131,8 @@ for o, r in [(body, BODY_RATIO)] + [(w, WHEEL_RATIO) for w in wheels]:
     bpy.context.view_layer.objects.active = o
     bpy.ops.object.modifier_apply(modifier='dec')
 
-for o in [body, bar] + wheels:
+extra = [o for o in bpy.context.scene.objects if o.type == 'MESH' and o.name.startswith('cannon')]
+for o in [body, bar] + wheels + extra:
     vs = [v.co for v in o.data.vertices]
     # glTF (x, y, z) = Blender (x, z, -y)
     lo = (min(c.x for c in vs), min(c.z for c in vs), min(-c.y for c in vs))

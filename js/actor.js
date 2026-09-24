@@ -822,6 +822,22 @@ export class Actor {
     return false;
   }
 
+  /**
+   * WATER, from the fire brigade's cannon (js/water.js): the fire half of
+   * chill() and none of the cold. Somebody alight has `amount` times four
+   * tics of it taken off, and their torch fuse with it; nobody freezes.
+   * Returns true if this was the call that put them out.
+   */
+  soak(amount) {
+    if (this.removed || this.dead || this.ash > 0 || !(this.burning > 0)) return false;
+    this.burning = Math.max(0, this.burning - amount * 4);
+    this.torch = Math.max(0, (this.torch || 0) - amount * 4);
+    if (this.burning > 0) return false;
+    this.lit = 0;
+    if (this.burnSprite) { this.burnSprite.remove(); this.burnSprite = null; }
+    return true;
+  }
+
   freeze() {
     if (this.frozen || this.removed || this.dead) return;
     this.frozen = true;

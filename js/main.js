@@ -24,7 +24,7 @@ import { LofiPipeline } from './lofi.js';
 import { bakeTextures } from './textures.js';
 import { bakeSprites, bakeWeapons } from './sprites.js';
 import { fireFrames } from './fireart.js';
-import { loadVehicleModel, POLICE_LENGTH, APC_LENGTH } from './car.js';
+import { loadVehicleModel, POLICE_LENGTH, APC_LENGTH, FIRE_LENGTH } from './car.js';
 import { loadVtolModel } from './vtol.js';
 import { addStrip, imageData } from './spriteload.js';
 import { CELLS, GIBLETS, BLAST_SPRITE, addStandees, addSplats, addTroops } from './people.js';
@@ -333,6 +333,12 @@ async function boot() {
      other two and floated by ArmyApc in js/vehicles.js. Without it the
      army never arrives and the SWAT are the whole night, which is the
      same bargain as above. */
+  /* and the FIRE TRUCK, which the fire calls rather than you: the
+     police van repainted, with a water cannon on the roof — see
+     js/brigade.js. Without it the fire burns until it is done. */
+  const fireP = loadVehicleModel('assets/models/firetruck.glb',
+      { length: FIRE_LENGTH, id: 'firetruck', name: 'Fire truck', use: 'fire', lamp: 'fire' })
+    .catch(e => { console.warn('no fire truck, the fire burns:', e.message); return null; });
   const apcP = loadVehicleModel('assets/models/apc.glb',
       { length: APC_LENGTH, id: 'apc', name: 'Hover APC', use: 'army' })
     .catch(e => { console.warn('no APC, the army stays home:', e.message); return null; });
@@ -444,6 +450,7 @@ async function boot() {
   const fleet = await fleetP;
   const police = await policeP;
   const apc = await apcP;
+  const firetruck = await fireP;
   const vtol = await vtolP;
 
   status('THE FLAMETHROWER', 0.78);
@@ -455,7 +462,7 @@ async function boot() {
   const input = new Input(renderer.domElement);
   const game = new Game({ level, scene, camera, textures, sprites, hud, audio, input, sky: skyBaker.texture,
                          flameAtlas: streamAtlas, bodyAtlas: flameAtlas, fxAtlases, gibAtlases, rainAtlas,
-                         fleet, police, apc, vtol, weather });
+                         fleet, police, apc, firetruck, vtol, weather });
   hud.game = game;
   const touch = new TouchControls(input, { root: $('touch'), prefs, onPause: () => pause(true) });
 

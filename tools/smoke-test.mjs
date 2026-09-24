@@ -7687,6 +7687,43 @@ section('the van');
     return v;
   })();
 
+  /* --- AND THE FIRE TRUCK, which is the police van repainted ----------
+     The user's fire variant: the same body and wheels on a red sheet,
+     with a water cannon on the roof — a turret and barrel the game turns
+     (`cannon`) on a mount it does not (`cannon_base`). Made by the same
+     script as the van. */
+  const firetruck = await (async () => {
+    const glb = await import('../js/glb.js');
+    const bytes = fs.readFileSync('assets/models/firetruck.glb');
+    const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    const { json, bin } = glb.parseGLB(ab);
+    note('the fire truck', `${json.meshes.length} mesh, ${json.materials.length} material, ${json.images.length} image, ` +
+      `${(bytes.length / 1024 / 1024).toFixed(2)} MB`);
+    check('one sheet, and the cannon in its own flat colours rather than the photo its metal-rough slot pointed at',
+      json.images.length === 1 && json.materials.every(m => !m.normalTexture && !m.pbrMetallicRoughness?.metallicRoughnessTexture) &&
+      bytes.length < 1.5 * 1024 * 1024, `${json.images.length} images`);
+    check('its parts are the van\'s and the cannon\'s: a turret the game turns and a mount it does not',
+      ['body', 'lightbar', 'wheel_fl', 'wheel_fr', 'wheel_mid', 'wheel_rear', 'cannon', 'cannon_base'].every(n => json.nodes.some(o => o.name === n)),
+      json.nodes.map(n => n.name).join(', '));
+    const v = car.modelVehicle(json, bin, { length: car.FIRE_LENGTH, id: 'firetruck', name: 'Fire truck', use: 'fire', lamp: 'fire' });
+    const c = v.model.cannon;
+    check('it is the police van\'s length, being the police van\'s body', car.FIRE_LENGTH === car.POLICE_LENGTH && v.length === police.length);
+    check('and the cannon is kept out of the body, with a pivot on top of its mount and a muzzle forward of it',
+      !!c && c.tris.length > 100 && c.tip[0] > c.pivot[0] + 0.05 && Math.abs(c.pivot[1]) < 0.02 && c.pivot[2] > 0.35 && c.pivot[2] < v.box.height,
+      c ? `pivot ${c.pivot.map(x => x.toFixed(3))}, tip ${c.tip.map(x => x.toFixed(3))}` : 'none');
+    check('the mount is body, and the barrel starts out pointing at the nose',
+      v.model.tris.some(t => t.ink) && Math.abs(c.tip[1] - c.pivot[1]) < 0.02);
+    check('and its light bar flashes the brigade\'s colours, red and white, not the police\'s',
+      v.lamp === 'fire' && police.lamp === 'police' && v.model.lamps.length > 0);
+    return v;
+  })();
+  {
+    const B = await import('../js/bloom.js');
+    const F = B.LAMP_COLOURS.fire, P = B.LAMP_COLOURS.police;
+    check('red and blue for the police, red and white for the fire brigade',
+      P.left[0] > 0.9 && P.right[2] > 0.9 && P.right[0] < 0.2 && F.left[0] > 0.9 && Math.min(...F.right) > 0.8);
+  }
+
   /* --- AND THE ARMY'S CARRIER, which is the user's third model --------
      A hover APC, and the first vehicle in the game that does not touch
      the road. Loaded exactly like the other two — the model says
@@ -8681,6 +8718,83 @@ section('the van');
       check('and a van is standing within six seconds of the shot', t2 < 6 * 35, `${(t2 / 35).toFixed(1)}s`);
       check('and it came from the nearer end of the road',
         fresh.responders.vans[0].side === fresh.responders.sideFor(fresh.responders.vans[0].stand.ring));
+    }
+
+    /* ==================================================================
+       AND THE FIRE BRIGADE, which the FIRE calls
+
+       The user's fire truck, its water cannon working, and nobody out of
+       it yet. A night with a car alight in the lot and no shot fired:
+       the brigade is called after BRIGADE.callAfter of burning, a truck
+       comes to the fire, stands off it, turns the cannon on it and pours,
+       and the water takes heat out of the grid.
+       ================================================================== */
+    {
+      const W = await import('../js/water.js');
+      const BR = await import('../js/brigade.js');
+      /* THE AIM IS THE JET'S OWN FLIGHT, run backwards */
+      const aimed = [300, 560, 900].map(d => W.hoseRange(W.aimPitch(d, 100), 100));
+      /* to within one tic of the jet's flight, which is the grain the
+         flight is integrated at */
+      check('the cannon lands a jet where it aims: the pitch aimPitch gives comes down at the distance asked',
+        aimed.every((r, k) => Math.abs(r - [300, 560, 900][k]) <= W.HOSE.speed), aimed.map(r => r.toFixed(0)).join(', '));
+      check('and it reaches well past where a truck stands off a fire', W.hoseReach() > BR.BRIGADE.stop * 2,
+        `${W.hoseReach().toFixed(0)} against a stand-off of ${BR.BRIGADE.stop}`);
+      check('and aimPitch says so when a fire is out of reach', W.aimPitch(W.hoseReach() * 1.3, 0) === null);
+
+      (await import('../js/util.js')).pSeed();
+      const gf = new Game({
+        level: MAP.buildSellWrong({ town: false }), scene: new THREE2.Scene(), camera: {},
+        textures: gm.textures, sprites: spr.bakeSprites(),
+        hud: { message() {}, ticMessages() {} }, audio: null,
+        input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
+                 attack: false, use: false, run: false, sample() {}, sensitivity: 0 },
+        fleet: { texture: {}, def: van }, police: { texture: {}, def: police },
+        apc: { texture: {}, def: apc }, firetruck: { texture: {}, def: firetruck },
+      });
+      const Bf = gf.brigade, Rf = gf.responders, doors = Rf.doorsPoint();
+      const lot = gf.vehicles.all.filter(v => v.state === 'parked')
+        .sort((a, b) => Math.hypot(a.x - doors.x, a.y - doors.y) - Math.hypot(b.x - doors.x, b.y - doors.y));
+      const lit = lot[2];
+      lit.ignite(4000);
+      let t = 0, calledAt = -1;
+      for (; t < BR.BRIGADE.callAfter + 5; t++) { gf.player.health = 100; gf.tic(); if (Bf.called && calledAt < 0) calledAt = t; }
+      check('a car alight in the lot calls the brigade, and no sooner than the fire has been burning its while',
+        Bf.called && calledAt >= BR.BRIGADE.callAfter - 2, `called at ${calledAt}`);
+      check('and the call puts a truck on the road that tic, with nobody asked to fire a shot',
+        Bf.trucks.length === 1 && gf.player.shotsFired === 0 && Bf.trucks[0].state === 'driving');
+      const truck = Bf.trucks[0];
+      check('it is a FireTruck with its cannon, its wheels and its light bar fitted',
+        truck.constructor.name === 'FireTruck' && !!truck.gun && truck.wheels.length === 4 && !!truck.lamp &&
+        truck.lamp.material === (await import('../js/bloom.js')).lampMaterial('fire'));
+      let parkedAt = -1, yaw0 = truck.gunYaw;
+      for (; t < 3000 && (parkedAt < 0 || truck.pouring < 120); t++) {
+        gf.player.health = 100;
+        gf.tic();
+        if (parkedAt < 0 && truck.state === 'parked') parkedAt = t;
+      }
+      note('the fire truck', `called at ${calledAt}, parked at ${parkedAt}, ${truck.pouring} tics poured by ${t}, ` +
+        `${gf.water.landed} drops landed, ${gf.water.doused} cells cooled, ${Bf.trucks.length} trucks`);
+      const sx = truck.stand.x, sy = truck.stand.y;
+      check('it drives in and stands', parkedAt > 0 && Math.hypot(truck.x - sx, truck.y - sy) < 4, `parked at ${parkedAt}`);
+      check('and its wheels turned on the way', truck.wheels.every(w => Math.abs(w.mesh.rotation.z) > 10));
+      check('the cannon turns off the nose and onto the fire, and pours',
+        truck.gunYaw !== yaw0 && truck.pouring >= 120 && gf.water.landed > 200);
+      check('and the water takes heat out of the fire', gf.water.doused > 100, `${gf.water.doused} cells cooled`);
+      check('and nobody gets out of it yet',
+        !gf.actors.some(a => a.van === truck) && Rf.vans.includes(truck) && !Rf.liveVansOf(Rf.swat).includes(truck));
+      /* THE WATER, by itself: a car alight, and a drop landing by it */
+      const car2 = lot[8];
+      car2.ignite(4000);
+      gf.water._land(car2.x + 20, car2.y, car2.ground);
+      check('a drop landing by a burning car puts it out', car2.burning === 0 && car2.flames.length === 0);
+      /* and a burning person, put out by soaking */
+      const who = gf.actors.find(a => !a.dead && a.info.shootable && !a.vehicle && a.soak);
+      if (who) {
+        who.burning = 30;
+        const out = who.soak(W.HOSE.soak);
+        check('and a person alight is soaked out, and not frozen', out && who.burning === 0 && !who.frozen);
+      }
     }
 
     /* ==================================================================

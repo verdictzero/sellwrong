@@ -94,6 +94,8 @@ uniform vec2 uNearFar;
 uniform vec2 uSize;
 uniform float thermal;
 uniform float uCycle;
+uniform vec3 uLeft, uRight;           // the two lenses
+uniform vec3 uLeftGlow, uRightGlow;   // and what each glows
 varying float vSide;
 varying float vPhase;
 
@@ -108,14 +110,12 @@ void main() {
   float side = vSide > 0.0 ? step(t, 0.5) : step(0.5, t);
   float strobe = step(fract(t * 4.0), 0.62);
   float on = side * strobe;
-  vec3 lens = vSide > 0.0 ? vec3(1.0, 0.06, 0.04) : vec3(0.10, 0.25, 1.0);
+  vec3 lens = vSide > 0.0 ? uLeft : uRight;
   if (uGlow > 0.5) {
     /* hidden behind something nearer: no glow from here */
     float d = texture2D(tDepth, gl_FragCoord.xy / uSize).r;
     if (lin(gl_FragCoord.z) > lin(d) * 1.015 + 3.0) discard;
-    /* the blue glows paler than its lens: a deep blue is a dark colour,
-       and a halo of it on a night sky is a halo of nothing */
-    vec3 glow = vSide > 0.0 ? lens : vec3(0.45, 0.72, 1.0);
+    vec3 glow = vSide > 0.0 ? uLeftGlow : uRightGlow;
     gl_FragColor = vec4(glow * on, 1.0);
     return;
   }
@@ -124,16 +124,31 @@ void main() {
 }
 `;
 
-let lampMat = null, darkMat = null;
+/* WHAT COLOUR EACH HALF IS, by who is coming. The police are red and
+   blue; the fire brigade red and white. The blue GLOWS paler than its
+   lens: a deep blue is a dark colour, and a halo of it on a night sky is
+   a halo of nothing. */
+export const LAMP_COLOURS = {
+  police: { left: [1.0, 0.06, 0.04], right: [0.10, 0.25, 1.0], leftGlow: [1.0, 0.06, 0.04], rightGlow: [0.45, 0.72, 1.0] },
+  fire:   { left: [1.0, 0.08, 0.04], right: [1.0, 0.95, 0.85], leftGlow: [1.0, 0.08, 0.04], rightGlow: [1.0, 0.85, 0.7] },
+};
 
-/** The material every lit bar is drawn with — one, for every van. */
-export function lampMaterial() {
-  if (lampMat) return lampMat;
-  lampMat = new THREE.ShaderMaterial({
+const lampMats = {};
+let darkMat = null;
+const lampSize = new THREE.Vector2(1, 1);
+
+/** The material every lit bar of one kind is drawn with — one, for every
+ *  van of that kind. */
+export function lampMaterial(kind = 'police') {
+  if (lampMats[kind]) return lampMats[kind];
+  const c = LAMP_COLOURS[kind] || LAMP_COLOURS.police;
+  const v3 = a => ({ value: new THREE.Vector3(a[0], a[1], a[2]) });
+  const lampMat = lampMats[kind] = new THREE.ShaderMaterial({
     uniforms: {
       ...lampUniforms,
-      uSize: { value: new THREE.Vector2(1, 1) },
+      uSize: { value: lampSize },
       uCycle: { value: FLASH_CYCLE },
+      uLeft: v3(c.left), uRight: v3(c.right), uLeftGlow: v3(c.leftGlow), uRightGlow: v3(c.rightGlow),
       /* the thermal sight's switch, read when the first bar is made
          rather than at load: js/material.js reaches this file through
          js/lofi.js, so `world` is not there yet when this one runs */
@@ -271,8 +286,7 @@ export class Bloom {
     if (!target.depthTexture || !liveIn(scene)) return false;
     this.renderer = renderer;
     this.resize(target.width, target.height);
-    const mat = lampMaterial();
-    mat.uniforms.uSize.value.set(this.w, this.h);
+    lampSize.set(this.w, this.h);
     lampUniforms.tDepth.value = target.depthTexture;
     lampUniforms.uNearFar.value.set(camera.near, camera.far);
 

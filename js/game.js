@@ -40,6 +40,8 @@ import { Tracers } from './tracers.js';
 import { BeamSystem } from './beam.js';
 import { BreachSystem } from './breach.js';
 import { FrostStream } from './frost.js';
+import { WaterStream } from './water.js';
+import { FireBrigade } from './brigade.js';
 import { Effects, SMOKE_PUFFS } from './effects.js';
 import { Giblets } from './people.js';
 import { Responders } from './responders.js';
@@ -81,7 +83,7 @@ const LAMP_RANGE = 340;
 const LAMP_GAIN = 0.30;
 
 export class Game {
-  constructor({ level, scene, camera, textures, sprites, hud, audio, input, sky, flameAtlas, bodyAtlas, fxAtlases, gibAtlases, rainAtlas, fleet, police, apc, vtol, weather }) {
+  constructor({ level, scene, camera, textures, sprites, hud, audio, input, sky, flameAtlas, bodyAtlas, fxAtlases, gibAtlases, rainAtlas, fleet, police, apc, firetruck, vtol, weather }) {
     this.level = level;
     this.scene = scene;
     this.camera = camera;
@@ -162,6 +164,8 @@ export class Game {
     /* and the other stream, which uses the smoke puffs rather than the
        flame frames — a jet of CO2 is a cloud, not a fire */
     this.frost = new FrostStream(this, fxAtlases?.smoke ? { texture: fxAtlases.smoke, frames: SMOKE_PUFFS } : null);
+    /* and the fire brigade's, out of the truck's cannon — see js/water.js */
+    this.water = new WaterStream(this, fxAtlases?.smoke ? { texture: fxAtlases.smoke, frames: SMOKE_PUFFS } : null);
     /* `bodyAtlas` is the tall flame the wood carries and the gun's
        muzzle wears, and it is what a person on fire is drawn with — the
        stream's fireballs are the wrong shape for something standing up.
@@ -192,7 +196,7 @@ export class Game {
     /* where the last hitscan stopped, for a tracer to be drawn to */
     this.lastHit = { x: 0, y: 0, z: 0 };
     if (flameAtlas) this.flame.attach(scene);
-    if (fxAtlases) { this.frost.attach(scene); this.fx.attach(scene); }
+    if (fxAtlases) { this.frost.attach(scene); this.water.attach(scene); this.fx.attach(scene); }
     if (gibAtlases) this.giblets.attach(scene);
     if (rainAtlas) this.rain.attach(scene);
     this.weapon3d = null;
@@ -204,6 +208,10 @@ export class Game {
     this.police = police || null;
     this.apc = apc || null;
     this.responders = new Responders(this);
+    /* AND THE FIRE BRIGADE, which the fire calls rather than you: the
+       user's fire truck and its water cannon — see js/brigade.js */
+    this.firetruck = firetruck || null;
+    this.brigade = new FireBrigade(this);
     /* AND THE AIR SUPPORT THAT COMES WITH THE ARMY: the user's VTOL
        gunship, sent by the wing the tic the army is called — see
        js/vtol.js. Without the model there is no air support, which is
@@ -488,6 +496,7 @@ export class Game {
     this.rain.tic();
     this.flame.tic();
     this.frost.tic();
+    this.water.tic();
     this.fx.tic();
     this.giblets.tic();
     this.decals.tic();
@@ -504,6 +513,7 @@ export class Game {
       if (this.actors[i].removed) this.actors.splice(i, 1);
 
     this.responders.tic();
+    this.brigade.tic();
     this.gunships.tic();
 
     if (this.sound) {
@@ -1465,6 +1475,7 @@ export class Game {
     this.rain.render(billboardRot);
     this.flame.render(billboardRot);
     this.frost.render(billboardRot);
+    this.water.render(billboardRot);
     this.fx.render(billboardRot);
     this.giblets.render(billboardRot);
     this.decals.render(ex, ey, vx, vy);

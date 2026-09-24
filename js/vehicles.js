@@ -50,9 +50,10 @@ import { TICRATE, pRandom, angleDiff, angleNorm, dist2 } from './util.js';
 import {
   carGeometry, chunkGeometry, carMesh, carGeom,
   carCorners, carBlockers, carBlockRadius, carHeight, carWidth,
-  wheelGeometry, wheelAt, lampGeometry,
+  wheelGeometry, wheelAt, lampGeometry, cannonGeometry, meshAt,
 } from './car.js';
 import { BLOOM_LAYER, lamps, lampMaterial, lampDarkMaterial } from './bloom.js';
+import { aimPitch, hoseReach } from './water.js';
 
 /* ---------------------------------------------------------------------
    The numbers
@@ -544,7 +545,7 @@ class Vehicle {
       g.scene.add(this.mesh);
     }
     this.light0 = Float32Array.from(this.local.light);
-    for (const w of this.wheels || []) w.light0 = Float32Array.from(w.mesh.geometry.getAttribute('light').array);
+    for (const q of this.parts || []) q.light0 = Float32Array.from(q.mesh.geometry.getAttribute('light').array);
     this.place();
     g.sound?.play('burn', this);
   }
@@ -564,11 +565,11 @@ class Vehicle {
          what left */
       this.local.charred.fill(k * WRECK_CHAR);
       for (let i = 0; i < lt.array.length; i++) this.local.light[i] = lt.array[i];
-      /* and the wheels, which are the same van */
-      for (const w of this.wheels || []) {
-        const wc = w.mesh.geometry.getAttribute('charred'), wl = w.mesh.geometry.getAttribute('light');
+      /* and the wheels and the cannon, which are the same van */
+      for (const q of this.parts || []) {
+        const wc = q.mesh.geometry.getAttribute('charred'), wl = q.mesh.geometry.getAttribute('light');
         wc.array.fill(k * WRECK_CHAR);
-        for (let i = 0; i < wl.array.length; i++) wl.array[i] = w.light0[i] * (1 - CHAR_DARK * k);
+        for (let i = 0; i < wl.array.length; i++) wl.array[i] = q.light0[i] * (1 - CHAR_DARK * k);
         wc.needsUpdate = true; wl.needsUpdate = true;
       }
     }
@@ -584,6 +585,16 @@ class Vehicle {
   douse() {
     for (const f of this.flames) f.remove();
     this.flames.length = 0;
+  }
+
+  /** PUT OUT, by the fire brigade's water (js/water.js): the burning
+   *  stops and the flames come off. Not once it is charring — the tank
+   *  has gone by then and nothing saves it, the same as a burnt aisle. */
+  putOut() {
+    if (this.state === 'charring' || this.burning <= 0) return false;
+    this.burning = 0;
+    this.douse();
+    return true;
   }
 
   /* ------------------------------------------------------------------
@@ -740,15 +751,35 @@ class Vehicle {
      ------------------------------------------------------------------ */
   fitParts() {
     const d = this.def, L = d.length;
+    const lit = { angle: this.yaw, light: this.light, sky: this.sky, paint: this.paint };
     this.wheels = [];
+    /* every part drawn off the body's sheet, with how to draw it again:
+       the char and the wreck repaint all of them (see refitParts) */
+    this.parts = [];
     for (const w of d.model.wheels || []) {
-      const m = new THREE.Mesh(carGeom(wheelGeometry(d, w, {
-        angle: this.yaw, light: this.light, sky: this.sky, paint: this.paint,
-      })), this.mesh.material);
+      const make = o => wheelGeometry(d, w, o);
+      const m = new THREE.Mesh(carGeom(make(lit)), this.mesh.material);
       m.name = 'wheel:' + w.name;
       m.position.set(...wheelAt(d, w, this.mid, L));
       this.mesh.add(m);
       this.wheels.push({ mesh: m, def: w, radius: w.radius * L });
+      this.parts.push({ mesh: m, make });
+    }
+    /* THE WATER CANNON: a turret that turns about its mount (`gunYaw`)
+       and inside it the barrel's elevation (`gunPitch`), both about the
+       pivot, so aiming it is two numbers — see FireTruck */
+    this.gun = null;
+    if (d.model.cannon) {
+      const c = d.model.cannon;
+      const make = o => cannonGeometry(d, o);
+      const m = new THREE.Mesh(carGeom(make(lit)), this.mesh.material);
+      m.name = 'cannon';
+      const yaw = new THREE.Group(), pitch = new THREE.Group();
+      yaw.position.set(...meshAt(d, c.pivot, this.mid, L));
+      yaw.add(pitch); pitch.add(m);
+      this.mesh.add(yaw);
+      this.gun = { yaw, pitch, mesh: m, def: c };
+      this.parts.push({ mesh: m, make });
     }
     this.lamp = null;
     if (d.model.lamps?.length) {
@@ -756,12 +787,13 @@ class Vehicle {
          than off the game's random table, which it is not worth a roll of */
       const phase = ((this.x * 0.0131 + this.y * 0.0077) % 1 + 1) % 1;
       const a = lampGeometry(d, { origin: this.mid, phase });
+      const kind = d.lamp || 'police';
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.Float32BufferAttribute(a.position, 3));
       geo.setAttribute('side', new THREE.Float32BufferAttribute(a.side, 1));
       geo.setAttribute('phase', new THREE.Float32BufferAttribute(a.phase, 1));
       geo.computeBoundingSphere();
-      this.lamp = new THREE.Mesh(geo, lampMaterial());
+      this.lamp = new THREE.Mesh(geo, lampMaterial(kind));
       this.lamp.name = 'lightbar';
       this.lamp.layers.enable(BLOOM_LAYER);
       this.mesh.add(this.lamp);
@@ -769,13 +801,11 @@ class Vehicle {
     }
   }
 
-  /** The wheels' geometry again, at a new light and char — see crash. */
-  refitWheels(opts) {
-    for (const w of this.wheels || []) {
-      w.mesh.geometry.dispose();
-      w.mesh.geometry = carGeom(wheelGeometry(this.def, w.def, {
-        angle: this.yaw, sky: this.sky, paint: this.paint, ...opts,
-      }));
+  /** The parts' geometry again, at a new light and char — see crash. */
+  refitParts(opts) {
+    for (const q of this.parts || []) {
+      q.mesh.geometry.dispose();
+      q.mesh.geometry = carGeom(q.make({ angle: this.yaw, sky: this.sky, paint: this.paint, ...opts }));
     }
   }
 
@@ -828,7 +858,7 @@ class Vehicle {
     });
     this.mesh.geometry.dispose();
     this.mesh.geometry = carGeom(this.local);
-    this.refitWheels({ light: this.light * WRECK_LIT, charred: WRECK_CHAR });
+    this.refitParts({ light: this.light * WRECK_LIT, charred: WRECK_CHAR });
     g.fire?.ignite(this.x, this.y, FUEL, 80);
   }
 
@@ -1600,6 +1630,184 @@ export class ArmyApc extends SwatVan {
 /* =====================================================================
    THE LOT
    ===================================================================== */
+/* =====================================================================
+   AND ONE THAT COMES FOR THE FIRE
+
+   The fire brigade's truck, at the user's request: the police van
+   repainted red with a water cannon on its roof, and the first thing in
+   the game that is on the side of the building. It is a SwatVan in
+   everything about getting somewhere — the same road, the same ring, the
+   same stands (see js/brigade.js for where it is sent) — and a different
+   vehicle once it has stopped: nobody gets out of it (yet), and the
+   cannon goes to work.
+
+   THE CANNON LOOKS, TURNS, AND POURS. Every CANNON_LOOK tics it picks the
+   fire it will play on — a burning vehicle first, because those go up;
+   then a person alight; then the nearest part of the store's fire or the
+   wood's it can see from the nozzle and reach — and the turret slews
+   toward it at CANNON_TURN a tic, the barrel lifting to the angle that
+   lands a jet there (aimPitch in js/water.js integrates the jet's own
+   flight). Once it is on, it pours, and it walks the jet a little either
+   side while it does, the way a crew plays a monitor over a fire rather
+   than drilling one point of it. With nothing left to put out the turret
+   comes back to face the front.
+
+   IT STANDS IN THE FIRE and takes a long time about burning: three times
+   the squad van's fire armour and half again its fuse. A fire truck that
+   can be lit by the fire it came to is fair; one that goes up the moment
+   it parks is not a fire truck.
+   ===================================================================== */
+const CANNON_LOOK = 12;          // tics between choosing what to play on
+const CANNON_BEST = 560;         // the distance it would rather work at
+const CANNON_NEAR = 200;         // and closer than this it will not aim
+const CANNON_TURN = 0.045;       // radians a tic the turret slews
+const CANNON_LIFT = 0.03;        // and the barrel
+const CANNON_ON = 0.09;          // how close to on target before it pours
+const CANNON_SWEEP = 0.07;       // how far either side it walks the jet
+const HOSE_NOTE_EVERY = 9;       // tics between the hiss
+const FIREHORN_EVERY = 24;       // tics between the two notes
+
+export class FireTruck extends SwatVan {
+  constructor(fleet, def, texture, route) {
+    super(fleet, def, texture, route);
+    this.notes = ['firehorn', 'firehorn2'];
+    this.noteEvery = FIREHORN_EVERY;
+    this.fireArmour = 24;
+    this.charFuse = 6;
+    this.gunYaw = 0;                 // the turret, against the body
+    this.gunPitch = 0.12;            // the barrel
+    this.target = null;              // { x, y, z, kind, ref }
+    this.lookTick = 0;
+    this.pouring = 0;                // tics poured, ever
+    this.hoseTick = 0;
+    this.reach = hoseReach() * 0.94;
+    this.aimGun();
+  }
+
+  tic() {
+    super.tic();
+    if (this.state === 'parked' && this.gun) this.fight();
+  }
+
+  /** Where the pivot of the cannon is in the world, now. */
+  pivotWorld() {
+    const o = turn(toMesh(this.gun.def.pivot, this.mid, this.def.length), this.yaw, this.rx, this.rz);
+    return { x: this.x + o[0], y: this.y - o[2], z: this.cz + o[1] };
+  }
+
+  /** And the muzzle, at the cannon's present yaw and elevation. */
+  nozzle() {
+    const L = this.def.length, c = this.gun.def, pv = this.pivotWorld();
+    const dx = (c.tip[0] - c.pivot[0]) * L, dy = (c.tip[1] - c.pivot[1]) * L, dz = (c.tip[2] - c.pivot[2]) * L;
+    const cp = Math.cos(this.gunPitch), sp = Math.sin(this.gunPitch);
+    const fx = dx * cp - dz * sp, fz = dx * sp + dz * cp;
+    const Y = this.yaw + this.gunYaw, cy = Math.cos(Y), sy = Math.sin(Y);
+    return { x: pv.x + fx * cy - dy * sy, y: pv.y + fx * sy + dy * cy, z: pv.z + fz };
+  }
+
+  /** The turret and the barrel onto the mesh. */
+  aimGun() {
+    if (!this.gun) return;
+    this.gun.yaw.rotation.y = this.gunYaw;
+    this.gun.pitch.rotation.z = this.gunPitch;
+  }
+
+  /** Is this target still worth pouring on? */
+  stillAlight(t) {
+    const g = this.fleet.game;
+    if (!t) return false;
+    if (t.kind === 'car') return t.ref.whole && t.ref.burning > 0 && t.ref.state !== 'charring';
+    if (t.kind === 'person') return !t.ref.dead && !t.ref.removed && t.ref.burning > 0;
+    if (t.kind === 'cell') return (g.fire?.heat[t.ref] || 0) > 0;
+    if (t.kind === 'tree') return g.forest?.burningCells > 0;
+    return false;
+  }
+
+  /** The fire it will play on next, or null: see the note above. */
+  findFire() {
+    const g = this.fleet.game, lv = g.level;
+    const from = this.pivotWorld();
+    const R2 = this.reach * this.reach;
+    const cands = [];
+    /* SCORED BY HOW WELL IT CAN BE WORKED, not by how near it is: the
+       nearest patch of a fire is usually the one lapping at the truck's
+       own wheels, and a monitor on a roof plays on the fire in front of
+       it, at a working distance, rather than on its own feet */
+    const add = (x, y, z, kind, ref, bias) => {
+      const d2 = dist2(from.x, from.y, x, y);
+      if (d2 > R2 || d2 < CANNON_NEAR * CANNON_NEAR) return;
+      cands.push({ x, y, z, kind, ref, score: Math.abs(Math.sqrt(d2) - CANNON_BEST) - bias });
+    };
+    for (const v of this.fleet.all) {
+      if (v === this || !v.whole || !(v.burning > 0) || v.state === 'charring') continue;
+      add(v.x, v.y, v.ground + 20, 'car', v, 700);
+    }
+    for (const a of g.actors) {
+      if (a.dead || a.removed || !(a.burning > 0) || a.vehicle) continue;
+      add(a.x, a.y, a.z + 20, 'person', a, 350);
+    }
+    const F = g.fire;
+    if (F && F.hotCells > 0) {
+      const act = F.active, n = act.length, step = Math.max(1, Math.floor(n / 160));
+      for (let k = 0; k < n; k += step) {
+        const i = act[k];
+        if (F.heat[i] < 40) continue;
+        const j = i % F.plane;
+        const x = F.worldX(j % F.cols), y = F.worldY((j / F.cols) | 0);
+        const sec = lv.sectorAt(x, y);
+        /* and the hottest of it first, by up to half a working distance */
+        add(x, y, (sec ? sec.floor : 0) + 12, 'cell', i, F.heat[i]);
+      }
+    }
+    const W = g.forest;
+    if (W && W.burningCells > 0) {
+      const out = this._emit || (this._emit = []);
+      W.emitters(from.x, from.y, this.reach, 12, out);
+      for (const e of out) add(e.x, e.y, (lv.sectorAt(e.x, e.y)?.floor || 0) + Math.min(60, e.h * 0.5), 'tree', null, 100);
+    }
+    cands.sort((a, b) => a.score - b.score);
+    /* the nearest few that the nozzle can actually see */
+    for (let k = 0; k < cands.length && k < 10; k++) {
+      const c = cands[k];
+      if (!lv.sightBlocked(from.x, from.y, from.z + 8, c.x, c.y, c.z + 10)) return c;
+    }
+    return null;
+  }
+
+  /** One tic of the cannon at work. */
+  fight() {
+    const g = this.fleet.game;
+    /* a burning car or person is held until it is out; a patch of the
+       store or the wood is looked at again every time, because the fire
+       moves and the nearest of it moves with it */
+    const due = ++this.lookTick >= CANNON_LOOK;
+    if (due) this.lookTick = 0;
+    const alight = this.stillAlight(this.target);
+    if (!alight) this.target = null;
+    if (due && (!alight || this.target.kind === 'cell' || this.target.kind === 'tree')) this.target = this.findFire();
+    const t = this.target;
+    let wantYaw = 0, wantPitch = 0.12, pour = false;
+    if (t) {
+      const pv = this.pivotWorld();
+      const sweep = Math.sin(g.tics * 0.11) * CANNON_SWEEP;
+      wantYaw = angleDiff(Math.atan2(t.y - pv.y, t.x - pv.x) + sweep, this.yaw);
+      const d = Math.hypot(t.x - pv.x, t.y - pv.y);
+      const p = aimPitch(d, pv.z - t.z);
+      if (p !== null) { wantPitch = p; pour = true; }
+    }
+    const dy = angleDiff(wantYaw, this.gunYaw);
+    this.gunYaw = angleNorm(this.gunYaw + Math.max(-CANNON_TURN, Math.min(CANNON_TURN, dy)));
+    const dp = wantPitch - this.gunPitch;
+    this.gunPitch += Math.max(-CANNON_LIFT, Math.min(CANNON_LIFT, dp));
+    this.aimGun();
+    if (pour && Math.abs(dy) < CANNON_ON + CANNON_SWEEP && Math.abs(dp) < 0.12 && g.water) {
+      g.water.fire(this.nozzle(), this.yaw + this.gunYaw, this.gunPitch);
+      this.pouring++;
+      if (++this.hoseTick >= HOSE_NOTE_EVERY) { this.hoseTick = 0; g.sound?.play('hose', this); }
+    }
+  }
+}
+
 export class Vehicles {
   /**
    * @param game

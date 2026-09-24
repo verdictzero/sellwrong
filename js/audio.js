@@ -159,6 +159,13 @@ const DEFS = {
   rifle:     { kind: 'noise', dur: 0.17, f0: 2400, f1: 380,  gain: 0.46 },
   hover:     { kind: 'sweep', dur: 0.85, f0: 96,   f1: 142,  gain: 0.18, wave: 'sawtooth' },
   hover2:    { kind: 'sweep', dur: 0.85, f0: 142,  f1: 96,   gain: 0.18, wave: 'sawtooth' },
+  /* THE FIRE BRIGADE: a second siren, deeper — which is what TIERS in
+     js/responders.js has said it was since before there was a truck —
+     and the cannon's hiss, pitched lower and longer than the
+     extinguisher's because it is a river rather than a puff */
+  firehorn:  { kind: 'sweep', dur: 0.68, f0: 330,  f1: 520,  gain: 0.20, wave: 'square' },
+  firehorn2: { kind: 'sweep', dur: 0.68, f0: 520,  f1: 330,  gain: 0.20, wave: 'square' },
+  hose:      { kind: 'noise', dur: 0.30, f0: 1400, f1: 900,  gain: 0.14 },
   armysee:   { kind: 'sweep', dur: 0.19, f0: 300,  f1: 200,  gain: 0.26, wave: 'triangle' },
   armypain:  { kind: 'sweep', dur: 0.16, f0: 260,  f1: 150,  gain: 0.26, wave: 'triangle' },
   armydie:   { kind: 'sweep', dur: 0.58, f0: 270,  f1: 62,   gain: 0.32, wave: 'triangle' },
