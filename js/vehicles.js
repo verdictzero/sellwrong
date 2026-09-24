@@ -50,7 +50,9 @@ import { TICRATE, pRandom, angleDiff, angleNorm, dist2 } from './util.js';
 import {
   carGeometry, chunkGeometry, carMesh, carGeom,
   carCorners, carBlockers, carBlockRadius, carHeight, carWidth,
+  wheelGeometry, wheelAt, lampGeometry,
 } from './car.js';
+import { BLOOM_LAYER, lamps, lampMaterial, lampDarkMaterial } from './bloom.js';
 
 /* ---------------------------------------------------------------------
    The numbers
@@ -355,6 +357,7 @@ class Vehicle {
       });
       this.mesh = carMesh(this.texture, this.local);
       this.mesh.name = 'car:' + def.id;
+      this.fitParts();
       fleet.game.scene.add(this.mesh);
       this.place();
     } else {
@@ -541,6 +544,7 @@ class Vehicle {
       g.scene.add(this.mesh);
     }
     this.light0 = Float32Array.from(this.local.light);
+    for (const w of this.wheels || []) w.light0 = Float32Array.from(w.mesh.geometry.getAttribute('light').array);
     this.place();
     g.sound?.play('burn', this);
   }
@@ -560,6 +564,13 @@ class Vehicle {
          what left */
       this.local.charred.fill(k * WRECK_CHAR);
       for (let i = 0; i < lt.array.length; i++) this.local.light[i] = lt.array[i];
+      /* and the wheels, which are the same van */
+      for (const w of this.wheels || []) {
+        const wc = w.mesh.geometry.getAttribute('charred'), wl = w.mesh.geometry.getAttribute('light');
+        wc.array.fill(k * WRECK_CHAR);
+        for (let i = 0; i < wl.array.length; i++) wl.array[i] = w.light0[i] * (1 - CHAR_DARK * k);
+        wc.needsUpdate = true; wl.needsUpdate = true;
+      }
     }
     const h = carHeight(this.def);
     g.fx?.ember(this.x, this.y, this.cz + h * 0.3, 1 + ((k * 2.5) | 0), 0.5 + k);
@@ -588,6 +599,7 @@ class Vehicle {
     this.state = 'air';
     this.burning = 0;
     this.douse();
+    this.lightsOut();
     this.unblock();
     if (this.slab) { this.fleet.dirty = true; this.slab = null; }
 
@@ -719,6 +731,67 @@ class Vehicle {
     if ((this.tick % 70) === 0 && k > 0.35) g.fire?.ignite(this.x, this.y, 90, 40);
   }
 
+  /* ------------------------------------------------------------------
+     THE PARTS THAT MOVE ON THEIR OWN — see js/car.js. The police van's
+     wheels, each hung off the body about its own axle and drawn with
+     the body's own material, so they warm and char with it; and its
+     light bar, flashing, on the bloom layer, until the van goes up.
+     A vehicle whose model has neither gets neither.
+     ------------------------------------------------------------------ */
+  fitParts() {
+    const d = this.def, L = d.length;
+    this.wheels = [];
+    for (const w of d.model.wheels || []) {
+      const m = new THREE.Mesh(carGeom(wheelGeometry(d, w, {
+        angle: this.yaw, light: this.light, sky: this.sky, paint: this.paint,
+      })), this.mesh.material);
+      m.name = 'wheel:' + w.name;
+      m.position.set(...wheelAt(d, w, this.mid, L));
+      this.mesh.add(m);
+      this.wheels.push({ mesh: m, def: w, radius: w.radius * L });
+    }
+    this.lamp = null;
+    if (d.model.lamps?.length) {
+      /* out of step with every other van, off where it came on rather
+         than off the game's random table, which it is not worth a roll of */
+      const phase = ((this.x * 0.0131 + this.y * 0.0077) % 1 + 1) % 1;
+      const a = lampGeometry(d, { origin: this.mid, phase });
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(a.position, 3));
+      geo.setAttribute('side', new THREE.Float32BufferAttribute(a.side, 1));
+      geo.setAttribute('phase', new THREE.Float32BufferAttribute(a.phase, 1));
+      geo.computeBoundingSphere();
+      this.lamp = new THREE.Mesh(geo, lampMaterial());
+      this.lamp.name = 'lightbar';
+      this.lamp.layers.enable(BLOOM_LAYER);
+      this.mesh.add(this.lamp);
+      lamps.set.add(this.lamp);
+    }
+  }
+
+  /** The wheels' geometry again, at a new light and char — see crash. */
+  refitWheels(opts) {
+    for (const w of this.wheels || []) {
+      w.mesh.geometry.dispose();
+      w.mesh.geometry = carGeom(wheelGeometry(this.def, w.def, {
+        angle: this.yaw, sky: this.sky, paint: this.paint, ...opts,
+      }));
+    }
+  }
+
+  /** The light bar goes dark and stops glowing, for good. */
+  lightsOut() {
+    if (!this.lamp || !lamps.set.has(this.lamp)) return;
+    lamps.set.delete(this.lamp);
+    this.lamp.material = lampDarkMaterial();
+    this.lamp.layers.disable(BLOOM_LAYER);
+  }
+
+  /** The wheels, turned through as far as the van has just rolled. */
+  roll(step) {
+    for (const w of this.wheels || []) w.mesh.rotation.z -= step / w.radius;
+  }
+
   place() {
     this.mesh.position.set(this.x, this.cz, -this.y);
     this.mesh.rotation.set(this.rx, this.yaw, this.rz);
@@ -755,6 +828,7 @@ class Vehicle {
     });
     this.mesh.geometry.dispose();
     this.mesh.geometry = carGeom(this.local);
+    this.refitWheels({ light: this.light * WRECK_LIT, charred: WRECK_CHAR });
     g.fire?.ignite(this.x, this.y, FUEL, 80);
   }
 
@@ -1228,6 +1302,7 @@ export class SwatVan extends Vehicle {
     const step = Math.min(this.speed, left);
     this.x += Math.cos(want) * step; this.y += Math.sin(want) * step;
     this.driven += step;
+    this.roll(step);
     if (left - step < 0.5) { this.route.shift(); this.tail.shift(); }
     this.suspension(this.speed - was, turn);
     if ((g.tics & 3) === 0) { this.updateSector(); this.cz = this.ridingHeight; }

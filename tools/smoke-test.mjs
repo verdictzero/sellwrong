@@ -7633,23 +7633,52 @@ section('the van');
     return v;
   })();
 
-  /* --- AND THE POLICE VAN, which is the user's second model -----------
+  /* --- AND THE POLICE VAN, which is the user's second model, twice -----
      Loaded the same way, on its own sheet; longer, because it is an
      armoured truck and the number is set against what it is rather than
-     against the file (see POLICE_LENGTH). The one thing that went wrong
-     loading it is worth a check of its own: it carries FOUR images, and
-     the first of them is a flat black emissive map. */
+     against the file (see POLICE_LENGTH). The second one the user sent
+     came in pieces the game uses: four wheels that turn and a light bar
+     on its own material, `DynamicPoliceLightMatEmissive`, which flashes
+     red and blue and glows (js/bloom.js). tools/blender/prep_swatvan.py
+     turned it round, stacked its two sheets into one and named the
+     parts. */
   const police = await (async () => {
     const glb = await import('../js/glb.js');
     const bytes = fs.readFileSync('assets/models/police_assault.glb');
     const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
     const { json, bin } = glb.parseGLB(ab);
     note('the police van', `${json.meshes.length} mesh, ${json.materials.length} material, ${json.images.length} images`);
-    const painted = json.materials.find(m => m.pbrMetallicRoughness?.baseColorTexture);
-    const colour = json.textures[painted.pbrMetallicRoughness.baseColorTexture.index].source;
-    check('its colour is not the first image in the file, so the loader has to ask the material',
-      colour !== 0 && /diffuse/i.test(json.images[colour].name || ''), `image ${colour}`);
+    check('one sheet for the body and the wheels, and nothing an unlit renderer cannot use',
+      json.images.length === 1 && json.materials.every(m => !m.normalTexture && !m.pbrMetallicRoughness?.metallicRoughnessTexture),
+      `${json.images.length} images`);
+    check('its parts are named for what the game does with them: a body, four wheels and a light bar',
+      ['body', 'lightbar', 'wheel_fl', 'wheel_fr', 'wheel_mid', 'wheel_rear'].every(n => json.nodes.some(o => o.name === n)) &&
+      json.materials.some(m => m.name === 'DynamicPoliceLightMatEmissive'),
+      json.nodes.map(n => n.name).join(', '));
+    check('the prep script is in the repository and says how it is run',
+      /blender -b -P prep_swatvan\.py -- <newSWATvan\.glb> <out\.glb>/.test(fs.readFileSync('tools/blender/prep_swatvan.py', 'utf8')));
+    check('under a megabyte and a half, and nothing like the thirty thousand triangles it arrived with',
+      bytes.length < 1.5 * 1024 * 1024, `${(bytes.length / 1024 / 1024).toFixed(2)} MB`);
     const v = car.modelVehicle(json, bin, { length: car.POLICE_LENGTH, id: 'police', name: 'Assault van', use: 'police' });
+    const M = v.model;
+    note('and its parts', `${M.tris.length} body, ${M.wheels.map(w => w.tris.length).join('/')} wheels, ${M.lamps.length} lamp triangles`);
+    check('the wheels and the lamp are kept out of the body, so they can move without it',
+      M.wheels.length === 4 && M.lamps.length > 0 && M.wheels.every(w => w.tris.length > 100) && M.tris.length < 12000);
+    /* THE NOSE IS +Z: the light bar is over the cab and the cab is over
+       the one steering axle, forward of the middle; the two driven axles
+       are behind it */
+    const lampX = M.lamps.reduce((a, t) => a + t.a[0], 0) / M.lamps.length;
+    const front = M.wheels.filter(w => w.axle[0] > 0), back = M.wheels.filter(w => w.axle[0] < 0);
+    check('it faces the way the game drives it: the light bar and the single axle at the front',
+      lampX > 0.1 && front.length === 2 && back.length === 2 && /^wheel_f/.test(front[0].name) && /^wheel_f/.test(front[1].name),
+      `lamp at ${lampX.toFixed(2)}, ${front.map(w => w.name)} forward`);
+    check('and the wheels are round, stand on the tarmac, and turn about their own middles',
+      M.wheels.every(w => Math.abs(w.axle[2] - w.radius) < 0.01 && w.radius > 0.04),
+      M.wheels.map(w => `${w.name} r ${(w.radius * v.length).toFixed(1)}`).join(', '));
+    check('the right-hand pair are on the right: wheel_fr is at -y, the vehicle\'s right',
+      M.wheels.find(w => w.name === 'wheel_fr').axle[1] < 0 && M.wheels.find(w => w.name === 'wheel_fl').axle[1] > 0);
+    check('a bit bigger than the van it replaced, which was 214 by 89 by 93',
+      car.POLICE_LENGTH > 214 && car.carWidth(v) > 89 && car.carHeight(v) > 93, `${car.POLICE_LENGTH}`);
     check('it is a truck: longer than the van, wider, and taller',
       car.carLength(v) > car.carLength(van) && car.carWidth(v) > car.carWidth(van) && car.carHeight(v) > car.carHeight(van),
       `${car.carLength(v)} long, ${car.carWidth(v).toFixed(0)} wide, ${car.carHeight(v).toFixed(0)} tall`);
@@ -7682,8 +7711,8 @@ section('the van');
     check('and the game prepared it rather than the artist',
       /prep-model/.test(json.asset.generator || ''), json.asset.generator);
     const v = car.modelVehicle(json, bin, { length: car.APC_LENGTH, id: 'apc', name: 'Hover APC', use: 'army' });
-    check('it is an APC: a fifth longer than the assault van and half again as wide',
-      car.carLength(v) > car.carLength(police) && car.carWidth(v) > car.carWidth(police) * 1.4,
+    check('it is an APC: longer than the assault van and a third again as wide',
+      car.carLength(v) > car.carLength(police) && car.carWidth(v) > car.carWidth(police) * 1.3,
       `${car.carLength(v)} long, ${car.carWidth(v).toFixed(0)} wide, ${car.carHeight(v).toFixed(0)} tall, ` +
       `against ${car.carLength(police)} by ${car.carWidth(police).toFixed(0)}`);
     check('and it still fits across the fire lane, which is what stopped it being bigger',
@@ -10699,7 +10728,12 @@ section('the arc maw');
   check('its voice is in the synthesised table: the climbing hum, the top of it, the crack, the thunder and the zap',
     ['arccharge1', 'arccharge2', 'arccharge3', 'arcfull', 'arcfire', 'arcbig', 'arczap'].every(k => AU.SOUNDS?.[k] || new RegExp(`\\b${k}:`).test(fs.readFileSync('js/audio.js', 'utf8'))));
 
-  /* ---- IN THE SHOP ---- */
+  /* ---- IN THE SHOP ----
+     ON ITS OWN ROLL of the dice: the chain and its fields land on
+     whoever happens to be standing near whom, and without a seed that
+     was decided by how many rolls every test above this one used — a
+     bigger police van tumbling differently in the car park moved it. */
+  (await import('../js/util.js')).pSeed();
   const g = new Game({
     level: MAPM.buildSellWrong({ town: false }), scene: new THREEM.Scene(), camera: {},
     textures: tex.bakeTextures(), sprites: spr.bakeSprites(),

@@ -125,14 +125,17 @@ export const VAN_LENGTH = 174;
    armoured assault truck and its author drew it at eleven metres to the
    van's one and a third — different files, different units — so the
    number is set against what the thing IS rather than against the file:
-   a quarter again longer than a panel van, the way a BearCat is beside a
+   a third again longer than a panel van, the way a BearCat is beside a
    Transit, and not a tank's length, because the fire lane it parks
-   across is a hundred and sixty deep. */
-export const POLICE_LENGTH = 214;
+   across is a hundred and sixty deep. The second model the user sent
+   is a bit bigger than the first, at the user's request: 240 by 97 by
+   100, against 214 by 89 by 93. */
+export const POLICE_LENGTH = 240;
 /* AND HOW LONG THE ARMY'S APC IS. The third model up the road and the
    first that does not touch it: a hover carrier, drawn at thirteen and
    a half metres of its own units against the assault van's eleven, and
-   set here at a fifth again the van's length and half again its width.
+   set here a little longer than the assault van and a third again as
+   wide.
    Which is the shape it IS rather than the shape of the file: an APC is
    not a longer van, it is a WIDER one, and at 260 it comes out 133
    across, in a fire lane 160 deep. Thirteen units of tarmac either side
@@ -280,6 +283,58 @@ export function carGeometry(v, opts = {}) {
   const P = pen(v, opts);
   for (const t of v.model.tris) P.tri(t.a, t.b, t.c, t.n, t.ta, t.tb, t.tc, t.ink);
   return P.arrays;
+}
+
+/* ---------------------------------------------------------------------
+   THE PARTS THAT MOVE ON THEIR OWN
+
+   The police van is the first vehicle to arrive with parts: its wheels
+   are nodes of their own (wheel_*) and its light bar is on its own
+   material, `DynamicPoliceLightMatEmissive`. So modelVehicle keeps those
+   triangles out of the body and here they are drawn as their own
+   meshes, hung off the body's, which is what lets a wheel turn and a
+   lamp flash without rebuilding a vertex.
+
+   A wheel is drawn about its own axle, so turning it is one number on
+   its mesh; the body's material is shared, so it chars and warms with
+   the body. A vehicle with no parts — the van in the car park, the APC
+   — has none, and nothing here is asked.
+   --------------------------------------------------------------------- */
+const WHEEL_NODE = /^wheel/i;
+const LAMP_MATERIAL = /^DynamicPoliceLight/i;
+
+/** One wheel's triangles, about its own axle. */
+export function wheelGeometry(v, w, opts = {}) {
+  const P = pen(v, { ...opts, origin: w.axle });
+  for (const t of w.tris) P.tri(t.a, t.b, t.c, t.n, t.ta, t.tb, t.tc, t.ink);
+  return P.arrays;
+}
+
+/** Where a wheel's axle is in the body mesh's own frame. */
+export function wheelAt(v, w, origin = [0, 0, 0], length = v.length) {
+  return [(w.axle[0] - origin[0]) * length, (w.axle[2] - origin[2]) * length, -(w.axle[1] - origin[1]) * length];
+}
+
+/**
+ * The light bar, in the body mesh's frame: positions, how far each vertex
+ * is to the left of the bar's middle (the sign is which half), and the
+ * van's own phase in the flash — see js/bloom.js.
+ */
+export function lampGeometry(v, opts = {}) {
+  const { origin = [0, 0, 0], length = v.length, phase = 0 } = opts;
+  const lamps = v.model.lamps;
+  let mid = 0;
+  for (const t of lamps) mid += (t.a[1] + t.b[1] + t.c[1]) / 3;
+  mid /= Math.max(1, lamps.length);
+  const position = [], side = [], ph = [];
+  for (const t of lamps) for (const p of [t.a, t.b, t.c]) {
+    position.push((p[0] - origin[0]) * length, (p[2] - origin[2]) * length, -(p[1] - origin[1]) * length);
+    /* HOW FAR TO THE LEFT OF THE BAR'S MIDDLE, not which half: a face
+       that spans the whole bar is split where the shader finds the sign
+       change, per pixel, rather than down its own diagonal */
+    side.push(p[1] - mid); ph.push(phase);
+  }
+  return { position, side, phase: ph };
 }
 
 /* ---------------------------------------------------------------------
@@ -472,12 +527,12 @@ export function modelVehicle(json, bin, opts = {}) {
       ? n.matrix
       : trs(n.translation || [0, 0, 0], n.rotation || [0, 0, 0, 1], n.scale || [1, 1, 1]);
     const m = mul(parent, local);
-    for (const p of (n.mesh !== undefined ? json.meshes[n.mesh].primitives : [])) parts.push({ p, m });
+    for (const p of (n.mesh !== undefined ? json.meshes[n.mesh].primitives : [])) parts.push({ p, m, node: n.name || '' });
     for (const c of n.children || []) walk(c, m);
   };
   for (const ni of json.scenes[json.scene ?? 0].nodes) walk(ni, IDENTITY);
 
-  const prims = parts.map(({ p, m }) => {
+  const prims = parts.map(({ p, m, node }) => {
     if (p.mode !== undefined && p.mode !== 4) throw new Error('only triangle lists are supported');
     if (p.targets) throw new Error('morph targets are not supported');
     const src = readAccessor(json, bin, p.attributes.POSITION).array;
@@ -496,7 +551,12 @@ export function modelVehicle(json, bin, opts = {}) {
        instead. baseColorFactor is linear, and so is what the GPU hands
        back from an sRGB texture, so it needs nothing doing to it. */
     const ink = painted ? null : (mat?.pbrMetallicRoughness?.baseColorFactor || [1, 1, 1, 1]).slice(0, 3);
-    return { pos, idx, uv, ink };
+    /* WHAT PART OF THE VEHICLE IT IS — see PARTS. Most of a vehicle is
+       its body; a node called wheel_* turns, and the surface on the
+       user's dynamic light material flashes. */
+    const role = LAMP_MATERIAL.test(mat?.name || '') ? 'lamp'
+      : WHEEL_NODE.test(node) ? 'wheel' : 'body';
+    return { pos, idx, uv, ink, role, node };
   });
   if (!prims.length) throw new Error('the model has no meshes in its scene');
 
@@ -525,8 +585,11 @@ export function modelVehicle(json, bin, opts = {}) {
   ];
 
   /* ---- and every triangle in it ------------------------------------ */
-  const tris = [];
+  const tris = [], wheels = [], lamps = [];
   for (const q of prims) {
+    const into = q.role === 'lamp' ? lamps
+      : q.role === 'wheel' ? (wheels.push({ name: q.node, tris: [] }), wheels[wheels.length - 1].tris)
+      : tris;
     /* THE MODEL'S OWN v, UNTOUCHED — see carTexture. The sheet is
        uploaded the way it is stored and glTF's v already runs down from
        the top of it, so there is nothing to cancel. This used to be
@@ -545,10 +608,22 @@ export function modelVehicle(json, bin, opts = {}) {
       const mg = Math.hypot(n[0], n[1], n[2]);
       if (mg < 1e-12) continue;                           // a degenerate triangle is nothing
       n = [n[0] / mg, n[1] / mg, n[2] / mg];
-      tris.push({ a, b, c, n, ta: uvAt(ia), tb: uvAt(ib), tc: uvAt(ic), ink: q.ink });
+      into.push({ a, b, c, n, ta: uvAt(ia), tb: uvAt(ib), tc: uvAt(ic), ink: q.ink });
     }
   }
   if (!tris.length) throw new Error('the model has no triangles in it');
+  /* each wheel's middle, which is its axle, and how far that is off the
+     tarmac, which is its radius: the bounding box of the wheel's own
+     triangles, since a wheel is round */
+  for (const w of wheels) {
+    const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    for (const t of w.tris) for (const p of [t.a, t.b, t.c]) for (let k = 0; k < 3; k++) {
+      if (p[k] < lo[k]) lo[k] = p[k];
+      if (p[k] > hi[k]) hi[k] = p[k];
+    }
+    w.axle = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2];
+    w.radius = Math.max(hi[0] - lo[0], hi[2] - lo[2]) / 2;
+  }
 
   /* ------------------------------------------------------------------
      ITS OWN BOX, in fractions of the length — which is 1 by
@@ -582,7 +657,7 @@ export function modelVehicle(json, bin, opts = {}) {
      ------------------------------------------------------------------ */
   const c3 = [0, 0, box.height / 2];
   let normalsTurned = 0;
-  for (const t of tris) {
+  for (const t of [...tris, ...wheels.flatMap(w => w.tris), ...lamps]) {
     const mx = (t.a[0] + t.b[0] + t.c[0]) / 3 - c3[0];
     const my = (t.a[1] + t.b[1] + t.c[1]) / 3 - c3[1];
     const mz = (t.a[2] + t.b[2] + t.c[2]) / 3 - c3[2];
@@ -596,7 +671,7 @@ export function modelVehicle(json, bin, opts = {}) {
     id: opts.id || 'van', name: opts.name || 'Van', use: 'civil',
     length,
     box,
-    model: { tris, normalsTurned },
+    model: { tris, wheels, lamps, normalsTurned },
   };
 }
 

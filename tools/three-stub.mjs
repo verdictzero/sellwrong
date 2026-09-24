@@ -56,8 +56,15 @@ export class Object3D extends Group {}
    the gunship (js/vtol.js) is a tree of meshes — the turret on the
    fuselage, the gun on the turret — and without `add` here the whole
    aircraft is untestable headless. */
+/* layers, because the police light bars glow and glowing is a layer
+   (see js/bloom.js); a bitmask, as in three */
+export class Layers {
+  constructor() { this.mask = 1; }
+  set(n) { this.mask = (1 << n) >>> 0; } enable(n) { this.mask |= 1 << n; } disable(n) { this.mask &= ~(1 << n); }
+  test(l) { return (this.mask & l.mask) !== 0; }
+}
 export class Mesh extends Stub {
-  constructor(g, m) { super(); this.geometry = g; this.material = m; this.position = new Vector3(); this.scale = new Vector3(1, 1, 1); this.rotation = new Vector3(); this.rotation.order = 'XYZ'; this.userData = {}; this.visible = true; this.children = []; this.name = ''; }
+  constructor(g, m) { super(); this.geometry = g; this.material = m; this.layers = new Layers(); this.position = new Vector3(); this.scale = new Vector3(1, 1, 1); this.rotation = new Vector3(); this.rotation.order = 'XYZ'; this.userData = {}; this.visible = true; this.children = []; this.name = ''; }
   add(o) { this.children.push(o); return this; }
   remove(o) { const i = this.children.indexOf(o); if (i >= 0) this.children.splice(i, 1); return this; }
   traverse(fn) { if (fn) fn(this); for (const c of this.children) c.traverse?.(fn); }
@@ -107,6 +114,7 @@ export class LineBasicMaterial extends MeshBasicMaterial {}
 export class Camera extends Stub {}
 export class PerspectiveCamera extends Camera {}
 export class OrthographicCamera extends Camera { updateProjectionMatrix() {} }
+export class DepthTexture extends Stub { constructor(w, h) { super(); this.image = { width: w, height: h }; } }
 export class WebGLRenderTarget extends Stub { constructor(w, h) { super(); this.texture = {}; this.width = w; this.height = h; } setSize() {} }
 
 /* Ear clipping, so sector triangulation can actually be exercised rather

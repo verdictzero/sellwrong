@@ -74,6 +74,7 @@
   "js/art-data.js",
   "js/audio.js",
   "js/beam.js",
+  "js/bloom.js",
   "js/bore.js",
   "js/breach.js",
   "js/car.js",

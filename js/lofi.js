@@ -130,6 +130,7 @@
 
 import * as THREE from 'three';
 import { buildLutAtlas, LUT_SIZE, displayDither, DISPLAY_PALETTES, DEFAULT_DISPLAY } from './palette.js';
+import { Bloom } from './bloom.js';
 
 /* How many samples the block average is allowed to take across one
    chunky pixel, per axis. Four is not arbitrary: at a ratio of four or
@@ -404,6 +405,10 @@ export class LofiPipeline {
       stencilBuffer: false,
     });
     this.target.texture.generateMipmaps = false;
+    /* ITS DEPTH AS A TEXTURE, so the bloom can tell a lamp that is in
+       view from one behind a wall — see js/bloom.js */
+    this.target.depthTexture = new THREE.DepthTexture(320, this.height);
+    this.bloom = new Bloom();
 
     /* THE GRID, which is what you are actually looking at. Nearest both
        ways, because the only thing that ever happens to it is being
@@ -583,6 +588,9 @@ export class LofiPipeline {
        readout on. */
     this.sceneCalls = r.info.render.calls;
     this.sceneTris = r.info.render.triangles;
+    /* THE GLOW, between the world and the overlays: against the world's
+       depth, and under the gun — see js/bloom.js */
+    this.bloom.render(r, scene, camera, this.target);
     for (const o of overlays) {
       if (!o || !o.scene || !o.camera || o.visible === false) continue;
       r.clearDepth();

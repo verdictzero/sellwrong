@@ -165,7 +165,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         2548 checks, no install and no browser
+  the smoke test         2556 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -3262,8 +3262,8 @@ the hull. A wreck loses the hover, because nothing that has stopped
 working floats.
 
 It is two hundred and sixty units nose to tail against the assault van's
-two hundred and fourteen, and a hundred and thirty-three across against
-its eighty-nine: an APC is not a longer van, it is a WIDER one. A hundred
+two hundred and forty, and a hundred and thirty-three across against
+its ninety-seven: an APC is not a longer van, it is a WIDER one. A hundred
 and thirty-three is what fits a fire lane a hundred and sixty deep with
 thirteen units of tarmac either side, which is the right amount — it fits,
 and it looks like it only just does. It has no siren: two notes still, on
@@ -5272,6 +5272,48 @@ trigger coming up, the shot going off, the weapon being swapped, dying
 with it in your hands — stops the loop through one line, and none of
 them has to remember to.
 
+
+THE POLICE VAN, AGAIN
+
+The user's second assault van replaced the first, and it came in pieces
+the game can use: four wheel nodes and a light bar on a material of its
+own, `DynamicPoliceLightMatEmissive`.
+
+  assets/models/police_assault.glb   the game's copy
+  tools/blender/prep_swatvan.py      what made it
+  js/bloom.js                        the light bar and the bloom off it
+
+  blender -b -P tools/blender/prep_swatvan.py -- newSWATvan.glb assets/models/police_assault.glb 1024 0.5 0.5
+
+The file faced -z, with its steering axle and its light bar at -z and
+"wheelFrontRight" at +x, so the script turns it half a turn to face +z the
+way glTF and the game both expect. It stacks the body's and the wheels'
+colour sheets into one picture, since a vehicle here is drawn off one
+sheet, drops the normal and metal-rough maps, and halves the triangles:
+thirty thousand in, fourteen thousand out, seven of them body.
+
+It is 240 long, 97 wide and 100 tall: a bit bigger than the 214 by 89 by
+93 van it replaced.
+
+THE WHEELS TURN. js/car.js keeps any node named wheel_* out of the body
+and hangs each wheel off the body mesh about its own axle, drawn with the
+body's material so it warms in the thermal sight and chars with the rest
+of the van. While the van drives, each wheel turns through the distance
+it rolled divided by its radius.
+
+THE LIGHT BAR FLASHES, red on its left half and blue on its right, two
+strobes a side in two-thirds of a second, with each van out of step with
+the others. It is drawn unlit, goes dark when the van goes up, and shows
+as warm in the thermal sight.
+
+AND IT GLOWS: a selective bloom (js/bloom.js). After the world is drawn,
+the lamps alone are drawn again at half size. Each glowing pixel is
+checked against the world's depth, so a bar behind the store does not
+glow through the store. The result is blurred at quarter size and added
+back onto the frame before the gun is drawn, so the gun in your hands
+covers the glow. Nothing else in the game is on the bloom layer, so a
+white shelf label does not halo, and with no lit bar in the scene the
+pass is skipped entirely.
 
 THE QUAD LAUNCHER
 -----------------
@@ -7848,7 +7890,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-2548 checks. Every one of them earns its place by having caught something
+2556 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm
