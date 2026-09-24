@@ -10,12 +10,12 @@
    small and every other frame, and why the gauges are a canvas, is true
    here without being said twice. What is different is three things.
 
-   THE PLANE. The lance's file has a mesh named for a display; the
-   launcher's has a flat face on the back of its sight and nothing on
-   it. So the plane is the game's — `screen` in GUNS (js/weapon3d.js)
-   builds a quad on that face, in the model's own units, and hangs this
-   scope's screen material on it — and from then on it is measured and
-   mapped exactly as the lance's panel is, u flip and all.
+   THE PLANE. The launcher's file — the XM222 — has a display surface
+   on the back of its sight under a material of its own, prepared by
+   the user for this feed, exactly as the lance's has; so it is named
+   by `display` in GUNS (js/weapon3d.js), wears this scope's screen
+   material, and is measured and mapped exactly as the lance's panel
+   is, u flip and all.
 
    THE PICTURE IS HEAT, NOT LIGHT. For the one render call this makes a
    frame, the shared uniform world.thermal is on (js/material.js), and
@@ -59,12 +59,12 @@ import { Scope } from './scope.js';
 import { world } from './material.js';
 import { SEEKER } from './missiles.js';
 
-/* THE GLASS IS NOT SQUARE. The face on the back of the sight is a
-   hair over four to three — 0.192 across and 0.140 up of the model's
-   own units, less the rim — so the feed, the canvas and the camera are
-   all that shape. It is a number here and the face is a number in GUNS,
-   and the suite checks the two agree. */
-export const THERMAL_ASPECT = 1.37;
+/* THE GLASS IS VERY NEARLY SQUARE. The display surface on the back of
+   the XM222's sight is 0.728 across and 0.741 up of the model's own
+   units, so the feed, the canvas and the camera are all that shape. It
+   is a number here and the panel is measured off the model, and the
+   suite checks the two agree. */
+export const THERMAL_ASPECT = 0.98;
 /* rows of feed; the columns are that times the aspect */
 export const THERMAL_SIZE = 176;
 export const THERMAL_PANEL = 256;

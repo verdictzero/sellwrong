@@ -111,7 +111,8 @@ export const GUN_LENGTH = 1.4;
              at full speed. Only the minigun has one
      display a material the file paints flat, which is a SCREEN: it gets
              the live feed and the gauges instead of the gun shader —
-             see js/scope.js. Only the lance has one
+             see js/scope.js — or the thermal feed, js/thermal.js. The
+             lance has one, and so does the launcher
      optics  and a material that is a LENS, for the same reason
      aim     a SECOND hold, for a gun that is raised to the eye rather
              than carried at the hip: its own pos, rot and out, blended
@@ -122,16 +123,21 @@ export const GUN_LENGTH = 1.4;
              than in a texture — a sculpt, painted where it was modelled,
              shipped straight out of tools/decimate-model.mjs. A texture
              in the file wins over it. No gun in the rack uses it now:
-             the launcher did until it was baked
+             the first launcher did until it was baked
      screen  a screen the game BUILDS, for a gun whose file has a flat
              face where a screen should be and no mesh to put one on:
              [x0, y0, x1, y1, z] in the model's own units, a quad facing
              the eye at that depth. It wears whatever screen the gun's
-             scope makes, exactly as `display` does
+             scope makes, exactly as `display` does. No gun uses it now:
+             the first launcher did, and the XM222 has its own display
      tubes   more than one mouth, for a gun that has more than one: each
              in the model's own units, like `nozzle`. What leaves them is
              the world's business; Weapon3D.tubeWorld hands each one
-             over the way nozzleWorld hands over the one */
+             over the way nozzleWorld hands over the one
+     loaded  the rounds in those mouths, for a gun whose file has them
+             as parts: { prefix, ammo } — the parts are prefix0, prefix1,
+             ... in firing order, and only as many as the player has of
+             that ammo are drawn, the last ones. The launcher's rockets */
 export const GUNS = {
   /* THE CEREBRAL BORE, the user's third model and the one with nothing
      coming out of the nozzle but a red line: the projectile is the
@@ -332,83 +338,67 @@ export const GUNS = {
     optics: { material: 'optics_mat', base: [0.34, 0.80, 0.0] },
   },
 
-  /* THE QUAD LAUNCHER, the user's sixth model, and the first that was
-     SCULPTED rather than modelled: a Nomad file of one watertight
-     surface and four hundred and sixty thousand triangles, painted in
-     its vertices, with no texture and no UVs.
+  /* THE QUAD LAUNCHER, the XM222: the user's sixth slot, and the
+     second model to fill it. The first was a Nomad sculpt, remeshed and
+     baked by tools/decimate-model.mjs and tools/bake-model.mjs, with a
+     screen the game had to build on a blank face of its sight. This one
+     came modelled and textured, with the screen already in it: a
+     slightly domed panel on the back of the sight, under its own
+     material — which the file spells `dyanmic_display_surface_mat`, and
+     so does this table — prepared by the user for the thermal feed to
+     be drawn on. So it is the lance's case, `display`, not `screen`.
 
-     REMESHED AND BAKED, at the user's request, which is the second way
-     it has come in. The first was the sculpt decimated to forty
-     thousand triangles with the paint left in the vertices (`paint`,
-     and GUN_FRAG's PAINT path, which are still here for a sculpt that
-     wants it). Now tools/decimate-model.mjs cuts a cage of eight
-     thousand triangles that spends nothing on the paint, and
-     tools/bake-model.mjs unwraps it and casts a ray from every texel
-     of a 512 sheet back to the sculpt for its colour: a fifth of the
-     triangles, three quarters of the bytes, and more of the grime,
-     because a texel is finer than a vertex was. Fourteen megabytes to
-     590 kilobytes.
+     Prepared by tools/blender/prep_launcher.py: the file's node
+     transforms baked into its vertices, half a turn so the rockets'
+     noses point +z like every other gun's muzzle, the two colour sheets
+     cut to 1024 and the normal, metal-rough and specular maps dropped,
+     and the ordnance — one mesh of four rockets — split into four named
+     rocket_0 to rocket_3 in the order the tubes fire, so `loaded` can
+     draw a tube empty once its rocket has gone. Fourteen megabytes to
+     under one.
 
-     FOUR TUBES IN A GREEN BOX, a pistol grip under the middle and a
-     sight on the left, which is an M202 and is held like one: on the
-     right shoulder, the tubes running forward past the hand and the
-     back half of the box over the shoulder and out of the picture. The
-     numbers were measured off the vertices, not guessed:
+     FOUR TUBES IN A GREEN BOX, a trigger guard under its front third
+     and the sight on the left of the front, looking back at the eye.
+     The numbers are off the vertices:
 
-       the front face is flat at z = 0.999 and the four mouths are
-       recesses four centimetres into it, square, centred on x = 0.039
-       and 0.498 and on y = 0.218 and -0.225. `tubes` is those four,
-       at the face, in the order they fire — top left, top right,
+       the four rocket noses stand a little proud of the front face, at
+       z = 3.299, centred on x = +-0.44 and y = 1.395 and 0.605. `tubes`
+       is those four, in the order they fire — top left, top right,
        bottom left, bottom right, as the gunner sees them, since the
-       half turn puts the model's +x on the left: a salvo ripples
-       across the box rather than down one side of it.
+       half turn puts the model's +x on the left.
 
-       the sight is a box of its own bolted to the model's +x side,
-       which the half turn every gun gets puts on the LEFT of the
-       picture, next to the eye. Its back is flat at z = 0.089, in the
-       sculpt and in the cage both, and runs 0.78 to 1.02 across and
-       0.07 to 0.24 up. It is a face where a screen should be with
-       nothing on it, so `screen` makes one: the same face less its
-       rounded rim, a hair behind it so the two do not fight over the
-       same depth. See js/thermal.js for what is on it. */
+       the screen runs 1.271 to 1.999 across and 0.824 to 1.565 up, and
+       bulges toward the eye from z = 1.475 at its rim to 1.377 at its
+       middle. Very nearly square: see THERMAL_ASPECT in js/thermal.js. */
   LAUNCHER: {
     url: 'assets/models/launcher.glb',
-    /* A LITTLE UNDER THE FLAMETHROWER'S LENGTH, because it is a box and
-       not a tube: at the flamethrower's own 1.4 metres the thing was
-       half a metre square, and held on the shoulder that is a wall of
-       green across the right half of the picture. At nine tenths of it
-       the box sits in the lower right quarter, running away from you,
-       with the sight on its near edge showing what it sees — measured
-       in the running game, off a dozen holds tried side by side. */
-    fit: GUN_LENGTH * 0.9,
-    out: 2.4,
-    pos: [0.16, -0.10, 0],
-    rot: [0.03, 0.12, -0.03],
-    nozzle: [0.268, -0.004, 1.03],
-    tubes: [[0.498, 0.218, 1.0], [0.039, 0.218, 1.0], [0.498, -0.225, 1.0], [0.039, -0.225, 1.0]],
+    /* long and narrow where the last one was a box, so a little over
+       the flamethrower's length to have the tubes a hand apart; held
+       low on the right, running away into the middle, with the sight's
+       screen on its near front corner showing what it sees — picked in
+       the running game off three holds side by side */
+    fit: GUN_LENGTH * 1.05,
+    out: 2.6,
+    pos: [0.20, -0.15, 0],
+    rot: [0.05, 0.16, -0.03],
+    nozzle: [0.0, 1.0, 3.299],
+    tubes: [[0.442, 1.395, 3.299], [-0.438, 1.395, 3.299], [0.438, 0.605, 3.299], [-0.442, 0.605, 3.299]],
     pilot: null,
     /* what leaves a tube: the motor lighting, short and hot, off the
        same frames as everything else, whitened and warmed */
     tint: [1.8, 1.25, 0.7],
     cold: true,
     muzzle: { len: 0.30, wid: 0.22, additive: true },
-    screen: { at: [0.8045, 0.0880, 0.9963, 0.2283, 0.0862] },
-    /* AND THE HOLD AT THE EYE, SOLVED rather than nudged, the way the
-       lance's was. `rot` cancels VIEW's own pitch, yaw and roll, so the
-       group is square to the camera and the screen — which faces model
-       -z, and so +z once the model is turned — faces the eye exactly.
-       With no turn, where the screen's middle lands is the group's
-       position plus the screen's middle in the group's own frame: that
-       is (0.9004, 0.1582, 0.0862) less the model's box centre (0.4094,
-       -0.2350, -0.2702), times the fit's scale (1.26 / 2.5375), with x
-       and z negated by the half turn — (-0.2438, 0.1952, -0.1770) — so
-       putting it 0.108 in front of the eye is a subtraction, and `pos`
-       is that less VIEW.pos at an `out` of one. At that distance the
-       screen is 54 per cent of the picture's height, measured off its
-       four corners through the weapon camera, and square on. The box
-       is then a hand's breadth right of your cheek, which is where a
-       launcher you are sighting is. */
-    aim: { pos: [-0.0862, 0.2048, 0.3990], rot: [-0.04, -0.17, 0.05], out: 1.0 },
+    display: { material: 'dyanmic_display_surface_mat' },
+    /* the rockets in the tubes, by name, in firing order, and the ammo
+       they stand for: a tube is drawn empty once its rocket has gone */
+    loaded: { prefix: 'rocket_', ammo: 'rockets' },
+    /* AND THE HOLD AT THE EYE, SOLVED as the last one's was: `rot`
+       cancels VIEW's own pitch, yaw and roll, so the group is square to
+       the camera and the screen faces the eye exactly, and `pos` puts
+       the screen's middle straight ahead of it at the distance where it
+       is about half the picture's height. See the suite. */
+    aim: { pos: [-0.1034, 0.2552, 0.4515], rot: [-0.04, -0.17, 0.05], out: 1.0 },
   },
   /* THE ARC MAW, the user's seventh model and the second sculpt: a
      Nomad file of ninety-one thousand triangles whose paint was a white
@@ -866,10 +856,20 @@ export class Weapon3D {
        own z, which is the axis the barrels run along. */
     const spin = extras.spin ? root.getObjectByName(extras.spin) : null;
 
+    /* AND THE ROUNDS IN IT, for a gun whose file has them as parts — the
+       launcher's four rockets, rocket_0 to rocket_3, in firing order. See
+       `loaded` in GUNS and update(). */
+    const rounds = [];
+    if (def.loaded) for (let i = 0; ; i++) {
+      const r = root.getObjectByName(def.loaded.prefix + i);
+      if (!r) break;
+      rounds.push(r);
+    }
+
     const g = {
       def, group, inner, anchors: { nozzle: place(nozzle), pilot: pilot ? place(pilot) : null,
                                     tubes: def.tubes ? def.tubes.map(place) : null },
-      gunMaterials, heatMaterial, spin, spinAngle: 0,
+      gunMaterials, heatMaterial, spin, spinAngle: 0, rounds,
       pilot: null, muzzle: null, muzzleMaterials: [],
     };
 
@@ -1013,6 +1013,13 @@ export class Weapon3D {
       const rate = (player.spin || 0) * (G.def.spin || 0) * Math.PI * 2;
       G.spinAngle = (G.spinAngle + rate * dt) % (Math.PI * 2);
       G.spin.rotation.z = G.spinAngle;
+    }
+    /* A TUBE IS EMPTY ONCE ITS ROCKET HAS GONE. The tubes fire in order
+       from the first while the ammo counts down (see Missiles.launch),
+       so with n left the loaded ones are the last n. */
+    if (G.rounds.length) {
+      const left = Math.max(0, Math.min(G.rounds.length, player.ammo?.[G.def.loaded.ammo] | 0));
+      G.rounds.forEach((r, i) => { r.visible = i >= G.rounds.length - left; });
     }
     /* AND OFF THE NUMBER THE DEF NAMES, not off one called `heat`:
        two guns cook now and they cook separately, so a minigun put

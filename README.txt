@@ -165,7 +165,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         2542 checks, no install and no browser
+  the smoke test         2548 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -5284,122 +5284,62 @@ with four locks". Every part of what follows is one clause of that.
 
   js/missiles.js        the seeker, the salvo, the flight and the warhead
   js/thermal.js         the sight: a Scope, drawn in heat
-  tools/decimate-model.mjs   what cut the sculpt down to a cage
-  tools/bake-model.mjs       and what laid its paint on a sheet over it
+  assets/models/launcher.glb   the XM222, the gun
+  tools/blender/prep_launcher.py   what made the game's copy of it
 
 
-THE MODEL WAS A SCULPT
+THE MODEL IS THE XM222
 
-The file came out of Nomad Sculpt: one watertight surface of 461,088
-triangles and 230,516 vertices, fourteen megabytes, painted in its
-VERTICES — no texture and no UVs, COLOR_0 the paint and COLOR_1 Nomad's
-own roughness and metalness. Every other gun in the rack is a modelled
-mesh on a painted sheet, and tools/prep-model.mjs, which strips those,
-says in its own header that it never resamples. There is nothing in a
-sculpt to strip; the triangles ARE the model. So it went through a new
-tool, tools/decimate-model.mjs, and came out at 40,000 triangles and
-19,970 vertices in 782 kilobytes, still one closed surface of the same
-genus, every edge between exactly two faces.
+The second model in this slot, and at the user's request it replaced the
+first outright: "fully replace the heat seeking rocket launcher with the
+new model, I've prepared a surface for the thermal display to be
+projected on". It came modelled and textured — three meshes, 12,656
+triangles, fourteen megabytes, seven 2048 sheets — and with the screen
+already in it: a slightly domed panel on the back of the sight under a
+material of its own, which the file spells dyanmic_display_surface_mat,
+and so does GUNS.
 
-QUADRIC EDGE COLLAPSE, WITH THE PAINT AND THE SHADING IN THE QUADRIC.
-Garland and Heckbert's, in nine dimensions: position, colour and normal.
-The colour is in there because vertex paint is exactly as sharp as the
-mesh under it, and a decimator that only looks at shape throws the paint
-away first — a flat panel in one green collapses to nothing, a smudge of
-grime across the same panel keeps the vertices that draw it. The normal
-is in there because the first cut left it out and the picture said so:
-the silhouette was right to the pixel and every flat panel was crumpled
-like foil, because the bevels' steep normals had been smeared across the
-triangles next to them.
+tools/blender/prep_launcher.py, headless, makes the game's copy:
 
-EVERY POSITION IS THE ARTIST'S, EVERY NORMAL AND COLOUR IS A PATCH'S.
-The kept vertex is always one of the two ends of the edge, never a point
-between, so the model cannot drift or swell; but its normal and paint are
-the AVERAGE of every vertex collapsed into it, because a single sculpt
-vertex is noisy — the brush's grain in its normal, one fleck of a smudge
-in its colour — and stretched over a triangle forty times its old size
-that noise was blotches. The average over the patch is the low-pass
-filter that matches the new spacing, which is what a smaller texture is
-to a bigger one.
+  blender -b -P tools/blender/prep_launcher.py -- xm222.glb assets/models/launcher.glb 1024
 
-AND TWO THINGS IN THE GAME HAD NEVER MET A MODEL LIKE IT. js/glb.js did
-not read the `normalized` flag, which nothing had shipped until now, and
-a byte of colour read as an integer is two hundred and fifty times too
-bright; it does now. And the gun shader took its colour from a texture;
-it has a PAINT path now (see GUN_FRAG), where the colour arrives in the
-vertices already linear — which is what an sRGB texture is decoded to —
-so the lighting after it serves both.
+  - the file's node transforms baked into the vertices, and half a turn
+    so the rockets' noses point +z, the way every gun here is modelled
+  - the ordnance, one mesh of four rockets, split by which quarter of the
+    box each loose part is in into rocket_0 to rocket_3, in the order the
+    tubes fire, so a fired tube can be drawn empty (`loaded` in GUNS: with
+    n rockets left, the last n are drawn)
+  - the gun's and the rockets' colour sheets cut to 1024 and written as
+    JPEG; the normal, metal-rough and specular maps dropped, and three of
+    the four UV sets and the tangents with them, because the gun shader
+    reads colour and nothing else
+  - the display kept flat and under its own name, for js/thermal.js
 
+894 kilobytes. Nothing is decimated: it was already a game model.
 
-AND THEN IT WAS REMESHED AND BAKED
-
-At the user's request, and it is what ships. Forty thousand vertex-
-painted triangles were a good copy of the sculpt and a poor use of the
-bytes: vertex paint is only as fine as the triangles under it, so the
-model could not get any smaller than the grime on it. A bake pulls the
-two apart — the shape on a CAGE of a few thousand triangles, the paint
-on a picture laid over it — which is what every other gun in the rack
-already was.
-
-  node tools/decimate-model.mjs sculpt.glb cage.glb --triangles 8000 --colour 0 --normal 0.02
-  node tools/bake-model.mjs sculpt.glb cage.glb launcher.glb --size 512
-
-THE CAGE is the same decimator asked a different question: eight
-thousand triangles, the paint's weight at nothing and the normal's at a
-fiftieth of what it was, because the shape is all it has to keep now.
-It is still one closed surface — every edge between exactly two faces,
-once the vertices the sheet's seams split are welded back — and the
-suite says so.
-
-THE SHEET is tools/bake-model.mjs, and its header is the long version.
-The cage is cut into pieces by which of six ways each triangle faces,
-after three rounds of every triangle taking the way most of its
-neighbours take — a bevel otherwise comes out as a ribbon of one-
-triangle pieces, each with a gutter round it — and the thin pieces and
-the small ones are then folded into the neighbour they face most nearly
-like. Two hundred and fifty-eight pieces, each laid flat by the way it
-faces, packed in shelves onto a sheet of 512 as large as they will all
-go: seventy-seven texels to the unit. Every corner sharper than thirty-
-eight degrees keeps a normal each side of it, which is what makes the
-box read as a box; the rest are smoothed.
-
-THEN EVERY TEXEL ASKS THE SCULPT WHAT COLOUR IT IS. From its place on
-the cage, along the cage's normal there, both ways, a ray into the
-sculpt's four hundred and sixty thousand triangles, and the hit NEAREST
-THE CAGE is the paint — not the first one along the ray, because the
-cage cuts through the sculpt, and the surface it stands in for is the
-one it cuts. Four rays to a texel, averaged, half a million in all, in
-two and a half seconds, because the triangles are in a bounding volume
-tree. Then the gaps round every piece are grown out from its edge, so a
-seam samples the piece's own colour and not the black round it.
-
-590 kilobytes, down from 782, for a model that shows more of the grime
-than the forty thousand did — a texel is smaller than any triangle the
-vertex paint could afford. A sheet of 1024 was baked beside it: a
-megabyte and more, and through the lo-fi pass it could not be told from
-the 512. Both steps run again from the sculpt come out byte for byte
-the file in the repo. The gun shader keeps its PAINT path for the next
-sculpt; a texture wins over it, and no gun wears vertex paint now.
+THE FIRST ONE was a Nomad sculpt, remeshed and baked by
+tools/decimate-model.mjs and tools/bake-model.mjs, which are still here
+for the next sculpt, as is the gun shader's PAINT path. It had no screen,
+only a blank face on the back of its sight, so the game built one there
+(`screen` in GUNS, which no gun uses now).
 
 
 HOW IT IS HELD
 
 On the right shoulder, the way the M202 it is plainly modelled on is: the
 tubes running away from you in the lower right quarter and the sight on
-the near edge of the box. Every number was measured, not guessed. The
-four tube mouths are square recesses four centimetres into the front
-face, and `tubes` in GUNS is their four centres, in the order they fire.
-The sight's back is flat — forty-five of the sculpt's vertices within
-three millimetres of one plane, and five of the cage's — and the hip
-hold was picked in the running game, off a dozen tried side by side.
+the near front corner of the box, its screen facing you. Every number is
+off the vertices: `tubes` in GUNS is the middle of each rocket's nose, in
+firing order — top left, top right, bottom left, bottom right as the
+gunner sees them — and the suite measures each one against its rocket.
+The hip hold was picked in the running game, off three tried side by
+side.
 
 THE HOLD AT THE EYE WAS SOLVED, as the lance's was. Its turn cancels the
-view's own cant, so the sight's face looks straight back at you; its
-position is the screen's middle in the gun's own frame subtracted from a
-point 0.108 in front of the eye; and the screen then fills 54 per cent
-of the picture's height, measured off its four corners through the
-weapon camera. The box is a hand's breadth to the right of your cheek,
-which is where a launcher you are sighting is.
+view's own cant, so the screen looks straight back at you; its position
+is the screen's middle, in the gun's own frame, subtracted from a point
+23.6 centimetres in front of the eye, where the screen is 53 per cent of
+the picture's height. The suite runs the same sum.
 
 
 THE THERMAL SIGHT, BY THE LANCE'S METHOD
@@ -5409,11 +5349,11 @@ into a small target, laid over a mesh the file named for a display (see
 THE POSITRON SNIPER LANCE, and js/scope.js). The thermal sight is that —
 ThermalScope extends Scope — with three differences.
 
-THE PLANE IS THE GAME'S. The launcher's file has a flat face on the back
-of its sight and no mesh on it, so `screen` in GUNS builds a quad on the
-face, in the model's own units, hung off the model's own root so the fit
-carries it, and from there it is measured and mapped exactly like the
-lance's panel, u flip and all. It is four to three, not square, so the
+THE PLANE IS THE FILE'S. The XM222 has a display surface on the back of
+its sight, prepared by the user for this, so `display` in GUNS names its
+material, the loader hangs the thermal screen material on it, and from
+there it is measured and mapped exactly like the lance's panel, u flip
+and all. It is very nearly square — 0.728 across and 0.741 up — so the
 feed, the canvas and the camera are too; the suite holds the two numbers
 to each other.
 
@@ -5535,7 +5475,7 @@ ball, more charge = more chain hits".
   js/arc.js             the lightning: who it strikes, the field, the
                         bolts, the sparks and the drips
   assets/models/arcgun.glb   the gun, finished in Blender
-  tools/blender/        the three headless Blender scripts that did it:
+  tools/blender/        the headless Blender scripts: three did this one —
                         the bake, the full textured export, and the
                         game's copy. Blender is not needed to run or
                         test the game — only to rebuild the model
@@ -7908,7 +7848,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-2542 checks. Every one of them earns its place by having caught something
+2548 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

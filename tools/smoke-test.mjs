@@ -5264,10 +5264,12 @@ section('the lance');
     B.LIGHT_RANGE.every((v, i) => v > B.BEAM_RADIUS[i] * 5));
 
   /* ---- the screen on the back of the gun ---------------------------- */
-  check('the lance is the only gun with a screen and a lens, and the file names both',
+  check('the lance and the launcher are the guns with a screen in the file, the lance the one with a lens, and the files name them',
     w3.GUNS.LANCE.display.material === 'dynamic_display_surface_mat' &&
     w3.GUNS.LANCE.optics.material === 'optics_mat' &&
-    Object.values(w3.GUNS).filter(d => d.display).length === 1);
+    w3.GUNS.LAUNCHER.display.material === 'dyanmic_display_surface_mat' &&
+    Object.keys(w3.GUNS).filter(k => w3.GUNS[k].display).join() === 'LANCE,LAUNCHER' &&
+    Object.values(w3.GUNS).filter(d => d.optics).length === 1);
   check('the screen is fed by a second camera at the eye, not by a painted picture',
     /this\.camera = new THREE\.PerspectiveCamera/.test(scopeSrc) &&
     /r\.render\(scene, c\);/.test(scopeSrc) &&
@@ -10344,100 +10346,104 @@ section('the quad launcher');
   const L = w3.GUNS.LAUNCHER;
 
   /* ---- THE MODEL, AS IT SHIPS ----------------------------------------
-     A Nomad sculpt of four hundred and sixty thousand triangles and
-     fourteen megabytes, REMESHED AND BAKED, at the user's request: cut
-     down to a cage of eight thousand by tools/decimate-model.mjs, laid
-     flat on one sheet, and the sculpt's paint cast onto the sheet from
-     the cage by tools/bake-model.mjs. What is checked is what the game
-     depends on: that it is small, that the paint came through as a
-     texture the loader wears, and that the surface is still one closed
-     skin — a remesh that tore it would show daylight through the box. */
+     The XM222, modelled and textured, with a display surface on the
+     back of its sight that the user prepared for the thermal feed.
+     Prepared by tools/blender/prep_launcher.py: fourteen megabytes to
+     under one, the two colour sheets kept as JPEG, the rest dropped, the
+     rockets split out and named. What is checked is what the game
+     depends on. */
   const file = fs.readFileSync(L.url);
   const { json, bin } = parseGLB(file.buffer.slice(file.byteOffset, file.byteOffset + file.length));
   const prims = json.meshes.flatMap(m => m.primitives);
   const tris = prims.reduce((n, p) => n + json.accessors[p.indices].count / 3, 0);
-  const baked = json.asset.extras?.baked || {};
-  note('the launcher', `${(file.length / 1024).toFixed(0)}K, ${tris} triangles from ${baked.from}, a ${baked.size}-texel sheet of ${baked.charts} pieces`);
-  check('the launcher ships as a model of under a megabyte: a cage of at most ten thousand triangles, from a sculpt over forty times that',
-    file.length < 1024 * 1024 && tris <= 10000 && (baked.from || 0) >= 40 * tris && baked.cage === tris);
-  const pr = prims[0];
-  const mat = json.materials?.[pr.material];
-  const img = json.images?.[json.textures?.[mat?.pbrMetallicRoughness?.baseColorTexture?.index]?.source];
-  check('its paint is baked onto one texture on the one mesh, and there is none left in its vertices',
-    prims.length === 1 && pr.attributes.TEXCOORD_0 !== undefined && pr.attributes.COLOR_0 === undefined &&
-    pr.attributes.NORMAL !== undefined && json.images?.length === 1 && !!img && !L.paint);
-  {
-    /* the sheet is a PNG of the size the bake says, square, and clamped
-       at its edges — a wrapping sampler bleeds the far side of the sheet
-       into every chart that touches the near one */
-    const bv = json.bufferViews[img.bufferView];
-    const png = bin.subarray(bv.byteOffset || 0, (bv.byteOffset || 0) + bv.byteLength);
-    const dv = new DataView(png.buffer, png.byteOffset, png.byteLength);
-    const sig = [137, 80, 78, 71, 13, 10, 26, 10].every((b, i) => png[i] === b);
-    const sampler = json.samplers?.[json.textures[0].sampler] || {};
-    check('the sheet is a square PNG of the size it was baked at, clamped at its edges',
-      img.mimeType === 'image/png' && sig && dv.getUint32(16) === baked.size && dv.getUint32(20) === baked.size &&
-      sampler.wrapS === 33071 && sampler.wrapT === 33071, `${dv.getUint32(16)}x${dv.getUint32(20)}`);
-    const UV = readAccessor(json, bin, pr.attributes.TEXCOORD_0).array;
-    let out = 0;
-    for (const u of UV) if (!(u >= 0 && u <= 1)) out++;
-    check('and every corner of the cage lands on the sheet', out === 0, `${out} off it`);
-  }
-  {
-    /* CLOSED ONCE IT IS WELDED. A baked mesh is cut along every seam of
-       the sheet and every hard crease, so the same corner is several
-       vertices with different places on the sheet or different normals;
-       counting edges between VERTICES would find every seam open. Welded
-       by where the corners are, it is the cage again, and the cage is
-       what the decimator kept closed. */
-    const P = readAccessor(json, bin, pr.attributes.POSITION).array;
-    const idx = readAccessor(json, bin, pr.indices).array;
-    const at = new Map(), weld = new Int32Array(P.length / 3);
-    for (let v = 0; v < weld.length; v++) {
-      const k = `${P[3 * v]},${P[3 * v + 1]},${P[3 * v + 2]}`;
-      if (!at.has(k)) at.set(k, at.size);
-      weld[v] = at.get(k);
-    }
-    const W = at.size, edges = new Map();
-    for (let f = 0; f < idx.length; f += 3)
-      for (const [a0, b0] of [[idx[f], idx[f + 1]], [idx[f + 1], idx[f + 2]], [idx[f + 2], idx[f]]]) {
-        const a = weld[a0], b = weld[b0], k = a < b ? a * W + b : b * W + a;
-        edges.set(k, (edges.get(k) || 0) + 1);
-      }
-    let open = 0;
-    for (const n of edges.values()) if (n !== 2) open++;
-    check('and the remeshed surface is still closed: welded, every edge between exactly two faces',
-      open === 0 && W < weld.length, `${open} edges, ${weld.length} vertices on ${W} corners`);
-  }
-  check('the decimator and the baker need nothing but node, like every other tool here',
-    ['tools/decimate-model.mjs', 'tools/bake-model.mjs', 'tools/png-read.mjs'].every(f =>
-      (fs.readFileSync(f, 'utf8').match(/^import .* from '([^']+)'/gm) || [])
-        .every(l => /'node:|'\.\/[\w-]+\.mjs'/.test(l))));
+  note('the launcher', `${(file.length / 1024).toFixed(0)}K, ${tris} triangles, ${json.nodes.length} parts, ${json.images.length} sheets`);
+  check('the launcher ships as a model of under a megabyte and at most sixteen thousand triangles',
+    file.length < 1024 * 1024 && tris <= 16000);
+  const byName = n => json.nodes.find(o => o.name === n);
+  const meshOf = n => json.meshes[byName(n).mesh].primitives[0];
+  const matOf = n => json.materials[meshOf(n).material];
+  check('its parts are the gun, the display and four rockets, each one mesh with its transforms baked in',
+    ['xm222', 'display', 'rocket_0', 'rocket_1', 'rocket_2', 'rocket_3'].every(n => byName(n) && byName(n).mesh !== undefined &&
+      json.meshes[byName(n).mesh].primitives.length === 1 && !byName(n).matrix && !byName(n).rotation && !byName(n).scale) &&
+    json.nodes.length === 6 && !byName('rocket_4'));
+  check('every part carries what the loader reads and nothing it does not: no tangents, no vertex paint, one set of UVs',
+    prims.every(p => p.attributes.POSITION !== undefined && p.attributes.NORMAL !== undefined && p.attributes.TEXCOORD_0 !== undefined &&
+      p.attributes.TANGENT === undefined && p.attributes.COLOR_0 === undefined && p.attributes.TEXCOORD_1 === undefined) && !L.paint);
+  check('the gun and the rockets wear their own colour sheets, JPEG, and no other map is left',
+    ['xm222', 'rocket_0'].every(n => matOf(n).pbrMetallicRoughness?.baseColorTexture !== undefined && !matOf(n).normalTexture &&
+      !matOf(n).pbrMetallicRoughness?.metallicRoughnessTexture) &&
+    json.images.length === 2 && json.images.every(i => i.mimeType === 'image/jpeg'));
+  check('the display surface is the file\'s own, under the name the table gives it, with nothing painted on it',
+    !!L.display && !L.screen && matOf('display').name === L.display.material &&
+    !matOf('display').pbrMetallicRoughness?.baseColorTexture);
+  check('the prep script is in the repo, with how to run it',
+    /blender -b -P prep_launcher\.py -- <xm222\.glb> <out\.glb>/.test(fs.readFileSync('tools/blender/prep_launcher.py', 'utf8')));
 
   /* ---- WHERE ITS PARTS ARE, in the model's own units ----------------- */
-  const P = readAccessor(json, bin, pr.attributes.POSITION).array;
-  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
-  for (let i = 0; i < P.length; i += 3) for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], P[i + k]); hi[k] = Math.max(hi[k], P[i + k]); }
-  check('four tubes, each on the front face of the box and inside it',
-    L.tubes.length === 4 && L.tubes.every(t => t[0] > lo[0] && t[0] < hi[0] && t[1] > lo[1] && t[1] < hi[1] && Math.abs(t[2] - hi[2]) < 0.02));
-  /* THE SCREEN GOES ON THE FLAT BACK OF THE SIGHT: the model's own face
-     a hair behind it, and nothing of the model between it and the eye.
-     A flat face decimates to a handful of vertices, so the first half
-     asks for a few, not many; the second half is the one that matters,
-     since a screen with metal in front of it is a screen you cannot see. */
+  const pts = n => readAccessor(json, bin, meshOf(n).attributes.POSITION).array;
+  const boxOf = arrs => {
+    const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    for (const P of arrs) for (let i = 0; i < P.length; i += 3)
+      for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], P[i + k]); hi[k] = Math.max(hi[k], P[i + k]); }
+    return { lo, hi };
+  };
+  const all = boxOf(json.nodes.map(n => pts(n.name)));
+  check('it points +z like every gun: the rockets\' noses are the front of the whole model',
+    [0, 1, 2, 3].every(i => Math.abs(boxOf([pts('rocket_' + i)]).hi[2] - all.hi[2]) < 1e-3));
   {
-    const [x0, y0, x1, y1, z] = L.screen.at;
-    let face = 0, front = 0;
-    for (let i = 0; i < P.length; i += 3) {
-      if (P[i] < x0 || P[i] > x1 || P[i + 1] < y0 || P[i + 1] > y1) continue;
-      if (P[i + 2] > z && P[i + 2] - z < 0.006) face++;
-      if (P[i + 2] < z) front++;
-    }
-    check('the thermal screen is built on the flat back of the sight, with nothing between it and the eye',
-      x1 > x0 && y1 > y0 && face >= 3 && front === 0 && x0 > 0.7 && !L.display, `${face} on the face, ${front} in front`);
-    check('and its picture is the shape of its glass, so nothing is stretched',
-      Math.abs((x1 - x0) / (y1 - y0) / TH.THERMAL_ASPECT - 1) < 0.03);
+    /* ONE ROCKET PER TUBE, IN FIRING ORDER. Each tube in the table is the
+       middle of its rocket's nose, at the nose; and the order is top
+       left, top right, bottom left, bottom right as the gunner sees them
+       — model +x is the gunner's left once the model is turned. */
+    const ok = [0, 1, 2, 3].every(i => {
+      const P = pts('rocket_' + i), { hi } = boxOf([P]);
+      let x = 0, y = 0, n = 0;
+      for (let v = 0; v < P.length; v += 3) if (P[v + 2] > hi[2] - 0.6) { x += P[v]; y += P[v + 1]; n++; }
+      const t = L.tubes[i];
+      return Math.hypot(x / n - t[0], y / n - t[1]) < 0.02 && Math.abs(t[2] - hi[2]) < 0.01;
+    });
+    check('four tubes, each at the nose of its own rocket', L.tubes.length === 4 && ok);
+    const [t0, t1, t2, t3] = L.tubes;
+    check('and they fire top left, top right, bottom left, bottom right, as the gunner sees them',
+      t0[0] > t1[0] && t2[0] > t3[0] && t0[1] > t2[1] && t1[1] > t3[1]);
+    check('the nozzle is the middle of the four', [0, 1].every(k => Math.abs(L.nozzle[k] - L.tubes.reduce((s, t) => s + t[k], 0) / 4) < 0.01));
   }
+  {
+    /* THE SCREEN FACES THE EYE AND NOTHING IS IN FRONT OF IT. The eye is
+       on the model's -z side once it is turned, so the display's normals
+       run -z, and no vertex of the gun that falls inside its outline is
+       nearer the eye than it is. */
+    const D = pts('display'), { lo, hi } = boxOf([D]);
+    const N = readAccessor(json, bin, meshOf('display').attributes.NORMAL).array;
+    let facing = 0;
+    for (let i = 2; i < N.length; i += 3) if (N[i] < -0.9) facing++;
+    const G = pts('xm222'), m = 0.02;
+    let front = 0;
+    for (let i = 0; i < G.length; i += 3)
+      if (G[i] > lo[0] + m && G[i] < hi[0] - m && G[i + 1] > lo[1] + m && G[i + 1] < hi[1] - m && G[i + 2] < lo[2]) front++;
+    check('the display faces the eye, with nothing of the gun between it and the eye',
+      facing === N.length / 3 && front === 0, `${facing} of ${N.length / 3} facing, ${front} in front`);
+    check('and it is on the left of the picture, as the sight of a thing held on the right shoulder is', lo[0] > 0.5);
+    check('and the picture is the shape of its glass, so nothing is stretched',
+      Math.abs((hi[0] - lo[0]) / (hi[1] - lo[1]) / TH.THERMAL_ASPECT - 1) < 0.03);
+    /* AND PUT TO THE EYE, IT IS STRAIGHT AHEAD OF IT: the aimed hold, run
+       through the same fit and half turn as the loader's, puts the
+       screen's middle on the line of sight, clear of the near plane,
+       and about half the picture high. */
+    const c = [0, 1, 2].map(k => (all.lo[k] + all.hi[k]) / 2);
+    const sc = L.fit / Math.max(...[0, 1, 2].map(k => all.hi[k] - all.lo[k]));
+    const mid = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2];
+    const at = [-(mid[0] - c[0]) * sc, (mid[1] - c[1]) * sc, -(mid[2] - c[2]) * sc]
+      .map((v, k) => v + w3.VIEW.pos[k] + L.aim.pos[k]).map((v, k) => k === 2 ? v * L.aim.out : v);
+    const high = (hi[1] - lo[1]) * sc / (2 * -at[2] * Math.tan(w3.VIEW.fov / 2 * Math.PI / 180));
+    note('the screen, aimed', `${(-at[2] * 100).toFixed(1)} cm out, ${(high * 100).toFixed(0)}% of the picture high`);
+    check('put to the eye, the screen is straight ahead of it and about half the picture high',
+      Math.abs(at[0]) < 0.01 && Math.abs(at[1]) < 0.01 && -at[2] > 0.05 && high > 0.4 && high < 0.7);
+  }
+  check('a fired tube is drawn empty: the rockets are found by name and shown only while there is ammo for them',
+    L.loaded?.prefix === 'rocket_' && L.loaded?.ammo === 'rockets' &&
+    /r\.visible = i >= G\.rounds\.length - left/.test(fs.readFileSync('js/weapon3d.js', 'utf8')) &&
+    /tube = SEEKER\.most - \(p\.ammo\.rockets \| 0\)/.test(fs.readFileSync('js/missiles.js', 'utf8')));
   check('put to the eye, it is turned square on: the aim cancels the hold\'s own cant',
     Math.abs(w3.VIEW.pitch + L.aim.rot[0]) < 1e-9 && Math.abs(w3.VIEW.yaw + L.aim.rot[1]) < 1e-9 &&
     Math.abs(w3.VIEW.roll + L.aim.rot[2]) < 1e-9 && L.aim.out < L.out);
