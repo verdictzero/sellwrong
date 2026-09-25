@@ -166,7 +166,14 @@ export function buildUI(ed) {
   ui.help2d = h('div', { class: 'help' });
   ui.help3d = h('div', { class: 'help' },
     'Q visual mode · hold RMB look + WASD fly · every mode works here\nwheel height · Ctrl+wheel brightness · Ctrl+C/V texture · B fullbright');
-  const wrap2d = h('div', { id: 'ed-2d-wrap', class: 'ed-view' }, ui.canvas2d, h('div', { class: 'tag' }, 'MAP  2D'), ui.help2d);
+  /* THE PLAN'S VIEWS: the map as drawn, or every sector shaded by its
+     brightness, floor or ceiling — Doom Builder's brightness view */
+  const planSel = h('select', { class: 'ed-planview', title: 'What the plan shades sectors by (Doom Builder\'s brightness view)',
+    onchange: e => { ed.planView = e.target.value; ed.emit('grid'); } },
+    h('option', { value: 'normal' }, 'Plan: normal'), h('option', { value: 'light' }, 'Plan: brightness'),
+    h('option', { value: 'floor' }, 'Plan: floor heights'), h('option', { value: 'ceil' }, 'Plan: ceilings'));
+  ui.planSel = planSel;
+  const wrap2d = h('div', { id: 'ed-2d-wrap', class: 'ed-view' }, ui.canvas2d, h('div', { class: 'tag' }, 'MAP  2D'), planSel, ui.help2d);
   const wrap3d = h('div', { id: 'ed-3d-wrap', class: 'ed-view' }, ui.canvas3d, h('div', { class: 'tag' }, 'VISUAL  3D'), ui.help3d,
     h('div', { class: 'ed-cross' }));
   ui.wrap2d = wrap2d; ui.wrap3d = wrap3d;
@@ -387,22 +394,48 @@ export function buildUI(ed) {
         row('Blocks sight', chk(o.blockSight, v => each('line sight', x => { if (v) x.blockSight = true; else delete x.blockSight; }))),
         /* THE SIDEDEF, Doom's way: top, middle and bottom textures, the
            offsets, and the two unpegged flags */
-        h('h4', {}, 'Textures — top, middle, bottom'),
-        ...(info && info.sectors.length > 1
-          ? [texField(o.upperTex, 'upperTex', 'Top (upper)', { allowNone: true }),
-             texField(o.midTex, 'midTex', 'Middle', { allowNone: true }),
-             o.midTex ? row('Middle height', num(o.midHeight ?? '', v => each('middle height', x => { if (v > 0) x.midHeight = v; else delete x.midHeight; }), { step: 8 })) : null,
-             texField(o.lowerTex, 'lowerTex', 'Bottom (lower)', { allowNone: true })]
-          : [texField(o.wallTex, 'wallTex', 'Middle (wall)', { allowNone: true })]),
+        /* THE TWO SIDES, Doom's front and back sidedefs, each named by the
+           sector it faces: its top, middle and bottom, and its offsets.
+           With several lines selected, what is set here goes on both
+           sides of all of them. */
+        ...(n === 1 && info ? info.sectors.map(si => {
+          const sec = d.sectors[si], sd = o.sides?.[sec.id] || {}, base = `sides.${sec.id}`;
+          const two = info.sectors.length > 1;
+          const setSide = (label, fn) => each(label, x => { x.sides = x.sides || {}; x.sides[sec.id] = x.sides[sec.id] || {}; fn(x.sides[sec.id]); if (!Object.keys(x.sides[sec.id]).length) delete x.sides[sec.id]; if (!Object.keys(x.sides).length) delete x.sides; });
+          return [
+            h('h4', {}, `Side facing sector ${sec.id}${sec.name ? ` · ${sec.name}` : ''} · ${isInside(sec) ? 'inside' : 'outside'}`),
+            two ? texField(sd.upperTex || o.upperTex, `${base}.upperTex`, 'Top (upper)', { allowNone: true }) : null,
+            texField(sd.midTex || (two ? o.midTex : o.wallTex), `${base}.midTex`, two ? 'Middle' : 'Wall', { allowNone: true }),
+            two ? texField(sd.lowerTex || o.lowerTex, `${base}.lowerTex`, 'Bottom (lower)', { allowNone: true }) : null,
+            h('div', { class: 'ed-row two' }, h('label', {}, 'Offset x / y'),
+              num(sd.xoff ?? o.xoff ?? 0, v => setSide('x offset', x => { x.xoff = v; }), { step: 1 }),
+              num(sd.yoff ?? o.yoff ?? 0, v => setSide('y offset', x => { x.yoff = v; }), { step: 1 })),
+          ];
+        }) : [
+          h('h4', {}, 'Textures — both sides'),
+          texField(o.upperTex, 'upperTex', 'Top (upper)', { allowNone: true }),
+          texField(o.midTex, 'midTex', 'Middle', { allowNone: true }),
+          texField(o.lowerTex, 'lowerTex', 'Bottom (lower)', { allowNone: true }),
+          texField(o.wallTex, 'wallTex', 'Wall (one-sided)', { allowNone: true }),
+        ]),
+        (info && info.sectors.length > 1 && (o.midTex || Object.values(o.sides || {}).some(x => x.midTex)))
+          ? row('Middle height', num(o.midHeight ?? '', v => each('middle height', x => { if (v > 0) x.midHeight = v; else delete x.midHeight; }), { step: 8 })) : null,
+        n === 1 && info && info.sectors.length > 1 ? h('div', { class: 'ed-small-btns' },
+          h('button', { class: 'ed-btn', title: "Doom Builder's Flip Sidedefs: each side gets the other's textures and offsets",
+            onclick: () => each('swap sides', x => {
+              const [a, b] = info.sectors.map(si => d.sectors[si].id);
+              const sa = x.sides?.[a], sb = x.sides?.[b];
+              x.sides = x.sides || {};
+              if (sb) x.sides[a] = sb; else delete x.sides[a];
+              if (sa) x.sides[b] = sa; else delete x.sides[b];
+              if (!Object.keys(x.sides).length) delete x.sides;
+            }) }, '⇄ Swap sides')) : null,
         info && info.sectors.length > 1 && info.sectors.map(i => d.sectors[i]).some(isInside) && info.sectors.map(i => d.sectors[i]).some(x => !isInside(x))
           ? [h('h4', {}, 'Building wall'),
              row('Doorway', chk(o.opening, v => each('doorway', x => { if (v) x.opening = true; else delete x.opening; }))),
              h('p', { class: 'ed-note' }, 'This line is where an inside sector meets the outside, so it is a wall unless it is a doorway. Split it with Insert (vertices mode) to make a doorway in part of a wall.')]
           : null,
-        h('h4', {}, 'Alignment'),
-        h('div', { class: 'ed-row two' }, h('label', {}, 'Offset x / y'),
-          num(o.xoff ?? 0, v => each('x offset', x => { if (v) x.xoff = v; else delete x.xoff; }), { step: 1 }),
-          num(o.yoff ?? 0, v => each('y offset', x => { if (v) x.yoff = v; else delete x.yoff; }), { step: 1 })),
+        h('h4', {}, 'Pegging'),
         row('Upper unpegged', chk(o.unpegUpper, v => each('upper unpegged', x => { if (v) x.unpegUpper = true; else delete x.unpegUpper; }))),
         row('Lower unpegged', chk(o.unpegLower, v => each('lower unpegged', x => { if (v) x.unpegLower = true; else delete x.unpegLower; }))),
         h('p', { class: 'ed-note' }, 'In 3D, the arrow keys over a wall nudge its offsets (Shift: 8 at a time). Deleting a line joins the two sectors on it into one.'));
@@ -556,7 +589,7 @@ export function buildUI(ed) {
     if (ui.picking) {
       const { field } = ui.picking;
       if (field === '@propTex') { ed.propTex = name; }
-      else if (ed.sel.kind) each(`${field} ${name}`, x => { x[field] = name; });
+      else if (ed.sel.kind) each(`${field.split('.').pop()} ${name}`, x => { setPath(x, field, name); });
       ui.picking = null;
       showTab('insp');
       renderInsp();
@@ -571,7 +604,7 @@ export function buildUI(ed) {
     texHead.textContent = '';
     if (ui.picking) {
       texHead.append(h('p', { class: 'ed-note' }, `Picking the ${ui.picking.label.toLowerCase()} texture. `,
-        ui.picking.allowNone ? h('button', { class: 'ed-btn', onclick: () => { const f = ui.picking.field; ui.picking = null; if (ed.sel.kind) each(`clear ${f}`, x => { delete x[f]; }); showTab('insp'); } }, 'Use none') : null,
+        ui.picking.allowNone ? h('button', { class: 'ed-btn', onclick: () => { const f = ui.picking.field; ui.picking = null; if (ed.sel.kind) each(`clear ${f.split('.').pop()}`, x => { delPath(x, f); }); showTab('insp'); } }, 'Use none') : null,
         ' ', h('button', { class: 'ed-btn', onclick: () => { ui.picking = null; showTab('insp'); renderInsp(); } }, 'Cancel')));
     } else {
       texHead.append(h('p', { class: 'ed-note' }, ed.surf ? `Click a texture to paint the picked ${ed.surf.part}.` : 'Pick a surface in the 3D view, then click a texture to paint it — or open this from an inspector field.'));
@@ -772,3 +805,18 @@ const MOODS = {
   'Night':      { floor: '#404a70', ceil: '#202840', thing: '#6070a0', top: '#303a60', bottom: '#101420' },
   'Violet':     { floor: '#c090ff', ceil: '#6030a0', thing: '#d0a0ff', top: '#a060ff', bottom: '#200840' },
 };
+
+/* a field that lives deeper in an object: 'sides.12.upperTex' */
+function setPath(o, path, v) {
+  const ks = path.split('.');
+  let t = o;
+  for (const k of ks.slice(0, -1)) t = t[k] = t[k] || {};
+  t[ks.at(-1)] = v;
+}
+function delPath(o, path) {
+  const ks = path.split('.');
+  const chain = [o];
+  for (const k of ks.slice(0, -1)) { const t = chain.at(-1)[k]; if (!t) return; chain.push(t); }
+  delete chain.at(-1)[ks.at(-1)];
+  for (let i = chain.length - 1; i > 0; i--) if (!Object.keys(chain[i]).length) delete chain[i - 1][ks[i - 1]]; else break;
+}

@@ -13412,7 +13412,7 @@ await (async () => {
   pp.vertices.push([2048, 0], [2560, 512], [2048, 1024], [1536, 512]);
   pp.sectors.push({ id: 5, verts: [4, 5, 6, 7], ...D.SECTOR_DEFAULTS });
   pp.nextId = 6;
-  check('a room that touches its surroundings at one corner is reported', D.problemsOf(pp).some(x => /touches the edge/.test(x.msg)));
+  check('a room that touches its surroundings at one corner is not an overlap (it is a pinched hole now)', !D.problemsOf(pp).some(x => /overlap|touches the edge/.test(x.msg)));
   const po = D.newDoc('P3', 4096);
   po.vertices.push(...Rq(1024, 1024, 1536, 1536), ...Rq(1280, 1024, 1792, 1536));
   po.sectors.push({ id: 5, verts: [4, 5, 6, 7], ...D.SECTOR_DEFAULTS }, { id: 6, verts: [8, 9, 10, 11], ...D.SECTOR_DEFAULTS });
@@ -13460,6 +13460,50 @@ await (async () => {
   const cssSrc = fsE.readFileSync('css/editor.css', 'utf8');
   check('the menu bar does not clip its own menus', !/#ed-top \{[^}]*overflow: hidden/s.test(cssSrc));
   for (const x of [edS, edW]) { clearTimeout(x._compileT); clearTimeout(x._saveT); }
+
+  /* WHAT DOOM BUILDER DOES THAT THE FIRST CUT DID NOT */
+  /* a room touching its surroundings at a corner is a hole there */
+  const tc = D.newDoc('TC', 4096);
+  tc.vertices.push([2048, 0], [2560, 512], [2048, 1024], [1536, 512]);
+  tc.sectors.push({ id: 5, verts: [4, 5, 6, 7], ...D.SECTOR_DEFAULTS, floor: 0, name: 'diamond' });
+  tc.nextId = 6;
+  const ctc = D.compileDoc(tc);
+  check('a room touching its surroundings at one corner is a room you can walk into, and no problem',
+    ctc.problems.length === 0 && ctc.level.sectorAt(2048, 512)?.docId === 5 &&
+    ctc.level.lines.filter(l => l.frontCol.length && l.backCol.length).length >= 4);
+  /* two sides of a line */
+  const sd3 = D.newDoc('SD', 2048);
+  const edF = new E.Editor(null);
+  edF.history = new D.History(sd3);
+  edF.addSector(Rq(512, 512, 1024, 1024));
+  const bid = edF.doc.sectors[1].id;
+  edF.setInside(true, new Set([bid]));
+  edF.edit('in', d => { d.sectors[1].wallTex = 'OFFPANEL'; }, { tidy: false });
+  const wallKey = D.linesOf(edF.doc).find(l => l.sectors.length === 2).key;
+  edF.surf = { sector: 0, part: 'wall', line: wallKey, band: 'middle' };
+  edF.applyTexture('FOUNDATN');
+  const cF = D.compileDoc(edF.doc);
+  const gF = MG.buildLevelGeometry(cF.level, bankC);
+  const texF = new Set();
+  const walkF = o => { if (o.geometry?.attributes?.position) texF.add(o.name.split('|').pop()); for (const ch of o.children || []) walkF(ch); };
+  walkF(gF.group);
+  check('painting one face of a wall paints that side only — brick outside, panelling in',
+    edF.doc.lines[wallKey]?.sides?.[edF.doc.sectors[0].id]?.midTex === 'FOUNDATN' && !edF.doc.lines[wallKey].sides[bid] &&
+    texF.has('FOUNDATN') && texF.has('OFFPANEL'));
+  /* drawn across a wall */
+  const edX = new E.Editor(null);
+  edX.history = new D.History(D.newDoc('X', 2048));
+  edX.addSector(Rq(512, 512, 1024, 1024));
+  edX.edit('h', d => { d.sectors[1].floor = 64; }, { tidy: false });
+  edX.addSector(Rq(768, 640, 1280, 896));
+  const cX = D.compileDoc(edX.doc);
+  check('a sector drawn across a wall is split where it crosses, each piece keeping its room\'s heights',
+    edX.sel.ids.size === 2 && cX.problems.length === 0 && cX.level.sectorAt(900, 700).floor === 64 &&
+    cX.level.sectorAt(1200, 700).floor === 0 && cX.level.sectorAt(600, 600).floor === 64 &&
+    edX.doc.sectors.length === 4);
+  const vsrc = fsE.readFileSync('js/editor/view2d.js', 'utf8');
+  check('the plan has Doom Builder\'s brightness view, and floor and ceiling views', /planView/.test(vsrc) && /brightOf\(s\) \/ 255/.test(vsrc));
+  for (const x of [edF, edX]) { clearTimeout(x._compileT); clearTimeout(x._saveT); }
 
   /* THE GODOT EXPORT: a GLB that reads back, and a scene that says what
      it should (it was also checked by importing it into Godot 4.3) */

@@ -149,7 +149,7 @@ function onBoundary(pts, x, y) {
 }
 
 /** Proper crossing of a-b and c-d, not counting shared ends. */
-function segCross(ax, ay, bx, by, cx, cy, dx, dy) {
+export function segCross(ax, ay, bx, by, cx, cy, dx, dy) {
   const d1 = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
   const d2 = (bx - ax) * (dy - ay) - (by - ay) * (dx - ax);
   const d3 = (dx - cx) * (ay - cy) - (dy - cy) * (ax - cx);
@@ -190,6 +190,35 @@ export function strictlyInside(inner, outer) {
   }
   return true;
 }
+
+/**
+ * Is `inner` a hole in `outer` that TOUCHES it — every corner inside or
+ * on its edge, no edge of it running along the edge, nothing crossing?
+ * A room drawn in a field with one corner on the field's wall is that:
+ * it can be neither cut out of the field (it shares no wall) nor a
+ * plain hole (it is not clear of the edge), so it is a hole pinched to
+ * the outline at the corner it touches — see bridge.
+ */
+export function insideTouching(inner, outer) {
+  let touches = false;
+  for (const [x, y] of inner) {
+    if (onBoundary(outer, x, y)) { touches = true; continue; }
+    if (!pointInPoly(outer, x, y)) return false;
+  }
+  if (!touches) return false;
+  for (let i = 0; i < inner.length; i++) {
+    const a = inner[i], b = inner[(i + 1) % inner.length];
+    const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+    if (onBoundary(outer, mx, my) || !pointInPoly(outer, mx, my)) return false;
+    for (let j = 0; j < outer.length; j++) {
+      const c = outer[j], d = outer[(j + 1) % outer.length];
+      if (segCross(a[0], a[1], b[0], b[1], c[0], c[1], d[0], d[1])) return false;
+    }
+  }
+  return true;
+}
+/** A hole in `outer`: clear of its edge, or touching it at corners. */
+export const holeIn = (inner, outer) => strictlyInside(inner, outer) || insideTouching(inner, outer);
 
 export function centroid(pts) {
   let x = 0, y = 0;
@@ -373,7 +402,7 @@ export function holeParents(doc) {
     plain.forEach((o, j) => {
       if (i === j || o.length < 3) return;
       const a = Math.abs(signedArea(o));
-      if (a < ba && strictlyInside(r, o)) { ba = a; best = j; }
+      if (a < ba && holeIn(r, o)) { ba = a; best = j; }
     });
     return best;
   });
@@ -446,7 +475,7 @@ export function problemsOf(doc) {
   for (let i = 0; i < rings.length; i++) {
     for (let j = i + 1; j < rings.length; j++) {
       const a = rings[i], b = rings[j];
-      if (strictlyInside(a, b) || strictlyInside(b, a)) continue;
+      if (holeIn(a, b) || holeIn(b, a)) continue;
       let crosses = false;
       for (let p = 0; p < a.length && !crosses; p++) {
         const a0 = a[p], a1 = a[(p + 1) % a.length];
@@ -521,6 +550,22 @@ export function bridge(outer, holes) {
   const hs = holes.map(h => (signedArea(h) < 0 ? h.slice() : h.slice().reverse()))  // clockwise
     .sort((a, b) => Math.max(...b.map(p => p[0])) - Math.max(...a.map(p => p[0])));
   for (const h of hs) {
+    /* A HOLE THAT TOUCHES THE OUTLINE at a corner is pinched in there —
+       out of the corner, round the hole, back to the same corner — with
+       no slit and no line of no length for the builder to trip on */
+    let pinch = null;
+    for (let i = 0; i < ring.length && !pinch; i++) {
+      for (let k = 0; k < h.length; k++) {
+        if (Math.abs(ring[i][0] - h[k][0]) < 0.5 && Math.abs(ring[i][1] - h[k][1]) < 0.5) { pinch = [i, k]; break; }
+      }
+    }
+    if (pinch) {
+      const [i, k] = pinch;
+      const round = [];
+      for (let q = 1; q < h.length; q++) round.push(h[(k + q) % h.length]);
+      ring = [...ring.slice(0, i + 1), ...round, ...ring.slice(i)];
+      continue;
+    }
     let hi = 0;
     for (let i = 1; i < h.length; i++) if (h[i][0] > h[hi][0]) hi = i;
     const [hx, hy] = h[hi];
@@ -609,7 +654,7 @@ export function compileDoc(doc) {
   /* 2. which sectors are holes in which: a sector's DIRECT children are
      the ones strictly inside it and not strictly inside anything else
      that is strictly inside it */
-  const inside = plain.map((r, i) => plain.map((o, j) => i !== j && strictlyInside(r, o)));
+  const inside = plain.map((r, i) => plain.map((o, j) => i !== j && holeIn(r, o)));
   const parentOf = plain.map((_, i) => {
     let best = -1, ba = Infinity;
     plain.forEach((o, j) => {
@@ -699,6 +744,9 @@ export function compileDoc(doc) {
   }
 
   const level = mb.build();
+  /* which document sector each level sector is, for a line's two sides
+     (see SIDES below) */
+  doc.sectors.forEach((s, i) => { if (index[i] >= 0 && level.sectors[index[i]]) level.sectors[index[i]].docId = s.id; });
   for (const [k, f] of flatHoles) {
     const L = level.sectors[k];
     if (L) { L.flatOuter = f.outer; L.flatHoles = f.holes; }
@@ -758,6 +806,15 @@ export function compileDoc(doc) {
     if (o.yoff) l.yoff = o.yoff;
     if (o.unpegUpper) l.pegUpper = 'top';
     if (o.unpegLower) { l.pegLower = 'ceiling'; l.pegMiddle = 'bottom'; }
+    /* THE TWO SIDES, Doom's front and back sidedefs: what each face of
+       the line wears, kept by the sector that face looks into, so a
+       building's wall can be brick outside and plaster in. Read face by
+       face by js/mapgeo.js (sideOf); a side that says nothing wears the
+       line's own, as above */
+    if (o.sides && Object.keys(o.sides).length) {
+      l.sides = o.sides;
+      l.texLocked = true;
+    }
   }
 
   /* 5c. INSIDE MEETS OUTSIDE: A WALL. A sector is inside if it has a
@@ -801,6 +858,7 @@ export function compileDoc(doc) {
       const L = level.sectors[index[i]];
       if (!L || L.ceilTex === 'SKY' || L.ceilTex === 'NONE') return;
       L.roofTex = s.roofTex || L.ceilTex;
+      L.editorRoof = true;
     });
   }
 

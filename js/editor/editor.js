@@ -40,7 +40,7 @@ import { Weather } from '../weather.js';
 import {
   History, compileDoc, gridDoc, newDoc, parseDoc, serialise, compact,
   THING_TYPES, SECTOR_DEFAULTS, takeId, ringOf, pointInPoly, signedArea, linesOf, lineKey,
-  segDist, strictlyInside, selfCrosses,
+  segDist, strictlyInside, selfCrosses, segCross,
 } from './doc.js';
 import { View2D } from './view2d.js';
 import { View3D } from './view3d.js';
@@ -342,6 +342,9 @@ export class Editor {
    */
   addSector(points, label = 'draw sector') {
     if (points.length < 3) return null;
+    /* DRAWN ACROSS EXISTING LINES: split where they cross, as Doom Builder
+       does, rather than laid over the top */
+    if (crossesLines(this.doc, points)) return this.addSectorAcross(points, label);
     let made = null;
     this.edit(label, d => {
       const idx = points.map(([x, y]) => vertexFor(d, x, y));
@@ -368,6 +371,101 @@ export class Editor {
     });
     if (made) this.select('sector', [made.id]);
     return made;
+  }
+
+  /**
+   * A SECTOR DRAWN ACROSS WALLS. The outline is cut where it crosses every
+   * existing line (splitting that line too), and every room it passes
+   * through is split along the part of the outline inside it — so each
+   * piece of the new shape is a sector of its own, carrying the heights
+   * and textures of the room it was cut from. What of the shape lies
+   * outside every sector is not made, and it says so.
+   */
+  addSectorAcross(points, label) {
+    const made = [];
+    let outside = false;
+    this.edit(label, d => {
+      /* 1. the outline, with a corner wherever it crosses a line */
+      const pts = [];
+      const L = linesOf(d);
+      for (let k = 0; k < points.length; k++) {
+        const p = points[k], q = points[(k + 1) % points.length];
+        pts.push(p);
+        const hits = [];
+        for (const l of L) {
+          const a = d.vertices[l.a], b = d.vertices[l.b];
+          if (!segCross(p[0], p[1], q[0], q[1], a[0], a[1], b[0], b[1])) continue;
+          const dx = q[0] - p[0], dy = q[1] - p[1], ex = b[0] - a[0], ey = b[1] - a[1];
+          const den = dx * ey - dy * ex;
+          if (Math.abs(den) < 1e-9) continue;
+          const t = ((a[0] - p[0]) * ey - (a[1] - p[1]) * ex) / den;
+          hits.push([t, +(p[0] + dx * t).toFixed(3), +(p[1] + dy * t).toFixed(3)]);
+        }
+        hits.sort((x, y) => x[0] - y[0]);
+        for (const [, x, y] of hits) pts.push([x, y]);
+      }
+      /* 2. every corner a vertex, splitting what it lands on */
+      let ring = pts.map(([x, y]) => vertexFor(d, x, y));
+      ring = ring.filter((v, k, a) => v !== a[(k + 1) % a.length]);
+      if (ring.length < 3) return;
+      if (signedArea(ring.map(i => d.vertices[i])) < 0) ring = ring.reverse();
+      /* 3. the runs of the outline that lie inside one sector, from its
+         edge to its edge: each one splits that sector */
+      const inSector = (i, j) => {
+        const a = d.vertices[i], b = d.vertices[j];
+        const s = sectorContaining(d, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+        if (!s) return null;
+        /* on the sector's edge is not inside it */
+        const r = s.verts;
+        for (let k = 0; k < r.length; k++) {
+          if ((r[k] === i && r[(k + 1) % r.length] === j) || (r[k] === j && r[(k + 1) % r.length] === i)) return 'edge';
+        }
+        return s;
+      };
+      const n = ring.length;
+      const owner = ring.map((v, k) => inSector(v, ring[(k + 1) % n]));
+      const onEdgeOf = (s, v) => s.verts.includes(v);
+      /* start at an edge whose owner differs from the one before it */
+      let k0 = owner.findIndex((o, k) => o !== owner[(k - 1 + n) % n]);
+      if (k0 < 0) k0 = 0;
+      const runs = [];
+      for (let c = 0, k = k0; c < n;) {
+        const s = owner[k];
+        const run = [ring[k]];
+        let m = k;
+        do { run.push(ring[(m + 1) % n]); m = (m + 1) % n; c++; } while (c < n && owner[m] === s && !(s && s !== 'edge' && onEdgeOf(s, ring[m])));
+        if (s && s !== 'edge') runs.push({ id: s.id, path: run }); else if (!s) outside = true;
+        k = m;
+      }
+      for (const { id, path } of runs) {
+        const S = d.sectors.find(x => x.id === id);
+        if (!S) continue;
+        const u = path[0], w = path[path.length - 1];
+        if (onEdgeOf(S, u) && onEdgeOf(S, w)) { splitSector(d, S, path); continue; }
+        /* the run starts and ends on the wall of a room INSIDE S — a hole
+           in it — so the piece is the run and the stretch of that room's
+           wall between its ends: the smaller of the two ways round */
+        const H = d.sectors.find(x => x !== S && x.verts.includes(u) && x.verts.includes(w));
+        if (!H) continue;
+        const r = H.verts, i = r.indexOf(u), j = r.indexOf(w);
+        const arc = (from, to, dir) => { const out = []; for (let k = from; ; k = (k + dir + r.length) % r.length) { out.push(r[k]); if (k === to) break; } return out; };
+        const cands = [1, -1].map(dir => [...path, ...arc(j, i, dir).slice(1, -1)]);
+        const area = vs => Math.abs(signedArea(vs.map(v => d.vertices[v])));
+        const ring2 = cands.filter(c => c.length >= 3 && !selfCrosses(c.map(v => d.vertices[v]))).sort((a, b) => area(a) - area(b))[0];
+        if (!ring2) continue;
+        d.sectors.push({ ...JSON.parse(JSON.stringify({ ...S, verts: undefined, id: undefined, name: '' })), id: takeId(d), verts: ring2 });
+      }
+      /* 4. the pieces inside the drawn shape are the new sectors */
+      const shape = ring.map(i => d.vertices[i]);
+      for (const s of d.sectors) {
+        const r = ringOf(d, s);
+        const [cx, cy] = r.reduce((acc, p) => [acc[0] + p[0] / r.length, acc[1] + p[1] / r.length], [0, 0]);
+        if (pointInPoly(shape, cx, cy) && r.every(([x, y]) => pointInPoly(shape, x, y) || segDistRing(shape, x, y) < 1)) made.push(s.id);
+      }
+    });
+    if (made.length) this.select('sector', made);
+    this.say(`${made.length} sector${made.length === 1 ? '' : 's'} drawn across the walls${outside ? ' — the part outside the map was not made; draw it on its own' : ''}`);
+    return made.length ? this.doc.sectors.find(s => s.id === made[0]) : null;
   }
 
   /** Raise or lower the floor or ceiling of the selected sectors (or
@@ -528,10 +626,15 @@ export class Editor {
       if (s.part === 'wall') {
         /* the part of the wall that was clicked: the middle of a
            one-sided wall, or the upper or lower step of a two-sided one */
-        const two = this.lines().find(l => l.key === s.line)?.sectors.length > 1;
-        const field = s.band === 'upper' ? 'upperTex' : s.band === 'lower' ? 'lowerTex' : two ? 'midTex' : 'wallTex';
+        /* ON THE SIDE THAT WAS CLICKED, Doom's front or back sidedef: the
+           face looking into the sector the camera is in — so painting
+           the outside of a wall leaves the inside as it was */
+        const field = s.band === 'upper' ? 'upperTex' : s.band === 'lower' ? 'lowerTex' : 'midTex';
+        const faceId = this.doc.sectors[s.sector]?.id;
         this.edit(`texture ${name}`, d => {
-          d.lines[s.line] = { ...(d.lines[s.line] || {}), [field]: name };
+          const o = d.lines[s.line] = d.lines[s.line] || {};
+          o.sides = o.sides || {};
+          o.sides[faceId] = { ...(o.sides[faceId] || {}), [field]: name };
         }, { tidy: false });
       } else {
         this.edit(`texture ${name}`, d => {
@@ -591,18 +694,8 @@ export class Editor {
     if (!s0) return false;
     let made = null;
     this.edit('split sector', d => {
-      const u = vertexFor(d, a[0], a[1]), w = vertexFor(d, b[0], b[1]);
-      const inner = pts.slice(1, -1).map(([x, y]) => vertexFor(d, x, y));
-      const S = d.sectors.find(s => s.id === s0.id);
-      const r = S.verts, i = r.indexOf(u), j = r.indexOf(w);
-      if (i < 0 || j < 0 || u === w) return;
-      const arc = (from, to) => { const out = []; for (let k = from; ; k = (k + 1) % r.length) { out.push(r[k]); if (k === to) break; } return out; };
-      const one = [...arc(i, j), ...[...inner].reverse()];
-      const two = [...arc(j, i), ...inner];
-      if (one.length < 3 || two.length < 3) return;
-      S.verts = one;
-      made = { ...JSON.parse(JSON.stringify({ ...S, verts: undefined, id: undefined, name: '' })), id: takeId(d), verts: two };
-      d.sectors.push(made);
+      const path = pts.map(([x, y]) => vertexFor(d, x, y));
+      made = splitSector(d, d.sectors.find(s => s.id === s0.id), path);
     });
     if (!made) return false;
     this.select('sector', [made.id]);
@@ -828,6 +921,41 @@ export function cutFrom(d, P, ring) {
   return true;
 }
 
+/** Split sector `S` along `path` (vertex indices, its ends on S's edge,
+ *  the rest inside): S keeps one side, a new sector the other. */
+export function splitSector(d, S, path) {
+  if (!S || path.length < 2) return null;
+  const u = path[0], w = path[path.length - 1], inner = path.slice(1, -1);
+  const r = S.verts, i = r.indexOf(u), j = r.indexOf(w);
+  if (i < 0 || j < 0 || u === w) return null;
+  const arc = (from, to) => { const out = []; for (let k = from; ; k = (k + 1) % r.length) { out.push(r[k]); if (k === to) break; } return out; };
+  const one = [...arc(i, j), ...[...inner].reverse()];
+  const two = [...arc(j, i), ...inner];
+  if (one.length < 3 || two.length < 3) return null;
+  S.verts = one;
+  const made = { ...JSON.parse(JSON.stringify({ ...S, verts: undefined, id: undefined, name: '' })), id: takeId(d), verts: two };
+  d.sectors.push(made);
+  return made;
+}
+
+/** Does an outline properly cross any line of the map? */
+function crossesLines(d, points) {
+  const L = linesOf(d);
+  for (let k = 0; k < points.length; k++) {
+    const p = points[k], q = points[(k + 1) % points.length];
+    for (const l of L) {
+      const a = d.vertices[l.a], b = d.vertices[l.b];
+      if (segCross(p[0], p[1], q[0], q[1], a[0], a[1], b[0], b[1])) return true;
+    }
+  }
+  return false;
+}
+function segDistRing(r, x, y) {
+  let m = Infinity;
+  for (let k = 0; k < r.length; k++) { const a = r[k], b = r[(k + 1) % r.length]; m = Math.min(m, segDist(a[0], a[1], b[0], b[1], x, y).d); }
+  return m;
+}
+
 function sectorContaining(d, x, y) {
   let best = null, ba = Infinity;
   for (const s of d.sectors) {
@@ -1033,6 +1161,15 @@ export async function startEditor() {
     if (k === ' ') { e.preventDefault(); ed.setMode('draw'); return; }
     if (up === 'F') { ed.emit('frame'); return; }
     if (up === 'B') { ed.view3d.setFullbright(!ed.view3d.fullbright); return; }
+    /* K: the plan's views in turn — normal, brightness, floors, ceilings */
+    if (up === 'K') {
+      const order = ['normal', 'light', 'floor', 'ceil'];
+      ed.planView = order[(order.indexOf(ed.planView || 'normal') + 1) % order.length];
+      if (ed.ui.planSel) ed.ui.planSel.value = ed.planView;
+      ed.emit('grid');
+      ed.say(`plan: ${{ normal: 'normal', light: 'brightness', floor: 'floor heights', ceil: 'ceiling heights' }[ed.planView]}`);
+      return;
+    }
   });
 
   /* keep working when the tab is closed, and say so if there is

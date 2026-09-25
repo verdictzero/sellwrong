@@ -5425,10 +5425,31 @@ the user's request:
   V L S T         vertices, lines, sectors, things, as in Doom Builder
   [ ] G           the grid, and snapping to it
 
-NOT YET LIKE DOOM BUILDER, and said here so nobody hunts for them: a line
-has one set of textures, not a front and a back sidedef; drawing across
-an existing line does not split it where they cross (draw up to it
-instead); and there is no brightness shading view on the plan.
+AND WHAT CAME AFTER THE REVIEW, the four things it listed as not yet
+Doom Builder:
+
+  TWO SIDES TO A LINE. Every line has a side facing each sector it
+  bounds, with its own top, middle and bottom textures and offsets,
+  as Doom's front and back sidedefs do. They are kept by the sector the
+  face looks into (lines[key].sides, read face by face by sideOf in
+  js/mapgeo.js). Painting a wall in 3D paints the face you are looking
+  at; the arrow keys move that face's offsets; the line inspector shows
+  both sides by name, with Swap sides (Doom Builder's Flip Sidedefs).
+  A building's wall can be brick outside and panelling in.
+
+  DRAWING ACROSS WALLS. A sector drawn across existing lines is cut
+  where it crosses them (and so are they), and every room it passes
+  through is split along the part of it inside that room: each piece is
+  its own sector, keeping the room's heights and textures, and the
+  pieces are selected. What lies outside every sector is not made.
+
+  THE PLAN'S VIEWS. The selector on the plan (or K) shades every sector
+  by its brightness, its floor or its ceiling, with the number on it —
+  Doom Builder's brightness view, and its height views.
+
+  A ROOM TOUCHING AT A CORNER. A room whose corner sits on the wall of
+  the sector round it is a hole in that sector pinched to the wall at
+  the corner, and can be walked into like any other room.
 
 AN ADVERSARIAL REVIEW, by two separate reviewers — one driving the editor
 with a real mouse and keyboard as a Doom Builder mapper would, one

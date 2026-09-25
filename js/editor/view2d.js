@@ -22,7 +22,7 @@
    ===================================================================== */
 
 import { THING_TYPES, ringOf, segDist, signedArea, FEATURES } from './doc.js';
-import { MODE_KIND, isInside } from './editor.js';
+import { MODE_KIND, isInside, brightOf } from './editor.js';
 import { exteriorWall } from './view3d.js';
 
 const PICK_PX = 8;           // how near, in pixels, counts as on it
@@ -387,6 +387,8 @@ export class View2D {
     const selS = ed.sel.kind === 'sector' ? ed.sel.ids : null;
     const hovS = this.hover?.kind === 'sector' ? this.hover.id : null;
     const order = d.sectors.map((s, i) => [s, Math.abs(signedArea(ringOf(d, s))), i]).sort((a, b) => b[1] - a[1]);
+    const ceils = d.sectors.map(s => s.ceil ?? 0);
+    const vr = { lo, hi, clo: Math.min(...ceils), chi: Math.max(...ceils) };
     for (const [s] of order) {
       const r = ringOf(d, s);
       if (r.length < 3) continue;
@@ -395,8 +397,19 @@ export class View2D {
       g.closePath();
       const t = (((s.floor ?? 0) - lo) / (hi - lo || 1));
       const shut = (s.ceil ?? 256) <= (s.floor ?? 0);
-      /* OUTSIDE is the ground's green; INSIDE is a roof, tan and hatched */
+      /* OUTSIDE is the ground's green; INSIDE is a roof, tan and hatched —
+         or, in one of the plan's views, the sector's brightness, floor or
+         ceiling as a shade (Doom Builder's brightness view) */
       const inside = isInside(s);
+      const view = ed.planView || 'normal';
+      if (view !== 'normal') {
+        const v = view === 'light' ? brightOf(s) / 255 : view === 'floor' ? ((s.floor ?? 0) - vr.lo) / (vr.hi - vr.lo || 1)
+          : ((s.ceil ?? 0) - vr.clo) / (vr.chi - vr.clo || 1);
+        const c = view === 'light' ? [v * 255, v * 255, v * 255] : [40 + v * 215, 60 + (1 - Math.abs(v - 0.5) * 2) * 120, 255 - v * 215];
+        g.fillStyle = selS?.has(s.id) ? 'rgba(255,157,61,0.55)' : `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${view === 'light' ? 0.85 : 0.6})`;
+        g.fill();
+        continue;
+      }
       g.fillStyle = selS?.has(s.id) ? 'rgba(255,157,61,0.28)' : s.id === hovS ? 'rgba(61,220,132,0.16)'
         : shut ? 'rgba(90,90,90,0.35)' : inside ? `rgba(${120 + t * 60},${90 + t * 40},${55 + t * 20},0.32)`
         : `rgba(${30 + t * 40},${60 + t * 90},${50 + t * 40},0.22)`;
@@ -420,6 +433,20 @@ export class View2D {
         for (let q = bx0 - (by1 - by0); q < bx1; q += 8) { g.moveTo(q, by1); g.lineTo(q + (by1 - by0), by0); }
         g.stroke(); g.restore();
       }
+    }
+
+    /* the numbers, in the plan's views, at each sector's middle */
+    if ((ed.planView || 'normal') !== 'normal' && this.scale > 0.03) {
+      g.font = '11px ui-monospace, monospace'; g.textAlign = 'center';
+      for (const s of d.sectors) {
+        const r = ringOf(d, s);
+        if (r.length < 3) continue;
+        const cx = r.reduce((a, p) => a + p[0], 0) / r.length, cy = r.reduce((a, p) => a + p[1], 0) / r.length;
+        const v = ed.planView === 'light' ? brightOf(s) : ed.planView === 'floor' ? (s.floor ?? 0) : (s.ceil ?? 0);
+        g.fillStyle = '#000a'; g.fillText(String(v), this.sx(cx) + 1, this.sy(cy) + 1);
+        g.fillStyle = '#fff'; g.fillText(String(v), this.sx(cx), this.sy(cy));
+      }
+      g.textAlign = 'start';
     }
 
     /* THE LINES: one-sided white, two-sided grey, blocking red */

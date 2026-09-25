@@ -779,13 +779,16 @@ export class View3D {
     const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
     if (arrows[e.key] && h?.kind === 'surface' && h.part === 'wall' && !ctrl) {
       const [dx, dy] = arrows[e.key].map(v => v * (e.shiftKey ? 8 : 1));
+      /* on the side being looked at */
+      const faceId = ed.doc.sectors[h.sector]?.id;
       ed.edit('texture offset', d => {
         const o = d.lines[h.line] = d.lines[h.line] || {};
-        o.xoff = (o.xoff || 0) + dx; o.yoff = (o.yoff || 0) + dy;
-        if (!o.xoff) delete o.xoff; if (!o.yoff) delete o.yoff;
-      }, { tidy: false });
-      const o = ed.doc.lines[h.line] || {};
-      ed.say(`offset ${o.xoff || 0}, ${o.yoff || 0}`);
+        o.sides = o.sides || {};
+        const sd = o.sides[faceId] = o.sides[faceId] || {};
+        sd.xoff = (sd.xoff ?? o.xoff ?? 0) + dx; sd.yoff = (sd.yoff ?? o.yoff ?? 0) + dy;
+      }, { tidy: false, group: `offset ${h.line} ${faceId}` });
+      const sd = ed.doc.lines[h.line]?.sides?.[faceId] || {};
+      ed.say(`offset ${sd.xoff || 0}, ${sd.yoff || 0} on the side facing sector ${faceId}`);
       return true;
     }
 
@@ -797,8 +800,11 @@ export class View3D {
     if (h.part === 'floor') return s.floorTex || 'GRID';
     if (h.part === 'ceil') return s.ceilTex || 'SKY';
     const o = d.lines[h.line] || {};
-    if (h.band === 'upper') return o.upperTex || s.upperTex || s.wallTex || 'GRIDWALL';
-    if (h.band === 'lower') return o.lowerTex || s.lowerTex || s.wallTex || 'GRIDWALL';
+    /* the side that is being looked at first — see SIDES in doc.js */
+    const side = o.sides?.[s.id] || {};
+    if (h.band === 'upper') return side.upperTex || o.upperTex || s.upperTex || s.wallTex || 'GRIDWALL';
+    if (h.band === 'lower') return side.lowerTex || o.lowerTex || s.lowerTex || s.wallTex || 'GRIDWALL';
+    if (side.midTex) return side.midTex;
     /* the middle: of a two-sided line, what stands in its opening (a
        building's outside wall is the inside sector's walls) */
     const two = this.ed.lines().find(l => l.key === h.line)?.sectors.length > 1;

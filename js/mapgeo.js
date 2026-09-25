@@ -64,6 +64,18 @@ function paintWall(s, lo = null, hi = null) {
 }
 const paintFlat = c => (c ? () => c : null);
 
+/* ONE SIDE OF A LINE, as the face looking into sector `s` wears it: the
+   line with that side's own textures and offsets over it (GSS-EDIT's
+   front and back sidedefs — see SIDES in js/editor/doc.js), or the line
+   itself when it has no sides. */
+function sideOf(l, s) {
+  const o = l.sides && s && l.sides[s.docId];
+  if (!o) return { l, mid: null, upper: null, lower: null };
+  const lv = (o.xoff !== undefined || o.yoff !== undefined)
+    ? Object.assign(Object.create(l), { xoff: o.xoff ?? l.xoff, yoff: o.yoff ?? l.yoff }) : l;
+  return { l: lv, mid: o.midTex || null, upper: o.upperTex || null, lower: o.lowerTex || null };
+}
+
 /* A batch collects triangles for one texture and hands back a mesh. */
 class Batch {
   constructor(name) {
@@ -1063,17 +1075,19 @@ function addLine(set, level, l, bank, pick = null) {
          what the kitchen under it is made of, so a storey above the
          ground wears its own; the ground keeps the line's, which is
          what a map file reaches in and sets by hand. */
-      const tex = i === 0 ? (l.middle || 'WALL') : (s.wallTex || l.middle || 'WALL');
+      const sd = sideOf(l, s);
+      const tex = sd.mid || (i === 0 ? (l.middle || 'WALL') : (s.wallTex || l.middle || 'WALL'));
       if (!tex || tex === 'NONE') continue;
       const dst = into(s);
-      const peg = pegOf(l, 'middle', s.floor, s.ceil, s, bank.get(tex).h);
+      const L1 = sd.l;
+      const peg = pegOf(L1, 'middle', s.floor, s.ceil, s, bank.get(tex).h);
       PAINT = paintWall(s);
       if (s.slopeCeil || s.slopeFloor) {
-        emitWall(dst, l, bank, tex, (x, y) => [level.floorAt(s, x, y), level.ceilAt(s, x, y)],
+        emitWall(dst, L1, bank, tex, (x, y) => [level.floorAt(s, x, y), level.ceilAt(s, x, y)],
                  facingFront, peg, s.light + l.contrast, skyOf(s), charOf(s),
                  [s.slopeCeil, s.slopeFloor]);
       } else {
-        addQuad(dst, l, bank, tex, s.floor, s.ceil, facingFront, peg,
+        addQuad(dst, L1, bank, tex, s.floor, s.ceil, facingFront, peg,
                 s.light + l.contrast, skyOf(s), charOf(s));
       }
     }
@@ -1090,6 +1104,9 @@ function addLine(set, level, l, bank, pick = null) {
   for (let i = 0; i < bands.length; i++) {
     const bd = bands[i];
     if (!bd.tex || bd.tex === 'NONE') continue;
+    /* the face looking into the open side wears that side's texture */
+    const sdB = sideOf(l, bd.open);
+    const bandTex = (bd.kind === 'upper' ? sdB.upper : sdB.lower) || bd.tex;
     /* A step between two patches of sky draws nothing: there is no
        surface there, only two different heights of nothing. */
     if (bd.kind === 'upper' && bd.open.ceilTex === 'SKY' && bd.from.ceilTex === 'SKY') continue;
@@ -1097,7 +1114,7 @@ function addLine(set, level, l, bank, pick = null) {
     /* a band between a roof and anything is the roof's, so a gable end
        is shell even where the wall under it is not */
     const dst = (bd.open.roofTex || bd.from.roofTex) ? into(bd.open.roofTex ? bd.open : bd.from) : into(s);
-    const peg = pegOf(l, bd.kind, bd.z0, bd.z1, s, bank.get(bd.tex).h);
+    const peg = pegOf(sdB.l, bd.kind, bd.z0, bd.z1, s, bank.get(bandTex).h);
     /* THE GABLE FACES THE STREET. An upper band over a sector whose
        ceiling is the sky is a wall rising above outdoor ground — the
        gable end of a roof, over the plinth at its foot, whose ceiling
@@ -1120,10 +1137,10 @@ function addLine(set, level, l, bank, pick = null) {
     const emit = (face, light) => {
       PAINT = paintWall(face === bd.openFront ? s : lit, bd.z0, bd.z1);
       if (edgeSlope(bd.e0) || edgeSlope(bd.e1))
-        emitWall(dst, l, bank, bd.tex, (x, y) => bandEdges(level, bd, x, y), face, peg,
+        emitWall(dst, sdB.l, bank, bandTex, (x, y) => bandEdges(level, bd, x, y), face, peg,
                  light + l.contrast, skyOf(lit), ch, [edgeSlope(bd.e0), edgeSlope(bd.e1)]);
       else
-        addQuad(dst, l, bank, bd.tex, bd.z0, bd.z1, face, peg,
+        addQuad(dst, sdB.l, bank, bandTex, bd.z0, bd.z1, face, peg,
                 light + l.contrast, skyOf(lit), ch);
     };
     emit(facing, lit.light);
@@ -1157,7 +1174,7 @@ function addLine(set, level, l, bank, pick = null) {
      and tiling it five times on the way up. So a line may say how tall
      the thing standing in it is, measured up from the floor it stands
      on, and the opening stays the LIMIT rather than the answer. */
-  if (l.middle && l.middle !== 'NONE') {
+  if ((l.middle && l.middle !== 'NONE') || (l.sides && Object.values(l.sides).some(x => x.midTex))) {
     const holes = l.holes || [];
     for (let i = 0; i < holes.length; i++) {
       const h = holes[i];
@@ -1167,16 +1184,20 @@ function addLine(set, level, l, bank, pick = null) {
          and its head — also has the hole between its roof and the
          room's roof over it, and the pane was being hung there too: a
          sheet of coloured glass above the eaves over every window. */
-      if (h.front.roofTex && h.back.roofTex) continue;
+      if (h.front.roofTex && h.back.roofTex && !h.front.editorRoof && !h.back.editorRoof) continue;
       const bot = h.z0;
       const top = Math.min(h.z1, bot + (l.midHeight ?? Infinity));
       if (top <= bot) continue;
-      const th = bank.get(l.middle).h;
-      const peg = l.pegMiddle === 'bottom' ? bot + th : top;
-      PAINT = paintWall(h.front, bot, top);
-      addQuad(set, l, bank, l.middle, bot, top, true,  peg + l.yoff, h.front.light + l.contrast, skyOf(h.front), charOf(h.front));
-      PAINT = paintWall(h.back, bot, top);
-      addQuad(set, l, bank, l.middle, bot, top, false, peg + l.yoff, h.back.light + l.contrast, skyOf(h.back), charOf(h.back));
+      /* each face its own side's middle, or the line's */
+      for (const [face, sec] of [[true, h.front], [false, h.back]]) {
+        const sd = sideOf(l, sec);
+        const tex = sd.mid || l.middle;
+        if (!tex || tex === 'NONE') continue;
+        const th = bank.get(tex).h;
+        const peg = l.pegMiddle === 'bottom' ? bot + th : top;
+        PAINT = paintWall(sec, bot, top);
+        addQuad(set, sd.l, bank, tex, bot, top, face, peg + sd.l.yoff, sec.light + l.contrast, skyOf(sec), charOf(sec));
+      }
       PAINT = null;
     }
   }
