@@ -131,7 +131,7 @@ export function buildGLB(surfaces, images, opts = {}) {
   };
   if (bake) { gltf.extensionsUsed = ['KHR_materials_unlit']; }
 
-  const primitives = [];
+  const primitives = [], maskedPrims = [];
   const texIndex = new Map();
   for (const [name, s] of surfaces) {
     const n = s.pos.length / 3;
@@ -176,11 +176,20 @@ export function buildGLB(surfaces, images, opts = {}) {
     }
     const attributes = { POSITION: accessor(P, 'VEC3', n, true), NORMAL: accessor(N, 'VEC3', n), TEXCOORD_0: accessor(T, 'VEC2', n) };
     if (C) attributes.COLOR_0 = accessor(C, 'VEC3', n);
-    primitives.push({ attributes, material: gltf.materials.length - 1, mode: TRIANGLES });
+    /* a cut-out picture — a grating, a fence in a doorway — is drawn but
+       not walked into, as in the game; so it is a mesh of its own that
+       gets no collision */
+    (img?.masked ? maskedPrims : primitives).push({ attributes, material: gltf.materials.length - 1, mode: TRIANGLES });
   }
   gltf.meshes.push({ name: 'World', primitives });
   /* "-col": Godot's importer makes a StaticBody3D with a trimesh shape */
   gltf.nodes.push({ name: opts.collision === false ? 'World' : 'World-col', mesh: 0 });
+  if (maskedPrims.length) {
+    gltf.meshes.push({ name: 'Cutouts', primitives: maskedPrims });
+    gltf.nodes.push({ name: 'Cutouts', mesh: 1 });
+    gltf.scenes[0].nodes.push(1);
+  }
+  if (!primitives.length) { gltf.meshes[0].primitives = maskedPrims.splice(0); gltf.meshes.length = 1; gltf.nodes.length = 1; gltf.scenes[0].nodes = [0]; }
   if (!gltf.images.length) { delete gltf.images; delete gltf.textures; }
   gltf.buffers[0].byteLength = length;
 
@@ -363,8 +372,14 @@ export async function exportGodot(ed, opts = {}) {
   /* THE THINGS, placed and grown, each on the floor under it */
   const L = c.level;
   const floorZ = (x, y) => { const s = L.sectorAt(x, y); return s ? L.floorAt(s, x, y) : 0; };
-  const things = opts.things === false ? ed.doc.things.filter(t => t.type === 'START')
+  let things = opts.things === false ? ed.doc.things.filter(t => t.type === 'START')
     : [...ed.doc.things, ...(c.scattered || [])];
+  /* a map with no start has one made for it by the compiler; the scene
+     gets that one */
+  if (!things.some(t => t.type === 'START')) {
+    const st = L.things.find(t => t.type === 'START');
+    if (st) things = [{ type: 'START', x: st.x, y: st.y, angle: st.angle || 0 }, ...things];
+  }
   const placed = things.map(t => ({ ...t, z: floorZ(t.x, t.y) }));
 
   say('drawing the sprites');

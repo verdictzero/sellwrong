@@ -154,7 +154,20 @@ function hasHoles(canvas) {
  */
 export async function registerTextures(bank, defs = [], builtIn = null) {
   const names = [];
-  for (const def of defs) {
+  /* A TEXTURE MADE OF ANOTHER OF THE MAP'S is drawn after it, whatever
+     order the map lists them in — or it is drawn from nothing */
+  const byName = new Map(defs.map(d => [d.name, d]));
+  const order = [], state = new Map();
+  const visit = d => {
+    if (state.get(d.name) === 2) return;
+    if (state.get(d.name) === 1) return;           // a loop: drawn as it stands
+    state.set(d.name, 1);
+    for (const L of d.layers || []) if (L.tex && byName.has(L.tex) && L.tex !== d.name) visit(byName.get(L.tex));
+    state.set(d.name, 2);
+    order.push(d);
+  };
+  for (const d of defs) visit(d);
+  for (const def of order) {
     if (checkTexture(def, builtIn || new Set())) continue;
     const canvas = await composeTexture(bank, def);
     bank.add(def.name, { w: canvas.width, h: canvas.height, toCanvas: () => canvas },

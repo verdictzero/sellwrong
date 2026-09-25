@@ -13362,6 +13362,74 @@ await (async () => {
   check('and the paste undoes as one step', edC.doc.sectors.length === 2);
   for (const x of [edL, edB, edC]) { clearTimeout(x._compileT); clearTimeout(x._saveT); }
 
+  /* WHAT THE ADVERSARIAL REVIEW FOUND, held down */
+  const Rq = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+  const edR = new E.Editor(null);
+  edR.history = new D.History(D.newDoc('R', 4096));
+  edR.addSector(Rq(1024, 1024, 1536, 1536));
+  edR.addSector(Rq(1536, 1024, 2048, 1536));
+  edR.edit('raise', d => { d.sectors[2].floor = 200; }, { tidy: false });
+  const cR = D.compileDoc(edR.doc);
+  const shared = cR.level.lines.filter(l => { const a = cR.level.verts[l.v1], b = cR.level.verts[l.v2]; return a[0] === 1536 && b[0] === 1536; });
+  check('two rooms drawn side by side in the open have a wall between them, not ground on both sides',
+    shared.length >= 1 && shared.every(l => l.bands && l.bands.some(b => b.kind === 'lower')) &&
+    !cR.level.lines.some(l => { const a = cR.level.verts[l.v1], b = cR.level.verts[l.v2]; return a[0] === b[0] && a[1] === b[1]; }));
+  /* merging rooms drawn either way round */
+  for (const flip of [false, true]) {
+    const edM = new E.Editor(null);
+    edM.history = new D.History(D.newDoc('M', 4096));
+    edM.addSector(Rq(1024, 1024, 2048, 2048));
+    const cut = [[1024, 1024], [1536, 1024], [1536, 2048], [1024, 2048]];
+    edM.addSector(flip ? cut.reverse() : cut);
+    const k = D.linesOf(edM.doc).find(l => l.sectors.length === 2 && edM.doc.vertices[l.a][0] === 1536 && edM.doc.vertices[l.b][0] === 1536)?.key;
+    edM.select('line', [k]);
+    edM.deleteSel();
+    const left = edM.doc.sectors.filter(s => s.id !== 1).map(s => Math.abs(D.signedArea(D.ringOf(edM.doc, s))));
+    check(`deleting the line between two rooms drawn ${flip ? 'opposite ways round' : 'the same way round'} joins them`,
+      left.length === 1 && Math.abs(left[0] - 1024 * 1024) < 1, JSON.stringify(left));
+    clearTimeout(edM._compileT); clearTimeout(edM._saveT);
+  }
+  /* a doorway kept when its line is split */
+  const edD = new E.Editor(null);
+  edD.history = new D.History(D.newDoc('D', 2048));
+  edD.addSector(Rq(512, 512, 1024, 1024));
+  edD.setInside(true, new Set([edD.doc.sectors[1].id]));
+  const south = D.linesOf(edD.doc).find(l => edD.doc.vertices[l.a][1] === 512 && edD.doc.vertices[l.b][1] === 512 && l.sectors.length === 2).key;
+  edD.edit('door', d => { d.lines[south] = { opening: true }; }, { tidy: false });
+  edD.cursor = [768, 512]; edD.mode = 'vertices';
+  edD.insertAtCursor();
+  const doorLines = Object.entries(edD.doc.lines).filter(([, o]) => o.opening);
+  check('a doorway stays a doorway when its line is split', doorLines.length === 2 &&
+    D.compileDoc(edD.doc).level.lines.filter(l => l.exterior).length === 3);
+  /* a drawn room's colours are its own */
+  const edK = new E.Editor(null);
+  edK.history = new D.History(D.newDoc('K', 2048));
+  edK.edit('c', d => { d.sectors[0].colors = { floor: '#ff0000', top: '#00ff00' }; }, { tidy: false });
+  edK.addSector(Rq(512, 512, 1024, 1024));
+  edK.doc.sectors[1].colors.floor = '#0000ff';
+  check('a room drawn in a coloured room takes its colours as a copy, not a share', edK.doc.sectors[0].colors.floor === '#ff0000');
+  /* the problems the review found unreported */
+  const pp = D.newDoc('P2', 4096);
+  pp.vertices.push([2048, 0], [2560, 512], [2048, 1024], [1536, 512]);
+  pp.sectors.push({ id: 5, verts: [4, 5, 6, 7], ...D.SECTOR_DEFAULTS });
+  pp.nextId = 6;
+  check('a room that touches its surroundings at one corner is reported', D.problemsOf(pp).some(x => /touches the edge/.test(x.msg)));
+  const po = D.newDoc('P3', 4096);
+  po.vertices.push(...Rq(1024, 1024, 1536, 1536), ...Rq(1280, 1024, 1792, 1536));
+  po.sectors.push({ id: 5, verts: [4, 5, 6, 7], ...D.SECTOR_DEFAULTS }, { id: 6, verts: [8, 9, 10, 11], ...D.SECTOR_DEFAULTS });
+  po.nextId = 7;
+  check('and two rooms drawn over each other along a shared line', D.problemsOf(po).some(x => /overlap/.test(x.msg)));
+  /* a welded vertex selection is let go, not left pointing elsewhere */
+  const edV = new E.Editor(null);
+  edV.history = new D.History(D.newDoc('V', 4096));
+  edV.addSector(Rq(1024, 1024, 1536, 1536));
+  edV.addSector(Rq(2048, 1024, 2560, 1536));
+  const vi = edV.doc.vertices.findIndex(v => v[0] === 2048 && v[1] === 1024);
+  edV.select('vertex', [vi]);
+  edV.moveSel(-512, 0);
+  check('a vertex welded onto another is let go, not left selecting a different one', edV.sel.kind === null);
+  for (const x of [edR, edD, edK, edV]) { clearTimeout(x._compileT); clearTimeout(x._saveT); }
+
   /* THE GODOT EXPORT: a GLB that reads back, and a scene that says what
      it should (it was also checked by importing it into Godot 4.3) */
   const GD = await import('../js/editor/godot.js');

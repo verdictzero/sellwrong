@@ -214,6 +214,69 @@ export function hexRGB(h) {
   return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
 }
 
+/**
+ * THE HOLES A SECTOR HAS TO BE BRIDGED ROUND. Rooms drawn side by side
+ * in the open are each a hole in the ground — but bridged into the
+ * ground one at a time, the ground's ring ran along the wall the two
+ * rooms share, twice, and MapBuilder welded that into ground on both
+ * sides: no wall between the rooms at all. So rooms that share a wall
+ * are one hole: their outlines UNIONED, by laying every edge of every
+ * one of them the same way round and cancelling each edge that is
+ * walked both ways (a shared wall), then following what is left.
+ */
+function holeOutlines(kids, ringIdx, V, problems, parent) {
+  if (!kids.length) return [];
+  const ccw = r => (signedArea(r.map(i => V[i])) >= 0 ? r : [...r].reverse());
+  const edgesOf = j => { const r = ringIdx[j]; return r.map((a, k) => lineKey(a, r[(k + 1) % r.length])); };
+  /* which of them share a wall: union-find over the edges */
+  const up = kids.map((_, k) => k);
+  const find = k => (up[k] === k ? k : (up[k] = find(up[k])));
+  const owner = new Map();
+  kids.forEach((j, k) => {
+    for (const e of edgesOf(j)) {
+      if (owner.has(e)) up[find(k)] = find(owner.get(e)); else owner.set(e, k);
+    }
+  });
+  const groups = new Map();
+  kids.forEach((j, k) => { const g = find(k); (groups.get(g) || groups.set(g, []).get(g)).push(j); });
+  const out = [];
+  for (const g of groups.values()) {
+    if (g.length === 1) { out.push(ringIdx[g[0]].map(i => V[i])); continue; }
+    const dir = new Set(), edges = [];
+    for (const j of g) {
+      const r = ccw(ringIdx[j]);
+      r.forEach((a, k) => { const b = r[(k + 1) % r.length]; if (a !== b) { edges.push([a, b]); dir.add(`${a}>${b}`); } });
+    }
+    const left = edges.filter(([a, b]) => !dir.has(`${b}>${a}`));
+    const next = new Map();
+    for (const [a, b] of left) (next.get(a) || next.set(a, []).get(a)).push(b);
+    const loops = [];
+    const used = new Set();
+    for (const [a0, b0] of left) {
+      if (used.has(`${a0}>${b0}`)) continue;
+      const loop = [a0];
+      let a = a0, b = b0;
+      used.add(`${a}>${b}`);
+      for (let guard = 0; b !== a0 && guard < left.length + 2; guard++) {
+        loop.push(b);
+        const nb = (next.get(b) || []).find(c => !used.has(`${b}>${c}`));
+        if (nb === undefined) break;
+        used.add(`${b}>${nb}`);
+        a = b; b = nb;
+      }
+      if (loop.length >= 3) loops.push(loop.map(i => V[i]));
+    }
+    if (!loops.length) { for (const j of g) out.push(ringIdx[j].map(i => V[i])); continue; }
+    loops.sort((x, y) => Math.abs(signedArea(y)) - Math.abs(signedArea(x)));
+    out.push(loops[0]);
+    if (loops.length > 1) {
+      problems.push({ kind: 'sector', id: parent.id,
+        msg: `rooms inside sector ${parent.id} close off a courtyard of it — draw the courtyard as its own sector` });
+    }
+  }
+  return out;
+}
+
 /* ---------------------------------------------------------------------
    THE DOCUMENT
    --------------------------------------------------------------------- */
@@ -392,6 +455,30 @@ export function problemsOf(doc) {
           if (segCross(a0[0], a0[1], a1[0], a1[1], b0[0], b0[1], b1[0], b1[1])) { crosses = true; break; }
         }
       }
+      /* and overlaps that cross nothing: a corner or an edge midpoint of
+         one strictly inside the other — rooms drawn over each other along
+         a shared line, or a room that only touches its surroundings at
+         a corner, which can be neither a hole in them nor cut out of them */
+      if (!crosses) {
+        const inOther = (p, q) => {
+          for (let k = 0; k < p.length; k++) {
+            const u = p[k], w = p[(k + 1) % p.length];
+            for (const [x, y] of [u, [(u[0] + w[0]) / 2, (u[1] + w[1]) / 2]]) {
+              if (pointInPoly(q, x, y) && !onBoundary(q, x, y)) return true;
+            }
+          }
+          return false;
+        };
+        const aInB = inOther(a, b), bInA = inOther(b, a);
+        if (aInB || bInA) {
+          const [inner, outer] = aInB ? [doc.sectors[i], doc.sectors[j]] : [doc.sectors[j], doc.sectors[i]];
+          const touching = aInB ? a.some(([x, y]) => onBoundary(b, x, y)) : b.some(([x, y]) => onBoundary(a, x, y));
+          out.push({ kind: 'sector', id: inner.id, msg: touching && !(aInB && bInA)
+            ? `sector ${inner.id} touches the edge of sector ${outer.id} without sharing a whole wall — draw it clear of the edge, or along the wall`
+            : `sectors ${doc.sectors[i].id} and ${doc.sectors[j].id} overlap` });
+          continue;
+        }
+      }
       if (crosses) out.push({ kind: 'sector', id: doc.sectors[i].id, msg: `sectors ${doc.sectors[i].id} and ${doc.sectors[j].id} overlap` });
     }
   }
@@ -506,15 +593,16 @@ export function compileDoc(doc) {
   const V = doc.vertices;
 
   /* 1. every ring, split at every vertex lying on it */
-  const rings = doc.sectors.map(s => {
+  const ringIdx = doc.sectors.map(s => {
     const out = [];
     for (let i = 0; i < s.verts.length; i++) {
       const a = s.verts[i], b = s.verts[(i + 1) % s.verts.length];
       out.push(a);
       for (const k of splitsOn(V, a, b)) out.push(k);
     }
-    return out.map(i => V[i]);
+    return out;
   });
+  const rings = ringIdx.map(r => r.map(i => V[i]));
   /* the plain rings, for containment */
   const plain = doc.sectors.map(s => ringOf(doc, s));
 
@@ -537,8 +625,9 @@ export function compileDoc(doc) {
   const index = new Array(doc.sectors.length).fill(-1);
   doc.sectors.forEach((s, i) => {
     if (plain[i].length < 3 || selfCrosses(plain[i])) return;
-    const holes = [];
-    parentOf.forEach((p, j) => { if (p === i) holes.push(rings[j]); });
+    const kids = [];
+    parentOf.forEach((p, j) => { if (p === i) kids.push(j); });
+    const holes = holeOutlines(kids, ringIdx, V, problems, s);
     const poly = holes.length ? bridge(rings[i], holes) : rings[i];
     const base = sectorProps(s, plain[i]);
     try {

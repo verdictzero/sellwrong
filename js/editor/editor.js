@@ -126,7 +126,13 @@ export class Editor {
   edit(label, fn, { tidy = true } = {}) {
     this.history.push(label);
     fn(this.doc);
-    if (tidy) compact(this.doc);
+    if (tidy) {
+      /* the weld renumbers vertices, so a vertex or line selection would
+         point at the wrong ones — it is let go instead */
+      const before = this.doc.vertices.length;
+      compact(this.doc);
+      if (this.doc.vertices.length !== before && (this.sel.kind === 'vertex' || this.sel.kind === 'line')) this.clearSel();
+    }
     this.changed();
   }
 
@@ -328,12 +334,17 @@ export class Editor {
     this.edit(label, d => {
       const idx = points.map(([x, y]) => vertexFor(d, x, y));
       /* drop repeats a slow double-click leaves */
-      const ring = idx.filter((v, k, a) => v !== a[(k + 1) % a.length]);
+      let ring = idx.filter((v, k, a) => v !== a[(k + 1) % a.length]);
       if (ring.length < 3) return;
+      /* EVERY SECTOR WINDS ONE WAY, anticlockwise, whichever way it was
+         clicked — merging two across a shared line depends on it */
+      if (signedArea(ring.map(i => d.vertices[i])) < 0) ring = ring.reverse();
       const pts = ring.map(i => d.vertices[i]);
       const [cx, cy] = pts.reduce((a, p) => [a[0] + p[0] / pts.length, a[1] + p[1] / pts.length], [0, 0]);
       const parent = sectorContaining(d, cx, cy);
-      const base = parent ? { ...parent, id: undefined, verts: undefined, name: '', storeys: undefined } : { ...SECTOR_DEFAULTS };
+      /* a deep copy: the parent's colours are its own, not shared */
+      const base = parent ? JSON.parse(JSON.stringify({ ...parent, id: undefined, verts: undefined, name: '', storeys: undefined }))
+        : { ...SECTOR_DEFAULTS };
       made = { ...base, id: takeId(d), verts: ring };
       /* DRAWN AGAINST THE PARENT'S OWN WALL, it is cut out of the parent
          rather than laid over it — a room drawn in a corner of the field
@@ -433,7 +444,7 @@ export class Editor {
     if (kind === 'thing') clip.items = d.things.filter(t => ids.has(t.id)).map(t => ({ ...t }));
     else if (kind === 'prop') clip.items = d.props.filter(p => ids.has(p.id)).map(p => ({ ...p }));
     else if (kind === 'scatter') clip.items = d.scatters.filter(c => ids.has(c.id)).map(c => JSON.parse(JSON.stringify(c)));
-    else if (kind === 'sector') clip.items = d.sectors.filter(s => ids.has(s.id)).map(s => ({ props: { ...s, verts: undefined, id: undefined }, ring: ringOf(d, s).map(p => [...p]) }));
+    else if (kind === 'sector') clip.items = d.sectors.filter(s => ids.has(s.id)).map(s => ({ props: JSON.parse(JSON.stringify({ ...s, verts: undefined, id: undefined })), ring: ringOf(d, s).map(p => [...p]) }));
     else { this.say(`${kind}s cannot be copied — copy the sectors or things`); return false; }
     const pts = kind === 'sector' ? clip.items.flatMap(i => i.ring) : kind === 'prop' ? clip.items.map(p => [p.x0, p.y0])
       : kind === 'scatter' ? clip.items.map(c => [c.area.x ?? c.area.x0 ?? 0, c.area.y ?? c.area.y0 ?? 0]) : clip.items.map(t => [t.x, t.y]);
@@ -453,7 +464,7 @@ export class Editor {
       for (const it of clip.items) {
         const d = this.doc;
         const ring = it.ring.map(([x, y]) => vertexFor(d, x + dx, y + dy));
-        const s = { ...it.props, id: takeId(d), verts: ring.filter((v, k, a) => v !== a[(k + 1) % a.length]) };
+        const s = { ...JSON.parse(JSON.stringify(it.props)), id: takeId(d), verts: ring.filter((v, k, a) => v !== a[(k + 1) % a.length]) };
         if (s.verts.length >= 3) { d.sectors.push(s); made.push(s.id); }
       }
       compact(this.doc);
@@ -705,7 +716,15 @@ export function vertexFor(d, x, y) {
     for (let k = 0; k < s.verts.length; k++) {
       const a = d.vertices[s.verts[k]], b = d.vertices[s.verts[(k + 1) % s.verts.length]];
       const { d: dist, t } = segDist(a[0], a[1], b[0], b[1], x, y);
-      if (dist < 0.75 && t > 0.0001 && t < 0.9999) { s.verts.splice(k + 1, 0, i); break; }
+      if (dist < 0.75 && t > 0.0001 && t < 0.9999) {
+        s.verts.splice(k + 1, 0, i);
+        /* and what the line said — a doorway, a texture, an offset — is
+           said by both halves of it now */
+        const old = lineKey(s.verts[k], s.verts[(k + 2) % s.verts.length]);
+        const o = d.lines?.[old];
+        if (o) { d.lines[lineKey(s.verts[k], i)] = { ...o }; d.lines[lineKey(i, s.verts[(k + 2) % s.verts.length])] = { ...o }; delete d.lines[old]; }
+        break;
+      }
     }
   }
   return i;
@@ -804,6 +823,10 @@ export function mergeAcross(d, key) {
   if (on.length === 1) { d.sectors = d.sectors.filter(s => s !== on[0]); return; }
   if (on.length !== 2) return;
   const [s1, s2] = on;
+  /* both anticlockwise first, so they walk the shared edge in opposite
+     directions — a room drawn clockwise would otherwise merge into a
+     ring that folds back on itself, and vanish */
+  for (const x of on) if (signedArea(x.verts.map(i => d.vertices[i])) < 0) x.verts = [...x.verts].reverse();
   /* walk s1 round to the shared edge, then s2 the other way round from
      it, and splice: the union's ring without the shared edge */
   const rot = (arr, i) => arr.slice(i).concat(arr.slice(0, i));
