@@ -37,11 +37,38 @@ import { roofFraming, breachDebris } from './ruin.js';
 import { pieces as breachPieces } from './breach.js';
 import { STREET_LAMP } from './textures.js';
 
+/* THE COLOUR OF THE LIGHT on whatever is being added right now, Doom
+   64's way — a function of the height, so a wall can run from its
+   sector's top colour down to its bottom one, or null for white. Set by
+   addFlats and addLine around each surface they add and read by
+   Batch.tri for every corner; see paintWall and `tint` on a sector. */
+let PAINT = null;
+const WHITE = [1, 1, 1];
+
+/** How a sector's walls are coloured: top at its ceiling, bottom at its
+ *  floor, straight between — or null if the sector says nothing. UNDER
+ *  THE SKY there is no ceiling to grade to, only the height the walls
+ *  are allowed to reach, so each piece of wall is graded over its own
+ *  height instead (`lo`, `hi`): the step round a pit runs from the top
+ *  colour at its rim to the bottom one at its foot. */
+function paintWall(s, lo = null, hi = null) {
+  const t = s?.tint;
+  if (!t || (!t.top && !t.bottom)) return null;
+  const top = t.top || WHITE, bot = t.bottom || WHITE;
+  const own = s.ceilTex === 'SKY' && lo !== null && hi > lo;
+  const z0 = own ? lo : s.floor, z1 = own ? hi : Math.max(s.floor + 1, s.ceil);
+  return h => {
+    const k = Math.max(0, Math.min(1, (h - z0) / (z1 - z0)));
+    return [bot[0] + (top[0] - bot[0]) * k, bot[1] + (top[1] - bot[1]) * k, bot[2] + (top[2] - bot[2]) * k];
+  };
+}
+const paintFlat = c => (c ? () => c : null);
+
 /* A batch collects triangles for one texture and hands back a mesh. */
 class Batch {
   constructor(name) {
     this.name = name; this.pos = []; this.uv = []; this.light = []; this.sky = []; this.char = [];
-    this.lamp = [];
+    this.lamp = []; this.tint = [];
     this.area = 0;
   }
   get empty() { return this.pos.length === 0; }
@@ -83,6 +110,10 @@ class Batch {
     this.sky.push(sk, sk, sk);
     this.char.push(ch, ch, ch);
     this.lamp.push(lp, lp, lp);
+    if (PAINT) {
+      const a = PAINT(ay), b = PAINT(by), c = PAINT(cy);
+      this.tint.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+    } else this.tint.push(1, 1, 1, 1, 1, 1, 1, 1, 1);
   }
 
   /* A quad as two triangles, given four corners in winding order. */
@@ -103,6 +134,7 @@ class Batch {
     g.setAttribute('sky', new THREE.Float32BufferAttribute(this.sky, 1));
     g.setAttribute('charred', new THREE.Float32BufferAttribute(this.char, 1));
     g.setAttribute('lamp', new THREE.Float32BufferAttribute(this.lamp, 1));
+    g.setAttribute('tintRGB', new THREE.Float32BufferAttribute(this.tint, 3));
     g.computeBoundingSphere();
     return g;
   }
@@ -120,7 +152,7 @@ class BatchSet {
     for (const [name, b] of this.map) {
       if (b.empty) continue;
       const entry = bank.get(name.split('|').pop());
-      const mat = createWallMaterial(entry.texture, { alphaTest: entry.masked ? 0.5 : 0.0, ...opts });
+      const mat = createWallMaterial(entry.texture, { alphaTest: entry.masked ? 0.5 : 0.0, tint: true, ...opts });
       const mesh = new THREE.Mesh(b.geometry(), mat);
       mesh.frustumCulled = true;
       mesh.name = name;
@@ -924,9 +956,20 @@ function surfaceTris(pts, tris, slope) {
 }
 
 function addFlats(set, level, s, bank) {
-  const pts = s.poly.map(p => new THREE.Vector2(p[0], p[1]));
+  /* A SECTOR WITH HOLES IN IT — a room drawn inside another, in a map
+     from GSS-EDIT (js/editor/doc.js) — is one ring bridged out to each
+     hole and back by a slit, because that is what a sector is here; but
+     a triangulator handed that ring can fill the holes in, and a pit
+     then has the ground drawn over the top of it. So a sector that says
+     where its holes are is triangulated from its outline AND its holes,
+     which is what the triangulator is for; the slit ring is still what
+     everything else in the engine reads. */
+  const V2 = p => new THREE.Vector2(p[0], p[1]);
+  const outline = s.flatOuter ? s.flatOuter.map(V2) : s.poly.map(V2);
+  const holes = (s.flatHoles || []).map(h => h.map(V2));
+  const pts = holes.length ? outline.concat(...holes) : outline;
   let tris;
-  try { tris = THREE.ShapeUtils.triangulateShape(pts, []); }
+  try { tris = THREE.ShapeUtils.triangulateShape(outline, holes); }
   catch (e) { console.warn('sector', s.index, 'would not triangulate', e); return; }
 
   const sky = s.ceilTex === 'SKY';
@@ -934,6 +977,7 @@ function addFlats(set, level, s, bank) {
   /* the pool of pavement under a street lamp — see lampGeometry */
   const lp = s.lampLit ? 1 : 0;
 
+  PAINT = paintFlat(s.tint?.floor);
   if (s.floorTex && s.floorTex !== 'NONE') {
     const t = bank.get(s.floorTex);
     const b = set.get(s.floorTex);   // one set per block, so the name is enough
@@ -962,6 +1006,7 @@ function addFlats(set, level, s, bank) {
      background shows through. */
   const zc = (x, y) => level.ceilAt(s, x, y);
   const ceilTris = surfaceTris(pts, tris, s.slopeCeil);
+  PAINT = paintFlat(s.tint?.ceil);
   if (!sky && s.ceilTex && s.ceilTex !== 'NONE') {
     const t = bank.get(s.ceilTex);
     const b = set.get(s.ceilTex);
@@ -980,6 +1025,7 @@ function addFlats(set, level, s, bank) {
      the same triangles wound the other way, wearing the roof's own
      skin, and the shingle you see from the street is the underside of
      the attic you would see from inside it. */
+  PAINT = null;
   if (s.roofTex && s.roofTex !== 'NONE') {
     const t = bank.get(s.roofTex);
     const b = set.get(s.roofTex);
@@ -1021,6 +1067,7 @@ function addLine(set, level, l, bank, pick = null) {
       if (!tex || tex === 'NONE') continue;
       const dst = into(s);
       const peg = pegOf(l, 'middle', s.floor, s.ceil, s, bank.get(tex).h);
+      PAINT = paintWall(s);
       if (s.slopeCeil || s.slopeFloor) {
         emitWall(dst, l, bank, tex, (x, y) => [level.floorAt(s, x, y), level.ceilAt(s, x, y)],
                  facingFront, peg, s.light + l.contrast, skyOf(s), charOf(s),
@@ -1030,6 +1077,7 @@ function addLine(set, level, l, bank, pick = null) {
                 s.light + l.contrast, skyOf(s), charOf(s));
       }
     }
+    PAINT = null;
     return;
   }
 
@@ -1070,6 +1118,7 @@ function addLine(set, level, l, bank, pick = null) {
        interval AT A POINT. Asked of the same two sectors the band was
        worked out from, so the flat case gives back the same numbers. */
     const emit = (face, light) => {
+      PAINT = paintWall(face === bd.openFront ? s : lit, bd.z0, bd.z1);
       if (edgeSlope(bd.e0) || edgeSlope(bd.e1))
         emitWall(dst, l, bank, bd.tex, (x, y) => bandEdges(level, bd, x, y), face, peg,
                  light + l.contrast, skyOf(lit), ch, [edgeSlope(bd.e0), edgeSlope(bd.e1)]);
@@ -1091,6 +1140,7 @@ function addLine(set, level, l, bank, pick = null) {
        houses nothing: their attics say ceilTex NONE and never ask. */
     if (gable && bd.open.ceilTex && bd.open.ceilTex !== 'NONE') emit(!facing, bd.open.light);
   }
+  PAINT = null;
 
   /* A middle texture on a two-sided line is the thing IN the hole: a
      grating, a shop window, a wire shelf you can see through. Drawn both
@@ -1123,8 +1173,11 @@ function addLine(set, level, l, bank, pick = null) {
       if (top <= bot) continue;
       const th = bank.get(l.middle).h;
       const peg = l.pegMiddle === 'bottom' ? bot + th : top;
+      PAINT = paintWall(h.front, bot, top);
       addQuad(set, l, bank, l.middle, bot, top, true,  peg + l.yoff, h.front.light + l.contrast, skyOf(h.front), charOf(h.front));
+      PAINT = paintWall(h.back, bot, top);
       addQuad(set, l, bank, l.middle, bot, top, false, peg + l.yoff, h.back.light + l.contrast, skyOf(h.back), charOf(h.back));
+      PAINT = null;
     }
   }
 }

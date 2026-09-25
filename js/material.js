@@ -644,6 +644,14 @@ vec3 worldShade(vec3 albedo, float l, float depth, vec3 world, float fullbright)
 `;
 
 const COMMON_VERT = /* glsl */`
+/* DOOM 64'S COLOURED LIGHT: what colour the light falling on this
+   surface is, multiplied into its picture. White everywhere unless a
+   map says otherwise — see TINT below, and the sector colours GSS-EDIT
+   sets (js/editor/). */
+varying vec3  vTint;
+#ifdef TINT
+  attribute vec3 tintRGB;
+#endif
 varying vec2  vUv;
 varying float vLight;
 varying float vDepth;
@@ -729,6 +737,7 @@ varying float vLamp;
   attribute float iLight;      // the light of the region it stands in
   attribute float iSky;        // how much of that light is the sky's
   attribute vec4  iFlags;      // fullbright, frost, ash, alight
+  attribute vec3  iTint;       // the colour of the light it stands in
   /* the yaw every sprite in the scene is turned to, which is the one
      thing here that IS the same for the whole batch. Declared again
      because a standee material does not define BILLBOARD. */
@@ -741,6 +750,10 @@ varying float vLamp;
 
 void main() {
   vUv = uv;
+  vTint = vec3(1.0);
+  #ifdef TINT
+    vTint = tintRGB;
+  #endif
   vLight = light;
   vSky = sky;
   vChar = charred;
@@ -770,6 +783,7 @@ void main() {
        see the block at the top of this file */
     vLight = iLight;
     vSky = iSky;
+    vTint = iTint;
     fullbright = iFlags.x; frost = iFlags.y; ash = iFlags.z; alight = iFlags.w;
     p.x *= iSize.x;
     p.y *= iSize.y;
@@ -786,6 +800,7 @@ void main() {
 `;
 
 const COMMON_FRAG = /* glsl */`
+varying vec3 vTint;
 uniform sampler2D map;
 uniform float alphaTest;
 #ifdef INSTANCED_SPRITE
@@ -1111,6 +1126,10 @@ void main() {
      lifts the pavement to full and the lamp is off), and ahead of the
      banding so it steps with everything else. */
   albedo *= mix(vec3(1.0), LAMP_LIGHT, vLamp * lampsOn(skyLight));
+  /* and the colour of the light itself, Doom 64's way: a sector's floor,
+     ceiling and things each have one, and its walls run from one colour
+     at the top to another at the bottom */
+  albedo *= vTint;
   float l = worldBand(vLight, vDepth, vSky, fullbright);
   vec3 c = worldShade(albedo, l, vDepth, vWorld, fullbright);
   /* The coals go on AFTER the smoke, so a burnt aisle glows through it —
@@ -1231,7 +1250,7 @@ export function createWallMaterial(texture, opts = {}) {
   if (opts.ink) u.warmth = { value: 0.0 };
   return new THREE.ShaderMaterial({
     uniforms: u,
-    defines: { PER_VERTEX_LIGHT: '', SURFACE_BURN: '', ...(opts.ink ? { INK: '' } : {}) },
+    defines: { PER_VERTEX_LIGHT: '', SURFACE_BURN: '', ...(opts.ink ? { INK: '' } : {}), ...(opts.tint ? { TINT: '' } : {}) },
     vertexShader: COMMON_VERT,
     fragmentShader: COMMON_FRAG,
     transparent: !!opts.transparent,

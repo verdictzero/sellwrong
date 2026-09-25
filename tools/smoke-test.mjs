@@ -13024,7 +13024,7 @@ await (async () => {
 
   /* A HOLE: a pillar standing in a room, which this engine's single-ring
      sectors cannot hold without the compiler's slit */
-  const d = D.newDoc('T');
+  const d = D.newDoc('T', 1024);
   d.vertices = [...R(0, 0, 1024, 1024), ...R(448, 448, 576, 576)];
   d.sectors = [{ id: 1, verts: [0, 1, 2, 3], ...D.SECTOR_DEFAULTS }, { id: 2, verts: [4, 5, 6, 7], ...D.SECTOR_DEFAULTS, floor: 0, ceil: 0 }];
   d.nextId = 3;
@@ -13041,7 +13041,7 @@ await (async () => {
      compiler ignores them while they are — but it still knows how, so
      they are checked with the switch thrown, and then put back */
   check('slopes and storeys are switched off for now', D.FEATURES.slopes === false && D.FEATURES.storeys === false);
-  const dOff = D.newDoc('O');
+  const dOff = D.newDoc('O', 1024);
   dOff.sectors[0].floorSlope = { dzdx: 0.1, dzdy: 0 };
   dOff.sectors[0].storeys = [{ floor: 300, ceil: 500 }];
   const LOff = D.compileDoc(dOff).level;
@@ -13050,7 +13050,7 @@ await (async () => {
   const uiSrc = fsE.readFileSync('js/editor/ui.js', 'utf8');
   check('and the inspector does not offer them', !/'Slopes'/.test(uiSrc) && !/Storeys above/.test(uiSrc));
   D.FEATURES.slopes = D.FEATURES.storeys = true;
-  const ds = D.newDoc('S');
+  const ds = D.newDoc('S', 1024);
   ds.sectors[0].floorSlope = { dzdx: 0.1, dzdy: 0 };
   ds.sectors[0].ceil = 512;
   const Ls = D.compileDoc(ds).level;
@@ -13063,7 +13063,7 @@ await (async () => {
   check('and so is a sloped ceiling', !!c0.slopeCeil);
 
   /* ROOM OVER ROOM */
-  const dr = D.newDoc('R');
+  const dr = D.newDoc('R', 1024);
   dr.sectors[0].ceil = 200; dr.sectors[0].outdoor = false;
   dr.sectors[0].storeys = [{ floor: 232, ceil: 432, outdoor: true }];
   const cr = D.compileDoc(dr);
@@ -13074,7 +13074,7 @@ await (async () => {
   D.FEATURES.slopes = D.FEATURES.storeys = false;
 
   /* A LINE'S OWN TEXTURES survive the level reassigning them */
-  const dl = D.newDoc('L');
+  const dl = D.newDoc('L', 1024);
   dl.vertices.push(...R(256, 256, 512, 512));
   dl.sectors.push({ id: 9, verts: [4, 5, 6, 7], ...D.SECTOR_DEFAULTS, floor: 32 });
   dl.lines[D.lineKey(4, 5)] = { lowerTex: 'BRICK', blocking: true };
@@ -13094,7 +13094,7 @@ await (async () => {
   check('and a file that is not a map is refused, not half-loaded', refused);
 
   /* UNDO */
-  const hdoc = D.newDoc('H');
+  const hdoc = D.newDoc('H', 1024);
   const H = new D.History(hdoc);
   H.push('a'); H.doc.sectors[0].floor = 64;
   H.push('b'); H.doc.sectors[0].floor = 128;
@@ -13106,7 +13106,7 @@ await (async () => {
   check('undo goes back a step at a time and redo comes forward', u1 === 64 && u2 === 0 && H.doc.sectors[0].floor === 64);
 
   /* THE WELD: a vertex dragged onto another becomes it */
-  const dw = D.newDoc('W');
+  const dw = D.newDoc('W', 1024);
   dw.vertices.push(...R(1024, 0, 2048, 1024).map(([x, y]) => [x + (x === 1024 ? 0.4 : 0), y]));
   dw.sectors.push({ id: 5, verts: [4, 5, 6, 7], ...D.SECTOR_DEFAULTS });
   D.compact(dw);
@@ -13129,7 +13129,7 @@ await (async () => {
   check('deleting a line between two rooms joins them into one',
     dc.sectors.length === 1 && Math.abs(Math.abs(D.signedArea(D.ringOf(dc, dc.sectors[0]))) - 10240 * 10240) < 1 &&
     !D.selfCrosses(D.ringOf(dc, dc.sectors[0])) && new Set(dc.sectors[0].verts).size === dc.sectors[0].verts.length);
-  const mt = D.newDoc('M');
+  const mt = D.newDoc('M', 1024);
   E.moveThings(mt, 'sector', new Set([1]), 64, 0);
   check('moving a sector moves its corners and what stands in it',
     mt.vertices[0][0] === 64 && mt.things[0].x === 512 + 64);
@@ -13183,7 +13183,7 @@ await (async () => {
   };
   check('clumping gathers a spread into drifts', spread(lumpy.items) > spread(flat.items) * 1.3,
     `${spread(flat.items).toFixed(2)} even against ${spread(lumpy.items).toFixed(2)} clumped`);
-  const pd = D.newDoc('P');
+  const pd = D.newDoc('P', 1024);
   pd.vertices.push([200, 200], [400, 200], [400, 400], [200, 400]);
   pd.sectors.push({ id: 5, verts: [4, 5, 6, 7], ...D.SECTOR_DEFAULTS, ceil: 0 });
   pd.props.push({ id: 6, x0: 600, y0: 600, x1: 900, y1: 900, z0: 0, z1: 64, tex: 'GRIDWALL' });
@@ -13192,7 +13192,7 @@ await (async () => {
   const pc = D.compileDoc(pd);
   check('nothing is grown in a pillar or under a prop',
     pc.scattered.length > 50 && pc.scattered.every(t => !(t.x > 200 && t.x < 400 && t.y > 200 && t.y < 400) && !(t.x > 590 && t.x < 910 && t.y > 590 && t.y < 910)));
-  const tight = D.newDoc('T');
+  const tight = D.newDoc('T', 1024);
   tight.scatters.push({ ...SC.scatterFrom('crowd', { kind: 'circle', x: 512, y: 512, r: 400 }, 9, 1), density: 400, spacing: 200 });
   tight.nextId = 10;
   check('a scatter asked for more than fits says so', D.compileDoc(tight).problems.some(p => p.kind === 'scatter'));
@@ -13222,6 +13222,78 @@ await (async () => {
   check('a scatter moves by its area', ed2.doc.scatters[0].area.x === 5184 && ed2.doc.scatters[0].area.y === 5056);
   clearTimeout(ed2._compileT); clearTimeout(ed2._saveT);
 
+  /* AN OPEN WORLD BY DEFAULT: under the sky, no ceiling */
+  const od = D.newDoc('OPEN');
+  check('a new map is open ground under the sky, with no ceiling',
+    od.sectors.length === 1 && od.sectors[0].ceilTex === 'SKY' && D.SECTOR_DEFAULTS.ceilTex === 'SKY' && D.SECTOR_DEFAULTS.outdoor === true &&
+    od.vertices[2][0] === 4096 && Array.isArray(od.textures));
+  od.vertices.push([1024, 1024], [2048, 1024], [2048, 2048], [1024, 2048]);
+  od.sectors.push({ id: 7, verts: [4, 5, 6, 7], ...D.SECTOR_DEFAULTS, ceil: 256, ceilTex: 'OFFPANEL', outdoor: false });
+  od.nextId = 8;
+  const upperTo = lvl => lvl.lines.flatMap(l => (l.bands || []).filter(b => b.kind === 'upper'));
+  const oc = D.compileDoc(od);
+  const ups = upperTo(oc.level);
+  check('a roofed room under the open sky gets a roof and no wall up to the sky',
+    ups.length === 4 && ups.every(b => b.tex === 'NONE') && oc.level.sectors.some(x => x.roofTex === 'OFFPANEL'));
+  od.world.skyWalls = true;
+  check('and Doom\'s sky walls, when the map asks for them', upperTo(D.compileDoc(od).level).every(b => b.tex && b.tex !== 'NONE'));
+  delete od.world.skyWalls;
+
+  /* DOOM 64'S COLOURS */
+  od.sectors[1].colors = { floor: '#ff8000', ceil: '#0000ff', thing: '#00ff00', top: '#ffffff', bottom: '#000000' };
+  const c64 = D.compileDoc(od);
+  const room = c64.level.sectors[c64.index[1]];
+  check('a sector\'s five colours reach the level as light colours',
+    room.tint && room.tint.floor[0] === 1 && Math.abs(room.tint.floor[1] - 128 / 255) < 1e-9 && room.tint.floor[2] === 0 &&
+    room.tint.thing[1] === 1 && room.tint.top[0] === 1 && room.tint.bottom[0] === 0 && !c64.level.sectors[c64.index[0]].tint);
+  const MG = await import('../js/mapgeo.js');
+  const TX = await import('../js/textures.js');
+  const bankC = TX.bakeTextures();
+  const geoC = MG.buildLevelGeometry(c64.level, bankC);
+  const byTex = new Map();
+  const walkC = o => {
+    if (o.geometry?.attributes?.tintRGB) { const k = o.name.split('|').pop(); (byTex.get(k) || byTex.set(k, []).get(k)).push(o.geometry); }
+    for (const ch of o.children || []) walkC(ch);
+  };
+  walkC(geoC.group);
+  const floorTint = (byTex.get('GRID') || []).flatMap(g => [...g.attributes.tintRGB.array]);
+  const hasOrange = (() => { for (let i = 0; i < floorTint.length; i += 3) if (floorTint[i] === 1 && Math.abs(floorTint[i + 1] - 128 / 255) < 1e-6) return true; return false; })();
+  const wallTint = (byTex.get('GRIDWALL') || []).flatMap(g => [...g.attributes.tintRGB.array]);
+  function wallTintAll() { return wallTint; }
+  check('the floor is drawn in its colour, and a wall nobody coloured in white',
+    hasOrange && wallTintAll().every(v => v === 1));
+  check('and every surface carries a colour for every corner', floorTint.length && wallTint.length &&
+    [...byTex.values()].flat().every(g => g.attributes.tintRGB.array.length === g.attributes.position.array.length));
+  const matSrc = fsE.readFileSync('js/material.js', 'utf8');
+  check('the world shader multiplies the light\'s colour in, on walls and on sprites',
+    /albedo \*= vTint;/.test(matSrc) && /attribute vec3 tintRGB;/.test(matSrc) && /vTint = iTint;/.test(matSrc));
+  check('and a thing stands in its sector\'s thing colour',
+    /this\.sector\?\.tint\?\.thing/.test(fsE.readFileSync('js/actor.js', 'utf8')) &&
+    /iTint/.test(fsE.readFileSync('js/standees.js', 'utf8')));
+
+  /* A LINE'S SIDEDEF: top, middle and bottom, the offsets, the pegging */
+  const sd2 = D.newDoc('L', 1024);
+  sd2.vertices.push(...R(256, 256, 512, 512));
+  sd2.sectors.push({ id: 9, verts: [4, 5, 6, 7], ...D.SECTOR_DEFAULTS, floor: 32 });
+  sd2.nextId = 10;
+  sd2.lines[D.lineKey(4, 5)] = { midTex: 'FENCEPIK', midHeight: 64, xoff: 12, yoff: -8, unpegUpper: true, unpegLower: true };
+  const Lsd = D.compileDoc(sd2).level;
+  const ln = Lsd.lines.find(l => l.middle === 'FENCEPIK');
+  check('a two-sided line can have a middle texture standing in its opening', ln && ln.midHeight === 64);
+  check('and its own offsets and Doom\'s unpegged flags',
+    ln && ln.xoff === 12 && ln.yoff === -8 && ln.pegUpper === 'top' && ln.pegLower === 'ceiling' && ln.pegMiddle === 'bottom');
+
+  /* THE MAP'S OWN TEXTURES: the shape a definition must have */
+  const TC = await import('../js/editor/texcompose.js');
+  const nt = TC.newTexture('my wall 1!', 'GRIDWALL', [128, 64]);
+  check('a map texture is named the way the bank names textures', nt.name === 'MYWALL1' && nt.layers.length === 1 && nt.worldW === 128);
+  check('and a bad one is refused before it is drawn',
+    TC.checkTexture(nt) === null && TC.checkTexture({ ...nt, w: 4000 }) !== null &&
+    TC.checkTexture({ ...nt, name: 'GRIDWALL' }, new Set(['GRIDWALL'])) !== null && TC.checkTexture({ ...nt, name: '' }) !== null);
+  const mainT = fsE.readFileSync('js/main.js', 'utf8');
+  check('and the game draws a test run\'s own textures before it builds anything',
+    /registerTextures\(textures, played\.doc\.textures/.test(mainT) && mainT.indexOf('registerTextures(textures') < mainT.indexOf('const game = new Game('));
+
   /* THE DOORS */
   const term = fsE.readFileSync('js/terminal.js', 'utf8');
   const main = fsE.readFileSync('js/main.js', 'utf8');
@@ -13237,7 +13309,7 @@ await (async () => {
   check('and ?edit opens it with no terminal, and ?play runs the game',
     /params\.has\('edit'\)/.test(term) && /m\.startEditor\(\)/.test(term) && /import\('\.\/main\.js'\)/.test(term));
   check('the game plays the map the editor stored, under the same key',
-    E.PLAY_KEY === 'gss-edit:play' && main.includes(`localStorage.getItem('${E.PLAY_KEY}')`) && /compileDoc\(parseDoc\(/.test(main));
+    E.PLAY_KEY === 'gss-edit:play' && main.includes(`localStorage.getItem('${E.PLAY_KEY}')`) && /parseDoc\(text\)/.test(main) && /compileDoc\(doc\)/.test(main));
   check('and F2 in the game goes back to the editor', /e\.code === 'F2'[^\n]*\?edit/.test(main));
   check('the editor brings its own stylesheet, and it exists',
     edsrc.includes("'css/editor.css'") && fsE.existsSync('css/editor.css'));

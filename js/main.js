@@ -33,6 +33,7 @@ import { CELLS, GIBLETS, BLAST_SPRITE, addStandees, addSplats, addTroops } from 
    still exported and still tested; nothing builds them any more. */
 import { buildGrid } from './maps/grid.js';
 import { compileDoc, parseDoc } from './editor/doc.js';
+import { registerTextures } from './editor/texcompose.js';
 import { Game } from './game.js';
 import { Hud } from './hud.js';
 import { Audio } from './audio.js';
@@ -554,6 +555,12 @@ async function boot() {
      fallback gun stay in the buffer, as an overlay, below. */
   const hud = new Hud(null, $('ui'));
   const input = new Input(renderer.domElement);
+  /* AN EDITED MAP'S OWN TEXTURES, drawn and put in the bank before
+     anything is built that could wear one — see js/editor/texcompose.js */
+  if (played?.doc.textures?.length) {
+    try { await registerTextures(textures, played.doc.textures, new Set(textures.map.keys())); }
+    catch (e) { console.warn('the map\'s own textures did not draw:', e); }
+  }
   const game = new Game({ level, scene, camera, textures, sprites, hud, audio, input, sky: skyBaker.texture,
                          flameAtlas: streamAtlas, bodyAtlas: flameAtlas, fxAtlases, gibAtlases, rainAtlas,
                          fleet, police, apc, firetruck, vtol, weather });
@@ -1265,7 +1272,9 @@ function playedMap() {
   if (!new URLSearchParams(location.search).has('play')) return null;
   try {
     const text = localStorage.getItem('gss-edit:play');
-    return text ? compileDoc(parseDoc(text)) : null;
+    if (!text) return null;
+    const doc = parseDoc(text);
+    return { ...compileDoc(doc), doc };
   } catch (e) {
     console.error('the edited map did not compile; playing THE GRID', e);
     return null;

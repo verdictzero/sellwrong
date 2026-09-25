@@ -86,6 +86,8 @@
   "js/editor/doc.js",
   "js/editor/editor.js",
   "js/editor/scatter.js",
+  "js/editor/texcompose.js",
+  "js/editor/texeditor.js",
   "js/editor/ui.js",
   "js/editor/view2d.js",
   "js/editor/view3d.js",

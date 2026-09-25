@@ -46,6 +46,7 @@ import { View2D } from './view2d.js';
 import { View3D } from './view3d.js';
 import { buildUI } from './ui.js';
 import { scatterFrom } from './scatter.js';
+import { registerTextures } from './texcompose.js';
 
 /* where the editor keeps its work in the browser */
 export const AUTOSAVE_KEY = 'gss-edit:autosave';
@@ -134,6 +135,9 @@ export class Editor {
   changed({ now = false } = {}) {
     this._lines = null;
     this.emit('doc');
+    /* the map's own textures, drawn again if they changed */
+    const tk = textureKey(this.doc);
+    if (tk !== this._texKey) { this._texKey = tk; this.refreshTextures(); }
     clearTimeout(this._compileT);
     if (now) this.compile();
     else this._compileT = setTimeout(() => this.compile(), 120);
@@ -146,6 +150,19 @@ export class Editor {
   lines() {
     if (!this._lines || this._linesDoc !== this.doc) { this._lines = linesOf(this.doc); this._linesDoc = this.doc; }
     return this._lines;
+  }
+
+  /** Draw the map's own textures into the bank, and say which names
+   *  there are now. The compile after it builds with them. */
+  async refreshTextures() {
+    const mine = (this.doc.textures || []).map(t => t.name);
+    if (!this.bank) return;
+    try { await registerTextures(this.bank, this.doc.textures || [], this.builtInTextures); }
+    catch (e) { console.warn(e); this.say(`a map texture did not draw: ${e.message}`); }
+    this.mapTextureNames = mine.filter(n => this.bank.map.has(n) && !this.builtInTextures.has(n));
+    this.textureNames = [...this.mapTextureNames, ...(this.gameTextureNames || [])];
+    this.emit('textures');
+    this.compile();
   }
 
   compile() {
@@ -705,7 +722,10 @@ export async function startEditor() {
 
   const ed = new Editor(root);
   ed.bank = bank;
-  ed.textureNames = TEXTURE_NAMES.filter(n => n !== 'MISSING').sort();
+  ed.gameTextureNames = TEXTURE_NAMES.filter(n => n !== 'MISSING').sort();
+  ed.builtInTextures = new Set(bank.map.keys());
+  ed.mapTextureNames = [];
+  ed.textureNames = [...ed.gameTextureNames];
 
   /* the map: what you were last working on, or THE GRID */
   let doc = null;
@@ -716,7 +736,8 @@ export async function startEditor() {
   ed.ui = ui;
   ed.view2d = new View2D(ed, ui.canvas2d);
   ed.view3d = new View3D(ed, ui.canvas3d);
-  ed.compile();
+  ed._texKey = textureKey(ed.doc);
+  await ed.refreshTextures();
 
   /* THE KEYBOARD, which is most of what a Doom editor is. The view the
      mouse is over gets first refusal (the 3D view flies with WASD); what
@@ -798,4 +819,10 @@ export function makeSky(renderer, doc) {
   baker.bake(weather.frame);
   world.skyTex.value = baker.texture;
   return { weather, baker };
+}
+
+/* A fingerprint of the map's own textures, cheap enough to take on every
+   edit: an imported picture counts by its length, not its bytes. */
+function textureKey(doc) {
+  return JSON.stringify(doc.textures || [], (k, v) => (k === 'image' && typeof v === 'string' ? v.length : v));
 }

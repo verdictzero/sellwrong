@@ -5376,18 +5376,86 @@ sector of the map and a part of it, which is what an edit needs.
 
 THE INSPECTOR edits everything selected at once:
 
-  sectors  name, floor, ceiling, light, open sky; floor, ceiling, wall,
-           upper and lower textures; and a button to scatter the chosen
-           mix into them
-  lines    blocks walking, blocks sight, and the line's own textures:
-           the wall on a one-sided line, the upper and lower steps on a
-           two-sided one, locked so the level keeps them
-  things   type, place, facing, variant; a plant's kind and scale
+  sectors  name; floor, wall height (or ceiling, with a roof on) and
+           light; SKY, NO CEILING (on by default); the five Doom 64
+           colours; floor, ceiling, wall, upper and lower textures; and
+           a button to scatter the chosen mix into them
+  lines    blocks walking, blocks sight, and the SIDEDEF: top, middle
+           and bottom textures, x and y offsets, and upper and lower
+           unpegged
+  things   type, place, facing (with an eight-way compass), variant; a
+           plant's kind and scale
   props    the box's extent, bottom, top, and side and top textures
   scatters everything below
 
+AN OPEN WORLD BY DEFAULT. A new map is open ground under the sky with
+no ceiling, 4096 units square, and a new sector is too. Its "ceiling"
+is SKY, which the renderer treats as a hole the sky shows through, and
+its height is only how tall the walls round it stand. Turn SKY, NO
+CEILING off for a sector and it gets a roof. Seen from outside, the
+roof is drawn as a roof, and no wall runs from it up to the sky the way
+Doom's upper texture would. That would put a tower on every room, so it
+is off unless the map asks for it (Doom sky walls, in the Map tab).
+
+DOOM 64 COLOURS. As in Doom 64, a sector's light has colours. There are
+five: the floor, the ceiling, the things standing in it, and its walls,
+which run from the top colour down to the bottom one. Each can be
+ticked on or left white, and a row of moods sets all five at once: warm
+lamp, cold light, toxic, blood, hell, night and violet. The renderer
+carries a colour for every corner (tintRGB, in js/mapgeo.js). Floors
+and ceilings take theirs flat, walls take theirs graded by height over
+the sector, and the world shader multiplies it into the picture. Sprites
+standing in the sector take its thing colour, in the game through
+js/standees.js. The editor's 3D view is the same renderer, so what you
+colour is what you play. A wall is coloured by the sector on the side
+you see it from, as in Doom 64. Under the open sky there is no ceiling
+to grade to, so each piece of wall is graded over its own height: the
+step round a pit runs from the top colour at its rim to the bottom one
+at its foot.
+
+A ROOM DRAWN INSIDE ANOTHER is a hole in it. The engine's sectors are
+single rings, so the compiler bridges the hole in with a slit. The
+floor round a hole is triangulated from the real outline and holes
+(flatOuter and flatHoles, read by addFlats in js/mapgeo.js), because a
+slit ring handed to the triangulator came back with the holes filled
+in, and a pit had the ground drawn over it.
+
+THE SIDEDEF, Doom's way. A one-sided line has its middle texture. A
+two-sided one has a top (upper), a bottom (lower), and a MIDDLE that
+stands in the opening, such as a fence, a grating or a window, with a
+height if it is shorter than the gap. Every line has x and y offsets
+and Doom's two flags. Upper unpegged hangs the top texture from the
+ceiling. Lower unpegged measures the bottom texture from the ceiling
+and sits a one-sided middle on the floor. In 3D, the arrow keys over a
+wall move its texture, 1 at a time or 8 with Shift, as they do in Doom
+Builder's visual mode.
+
+THE TEXTURE EDITOR (js/editor/texeditor.js, drawn by texcompose.js).
+Textures tab > + New, or double-click any game texture to start from
+it. A texture of the map is a stack of LAYERS. Each layer is one of the
+game's textures or an image imported from a file (brought down to 512
+pixels at most). A layer can be offset, scaled, turned in quarter
+turns, flipped, tiled or drawn once, tinted, blended (normal, multiply,
+screen, add or overlay) and faded. The preview tiles three by three so
+the seams show. Saving is one undoable edit, and everything wearing the
+texture changes with it; renaming it renames every use. The textures
+live in the map (doc.textures) and are drawn again whenever the map is
+opened, in the editor and in a test run, so a map carries its own
+textures with it. A texture with holes in it is cut out like the
+game's gratings.
+
+THE THINGS EDITOR (the Things tab):
+
+  - Place: every thing type, and every plant with its own picture.
+  - The selection: face it one of eight ways, change its type, random
+    facing, random variant, snap to grid, select all of the same type,
+    or delete.
+  - In this map: every placed thing, filtered by type with chips or
+    found by search. Click one to select it and frame it; Shift-click
+    to add to the selection.
+
 The Map tab holds the map's name, whether anything burns, whether anyone
-is sent, the four colours of its sky (re-baked in the 3D view as you
+is sent, whether upper walls go up to the sky (Doom's way), the four colours of its sky (re-baked in the 3D view as you
 change them) and the PROBLEMS list: overlapping sectors, crossed rings,
 a ceiling under its floor, storeys that do not stack, and no start. None
 of them stops the map compiling. A map with no start gets one, and one
@@ -5442,7 +5510,10 @@ the game will not.
 
 The smoke test holds the compiler against the game's own Level: THE
 GRID as a document, a hole, the feature switch, a line's own textures,
-the file round trip, undo, the weld, the cut, the merge, the scatters
+the open-world default and its roofs, the Doom 64 colours down to the
+colour on every corner of a built surface, the sidedef's middle,
+offsets and pegging, the shape of a map texture, the file round trip,
+undo, the weld, the cut, the merge, the scatters
 (count, area, spacing, determinism, clumping, pillars and props, the
 one-tree-to-a-cell rule, the too-dense report), the game's forest
 growing exactly the placed plants, bake and move, and both doors in

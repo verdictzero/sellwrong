@@ -12,7 +12,8 @@
    every write is one `ed.edit`, so it undoes like anything else.
    ===================================================================== */
 
-import { THING_TYPES, problemsOf, ringOf, signedArea } from './doc.js';
+import { THING_TYPES, problemsOf, ringOf, signedArea, COLOR_PARTS } from './doc.js';
+import { openTextureEditor } from './texeditor.js';
 import { MODES, GRIDS } from './editor.js';
 import { PRESETS, SCATTER_TYPES, PLANT_KINDS, SCATTER_MAX } from './scatter.js';
 import { plantColour } from './view2d.js';
@@ -32,6 +33,10 @@ const h = (tag, attrs = {}, ...kids) => {
   for (const c of kids.flat()) if (c !== null && c !== undefined && c !== false) el.append(c.nodeType ? c : String(c));
   return el;
 };
+
+/** Append, leaving out what a condition left empty — `append` would
+ *  write "null" into the panel. */
+const put = (el, ...kids) => el.append(...kids.flat(Infinity).filter(k => k !== null && k !== undefined && k !== false && k !== ''));
 
 /** A texture's picture, small, for a swatch. Drawn from the bank's own
  *  canvas, so it is what the wall will show. */
@@ -174,6 +179,7 @@ export function buildUI(ed) {
     ui.tab = t;
     if (t === 'map') renderMap();
     if (t === 'scatter') renderScatter();
+    if (t === 'things') renderThings();
   };
   ui.showTab = showTab;
   const tabs = h('div', { class: 'ed-tabs' },
@@ -233,6 +239,25 @@ export function buildUI(ed) {
     return row(label, el);
   };
 
+  /** One of a sector's five Doom 64 colours: a tick to use it, and the
+   *  colour. */
+  const colourRow = (s, k) => {
+    const v = s.colors?.[k];
+    const label = { floor: 'Floor', ceil: 'Ceiling', thing: 'Things', top: 'Walls, top', bottom: 'Walls, bottom' }[k];
+    const set = c => each(`${label.toLowerCase()} colour`, x => {
+      if (c) x.colors = { ...(x.colors || {}), [k]: c };
+      else if (x.colors) { delete x.colors[k]; if (!Object.keys(x.colors).length) delete x.colors; }
+    });
+    return h('div', { class: 'ed-row two' }, h('label', {}, label),
+      h('input', { type: 'checkbox', ...(v ? { checked: true } : {}), onchange: e => set(e.target.checked ? (v || '#ffffff') : null) }),
+      h('input', { type: 'color', value: v || '#ffffff', onchange: e => set(e.target.value) }));
+  };
+
+  /** Doom Builder's eight facings, as a compass of buttons. */
+  const facingButtons = onset => h('div', { class: 'ed-compass' },
+    ...[['NW', 135], ['N', 90], ['NE', 45], ['W', 180], ['', null], ['E', 0], ['SW', 225], ['S', 270], ['SE', 315]].map(([n, deg]) =>
+      deg === null ? h('span') : h('button', { title: `${deg}°`, onclick: () => onset(+(deg * Math.PI / 180).toFixed(4)) }, n)));
+
   /** Write `fn(obj)` into every selected object of the current kind. */
   const each = (label, fn) => {
     const { kind, ids } = ed.sel;
@@ -252,7 +277,7 @@ export function buildUI(ed) {
     const { kind, ids } = ed.sel;
     const d = ed.doc;
     if (!kind || !ids.size) {
-      p.append(h('h3', {}, 'Nothing selected'),
+      put(p, h('h3', {}, 'Nothing selected'),
         h('p', { class: 'ed-note' }, 'Click something in the map or the 3D view. Shift adds to the selection; drag on empty space to box-select.'),
         h('p', { class: 'ed-note' }, `${d.sectors.length} sectors · ${ed.lines().length} lines · ${d.vertices.length} vertices · ${d.things.length} things · ${d.props.length} props`),
         h('h4', {}, 'New things'),
@@ -268,17 +293,27 @@ export function buildUI(ed) {
       const s = d.sectors.find(x => ids.has(x.id));
       if (!s) return;
       const r = ringOf(d, s);
-      p.append(head(`Sector ${s.id}${s.name ? ` · ${s.name}` : ''}`),
+      put(p, head(`Sector ${s.id}${s.name ? ` · ${s.name}` : ''}`),
         h('p', { class: 'ed-note' }, `${s.verts.length} corners · ${Math.round(Math.abs(signedArea(r)) / 4096)} cells²${ed.surf ? ` · picked: ${ed.surf.part}` : ''}`),
         row('Name', txt(s.name, v => each('rename sector', x => { x.name = v; }))),
         h('h4', {}, 'Heights'),
         row('Floor', num(s.floor, v => each('floor height', x => { x.floor = v; }), { step: 8 })),
-        row('Ceiling', num(s.ceil, v => each('ceiling height', x => { x.ceil = v; }), { step: 8 })),
+        row(s.ceilTex === 'SKY' ? 'Wall height' : 'Ceiling', num(s.ceil, v => each('ceiling height', x => { x.ceil = v; }), { step: 8 })),
         row('Light', num(s.light ?? 0.72, v => each('light', x => { x.light = Math.max(0, Math.min(1.5, v)); }), { step: 0.05 })),
-        row('Open sky', chk(s.outdoor !== false, v => each('outdoor', x => { x.outdoor = v; }))),
+        /* THE SKY IS THE DEFAULT: no ceiling drawn, the sky showing
+           through; turning it off gives the sector a roof */
+        row('Sky, no ceiling', chk(s.ceilTex === 'SKY', v => each(v ? 'open to the sky' : 'roof over', x => {
+          if (v) { x.ceilTex = 'SKY'; x.outdoor = true; } else { x.ceilTex = x.ceilTex === 'SKY' ? 'GRIDBOX' : x.ceilTex; x.outdoor = false; }
+        }))),
+        h('h4', {}, 'Colours — Doom 64'),
+        h('p', { class: 'ed-note' }, 'The colour of the light on the floor, the ceiling, the things standing here, and the walls from top to bottom. Unticked is white.'),
+        ...COLOR_PARTS.map(k => colourRow(s, k)),
+        h('div', { class: 'ed-swatches' }, ...Object.entries(MOODS).map(([n, c]) =>
+          h('button', { title: n, style: `background:linear-gradient(${c.top}, ${c.bottom})`, onclick: () => each(`colours ${n}`, x => { x.colors = { ...c }; }) })),
+          h('button', { class: 'ed-btn', title: 'All white again', onclick: () => each('clear colours', x => { delete x.colors; }) }, 'Clear')),
         h('h4', {}, 'Textures'),
         texField(s.floorTex, 'floorTex', 'Floor'),
-        texField(s.ceilTex, 'ceilTex', 'Ceiling'),
+        s.ceilTex === 'SKY' ? null : texField(s.ceilTex, 'ceilTex', 'Ceiling'),
         texField(s.wallTex, 'wallTex', 'Walls'),
         texField(s.upperTex, 'upperTex', 'Upper', { allowNone: true }),
         texField(s.lowerTex, 'lowerTex', 'Lower', { allowNone: true }),
@@ -297,14 +332,26 @@ export function buildUI(ed) {
       const [a, b] = key.split(',').map(Number);
       const va = d.vertices[a], vb = d.vertices[b];
       const len = va && vb ? Math.hypot(vb[0] - va[0], vb[1] - va[1]) : 0;
-      p.append(head(`Line ${key}`),
+      put(p, head(`Line ${key}`),
         h('p', { class: 'ed-note' }, `${Math.round(len)} units · ${info ? (info.sectors.length > 1 ? 'two-sided' : 'one-sided') : 'not on a sector'}`),
         row('Blocks walking', chk(o.blocking, v => each('line blocking', x => { if (v) x.blocking = true; else delete x.blocking; }))),
         row('Blocks sight', chk(o.blockSight, v => each('line sight', x => { if (v) x.blockSight = true; else delete x.blockSight; }))),
-        info && info.sectors.length > 1
-          ? [texField(o.upperTex, 'upperTex', 'Upper step', { allowNone: true }), texField(o.lowerTex, 'lowerTex', 'Lower step', { allowNone: true })]
-          : texField(o.wallTex, 'wallTex', 'Wall', { allowNone: true }),
-        h('p', { class: 'ed-note' }, 'Deleting a line joins the two sectors on it into one.'));
+        /* THE SIDEDEF, Doom's way: top, middle and bottom textures, the
+           offsets, and the two unpegged flags */
+        h('h4', {}, 'Textures — top, middle, bottom'),
+        ...(info && info.sectors.length > 1
+          ? [texField(o.upperTex, 'upperTex', 'Top (upper)', { allowNone: true }),
+             texField(o.midTex, 'midTex', 'Middle', { allowNone: true }),
+             o.midTex ? row('Middle height', num(o.midHeight ?? '', v => each('middle height', x => { if (v > 0) x.midHeight = v; else delete x.midHeight; }), { step: 8 })) : null,
+             texField(o.lowerTex, 'lowerTex', 'Bottom (lower)', { allowNone: true })]
+          : [texField(o.wallTex, 'wallTex', 'Middle (wall)', { allowNone: true })]),
+        h('h4', {}, 'Alignment'),
+        h('div', { class: 'ed-row two' }, h('label', {}, 'Offset x / y'),
+          num(o.xoff ?? 0, v => each('x offset', x => { if (v) x.xoff = v; else delete x.xoff; }), { step: 1 }),
+          num(o.yoff ?? 0, v => each('y offset', x => { if (v) x.yoff = v; else delete x.yoff; }), { step: 1 })),
+        row('Upper unpegged', chk(o.unpegUpper, v => each('upper unpegged', x => { if (v) x.unpegUpper = true; else delete x.unpegUpper; }))),
+        row('Lower unpegged', chk(o.unpegLower, v => each('lower unpegged', x => { if (v) x.unpegLower = true; else delete x.unpegLower; }))),
+        h('p', { class: 'ed-note' }, 'In 3D, the arrow keys over a wall nudge its offsets (Shift: 8 at a time). Deleting a line joins the two sectors on it into one.'));
       return;
     }
 
@@ -312,7 +359,7 @@ export function buildUI(ed) {
       const i = [...ids][0];
       const v = d.vertices[i];
       if (!v) return;
-      p.append(head(`Vertex ${i}`),
+      put(p, head(`Vertex ${i}`),
         n === 1 ? row('X', num(v[0], x => each('vertex x', w => { w[0] = x; }))) : null,
         n === 1 ? row('Y', num(v[1], y => each('vertex y', w => { w[1] = y; }))) : null,
         h('p', { class: 'ed-note' }, 'Drag a vertex onto another to weld them. Deleting a vertex takes it out of every sector it is in.'));
@@ -322,17 +369,18 @@ export function buildUI(ed) {
     if (kind === 'thing') {
       const t = d.things.find(x => ids.has(x.id));
       if (!t) return;
-      p.append(head(`${THING_TYPES[t.type]?.name || t.type}`),
+      put(p, head(`${THING_TYPES[t.type]?.name || t.type}`),
         row('Type', h('select', { onchange: e => each('thing type', x => { x.type = e.target.value; }) },
           ...Object.entries(THING_TYPES).map(([k, tt]) => h('option', { value: k, ...(k === t.type ? { selected: true } : {}) }, tt.name)))),
         n === 1 ? row('X', num(t.x, v => each('thing x', x => { x.x = v; }))) : null,
         n === 1 ? row('Y', num(t.y, v => each('thing y', x => { x.y = v; }))) : null,
         row('Facing °', num(Math.round((t.angle || 0) * 180 / Math.PI), v => each('thing angle', x => { x.angle = v * Math.PI / 180; }), { step: 45 })),
-        t.type === 'PLANT'
+        row('', facingButtons(a2 => each('face', x => { x.angle = a2; }))),
+        ...(t.type === 'PLANT'
           ? [row('Plant', h('select', { onchange: e => each('plant kind', x => { x.kind = e.target.value; }) },
               ...PLANT_KINDS.map(k => h('option', { value: k, ...(k === t.kind ? { selected: true } : {}) }, k)))),
              row('Scale', num(t.scale ?? 1, v => each('plant scale', x => { x.scale = Math.max(0.2, Math.min(4, v)); }), { step: 0.1 }))]
-          : row('Variant', num(t.variant ?? '', v => each('thing variant', x => { x.variant = Math.max(0, Math.round(v)); }))),
+          : [row('Variant', num(t.variant ?? '', v => each('thing variant', x => { x.variant = Math.max(0, Math.round(v)); })))]),
         h('p', { class: 'ed-note' }, 'In Things mode, click empty floor to place the type chosen in the Things tab. , and . turn the selection.'));
       return;
     }
@@ -340,7 +388,7 @@ export function buildUI(ed) {
     if (kind === 'prop') {
       const pr = d.props.find(x => ids.has(x.id));
       if (!pr) return;
-      p.append(head(`Prop ${pr.id}`),
+      put(p, head(`Prop ${pr.id}`),
         h('p', { class: 'ed-note' }, 'A solid box anywhere in space — a crate, a beam, a bridge, a floating platform.'),
         h('div', { class: 'ed-row two' }, h('label', {}, 'X from / to'),
           num(pr.x0, v => each('prop x0', x => { x.x0 = v; }), { step: 8 }), num(pr.x1, v => each('prop x1', x => { x.x1 = v; }), { step: 8 })),
@@ -352,7 +400,7 @@ export function buildUI(ed) {
         texField(pr.topTex, 'topTex', 'Top', { allowNone: true }));
     }
 
-    if (kind === 'scatter') p.append(...scatterInspector(d.scatters.find(x => ids.has(x.id)), n));
+    if (kind === 'scatter') put(p, ...scatterInspector(d.scatters.find(x => ids.has(x.id)), n));
   };
 
   /* ------------------------------------------------------------------
@@ -412,15 +460,44 @@ export function buildUI(ed) {
      ------------------------------------------------------------------ */
   let filter = '';
   const texCells = new Map();
-  const texGrid = h('div', { class: 'ed-texgrid' });
   const texHead = h('div');
+  const mineGrid = h('div', { class: 'ed-texgrid' });
+  const gameGrid = h('div', { class: 'ed-texgrid' });
+  const mineHead = h('div', { class: 'ed-texsec' });
   const texFilter = h('input', { class: 'ed-texfilter', type: 'text', placeholder: 'filter textures…', oninput: e => { filter = e.target.value.toUpperCase(); renderTex(); } });
-  panes.tex.append(texHead, texFilter, texGrid);
-  for (const name of ed.textureNames) {
-    const cell = h('div', { class: 'ed-texcell', title: name, onclick: () => pickTexture(name) }, swatch(ed, name, 64), h('span', {}, name));
-    texCells.set(name, cell);
-    texGrid.append(cell);
-  }
+  panes.tex.append(texHead, texFilter, mineHead, mineGrid, h('div', { class: 'ed-texsec' }, h('span', {}, 'Game textures')), gameGrid);
+  /* THE CELLS, made again when the map's own textures change — a new
+     one, a repainted one, one gone */
+  const buildCells = () => {
+    texCells.clear();
+    mineGrid.textContent = ''; gameGrid.textContent = '';
+    const cell = (name, mine) => {
+      const c = h('div', { class: 'ed-texcell' + (mine ? ' mine' : ''), title: mine ? `${name} — double-click to edit` : `${name} — double-click to make a texture from it`,
+        onclick: () => pickTexture(name),
+        ondblclick: () => (mine ? openTextureEditor(ed, name) : openTextureEditor(ed, null, name)) },
+        swatch(ed, name, 64), h('span', {}, name));
+      texCells.set(name, c);
+      return c;
+    };
+    for (const n of ed.mapTextureNames || []) mineGrid.append(cell(n, true));
+    for (const n of ed.gameTextureNames || ed.textureNames) gameGrid.append(cell(n, false));
+    renderMineHead();
+    if (!(ed.mapTextureNames || []).length) mineGrid.append(h('p', { class: 'ed-note' }, 'None yet. + New starts one; double-click any game texture to start from it.'));
+  };
+  const renderMineHead = () => {
+    mineHead.textContent = '';
+    mineHead.append(h('span', {}, `This map's textures (${(ed.mapTextureNames || []).length})`),
+      h('span', { class: 'ed-small-btns' },
+        h('button', { class: 'ed-btn', title: 'A new texture, from layers of others and your own images', onclick: () => openTextureEditor(ed, null, ui.current && ed.bank.map.has(ui.current) ? ui.current : 'GRIDWALL') }, '+ New'),
+        ui.current && (ed.mapTextureNames || []).includes(ui.current)
+          ? [h('button', { class: 'ed-btn', onclick: () => openTextureEditor(ed, ui.current) }, 'Edit'),
+             h('button', { class: 'ed-btn', onclick: () => {
+               const n = ui.current;
+               ed.edit(`delete texture ${n}`, d => { d.textures = (d.textures || []).filter(t => t.name !== n); }, { tidy: false });
+               ui.current = null;
+             } }, 'Delete')]
+          : null));
+  };
   const pickTexture = name => {
     if (ui.picking) {
       const { field } = ui.picking;
@@ -445,55 +522,80 @@ export function buildUI(ed) {
     } else {
       texHead.append(h('p', { class: 'ed-note' }, ed.surf ? `Click a texture to paint the picked ${ed.surf.part}.` : 'Pick a surface in the 3D view, then click a texture to paint it — or open this from an inspector field.'));
     }
+    if (!texCells.size) buildCells();
+    else renderMineHead();
     for (const [name, cell] of texCells) {
       cell.style.display = !filter || name.includes(filter) ? '' : 'none';
       cell.classList.toggle('on', name === ui.current);
     }
   };
+  ed.on('textures', () => { buildCells(); renderTex(); });
   renderTex();
 
   /* ------------------------------------------------------------------
      THE THING PALETTE
      ------------------------------------------------------------------ */
+  /* THE THINGS EDITOR: what to place, everything already placed — a
+     list to find and select them by, filtered by type — and what to do
+     to the selection all at once */
+  let thingFilter = null, thingSearch = '';
   const renderThings = () => {
-    panes.things.textContent = '';
-    panes.things.append(h('p', { class: 'ed-note' }, 'Pick a type, then click in the map in Things mode (T) to place it.'),
-      h('div', { class: 'ed-things' }, ...Object.entries(THING_TYPES).map(([k, t]) =>
+    const p = panes.things;
+    const keepFocus = p.contains(document.activeElement) && document.activeElement.tagName === 'INPUT';
+    if (keepFocus) return;
+    p.textContent = '';
+    const d = ed.doc;
+    const count = new Map();
+    for (const t of d.things) count.set(t.type, (count.get(t.type) || 0) + 1);
+    const selThings = ed.sel.kind === 'thing' ? d.things.filter(t => ed.sel.ids.has(t.id)) : [];
+    const eachSel = (label, fn) => ed.edit(label, dd => { for (const t of dd.things) if (ed.sel.ids.has(t.id)) fn(t); }, { tidy: false });
+    put(p, 
+      h('h4', { class: 'ed-sub0' }, 'Place'),
+      h('p', { class: 'ed-note' }, 'Pick a type, then click the floor in Things mode (T) — on the plan or in 3D.'),
+      h('div', { class: 'ed-things' }, ...Object.entries(THING_TYPES).filter(([k]) => k !== 'PLANT').map(([k, t]) =>
         h('button', { class: k === ed.thingType ? 'on' : '', onclick: () => { ed.thingType = k; ed.setMode('things'); renderThings(); } },
           h('i', { style: `background:${t.color}` }), t.name))),
       h('h4', { class: 'ed-sub' }, 'Plants — sprite decorations'),
-      h('p', { class: 'ed-note' }, 'Pick one to place it with Things mode, or use the Scatter tab to spread many.'),
       h('div', { class: 'ed-plants' }, ...PLANT_KINDS.map(k =>
         h('button', { class: ed.thingType === 'PLANT' && ed.plantKind === k ? 'on' : '', title: k,
           onclick: () => { ed.thingType = 'PLANT'; ed.plantKind = k; ed.setMode('things'); renderThings(); } },
-          h('img', { src: `assets/forest/${k}.png`, alt: '' }), h('span', {}, k.replace(/_/g, ' '))))));
-  };
-
-  /* ------------------------------------------------------------------
-     THE SCATTER TAB: the mixes, the brush, and every scatter in the map
-     ------------------------------------------------------------------ */
-  const renderScatter = () => {
-    const p = panes.scatter;
-    p.textContent = '';
-    const d = ed.doc;
-    p.append(h('h3', {}, 'Scatter'),
-      h('p', { class: 'ed-note' }, 'Spread sprite people and decorations procedurally. Pick a mix, then in Scatter mode (X) drag a circle out from its middle — on the plan or in 3D. Or fill selected sectors. Every scatter stays a live rule: change its dials and it re-grows.'),
-      h('h4', {}, 'Mix'),
-      h('div', { class: 'ed-presets' }, ...Object.entries(PRESETS).map(([k, pr]) =>
-        h('button', { class: k === ed.scatterPreset ? 'on' : '', onclick: () => { ed.scatterPreset = k; ed.setMode('scatter'); renderScatter(); renderInsp(); } },
-          h('span', { class: 'sw' }, ...pr.items.slice(0, 4).map(it => h('i', { style: `background:${it.type.startsWith('PLANT:') ? plantColour(it.type.slice(6)) : THING_TYPES[it.type]?.color}` }))),
-          pr.name))),
-      row('Brush radius', num(ed.brushRadius || 512, v => { ed.brushRadius = Math.max(16, v); }, { step: 64, title: 'for a click without a drag' })),
-      h('div', { class: 'ed-small-btns' },
-        h('button', { class: 'ed-btn', onclick: () => ed.setMode('scatter') }, 'Brush (X)'),
-        h('button', { class: 'ed-btn', onclick: () => ed.scatterSectors() }, 'Fill selected sectors')),
-      h('h4', {}, `In this map (${d.scatters.length})`),
-      d.scatters.length ? h('div', {}, ...d.scatters.map(c => {
-        const g = ed.compiled?.grown?.get(c.id);
-        return h('div', { class: 'ed-listrow' + (ed.isSel('scatter', c.id) ? ' on' : ''),
-          onclick: () => { ed.setMode('scatter'); ed.select('scatter', [c.id]); ed.emit('frameSel'); showTab('insp'); } },
-          h('span', {}, c.name || `scatter ${c.id}`), h('small', {}, g ? `${g.grown}` : ''));
-      })) : h('p', { class: 'ed-note' }, 'None yet.'));
+          h('img', { src: `assets/forest/${k}.png`, alt: '' }), h('span', {}, k.replace(/_/g, ' '))))),
+    );
+    if (selThings.length) {
+      put(p, h('h4', { class: 'ed-sub' }, `The selection (${selThings.length})`),
+        h('div', { class: 'ed-row' }, h('label', {}, 'Face'), facingButtons(a2 => eachSel('face', t => { t.angle = a2; }))),
+        h('div', { class: 'ed-row' }, h('label', {}, 'Change to'), h('select', { onchange: e => { if (e.target.value) eachSel('change type', t => { t.type = e.target.value; if (t.type === 'PLANT' && !t.kind) t.kind = ed.plantKind; }); } },
+          h('option', { value: '' }, '…'), ...Object.entries(THING_TYPES).map(([k, t]) => h('option', { value: k }, t.name)))),
+        h('div', { class: 'ed-small-btns' },
+          h('button', { class: 'ed-btn', onclick: () => eachSel('random facing', t => { t.angle = +(Math.random() * Math.PI * 2).toFixed(3); }) }, 'Random facing'),
+          h('button', { class: 'ed-btn', onclick: () => eachSel('random variant', t => { t.variant = (Math.random() * 64) | 0; }) }, 'Random variant'),
+          h('button', { class: 'ed-btn', onclick: () => eachSel('snap to grid', t => { t.x = ed.snapV(t.x); t.y = ed.snapV(t.y); }) }, 'Snap to grid'),
+          h('button', { class: 'ed-btn', onclick: () => { const types = new Set(selThings.map(t => t.type)); ed.select('thing', d.things.filter(t => types.has(t.type)).map(t => t.id)); } }, 'Select all of this type'),
+          h('button', { class: 'ed-btn', onclick: () => ed.deleteSel() }, 'Delete')));
+    }
+    /* everything placed, to find it by */
+    const table = h('div', { class: 'ed-thingtable' });
+    const fillTable = () => {
+      table.textContent = '';
+      const shown = d.things.filter(t => (!thingFilter || t.type === thingFilter) &&
+        (!thingSearch || `${t.type} ${t.kind || ''} ${t.id}`.toUpperCase().includes(thingSearch)));
+      table.append(...shown.slice(0, 300).map(t => h('div', { class: 'ed-listrow' + (ed.isSel('thing', t.id) ? ' on' : ''),
+          onclick: e => { ed.setMode('things'); ed.select('thing', [t.id], e.shiftKey); if (!e.shiftKey) ed.emit('frameSel'); } },
+          h('span', {}, h('i', { class: 'ed-dot', style: `background:${t.type === 'PLANT' ? plantColour(t.kind) : THING_TYPES[t.type]?.color}` }),
+            ` ${t.type === 'PLANT' ? (t.kind || 'plant').replace(/_/g, ' ') : THING_TYPES[t.type]?.name || t.type}`),
+          h('small', {}, `${Math.round(t.x)}, ${Math.round(t.y)} · ${Math.round(((t.angle || 0) * 180 / Math.PI) % 360)}°`))),
+        shown.length > 300 ? h('p', { class: 'ed-note' }, `and ${shown.length - 300} more — filter to find them`) : '');
+    };
+    fillTable();
+    put(p, h('h4', { class: 'ed-sub' }, `In this map (${d.things.length})`),
+      h('div', { class: 'ed-chips' },
+        h('button', { class: !thingFilter ? 'on' : '', onclick: () => { thingFilter = null; renderThings(); } }, `all ${d.things.length}`),
+        ...[...count].sort((x, y) => y[1] - x[1]).map(([k, n]) => h('button', { class: thingFilter === k ? 'on' : '', onclick: () => { thingFilter = k; renderThings(); } },
+          h('i', { style: `background:${THING_TYPES[k]?.color || '#f0f'}` }), `${THING_TYPES[k]?.name || k} ${n}`))),
+      h('input', { class: 'ed-texfilter', type: 'text', placeholder: 'find…', value: thingSearch,
+        oninput: e => { thingSearch = e.target.value.toUpperCase(); fillTable(); } }),
+      table,
+      h('p', { class: 'ed-note' }, 'Things grown by scatters are not listed: bake a scatter to list them.'));
   };
   renderThings();
 
@@ -512,11 +614,13 @@ export function buildUI(ed) {
     const probs = [...problemsOf(d), ...(ed.compiled?.problems || [])];
     const seen = new Set();
     const uniq = probs.filter(x => (seen.has(x.msg) ? false : seen.add(x.msg)));
-    p.append(h('h3', {}, 'Map'),
+    put(p, h('h3', {}, 'Map'),
       row('Name', txt(d.name, v => ed.edit('rename map', dd => { dd.name = v; }, { tidy: false }))),
       h('h4', {}, 'World'),
       row('Nothing burns', chk(w.noBurn, v => setWorld('noBurn', ww => { ww.noBurn = v; }))),
       row('No responders', chk(w.noSquads, v => setWorld('noSquads', ww => { ww.noSquads = v; }))),
+      row('Doom sky walls', chk(w.skyWalls, v => setWorld('skyWalls', ww => { if (v) ww.skyWalls = true; else delete ww.skyWalls; }))),
+      h('p', { class: 'ed-note' }, 'Off (the default): an open world — a roofed room under the sky has a roof and no wall running up to the sky. On: Doom\'s way, the upper wall goes up to the sky height.'),
       h('h4', {}, 'Sky'),
       colour('horizon', 'Horizon'), colour('mid', 'Middle'), colour('zenith', 'Overhead'), colour('ground', 'Below'),
       h('p', { class: 'ed-note' }, 'The sky is re-baked in the 3D view as you change it.'),
@@ -532,11 +636,15 @@ export function buildUI(ed) {
      WIRING
      ------------------------------------------------------------------ */
   const inspFocused = () => panes.insp.contains(document.activeElement) || panes.map.contains(document.activeElement);
-  ed.on('sel', () => { refreshBar(); if (!ui.picking) renderInsp(); renderTex(); });
+  ed.on('sel', () => { refreshBar(); if (!ui.picking) renderInsp(); renderTex(); if (ui.tab === 'things') renderThings(); });
   ed.on('mode', refreshBar);
   ed.on('grid', refreshBar);
   ed.on('layout', refreshBar);
-  ed.on('doc', () => { if (!inspFocused()) { renderInsp(); if (ui.tab === 'map') renderMap(); } });
+  let thingsT = 0;
+  ed.on('doc', () => {
+    if (!inspFocused()) { renderInsp(); if (ui.tab === 'map') renderMap(); }
+    if (ui.tab === 'things') { clearTimeout(thingsT); thingsT = setTimeout(renderThings, 150); }
+  });
   ed.on('compiled', c => {
     if (ed.sel.kind === 'scatter' && !inspFocused()) renderInsp();
     if (ui.tab === 'scatter') renderScatter();
@@ -564,3 +672,14 @@ function typeName(t) {
   if (t.startsWith('PLANT:')) return `plant: ${t.slice(6).replace(/_/g, ' ')}`;
   return THING_TYPES[t]?.name || t;
 }
+
+/* SECTOR MOODS: whole Doom 64 colour sets, one click each */
+const MOODS = {
+  'Warm lamp':  { floor: '#ffd9a0', ceil: '#ffe8c0', thing: '#ffe0b0', top: '#ffd08a', bottom: '#8a5a30' },
+  'Cold light': { floor: '#a8c8ff', ceil: '#c8dcff', thing: '#b8d0ff', top: '#d0e4ff', bottom: '#40507a' },
+  'Toxic':      { floor: '#8aff6a', ceil: '#60c050', thing: '#a0ff80', top: '#50ff40', bottom: '#103a10' },
+  'Blood':      { floor: '#ff5040', ceil: '#a02018', thing: '#ff7060', top: '#ff3020', bottom: '#300808' },
+  'Hell':       { floor: '#ff9030', ceil: '#401000', thing: '#ffb060', top: '#200800', bottom: '#ff6010' },
+  'Night':      { floor: '#404a70', ceil: '#202840', thing: '#6070a0', top: '#303a60', bottom: '#101420' },
+  'Violet':     { floor: '#c090ff', ceil: '#6030a0', thing: '#d0a0ff', top: '#a060ff', bottom: '#200840' },
+};

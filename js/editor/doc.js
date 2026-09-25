@@ -101,8 +101,13 @@ export const THING_TYPES = {
 };
 
 /* What a new sector is, until somebody says otherwise. */
+/* AN OPEN WORLD BY DEFAULT, at the user's request: a new sector is
+   under the sky, with no ceiling drawn — SKY as a ceiling is a hole the
+   sky shows through, see addFlats in js/mapgeo.js — and its height is
+   only how tall the walls round it stand. A room with a roof is one you
+   turn the sky off for. */
 export const SECTOR_DEFAULTS = {
-  floor: 0, ceil: 256,
+  floor: 0, ceil: 1024,
   floorTex: 'GRID', ceilTex: 'SKY', wallTex: 'GRIDWALL', upperTex: null, lowerTex: null,
   light: 0.72, outdoor: true, sky: 0, name: '',
 };
@@ -198,18 +203,34 @@ export function bboxOf(pts) {
   return [x0, y0, x1, y1];
 }
 
+/* THE FIVE COLOURS OF A DOOM 64 SECTOR: the floor, the ceiling, the
+   things standing in it, and its walls from top to bottom */
+export const COLOR_PARTS = ['floor', 'ceil', 'thing', 'top', 'bottom'];
+/** '#rrggbb' as three numbers 0..1, or null. */
+export function hexRGB(h) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(h || '');
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+}
+
 /* ---------------------------------------------------------------------
    THE DOCUMENT
    --------------------------------------------------------------------- */
 
 /** A blank map: one room, a start in it, the grid's floor and walls. */
-export function newDoc(name = 'UNTITLED') {
+/** A blank map: an OPEN WORLD — one square of ground `size` across under
+ *  an open sky with no ceiling, and a start in it. */
+export function newDoc(name = 'UNTITLED', size = 4096) {
   const d = {
     format: DOC_FORMAT, version: DOC_VERSION, name,
-    vertices: [[0, 0], [1024, 0], [1024, 1024], [0, 1024]],
-    sectors: [{ id: 1, verts: [0, 1, 2, 3], ...SECTOR_DEFAULTS, name: 'room' }],
+    vertices: [[0, 0], [size, 0], [size, size], [0, size]],
+    sectors: [{ id: 1, verts: [0, 1, 2, 3], ...SECTOR_DEFAULTS, name: 'ground' }],
     lines: {},
-    things: [{ id: 1, type: 'START', x: 512, y: 256, angle: Math.PI / 2 }],
+    things: [{ id: 1, type: 'START', x: size / 2, y: size / 4, angle: Math.PI / 2 }],
+    /* THE MAP'S OWN TEXTURES, made in the texture editor — see
+       js/editor/texcompose.js */
+    textures: [],
     props: [],
     /* THE PROCEDURAL SPREADS: rules, not things — see js/editor/scatter.js */
     scatters: [],
@@ -512,6 +533,7 @@ export function compileDoc(doc) {
   });
 
   /* 3. and every sector into the builder */
+  const flatHoles = new Map();
   const index = new Array(doc.sectors.length).fill(-1);
   doc.sectors.forEach((s, i) => {
     if (plain[i].length < 3 || selfCrosses(plain[i])) return;
@@ -529,6 +551,9 @@ export function compileDoc(doc) {
         index[i] = mb.column(poly, stack)[0];
       } else {
         index[i] = mb.sector(poly, base);
+        /* and where the holes are, for drawing the floor round them —
+           see addFlats in js/mapgeo.js */
+        if (holes.length) flatHoles.set(index[i], { outer: rings[i], holes });
       }
     } catch (e) {
       problems.push({ kind: 'sector', id: s.id, msg: `sector ${s.id}: ${e.message}` });
@@ -585,6 +610,10 @@ export function compileDoc(doc) {
   }
 
   const level = mb.build();
+  for (const [k, f] of flatHoles) {
+    const L = level.sectors[k];
+    if (L) { L.flatOuter = f.outer; L.flatHoles = f.holes; }
+  }
 
   /* 5. the line overrides: blocking, and a line's own textures */
   const byPair = new Map();
@@ -616,7 +645,48 @@ export function compileDoc(doc) {
         l.texLocked = true;
       }
     }
+    /* THE MIDDLE OF A TWO-SIDED LINE: what stands IN the opening — a
+       grating, a fence, a window — Doom's masked middle texture */
+    if (o.midTex && l.bands) { l.middle = o.midTex; if (o.midHeight) l.midHeight = o.midHeight; }
+    /* THE OFFSETS AND THE PEGGING, Doom's sidedef x and y offsets and its
+       two unpegged flags, in this engine's terms (see pegOf in
+       js/mapgeo.js): upper unpegged hangs the upper texture from the
+       ceiling; lower unpegged measures the lower from the ceiling too,
+       and sits a one-sided middle on the floor, as it does in Doom */
+    if (o.xoff) l.xoff = o.xoff;
+    if (o.yoff) l.yoff = o.yoff;
+    if (o.unpegUpper) l.pegUpper = 'top';
+    if (o.unpegLower) { l.pegLower = 'ceiling'; l.pegMiddle = 'bottom'; }
   }
+
+  /* 5a. AN OPEN WORLD HAS NO SKY WALLS. Doom draws the upper texture
+     between an outdoor sector's sky and the lower roof of a room beside
+     it, which is how its buildings go up to the clouds; with the sky as
+     the default everywhere that is a tower over every room. So, unless
+     the map asks for Doom's way (world.skyWalls), that band is not
+     drawn, and the room's ceiling is drawn from above as well — a roof,
+     in the room's own ceiling texture unless it names another. */
+  const wAll = { ...defaultWorld(), ...(doc.world || {}) };
+  if (!wAll.skyWalls) {
+    for (const l of level.lines) for (const bd of l.bands || []) {
+      if (bd.kind === 'upper' && bd.open?.ceilTex === 'SKY' && bd.from && bd.from.ceilTex !== 'SKY') bd.tex = 'NONE';
+    }
+    doc.sectors.forEach((s, i) => {
+      const L = level.sectors[index[i]];
+      if (!L || L.ceilTex === 'SKY' || L.ceilTex === 'NONE') return;
+      L.roofTex = s.roofTex || L.ceilTex;
+    });
+  }
+
+  /* 5b. DOOM 64'S COLOURS: each sector's floor, ceiling and things, and
+     its walls from the top colour down to the bottom one */
+  doc.sectors.forEach((s, i) => {
+    const c = s.colors;
+    if (!c || index[i] < 0 || !level.sectors[index[i]]) return;
+    const t = {};
+    for (const k of COLOR_PARTS) if (c[k]) t[k] = hexRGB(c[k]);
+    if (Object.keys(t).length) level.sectors[index[i]].tint = t;
+  });
 
   /* 6. and the world around it */
   const w = { ...defaultWorld(), ...(doc.world || {}) };
@@ -685,6 +755,7 @@ export function parseDoc(text) {
   d.things = d.things || [];
   d.props = d.props || [];
   d.scatters = d.scatters || [];
+  d.textures = d.textures || [];
   d.world = { ...defaultWorld(), ...(d.world || {}) };
   let top = 1;
   for (const x of [...d.sectors, ...d.things, ...d.props, ...d.scatters]) top = Math.max(top, (x.id | 0) + 1);

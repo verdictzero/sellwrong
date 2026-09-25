@@ -304,13 +304,16 @@ export class View3D {
       const ss = l.sectors.map(i => d.sectors[i]);
       for (const s of ss) {
         seg(a[0], a[1], zOf(d, s, 'floor', a[0], a[1]), b[0], b[1], zOf(d, s, 'floor', b[0], b[1]));
-        if (s.outdoor === false || ss.length === 1) seg(a[0], a[1], zOf(d, s, 'ceil', a[0], a[1]), b[0], b[1], zOf(d, s, 'ceil', b[0], b[1]));
+        if (s.ceilTex !== 'SKY' || ss.length === 1) seg(a[0], a[1], zOf(d, s, 'ceil', a[0], a[1]), b[0], b[1], zOf(d, s, 'ceil', b[0], b[1]));
       }
       for (const v of [a, b]) {
         const fl = ss.map(s => zOf(d, s, 'floor', v[0], v[1])), ce = ss.map(s => zOf(d, s, 'ceil', v[0], v[1]));
         if (ss.length === 1) { seg(v[0], v[1], fl[0], v[0], v[1], ce[0]); continue; }
         if (Math.max(...fl) > Math.min(...fl)) seg(v[0], v[1], Math.min(...fl), v[0], v[1], Math.max(...fl));
-        if (ss.some(s => s.outdoor === false) && Math.max(...ce) > Math.min(...ce)) seg(v[0], v[1], Math.min(...ce), v[0], v[1], Math.max(...ce));
+        /* the step between two ceilings — not where one of them is the
+           sky, which an open world does not draw (see 5a in doc.js) */
+        const skyWalls = d.world?.skyWalls;
+        if (ss.some(s => s.outdoor === false) && (skyWalls || ss.every(s => s.ceilTex !== 'SKY')) && Math.max(...ce) > Math.min(...ce)) seg(v[0], v[1], Math.min(...ce), v[0], v[1], Math.max(...ce));
       }
     }
     for (const p of d.props) box(P, p.x0, p.y0, p.z0, p.x1, p.y1, p.z1);
@@ -671,6 +674,20 @@ export class View3D {
       ed.applyTexture(this.clip);
       ed.surf = was;
       ed.say(`pasted ${this.clip}`);
+      return true;
+    }
+    /* DOOM BUILDER'S TEXTURE ALIGNMENT: the arrow keys over a wall move
+       its texture — 1 at a time, 8 with Shift */
+    const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+    if (arrows[e.key] && h?.kind === 'surface' && h.part === 'wall' && !ctrl) {
+      const [dx, dy] = arrows[e.key].map(v => v * (e.shiftKey ? 8 : 1));
+      ed.edit('texture offset', d => {
+        const o = d.lines[h.line] = d.lines[h.line] || {};
+        o.xoff = (o.xoff || 0) + dx; o.yoff = (o.yoff || 0) + dy;
+        if (!o.xoff) delete o.xoff; if (!o.yoff) delete o.yoff;
+      }, { tidy: false });
+      const o = ed.doc.lines[h.line] || {};
+      ed.say(`offset ${o.xoff || 0}, ${o.yoff || 0}`);
       return true;
     }
     if ((c === 'PageUp' || c === 'PageDown') && h?.kind === 'surface' && h.part !== 'wall') {

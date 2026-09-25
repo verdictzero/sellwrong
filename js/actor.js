@@ -1249,7 +1249,7 @@ export class Actor {
     this.drawn = true;
     this.game.standees.add(this._tex, this.drawX, this.drawY, this.drawZ,
                            this._w, this._h, light, sky, fullbright, frost, ash, alight,
-                           this.monster ? 1 : 0);
+                           this.monster ? 1 : 0, this.sector?.tint?.thing || null);
   }
 }
 
