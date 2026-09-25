@@ -239,3 +239,32 @@
 .ed-tx-add { height: 24px; background: #0f1317; border: 1px solid var(--line); border-radius: 4px; max-width: 190px; }
 .ed-tx-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 0 14px; border-top: 1px solid var(--line); }
 .ed-tx-err { flex: 1; color: var(--danger); }
+
+/* inside / outside, and brightness */
+.ed-seg { display: flex; gap: 0; }
+.ed-seg button { flex: 1; height: 26px; border: 1px solid var(--line); background: #0f1317; cursor: pointer; font-size: 11px; }
+.ed-seg button:first-child { border-radius: 4px 0 0 4px; }
+.ed-seg button:last-child { border-radius: 0 4px 4px 0; border-left: 0; }
+.ed-seg button.on { background: #17301f; border-color: var(--accent); color: #fff; }
+.ed-bright { display: grid; grid-template-columns: 1fr 64px; gap: 6px; align-items: center; }
+.ed-bright input[type=range] { width: 100%; accent-color: #ffd35a; }
+.ed-pane.flash { animation: ed-flash .6s; }
+@keyframes ed-flash { from { box-shadow: inset 0 0 0 2px var(--accent2); } to { box-shadow: inset 0 0 0 2px transparent; } }
+#ed-status .info { color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+#ed-status .info b { color: #fff; }
+
+/* VISUAL MODE's crosshair */
+.ed-cross { display: none; position: absolute; left: 50%; top: 50%; width: 18px; height: 18px; margin: -9px 0 0 -9px; pointer-events: none; }
+.ed-cross::before, .ed-cross::after { content: ''; position: absolute; background: #fffc; box-shadow: 0 0 2px #000; }
+.ed-cross::before { left: 8px; top: 0; width: 2px; height: 18px; }
+.ed-cross::after { top: 8px; left: 0; height: 2px; width: 18px; }
+#ed-3d-wrap.visual .ed-cross { display: block; }
+#ed-3d-wrap.visual { cursor: none; }
+#ed-3d-wrap.visual .tag::after { content: '  ·  VISUAL MODE — Q or Esc to leave'; color: var(--accent2); }
+
+/* the Godot export dialog */
+#ed-godot { position: fixed; inset: 0; z-index: 70; background: #000a; display: grid; place-items: center; }
+.ed-gd-box { width: min(620px, 94vw); height: auto; grid-template-rows: 40px auto 48px; }
+.ed-gd-body { padding: 14px; }
+.ed-gd-body .ed-row { grid-template-columns: 130px 1fr; align-items: start; margin-bottom: 10px; }
+.ed-gd-body .ed-row input[type=number] { width: 90px; height: 24px; background: #0f1317; border: 1px solid var(--line); border-radius: 4px; padding: 0 6px; }

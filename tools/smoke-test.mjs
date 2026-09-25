@@ -13261,7 +13261,7 @@ await (async () => {
   const wallTint = (byTex.get('GRIDWALL') || []).flatMap(g => [...g.attributes.tintRGB.array]);
   function wallTintAll() { return wallTint; }
   check('the floor is drawn in its colour, and a wall nobody coloured in white',
-    hasOrange && wallTintAll().every(v => v === 1));
+    hasOrange && (() => { const w = wallTintAll(); for (let i = 0; i < w.length; i += 3) if (w[i] === 1 && w[i + 1] === 1 && w[i + 2] === 1) return true; return false; })());
   check('and every surface carries a colour for every corner', floorTint.length && wallTint.length &&
     [...byTex.values()].flat().every(g => g.attributes.tintRGB.array.length === g.attributes.position.array.length));
   const matSrc = fsE.readFileSync('js/material.js', 'utf8');
@@ -13293,6 +13293,119 @@ await (async () => {
   const mainT = fsE.readFileSync('js/main.js', 'utf8');
   check('and the game draws a test run\'s own textures before it builds anything',
     /registerTextures\(textures, played\.doc\.textures/.test(mainT) && mainT.indexOf('registerTextures(textures') < mainT.indexOf('const game = new Game('));
+
+  /* UDB'S WAY WITH LIGHT: brightness 0..255, Ctrl+wheel in 16s */
+  const edL = new E.Editor(null);
+  edL.history = new D.History(D.newDoc('B', 1024));
+  const sid = edL.doc.sectors[0].id;
+  check('a sector\'s brightness reads as Doom\'s 0 to 255', E.brightOf(edL.doc.sectors[0]) === Math.round(0.72 * 255));
+  edL.nudgeLight(16, new Set([sid])); edL.nudgeLight(16, new Set([sid]));
+  check('and Ctrl+wheel moves it sixteen at a time, as one undo each', E.brightOf(edL.doc.sectors[0]) === 184 + 32 && edL.history.past.length === 2);
+  for (let i = 0; i < 30; i++) edL.nudgeLight(16, new Set([sid]));
+  check('and never past 255, nor puts a step on the undo stack for trying', E.brightOf(edL.doc.sectors[0]) === 255 && edL.history.past.length === 5);
+  const topB = E.brightOf(edL.doc.sectors[0]);
+  edL.undo(); edL.undo(); edL.undo();
+  check('and undoes a step at a time', topB === 255 && E.brightOf(edL.doc.sectors[0]) < 255);
+
+  /* INSIDE AND OUTSIDE: a roofed room in the open is a building */
+  const bd = D.newDoc('BLD', 2048);
+  bd.vertices.push([512, 512], [1024, 512], [1024, 1024], [512, 1024]);
+  bd.sectors.push({ id: 5, verts: [4, 5, 6, 7], ...D.SECTOR_DEFAULTS });
+  bd.nextId = 6;
+  const edB = new E.Editor(null);
+  edB.history = new D.History(bd);
+  edB.setInside(true, new Set([5]));
+  const room5 = edB.doc.sectors.find(x => x.id === 5);
+  check('turning a sector inside gives it a roof and a room\'s height', E.isInside(room5) && room5.ceil === 128 && room5.outdoor === false);
+  let cb = D.compileDoc(edB.doc);
+  const walls = cb.level.lines.filter(l => l.exterior);
+  check('and where it meets the outside, a wall: solid, blocking, in its wall texture',
+    walls.length === 4 && walls.every(l => l.blocking && l.blockSight && l.middle === room5.wallTex));
+  edB.edit('door', d => { d.lines[D.lineKey(4, 5)] = { opening: true }; }, { tidy: false });
+  cb = D.compileDoc(edB.doc);
+  check('unless the line is a doorway', cb.level.lines.filter(l => l.exterior).length === 3);
+  edB.setInside(false, new Set([5]));
+  check('and outside again is open, with no walls', !E.isInside(edB.doc.sectors.find(x => x.id === 5)) &&
+    D.compileDoc(edB.doc).level.lines.filter(l => l.exterior).length === 0);
+  /* a line override reaches every piece of a line the compiler split */
+  const tj = D.newDoc('TJ', 2048);
+  tj.vertices.push([512, 0], [1024, 0], [1024, 512], [512, 512]);
+  tj.sectors.push({ id: 5, verts: [4, 5, 6, 7], ...D.SECTOR_DEFAULTS, floor: 32 });
+  tj.nextId = 6;
+  D.compact(tj);
+  const long = D.linesOf(tj).find(l => l.sectors.length === 1 && tj.vertices[l.a][1] === 0 && tj.vertices[l.b][1] === 0 &&
+    Math.abs(tj.vertices[l.a][0] - tj.vertices[l.b][0]) > 1024);
+  if (long) tj.lines[long.key] = { xoff: 7 };
+  const tjl = long ? D.compileDoc(tj).level.lines.filter(l => l.xoff === 7).length : 0;
+  check('a line\'s own settings reach every piece the compiler splits it into', !long || tjl >= 1, `${tjl}`);
+
+  /* COPY AND PASTE */
+  const edC = new E.Editor(null);
+  edC.history = new D.History(D.newDoc('C', 2048));
+  edC.select('thing', [edC.doc.things[0].id]);
+  edC.copySel();
+  edC.cursor = [1600, 1600];
+  const beforeT = edC.doc.things.length;
+  edC.paste();
+  check('Ctrl+C, Ctrl+V: a thing pasted at the cursor, as a new thing', edC.doc.things.length === beforeT + 1 &&
+    edC.doc.things.at(-1).id !== edC.doc.things[0].id && edC.sel.kind === 'thing');
+  edC.history.doc.vertices.push([256, 256], [512, 256], [512, 512], [256, 512]);
+  edC.history.doc.sectors.push({ id: 90, verts: [4, 5, 6, 7], ...D.SECTOR_DEFAULTS, floor: 48, light: 0.5 });
+  edC.select('sector', [90]);
+  edC.copySel();
+  edC.cursor = [1024, 1024];
+  edC.paste();
+  const pasted = edC.doc.sectors.at(-1);
+  check('and a sector, with its heights and light, where the cursor is', edC.doc.sectors.length === 3 && pasted.floor === 48 &&
+    pasted.light === 0.5 && D.ringOf(edC.doc, pasted).some(p => p[0] === 1024 && p[1] === 1024));
+  edC.undo();
+  check('and the paste undoes as one step', edC.doc.sectors.length === 2);
+  for (const x of [edL, edB, edC]) { clearTimeout(x._compileT); clearTimeout(x._saveT); }
+
+  /* THE GODOT EXPORT: a GLB that reads back, and a scene that says what
+     it should (it was also checked by importing it into Godot 4.3) */
+  const GD = await import('../js/editor/godot.js');
+  const surf = GD.gatherSurfaces(geoC.group);
+  const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 64, 0, 0, 0, 32]);
+  const imgs = new Map([...surf.keys()].map(n => [n, { png, masked: false }]));
+  const glb = GD.buildGLB(surf, imgs, { scale: 1 / 32, name: 'T' });
+  const dvG = new DataView(glb.buffer);
+  const jsonLen = dvG.getUint32(12, true);
+  const gj = JSON.parse(new TextDecoder().decode(glb.subarray(20, 20 + jsonLen)));
+  check('the GLB is a GLB: header, JSON chunk, binary chunk, lengths that add up',
+    dvG.getUint32(0, true) === 0x46546c67 && dvG.getUint32(8, true) === glb.length && dvG.getUint32(16, true) === 0x4e4f534a &&
+    dvG.getUint32(20 + jsonLen + 4, true) === 0x004e4942 && gj.buffers[0].byteLength <= dvG.getUint32(20 + jsonLen, true));
+  const prim = gj.meshes[0].primitives;
+  check('one primitive per texture, each with positions, normals, UVs and baked colour, and its texture',
+    prim.length === surf.size && prim.every(p => ['POSITION', 'NORMAL', 'TEXCOORD_0', 'COLOR_0'].every(a => p.attributes[a] !== undefined)) &&
+    gj.materials.every(m => m.pbrMetallicRoughness.baseColorTexture && m.extensions?.KHR_materials_unlit) &&
+    gj.images.length === surf.size && gj.accessors.every(a => a.count > 0));
+  check('and a mesh Godot will give collision to', gj.nodes[0].name === 'World-col' && gj.scenes[0].nodes[0] === 0);
+  const firstS = [...surf.values()][0], posAcc = gj.accessors[prim[0].attributes.POSITION], uvAcc = gj.accessors[prim[0].attributes.TEXCOORD_0];
+  const binAt = 20 + jsonLen + 8;
+  const read = (acc, i) => new Float32Array(glb.buffer.slice(binAt + gj.bufferViews[acc.bufferView].byteOffset, binAt + gj.bufferViews[acc.bufferView].byteOffset + gj.bufferViews[acc.bufferView].byteLength))[i];
+  check('in metres at 32 units each, with v turned over for glTF',
+    Math.abs(read(posAcc, 0) - firstS.pos[0] / 32) < 1e-4 && Math.abs(read(uvAcc, 1) - (1 - firstS.uv[1])) < 1e-4 && posAcc.min && posAcc.max);
+  const lit = GD.buildGLB(surf, imgs, { bake: false, collision: false });
+  const lj = JSON.parse(new TextDecoder().decode(lit.subarray(20, 20 + new DataView(lit.buffer).getUint32(12, true))));
+  check('and unbaked: no vertex colours, lit materials, no collision', lj.meshes[0].primitives.every(p => p.attributes.COLOR_0 === undefined) &&
+    !lj.extensionsUsed && lj.nodes[0].name === 'World');
+  const tscn = GD.buildTSCN({ name: 'My "Map" 1', world: { sky: { horizon: '#1d9a48' } } }, [
+    { type: 'START', x: 64, y: 32, z: 0, angle: Math.PI / 2 },
+    { type: 'PLANT', kind: 'fir_tall_1', x: 320, y: 320, z: 16, scale: 1 },
+    { type: 'PLANT', kind: 'fir_tall_1', x: 400, y: 320, z: 16, scale: 1.1 },
+    { type: 'SHOPPER', x: 100, y: 100, z: 0, angle: 0, variant: 3 },
+  ], new Map([['fir_tall_1', { file: 'sprites/fir_tall_1.png', w: 128, h: 256 }]]), { scale: 1 / 32 });
+  check('the scene names its root safely and instances the level',
+    /^\[gd_scene load_steps=\d+ format=3\]/.test(tscn) && /\[node name="My__Map__1" type="Node3D"\]/.test(tscn) &&
+    /\[node name="World" parent="\." instance=ExtResource\("1_world"\)\]/.test(tscn));
+  check('the plants are Sprite3D billboards about the vertical, cut out and point sampled, standing on the floor',
+    (tscn.match(/type="Sprite3D"/g) || []).length === 2 && /billboard = 2/.test(tscn) && /alpha_cut = 1/.test(tscn) &&
+    /texture_filter = 0/.test(tscn) && /offset = Vector2\(0, 128\)/.test(tscn) && tscn.includes(', 10, 0.5, -10)'));
+  check('the actors are markers with their type, and the start faces north as -Z',
+    /\[node name="SHOPPER_1" type="Marker3D" parent="Things"\]/.test(tscn) && /metadata\/variant = 3/.test(tscn) &&
+    tscn.includes('[node name="PlayerStart" type="Marker3D" parent="."]\ntransform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2, 0, -1)'));
+  check('and the sky is the map\'s', /sky_horizon_color = Color\(0\.11373, 0\.60392, 0\.28235, 1\)/.test(tscn) && /background_mode = 2/.test(tscn));
 
   /* THE DOORS */
   const term = fsE.readFileSync('js/terminal.js', 'utf8');

@@ -24,8 +24,12 @@
 
    Hold the right button to look, and while it is held WASD, Q and E
    fly (Shift faster) — so while it is not, those letters are the mode
-   keys they are on the plan. The wheel over a floor or a ceiling
-   raises it. Ctrl+C over a surface copies its texture and Ctrl+V
+   keys they are on the plan. Or press Q for VISUAL MODE, Doom
+   Builder's: the 3D view on its own, the mouse always looking, a
+   crosshair to pick with, WASD to fly, Space and C for up and down; Q
+   or Escape to come back. The wheel over a floor or a ceiling raises
+   it; CTRL AND THE WHEEL CHANGE ITS BRIGHTNESS, as they do in Ultimate
+   Doom Builder. Ctrl+C over a surface copies its texture and Ctrl+V
    pastes it; B is fullbright; F goes back to the start.
 
    PICKING IS DONE AGAINST THE DOCUMENT, NOT THE TRIANGLES. The level's
@@ -124,9 +128,10 @@ export class View3D {
     canvas.addEventListener('wheel', e => this.wheel(e), { passive: false });
     canvas.addEventListener('contextmenu', e => e.preventDefault());
     canvas.addEventListener('pointerenter', () => { ed.pointerView = '3d'; });
-    canvas.addEventListener('pointerleave', () => { if (!this.looking && !this.drag) { this.hover = null; this.mouse = null; this.drawHover(); } });
+    canvas.addEventListener('pointerleave', () => { if (!this.looking && !this.drag && !this.visual) { this.hover = null; this.mouse = null; this.drawHover(); ed.setHover(null); } });
     document.addEventListener('pointerlockchange', () => {
       if (document.pointerLockElement !== canvas && this.looking) this.stopLook();
+      if (document.pointerLockElement !== canvas && this.visual) this.toggleVisual(false);
     });
     addEventListener('keyup', e => this.keys.delete(e.code));
     addEventListener('blur', () => this.keys.clear());
@@ -145,6 +150,30 @@ export class View3D {
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
+  }
+
+  /** VISUAL MODE on or off. */
+  toggleVisual(on = !this.visual) {
+    const ed = this.ed, wrap = this.canvas.parentElement;
+    if (on === this.visual) return;
+    this.visual = on;
+    wrap.classList.toggle('visual', on);
+    if (on) {
+      this.before = ed.layout;
+      if (ed.layout !== 'only3d') ed.setLayout('only3d');
+      ed.pointerView = '3d';
+      if (!this.cam) this.toStart();
+      try { this.canvas.requestPointerLock?.(); } catch (e) { /* then it looks by dragging */ }
+      this.mouse = [this.w / 2, this.h / 2];
+      this.hoverDirty = true;
+      ed.say('VISUAL MODE — mouse looks, WASD flies, Space/C up and down, click picks, wheel raises, Ctrl+wheel brightness; Q or Esc leaves');
+    } else {
+      this.keys.clear();
+      if (document.pointerLockElement === this.canvas) document.exitPointerLock?.();
+      if (this.before && this.before !== 'only3d') ed.setLayout(this.before);
+      ed.say('left visual mode');
+    }
+    ed.emit('visual', on);
   }
 
   resize() {
@@ -315,6 +344,12 @@ export class View3D {
         const skyWalls = d.world?.skyWalls;
         if (ss.some(s => s.outdoor === false) && (skyWalls || ss.every(s => s.ceilTex !== 'SKY')) && Math.max(...ce) > Math.min(...ce)) seg(v[0], v[1], Math.min(...ce), v[0], v[1], Math.max(...ce));
       }
+      /* a building's outside wall, standing in the opening */
+      if (ss.length === 2 && exteriorWall(d, l)) {
+        const top = Math.min(...ss.map(s => s.ceil ?? 0)), bot = Math.max(...ss.map(s => s.floor ?? 0));
+        seg(a[0], a[1], top, b[0], b[1], top);
+        for (const v of [a, b]) seg(v[0], v[1], bot, v[0], v[1], top);
+      }
     }
     for (const p of d.props) box(P, p.x0, p.y0, p.z0, p.x1, p.y1, p.z1);
     setLines(this.edges, pts);
@@ -447,7 +482,10 @@ export class View3D {
       } else {
         const fLo = Math.min(...fl), fHi = Math.max(...fl), cLo = Math.min(...ce), cHi = Math.max(...ce);
         if (z >= fLo && z <= fHi && fHi > fLo) take({ t, kind: 'surface', part: 'wall', band: 'lower', line: l.key, sector: front, x, y, z });
-        else if (z >= cLo && z <= cHi && cHi > cLo) take({ t, kind: 'surface', part: 'wall', band: 'upper', line: l.key, sector: front, x, y, z });
+        else if (z >= cLo && z <= cHi && cHi > cLo && !ss.some(q => q.ceilTex === 'SKY')) take({ t, kind: 'surface', part: 'wall', band: 'upper', line: l.key, sector: front, x, y, z });
+        /* and a wall standing in the opening: a building's outside wall,
+           or a middle texture — see midWall */
+        else if (z > fHi && z < cLo && midWall(d, l)) take({ t, kind: 'surface', part: 'wall', band: 'middle', line: l.key, sector: front, x, y, z });
       }
     }
 
@@ -473,13 +511,19 @@ export class View3D {
      THE MOUSE — every mode, as on the plan
      ------------------------------------------------------------------ */
   at(e) {
+    /* in visual mode everything happens at the crosshair */
+    if (this.visual) return [this.w / 2, this.h / 2];
     const r = this.canvas.getBoundingClientRect();
     return [e.clientX - r.left, e.clientY - r.top];
   }
 
   down(e) {
     this.canvas.focus();
-    if (e.button === 2) {
+    if (this.visual && document.pointerLockElement !== this.canvas) {
+      /* the lock can be refused until the page is clicked; this click */
+      try { this.canvas.requestPointerLock?.(); } catch (err) { /* keep going */ }
+    }
+    if (e.button === 2 && !this.visual) {
       this.looking = true;
       this.canvas.parentElement.classList.add('look');
       try { this.canvas.requestPointerLock?.(); } catch (err) { /* then it looks by dragging */ }
@@ -562,6 +606,14 @@ export class View3D {
   }
 
   move(e) {
+    if (this.visual && this.cam && !this.drag) {
+      this.cam.yaw -= e.movementX * LOOK;
+      this.cam.pitch = Math.max(-1.5, Math.min(1.5, this.cam.pitch - e.movementY * LOOK));
+      this.mouse = [this.w / 2, this.h / 2];
+      this.hoverDirty = true;
+      this.ed.emit('camera');
+      return;
+    }
     if (this.looking && this.cam) {
       this.cam.yaw -= e.movementX * LOOK;
       this.cam.pitch = Math.max(-1.5, Math.min(1.5, this.cam.pitch - e.movementY * LOOK));
@@ -571,6 +623,12 @@ export class View3D {
     const [px, py] = this.at(e);
     this.mouse = [px, py];
     const dr = this.drag;
+    /* in visual mode a drag goes where the crosshair is pointed, which
+       the mouse is doing by looking */
+    if (dr && this.visual) {
+      this.cam.yaw -= e.movementX * LOOK;
+      this.cam.pitch = Math.max(-1.5, Math.min(1.5, this.cam.pitch - e.movementY * LOOK));
+    }
     if (dr && this.cam) {
       const p = this.onPlane(this.ray(px, py), dr.z);
       if (!p) return;
@@ -617,6 +675,19 @@ export class View3D {
     e.preventDefault();
     const ed = this.ed;
     const h = this.hover;
+    /* CTRL AND THE WHEEL: the brightness of the sector under the mouse —
+       every selected sector with it, if it is one of them — in Doom's
+       sixteen steps (Shift: one at a time) */
+    if (e.ctrlKey || e.metaKey) {
+      /* a thing or a prop is lit by the sector it stands in */
+      let s = h?.kind === 'surface' ? ed.doc.sectors[h.sector] : null;
+      if (!s && h?.kind === 'thing') { const t = ed.doc.things.find(q => q.id === h.id); if (t) s = ed.sectorAt(t.x, t.y); }
+      if (!s && h?.kind === 'prop') { const p = ed.doc.props.find(q => q.id === h.id); if (p) s = ed.sectorAt((p.x0 + p.x1) / 2, (p.y0 + p.y1) / 2); }
+      if (!s) return;
+      const ids = ed.sel.kind === 'sector' && ed.sel.ids.has(s.id) ? ed.sel.ids : new Set([s.id]);
+      ed.nudgeLight((e.shiftKey ? 1 : 16) * (e.deltaY < 0 ? 1 : -1), ids);
+      return;
+    }
     const step = (e.shiftKey ? 1 : 8) * (e.deltaY < 0 ? 1 : -1);
     if (h?.kind === 'surface' && h.part !== 'wall') {
       /* THE DOOM BUILDER WHEEL: the floor or ceiling under the mouse
@@ -640,6 +711,7 @@ export class View3D {
       ed.edit(`prop ${step > 0 ? 'up' : 'down'}`, d => { for (const p of d.props) if (p.id === id) { p.z0 += step; p.z1 += step; } }, { tidy: false });
       return;
     }
+    if (h?.kind === 'thing') { ed.say('things stand on the floor: raise the floor under it, or Ctrl+wheel for its light'); return; }
     /* over nothing: fly forward and back */
     if (this.cam) {
       const f = (e.deltaY < 0 ? 1 : -1) * 64;
@@ -659,6 +731,11 @@ export class View3D {
       this.keys.add(c);
       return !c.startsWith('Shift');
     }
+    if (this.visual && ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'KeyC', 'KeyE', 'ShiftLeft', 'ShiftRight'].includes(c) && !ctrl) {
+      this.keys.add(c);
+      return !c.startsWith('Shift');
+    }
+    if (this.visual && e.key === 'Escape') { this.toggleVisual(false); return true; }
     if (c === 'KeyF' && !ctrl) { this.toStart(); return true; }
     if (c === 'KeyB' && !ctrl) { this.setFullbright(!this.fullbright); return true; }
     const h = this.hover;
@@ -735,6 +812,10 @@ export class View3D {
         const fl = at(p, 'floor'), ce = at(p, 'ceil');
         if (h.band === 'lower') return [Math.min(...fl), Math.max(...fl)];
         if (h.band === 'upper') return [Math.min(...ce), Math.max(...ce)];
+        if (ss.length > 1) {
+          const top = Math.min(...ce), mh = d.lines[h.line]?.midHeight;
+          return [Math.max(...fl), mh && !exteriorWall(d, l) ? Math.min(top, Math.max(...fl) + mh) : top];
+        }
         return [fl[0], ce[0]];
       };
       const [a0, a1] = band(a), [b0, b1] = band(b);
@@ -853,7 +934,7 @@ export class View3D {
   frame(dt) {
     if (!this.cam) return;
     const c = this.cam, k = this.keys;
-    if (this.looking) {
+    if (this.looking || this.visual) {
       const sp = FLY * (k.has('ShiftLeft') || k.has('ShiftRight') ? 3.5 : 1) * dt;
       const fx = Math.cos(c.yaw), fy = Math.sin(c.yaw);
       let mx = 0, my = 0, mz = 0;
@@ -861,9 +942,9 @@ export class View3D {
       if (k.has('KeyS')) { mx -= fx * Math.cos(c.pitch); my -= fy * Math.cos(c.pitch); mz -= Math.sin(c.pitch); }
       if (k.has('KeyA')) { mx -= fy; my += fx; }
       if (k.has('KeyD')) { mx += fy; my -= fx; }
-      if (k.has('KeyE')) mz += 1;
-      if (k.has('KeyQ')) mz -= 1;
-      if (mx || my || mz) { c.x += mx * sp; c.y += my * sp; c.z += mz * sp; this.ed.emit('camera'); }
+      if (k.has('KeyE') || k.has('Space')) mz += 1;
+      if (k.has('KeyQ') || k.has('KeyC')) mz -= 1;
+      if (mx || my || mz) { c.x += mx * sp; c.y += my * sp; c.z += mz * sp; this.ed.emit('camera'); this.hoverDirty = true; }
     }
     this.camera.position.set(c.x, c.z, -c.y);
     this.camera.rotation.set(c.pitch, c.yaw - Math.PI / 2, 0, 'YXZ');
@@ -876,6 +957,10 @@ export class View3D {
       const R = this.ray(this.mouse[0], this.mouse[1]);
       this.hover = this.pick(R);
       this.drawHover();
+      const hv = this.hover;
+      this.ed.setHover(!hv ? null : hv.kind === 'thing' || hv.kind === 'prop' ? { kind: hv.kind, id: hv.id }
+        : hv.part === 'wall' ? { kind: 'line', id: hv.line, part: 'wall', band: hv.band }
+        : { kind: 'sector', id: this.ed.doc.sectors[hv.sector]?.id, part: hv.part });
       /* and the cursor on the map, for both views */
       const sg = this.snapGround(this.ground(R, this.hover), this.mouse[0], this.mouse[1]);
       if (sg) { this.ed.setCursor(sg); this.ed.ui.setPos(sg[0], sg[1]); }
@@ -1014,3 +1099,14 @@ function disposeTree(root) {
     if (Array.isArray(m)) m.forEach(x => x.dispose?.()); else m?.dispose?.();
   });
 }
+
+/** Whether a two-sided line is a building's outside wall: an inside
+ *  sector on one side, the outside on the other, and not a doorway —
+ *  the rule the compiler walls it by (5c in js/editor/doc.js). */
+export function exteriorWall(d, l) {
+  if (!l || l.sectors.length !== 2 || d.lines[l.key]?.opening) return false;
+  const [a, b] = l.sectors.map(i => d.sectors[i]);
+  return (a.ceilTex !== 'SKY') !== (b.ceilTex !== 'SKY');
+}
+/** Or anything else standing in the opening: a middle texture. */
+function midWall(d, l) { return exteriorWall(d, l) || !!d.lines[l.key]?.midTex; }

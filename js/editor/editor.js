@@ -361,6 +361,141 @@ export class Editor {
     }, { tidy: false });
   }
 
+  /** BRIGHTNESS, Doom's 0 to 255 — Ctrl and the wheel in UDB, over a
+   *  sector on the plan or in 3D. The game's light is that over 255. */
+  nudgeLight(delta, ids = null) {
+    const which = ids || (this.sel.kind === 'sector' ? this.sel.ids : new Set());
+    if (!which.size) return;
+    /* at the end of the range there is nothing to do, and nothing to
+       put on the undo stack */
+    const moves = this.doc.sectors.some(s => which.has(s.id) && Math.max(0, Math.min(255, brightOf(s) + delta)) !== brightOf(s));
+    if (!moves) { this.say(`brightness ${delta > 0 ? 255 : 0} is as far as it goes`); return; }
+    let now = 0;
+    this.edit(`brightness ${delta > 0 ? '+' : ''}${delta}`, d => {
+      for (const s of d.sectors) {
+        if (!which.has(s.id)) continue;
+        const b = Math.max(0, Math.min(255, brightOf(s) + delta));
+        s.light = +(b / 255).toFixed(4);
+        now = b;
+      }
+    }, { tidy: false });
+    this.say(`brightness ${now}`);
+  }
+
+  /** INSIDE OR OUTSIDE. Outside is under the sky with no ceiling; inside
+   *  is a room with a roof, and where it meets the outside the compiler
+   *  stands a wall (see 5c in js/editor/doc.js) — unless the line is a
+   *  doorway. */
+  setInside(inside, ids = null) {
+    const which = ids || (this.sel.kind === 'sector' ? this.sel.ids : new Set());
+    if (!which.size) return;
+    this.edit(inside ? 'inside' : 'outside', d => {
+      for (const s of d.sectors) {
+        if (!which.has(s.id)) continue;
+        if (inside) {
+          if (s.ceilTex === 'SKY' || !s.ceilTex) s.ceilTex = s.roofTex && s.roofTex !== 'SKY' ? s.roofTex : 'GRIDBOX';
+          /* a room gets a room's height, not the sky's */
+          if ((s.ceil ?? 1024) - (s.floor ?? 0) > 512) s.ceil = (s.floor ?? 0) + 128;
+          s.outdoor = false;
+        } else {
+          s.ceilTex = 'SKY';
+          s.outdoor = true;
+          if ((s.ceil ?? 0) < (s.floor ?? 0) + 128) s.ceil = (s.floor ?? 0) + 128;
+        }
+      }
+    }, { tidy: false });
+    this.say(inside ? 'inside: roofed, walled where it meets the outside' : 'outside: open to the sky');
+  }
+
+  /** INSERT, as in Doom Builder: a thing in things mode, a vertex (in
+   *  whatever line it lands on) in vertex mode — at the cursor. */
+  insertAtCursor() {
+    const c = this.cursor;
+    if (!c) return;
+    if (this.mode === 'vertices') {
+      this.edit('insert vertex', d => { vertexFor(d, c[0], c[1]); });
+      this.say(`vertex at ${c[0]}, ${c[1]}`);
+    } else if (this.mode === 'draw') {
+      this.addPathPoint(c);
+    } else {
+      this.addThing(c[0], c[1]);
+    }
+  }
+
+  /* ------------------------------------------------------------------
+     COPY AND PASTE, Doom Builder's: the selection to a clipboard of its
+     own, and back at the cursor, offset from where it was grabbed
+     ------------------------------------------------------------------ */
+  copySel() {
+    const d = this.doc, { kind, ids } = this.sel;
+    if (!kind || !ids.size) { this.say('nothing selected to copy'); return false; }
+    const clip = { kind, items: [] };
+    if (kind === 'thing') clip.items = d.things.filter(t => ids.has(t.id)).map(t => ({ ...t }));
+    else if (kind === 'prop') clip.items = d.props.filter(p => ids.has(p.id)).map(p => ({ ...p }));
+    else if (kind === 'scatter') clip.items = d.scatters.filter(c => ids.has(c.id)).map(c => JSON.parse(JSON.stringify(c)));
+    else if (kind === 'sector') clip.items = d.sectors.filter(s => ids.has(s.id)).map(s => ({ props: { ...s, verts: undefined, id: undefined }, ring: ringOf(d, s).map(p => [...p]) }));
+    else { this.say(`${kind}s cannot be copied — copy the sectors or things`); return false; }
+    const pts = kind === 'sector' ? clip.items.flatMap(i => i.ring) : kind === 'prop' ? clip.items.map(p => [p.x0, p.y0])
+      : kind === 'scatter' ? clip.items.map(c => [c.area.x ?? c.area.x0 ?? 0, c.area.y ?? c.area.y0 ?? 0]) : clip.items.map(t => [t.x, t.y]);
+    clip.anchor = [Math.min(...pts.map(p => p[0])), Math.min(...pts.map(p => p[1]))];
+    this.clipboard = clip;
+    this.say(`copied ${clip.items.length} ${kind}${clip.items.length > 1 ? 's' : ''}`);
+    return true;
+  }
+  paste() {
+    const clip = this.clipboard, c = this.cursor;
+    if (!clip) { this.say('the clipboard is empty'); return; }
+    if (!c) { this.say('point at where to paste'); return; }
+    const dx = this.snapV(c[0] - clip.anchor[0]), dy = this.snapV(c[1] - clip.anchor[1]);
+    const made = [];
+    if (clip.kind === 'sector') {
+      this.history.push(`paste ${clip.items.length} sectors`);
+      for (const it of clip.items) {
+        const d = this.doc;
+        const ring = it.ring.map(([x, y]) => vertexFor(d, x + dx, y + dy));
+        const s = { ...it.props, id: takeId(d), verts: ring.filter((v, k, a) => v !== a[(k + 1) % a.length]) };
+        if (s.verts.length >= 3) { d.sectors.push(s); made.push(s.id); }
+      }
+      compact(this.doc);
+      this.changed({ now: true });
+    } else {
+      this.edit(`paste ${clip.items.length} ${clip.kind}s`, d => {
+        for (const it of clip.items) {
+          const o = JSON.parse(JSON.stringify(it));
+          o.id = takeId(d);
+          if (clip.kind === 'thing') { o.x += dx; o.y += dy; d.things.push(o); }
+          if (clip.kind === 'prop') { o.x0 += dx; o.x1 += dx; o.y0 += dy; o.y1 += dy; d.props.push(o); }
+          if (clip.kind === 'scatter') {
+            const a = o.area;
+            if (a.kind === 'circle') { a.x += dx; a.y += dy; }
+            else if (a.kind === 'rect') { a.x0 += dx; a.x1 += dx; a.y0 += dy; a.y1 += dy; }
+            d.scatters.push(o);
+          }
+          made.push(o.id);
+        }
+      }, { tidy: false });
+    }
+    this.select(clip.kind, made);
+    this.say(`pasted ${made.length}`);
+  }
+
+  /** WHAT IS UNDER THE MOUSE, for the info bar and for the keys that act
+   *  on the highlight when nothing is selected (Delete, Ctrl+wheel). Set
+   *  by whichever view the mouse is in: { kind, id }. */
+  setHover(h) {
+    const k = h ? `${h.kind}:${h.id}` : '';
+    if (k === this._hoverKey) return;
+    this._hoverKey = k;
+    this.hovered = h;
+    this.emit('hover', h);
+  }
+  /** The selection if there is one, or the highlighted thing. */
+  targetOr(kind) {
+    if (this.sel.kind === kind && this.sel.ids.size) return this.sel.ids;
+    if (this.hovered?.kind === kind) return new Set([this.hovered.id]);
+    return new Set();
+  }
+
   /** A texture onto whatever is selected: the surface picked in 3D if
    *  there is one, or the field the inspector is picking for. */
   applyTexture(name, field = null) {
@@ -370,7 +505,8 @@ export class Editor {
       if (s.part === 'wall') {
         /* the part of the wall that was clicked: the middle of a
            one-sided wall, or the upper or lower step of a two-sided one */
-        const field = s.band === 'upper' ? 'upperTex' : s.band === 'lower' ? 'lowerTex' : 'wallTex';
+        const two = this.lines().find(l => l.key === s.line)?.sectors.length > 1;
+        const field = s.band === 'upper' ? 'upperTex' : s.band === 'lower' ? 'lowerTex' : two ? 'midTex' : 'wallTex';
         this.edit(`texture ${name}`, d => {
           d.lines[s.line] = { ...(d.lines[s.line] || {}), [field]: name };
         }, { tidy: false });
@@ -534,6 +670,12 @@ export class Editor {
       } catch (e) { this.say(`could not open ${f.name}: ${e.message}`); }
     };
     input.click();
+  }
+
+  /** EXPORT: the map as a Godot 4 scene — see js/editor/godot.js */
+  async exportGodot() {
+    const { openGodotDialog } = await import('./godot.js');
+    openGodotDialog(this);
   }
 
   /** TEST THE MAP: hand it to the game and go. */
@@ -756,7 +898,14 @@ export async function startEditor() {
     if (ctrl && k.toLowerCase() === 'o') { e.preventDefault(); ed.fileOpen(); return; }
     if (ctrl && k.toLowerCase() === 'a') { e.preventDefault(); selectAll(ed); return; }
     if (ctrl && ed.pointerView === '3d' && ed.view3d.key(e)) { e.preventDefault(); return; }
+    /* copy and paste of the selection itself (in 3D, over a surface,
+       Ctrl+C and Ctrl+V are its texture, taken just above) */
+    if (ctrl && k.toLowerCase() === 'c') { e.preventDefault(); ed.copySel(); return; }
+    if (ctrl && k.toLowerCase() === 'v') { e.preventDefault(); ed.paste(); return; }
     if (ctrl) return;
+    /* VISUAL MODE, Doom Builder's Q: the 3D view on its own, the mouse
+       looking, a crosshair to pick with — Q or Escape again to leave */
+    if (k.toLowerCase() === 'q' && !e.altKey && !ed.view3d.looking) { e.preventDefault(); ed.view3d.toggleVisual(); return; }
     const target = ed.pointerView === '3d' ? ed.view3d : ed.view2d;
     if (target.key?.(e)) { e.preventDefault(); return; }
     if (k === 'F5') { e.preventDefault(); ed.play(); return; }
@@ -769,7 +918,22 @@ export async function startEditor() {
       return;
     }
     if (k === 'Backspace' && ed.path.length) { e.preventDefault(); ed.path.pop(); ed.emit('path'); return; }
-    if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); ed.deleteSel(); return; }
+    if (k === 'Delete' || k === 'Backspace') {
+      e.preventDefault();
+      /* nothing selected: the highlighted thing, as Doom Builder does */
+      if (!ed.sel.kind && ed.hovered && ed.hovered.kind !== 'surface') ed.select(ed.hovered.kind, [ed.hovered.id]);
+      ed.deleteSel();
+      return;
+    }
+    if (k === 'Insert') { e.preventDefault(); ed.insertAtCursor(); return; }
+    if (k === 'PageUp' || k === 'PageDown') {
+      /* the floor of the selected or highlighted sectors, a grid step;
+         Shift for the ceiling */
+      e.preventDefault();
+      const ids = ed.targetOr('sector');
+      if (ids.size) ed.nudgeHeight(e.shiftKey ? 'ceil' : 'floor', (k === 'PageUp' ? 1 : -1) * ed.grid, ids);
+      return;
+    }
     if (k === 'Escape') { if (ed.path.length) ed.cancelPath(); else ed.clearSel(); return; }
     if (k === 'Enter' && ed.path.length) { ed.closePath(); return; }
     if (k === '[') { ed.gridStep(-1); return; }
@@ -826,3 +990,8 @@ export function makeSky(renderer, doc) {
 function textureKey(doc) {
   return JSON.stringify(doc.textures || [], (k, v) => (k === 'image' && typeof v === 'string' ? v.length : v));
 }
+
+/** A sector's brightness, Doom's way: 0 to 255. */
+export function brightOf(s) { return Math.round(Math.max(0, Math.min(1, s.light ?? 0.72)) * 255); }
+/** And whether it is inside: roofed, rather than open to the sky. */
+export function isInside(s) { return !!s.ceilTex && s.ceilTex !== 'SKY'; }

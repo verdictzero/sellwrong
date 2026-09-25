@@ -5388,6 +5388,75 @@ THE INSPECTOR edits everything selected at once:
   props    the box's extent, bottom, top, and side and top textures
   scatters everything below
 
+IT BEHAVES LIKE ULTIMATE DOOM BUILDER AND SLADE3 where they agree, at
+the user's request:
+
+  Q               visual mode: the 3D view alone, the mouse looking, a
+                  crosshair to pick with, WASD to fly, Space and C for
+                  up and down; Q or Esc to leave
+  wheel (3D)      raise or lower the floor or ceiling under the mouse,
+                  8 a notch (Shift: 1), every selected sector with it
+  Ctrl+wheel      SECTOR BRIGHTNESS, on the plan or in 3D: Doom's 0-255
+                  in its sixteen steps (Shift: 1). Over a thing, the
+                  sector it stands in. The inspector has it as a slider.
+  PgUp / PgDn     floor up or down a grid step (Shift: the ceiling)
+  right-click     the thing under the mouse, in the inspector (its
+                  properties); right-drag moves it; on nothing, pans
+  Insert          a thing at the cursor, or a vertex (in vertex mode,
+                  splitting the line it lands on)
+  Delete          the selection, or the highlighted thing if nothing is
+                  selected
+  Ctrl+C / Ctrl+V copy the selection and paste it at the cursor
+                  (sectors, things, props, scatters); in 3D over a
+                  surface, its texture
+  arrows (3D)     a wall's texture offsets, 1 at a time (Shift: 8)
+  V L S T         vertices, lines, sectors, things, as in Doom Builder
+  [ ] G           the grid, and snapping to it
+
+THE INFO BAR along the bottom says what is under the mouse, in either
+view: a sector's floor, ceiling, brightness, whether it is inside, and
+its textures; a line's length and sides; a thing's type, place and
+facing.
+
+INSIDE AND OUTSIDE. Every sector is one or the other; it is the first
+setting in the sector inspector. OUTSIDE is open ground under the sky,
+with no ceiling, and its height is only how tall walls round it stand.
+INSIDE is a room with a roof, 128 high to start with. Where an inside
+sector meets an outside one the compiler stands the building's outside
+wall (5c in js/editor/doc.js): solid, the inside sector's wall texture,
+from its floor to its roof, blocking walking and sight. The roof is
+drawn from above, and no wall runs from it up to the sky. To make a
+door, mark the line a DOORWAY in the line inspector; to make a doorway
+in part of a wall, split the wall first (Insert, in vertex mode). On
+the plan, inside is tan and hatched, the outside wall is drawn solid,
+and a doorway dashed.
+
+EXPORT TO GODOT (File > Export Godot scene; js/editor/godot.js). The
+map goes out as a zip that unpacks into one folder for a Godot 4
+project:
+
+  <name>.tscn    the scene to open: a WorldEnvironment with the map's
+                 sky, the level, the plants as Sprite3D billboards
+                 (fixed-Y, cut out, point sampled, feet on the floor),
+                 the game's actors as Marker3D nodes carrying their
+                 type, variant and facing, and the player start
+  world.glb      every surface of the level, from the game's own
+                 geometry: one primitive per texture, UV-mapped as the
+                 game maps it, textures packed inside
+  textures/      the same textures as PNG files
+  sprites/       the billboards' pictures, drawn at each plant's aspect
+  README.txt
+
+Sector brightness and Doom 64 colours are baked into the vertex colours
+and the materials are unshaded (KHR_materials_unlit), so the scene looks
+like the map with no lights placed; untick BAKE LIGHTING for lit
+materials and a sun. The level mesh is named World-col, so Godot's
+importer gives it a static trimesh collision body. The scale is 32 map
+units to the metre, which can be changed. An export was imported into
+Godot 4.3 headless to check it: the scene loads, every surface has its
+texture, UVs and vertex colours with unshaded materials, the collision
+body is there, and the sprites and markers are where they should be.
+
 AN OPEN WORLD BY DEFAULT. A new map is open ground under the sky with
 no ceiling, 4096 units square, and a new sector is too. Its "ceiling"
 is SKY, which the renderer treats as a hole the sky shows through, and

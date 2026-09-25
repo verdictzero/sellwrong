@@ -14,7 +14,7 @@
 
 import { THING_TYPES, problemsOf, ringOf, signedArea, COLOR_PARTS } from './doc.js';
 import { openTextureEditor } from './texeditor.js';
-import { MODES, GRIDS } from './editor.js';
+import { MODES, GRIDS, brightOf, isInside } from './editor.js';
 import { PRESETS, SCATTER_TYPES, PLANT_KINDS, SCATTER_MAX } from './scatter.js';
 import { plantColour } from './view2d.js';
 
@@ -111,6 +111,7 @@ export function buildUI(ed) {
       ['Save as file', 'Ctrl+S', () => ed.fileSave()],
       '-',
       ['Test map', 'F5', () => ed.play()],
+      ['Export Godot scene…', '', () => ed.exportGodot()],
       ['Back to the terminal', '', () => { ed.autosave(); location.href = location.pathname; }],
     ]),
     menu('Edit', [
@@ -129,6 +130,13 @@ export function buildUI(ed) {
       ['R: drag a rectangle into a sector', '', () => {}],
       ['X: drag a circle to scatter the chosen mix', '', () => {}],
       ['Every mode works in the 3D view too', '', () => {}],
+      ['Q: visual mode — mouselook, WASD, crosshair', '', () => {}],
+      ['Ctrl+wheel: sector brightness (2D and 3D)', '', () => {}],
+      ['Wheel in 3D: raise/lower floor or ceiling', '', () => {}],
+      ['Right-click: properties · right-drag: move', '', () => {}],
+      ['Insert: thing / vertex at the cursor', '', () => {}],
+      ['Ctrl+C / Ctrl+V: copy / paste selection', '', () => {}],
+      ['PgUp/PgDn: floor ±grid (Shift: ceiling)', '', () => {}],
       ['Tab swaps the big view and the inset', '', () => {}],
       ['3D: hold right mouse to look, WASD QE fly', '', () => {}],
       ['3D: wheel raises the floor/ceiling under it', '', () => {}],
@@ -153,9 +161,10 @@ export function buildUI(ed) {
   ui.canvas3d = h('canvas', { tabindex: 0 });
   ui.help2d = h('div', { class: 'help' });
   ui.help3d = h('div', { class: 'help' },
-    'hold RMB: look + WASD/QE fly · every mode works here\nwheel height · Ctrl+C/V texture · B fullbright · F start');
+    'Q visual mode · hold RMB look + WASD fly · every mode works here\nwheel height · Ctrl+wheel brightness · Ctrl+C/V texture · B fullbright');
   const wrap2d = h('div', { id: 'ed-2d-wrap', class: 'ed-view' }, ui.canvas2d, h('div', { class: 'tag' }, 'MAP  2D'), ui.help2d);
-  const wrap3d = h('div', { id: 'ed-3d-wrap', class: 'ed-view' }, ui.canvas3d, h('div', { class: 'tag' }, 'VISUAL  3D'), ui.help3d);
+  const wrap3d = h('div', { id: 'ed-3d-wrap', class: 'ed-view' }, ui.canvas3d, h('div', { class: 'tag' }, 'VISUAL  3D'), ui.help3d,
+    h('div', { class: 'ed-cross' }));
   ui.wrap2d = wrap2d; ui.wrap3d = wrap3d;
   /* in the combined workspace, a button on the inset to swap it big */
   for (const w of [wrap2d, wrap3d]) w.append(h('button', { class: 'ed-swap', title: 'Swap the big view and the inset (Tab)',
@@ -193,13 +202,43 @@ export function buildUI(ed) {
      ------------------------------------------------------------------ */
   const st = {
     mode: h('span'), grid: h('span'), pos: h('span'), sel: h('span'), probs: h('span'), msg: h('span', { class: 'msg' }),
+    info: h('span', { class: 'info' }),
   };
-  const status = h('div', { id: 'ed-status' }, st.mode, st.grid, st.pos, st.sel, st.probs, st.msg);
+  const status = h('div', { id: 'ed-status' }, st.mode, st.grid, st.pos, st.sel, st.info, st.probs, st.msg);
+  /* THE INFO BAR, Doom Builder's panel along the bottom: what is under
+     the mouse, and what it is — in either view */
+  ed.on('hover', hv => {
+    const d = ed.doc;
+    let t = '';
+    if (hv?.kind === 'sector') {
+      const x = d.sectors.find(q => q.id === hv.id);
+      if (x) t = `<b>Sector ${x.id}</b>${x.name ? ` ${x.name}` : ''} · ${isInside(x) ? 'inside' : 'outside'} · floor <b>${x.floor ?? 0}</b> · ${isInside(x) ? 'ceiling' : 'walls'} <b>${x.ceil ?? 0}</b> · brightness <b>${brightOf(x)}</b> · ${x.floorTex}${isInside(x) ? ` / ${x.ceilTex}` : ''}`;
+    } else if (hv?.kind === 'line') {
+      const l = ed.lines().find(q => q.key === hv.id);
+      const [a, b] = String(hv.id).split(',').map(Number);
+      const va = d.vertices[a], vb = d.vertices[b];
+      if (l && va && vb) t = `<b>Line ${hv.id}</b> · ${Math.round(Math.hypot(vb[0] - va[0], vb[1] - va[1]))} long · ${l.sectors.length > 1 ? 'two-sided' : 'one-sided'}${d.lines[hv.id]?.opening ? ' · doorway' : ''}`;
+    } else if (hv?.kind === 'thing') {
+      const x = d.things.find(q => q.id === hv.id);
+      if (x) t = `<b>${x.type === 'PLANT' ? x.kind : THING_TYPES[x.type]?.name || x.type}</b> #${x.id} · ${Math.round(x.x)}, ${Math.round(x.y)} · ${Math.round(((x.angle || 0) * 180 / Math.PI) % 360)}°`;
+    } else if (hv?.kind === 'vertex') {
+      const v = d.vertices[hv.id];
+      if (v) t = `<b>Vertex ${hv.id}</b> · ${v[0]}, ${v[1]}`;
+    } else if (hv?.kind === 'prop') {
+      const x = d.props.find(q => q.id === hv.id);
+      if (x) t = `<b>Prop ${x.id}</b> · ${x.z0}–${x.z1} · ${x.tex}`;
+    } else if (hv?.kind === 'scatter') {
+      const x = d.scatters.find(q => q.id === hv.id);
+      if (x) t = `<b>Scatter</b> ${x.name} · ${ed.compiled?.grown?.get(x.id)?.grown ?? '…'} grown`;
+    }
+    st.info.innerHTML = t;
+  });
   const toast = h('div', { id: 'ed-toast' });
 
   root.append(top, h('div', { id: 'ed-main' }, views, side), status, toast);
 
   let toastT = 0;
+  ui.flashInsp = () => { panes.insp.classList.remove('flash'); void panes.insp.offsetWidth; panes.insp.classList.add('flash'); };
   ui.toast = msg => {
     toast.textContent = msg; toast.classList.add('show');
     clearTimeout(toastT); toastT = setTimeout(() => toast.classList.remove('show'), 1800);
@@ -298,13 +337,17 @@ export function buildUI(ed) {
         row('Name', txt(s.name, v => each('rename sector', x => { x.name = v; }))),
         h('h4', {}, 'Heights'),
         row('Floor', num(s.floor, v => each('floor height', x => { x.floor = v; }), { step: 8 })),
-        row(s.ceilTex === 'SKY' ? 'Wall height' : 'Ceiling', num(s.ceil, v => each('ceiling height', x => { x.ceil = v; }), { step: 8 })),
-        row('Light', num(s.light ?? 0.72, v => each('light', x => { x.light = Math.max(0, Math.min(1.5, v)); }), { step: 0.05 })),
-        /* THE SKY IS THE DEFAULT: no ceiling drawn, the sky showing
-           through; turning it off gives the sector a roof */
-        row('Sky, no ceiling', chk(s.ceilTex === 'SKY', v => each(v ? 'open to the sky' : 'roof over', x => {
-          if (v) { x.ceilTex = 'SKY'; x.outdoor = true; } else { x.ceilTex = x.ceilTex === 'SKY' ? 'GRIDBOX' : x.ceilTex; x.outdoor = false; }
-        }))),
+        /* INSIDE OR OUTSIDE, the first thing a sector is here: outside is
+           under the sky with no ceiling; inside has a roof, and walls
+           where it meets the outside */
+        row('Environment', h('div', { class: 'ed-seg' },
+          h('button', { class: isInside(s) ? '' : 'on', title: 'Open to the sky, no ceiling', onclick: () => ed.setInside(false) }, '☀ Outside'),
+          h('button', { class: isInside(s) ? 'on' : '', title: 'A roof, and walls where it meets the outside', onclick: () => ed.setInside(true) }, '⌂ Inside'))),
+        row(isInside(s) ? 'Ceiling' : 'Wall height', num(s.ceil, v => each('ceiling height', x => { x.ceil = v; }), { step: 8 })),
+        row('Brightness', h('div', { class: 'ed-bright' },
+          h('input', { type: 'range', min: 0, max: 255, step: 1, value: brightOf(s), title: 'Ctrl+wheel over the sector, on the plan or in 3D',
+            onchange: e => each('brightness', x => { x.light = +(+e.target.value / 255).toFixed(4); }) }),
+          num(brightOf(s), v => each('brightness', x => { x.light = +(Math.max(0, Math.min(255, v)) / 255).toFixed(4); }), { step: 16 }))),
         h('h4', {}, 'Colours — Doom 64'),
         h('p', { class: 'ed-note' }, 'The colour of the light on the floor, the ceiling, the things standing here, and the walls from top to bottom. Unticked is white.'),
         ...COLOR_PARTS.map(k => colourRow(s, k)),
@@ -345,6 +388,11 @@ export function buildUI(ed) {
              o.midTex ? row('Middle height', num(o.midHeight ?? '', v => each('middle height', x => { if (v > 0) x.midHeight = v; else delete x.midHeight; }), { step: 8 })) : null,
              texField(o.lowerTex, 'lowerTex', 'Bottom (lower)', { allowNone: true })]
           : [texField(o.wallTex, 'wallTex', 'Middle (wall)', { allowNone: true })]),
+        info && info.sectors.length > 1 && info.sectors.map(i => d.sectors[i]).some(isInside) && info.sectors.map(i => d.sectors[i]).some(x => !isInside(x))
+          ? [h('h4', {}, 'Building wall'),
+             row('Doorway', chk(o.opening, v => each('doorway', x => { if (v) x.opening = true; else delete x.opening; }))),
+             h('p', { class: 'ed-note' }, 'This line is where an inside sector meets the outside, so it is a wall unless it is a doorway. Split it with Insert (vertices mode) to make a doorway in part of a wall.')]
+          : null,
         h('h4', {}, 'Alignment'),
         h('div', { class: 'ed-row two' }, h('label', {}, 'Offset x / y'),
           num(o.xoff ?? 0, v => each('x offset', x => { if (v) x.xoff = v; else delete x.xoff; }), { step: 1 }),
@@ -659,11 +707,11 @@ export function buildUI(ed) {
 }
 
 const HELP2D = {
-  vertices: 'click select · drag move · shift add · Del delete\nwheel zoom · RMB/MMB pan · [ ] grid',
-  lines: 'click select · drag move · Del joins sectors\nwheel zoom · RMB/MMB pan · [ ] grid',
-  sectors: 'click select · drag move · dbl-click inspect\nwheel zoom · RMB/MMB pan · [ ] grid',
-  things: 'click empty to place · drag move · , . turn\nwheel zoom · RMB/MMB pan',
-  props: 'drag empty to draw a box · drag to move\nwheel zoom · RMB/MMB pan',
+  vertices: 'click select · drag move · shift add · Del delete\nwheel zoom · right-drag/MMB pan · Ctrl+wheel light · [ ] grid',
+  lines: 'click select · drag move · Del joins sectors\nwheel zoom · right-drag/MMB pan · Ctrl+wheel light · [ ] grid',
+  sectors: 'click select · drag move · dbl-click inspect\nwheel zoom · right-drag/MMB pan · Ctrl+wheel light · [ ] grid',
+  things: 'click empty to place · drag move · , . turn\nwheel zoom · right-drag/MMB pan · Ctrl+wheel light',
+  props: 'drag empty to draw a box · drag to move\nwheel zoom · right-drag/MMB pan · Ctrl+wheel light',
   draw: 'click points · click the first to close · Enter close\nBackspace undo point · Esc cancel',
   rect: 'drag a rectangle into a new sector\nEsc cancel',
 };

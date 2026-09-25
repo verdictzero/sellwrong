@@ -22,7 +22,8 @@
    ===================================================================== */
 
 import { THING_TYPES, ringOf, segDist, signedArea, FEATURES } from './doc.js';
-import { MODE_KIND } from './editor.js';
+import { MODE_KIND, isInside } from './editor.js';
+import { exteriorWall } from './view3d.js';
 
 const PICK_PX = 8;           // how near, in pixels, counts as on it
 
@@ -51,7 +52,7 @@ export class View2D {
     canvas.addEventListener('wheel', e => this.wheel(e), { passive: false });
     canvas.addEventListener('contextmenu', e => e.preventDefault());
     canvas.addEventListener('pointerenter', () => { ed.pointerView = '2d'; });
-    canvas.addEventListener('pointerleave', () => { this.mouse = null; this.hover = null; ed.ui.setPos(null); ed.setCursor(null); this.dirty = true; });
+    canvas.addEventListener('pointerleave', () => { this.mouse = null; this.hover = null; ed.ui.setPos(null); ed.setCursor(null); ed.setHover(null); this.dirty = true; });
 
     for (const ev of ['doc', 'sel', 'mode', 'grid', 'layout', 'compiled', 'path', 'cursor']) ed.on(ev, () => { this.dirty = true; });
     ed.on('layout', () => setTimeout(() => this.resize(), 0));
@@ -181,8 +182,15 @@ export class View2D {
     this.canvas.focus();
     const p = this.at(e);
     this.canvas.setPointerCapture(e.pointerId);
-    if (e.button === 1 || e.button === 2) {
+    if (e.button === 1) {
       this.drag = { type: 'pan', px: p.px, py: p.py, cx: this.cx, cy: this.cy };
+      return;
+    }
+    /* THE RIGHT BUTTON, Doom Builder's way: a click on something is its
+       properties; a drag on something moves it; a drag on nothing pans */
+    if (e.button === 2) {
+      const hit = this.pick(p.x, p.y);
+      this.drag = { type: 'right', hit, px: p.px, py: p.py, x: p.x, y: p.y, cx: this.cx, cy: this.cy };
       return;
     }
     if (e.button !== 0) return;
@@ -226,8 +234,22 @@ export class View2D {
     const dr = this.drag;
     if (!dr) {
       this.hover = ['draw', 'rect'].includes(ed.mode) ? null : this.pick(p.x, p.y);
+      /* for the info bar, the sector under the mouse whatever the mode */
+      const s = ed.sectorAt(p.x, p.y);
+      ed.setHover(this.hover || (s ? { kind: 'sector', id: s.id } : null));
       this.dirty = true;
       return;
+    }
+    if (dr.type === 'right') {
+      if (Math.hypot(p.px - dr.px, p.py - dr.py) < 4) return;
+      if (dr.hit) {
+        const kind = dr.hit.kind;
+        if (!ed.isSel(kind, dr.hit.id)) ed.select(kind, [dr.hit.id]);
+        this.drag = { type: 'move', mv: ed.beginMove(ed.grabPoint([dr.x, dr.y]), [dr.x, dr.y]), px: dr.px, py: dr.py, moved: true };
+      } else {
+        this.drag = { type: 'pan', px: dr.px, py: dr.py, cx: dr.cx, cy: dr.cy };
+      }
+      return this.move(e);
     }
     if (dr.type === 'pan') {
       this.cx = dr.cx - (p.px - dr.px) / this.scale;
@@ -249,6 +271,15 @@ export class View2D {
     this.drag = null;
     try { this.canvas.releasePointerCapture(e.pointerId); } catch (err) { /* already gone */ }
     if (!dr) return;
+    if (dr.type === 'right') {
+      /* a right click, not a drag: the thing under it, in the inspector */
+      if (dr.hit) {
+        if (!ed.isSel(dr.hit.kind, dr.hit.id)) ed.select(dr.hit.kind, [dr.hit.id]);
+        ed.ui.showTab('insp');
+        ed.ui.flashInsp?.();
+      }
+      return;
+    }
     if (dr.type === 'box') {
       const kind = modeKind(ed.mode);
       const [x0, x1] = [Math.min(dr.a[0], dr.b[0]), Math.max(dr.a[0], dr.b[0])];
@@ -280,6 +311,17 @@ export class View2D {
   wheel(e) {
     e.preventDefault();
     const p = this.at(e);
+    /* CTRL AND THE WHEEL: the brightness of the sector under the mouse,
+       and of every selected one with it if it is one of them, as in
+       Ultimate Doom Builder — Doom's sixteen steps, Shift for one */
+    if (e.ctrlKey || e.metaKey) {
+      const s = this.ed.sectorAt(p.x, p.y);
+      if (!s) return;
+      const ed = this.ed;
+      const ids = ed.sel.kind === 'sector' && ed.sel.ids.has(s.id) ? ed.sel.ids : new Set([s.id]);
+      ed.nudgeLight((e.shiftKey ? 1 : 16) * (e.deltaY < 0 ? 1 : -1), ids);
+      return;
+    }
     const k = Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0015));
     this.scale = Math.max(0.005, Math.min(40, this.scale * k));
     /* about the cursor: the point under it stays under it */
@@ -343,9 +385,21 @@ export class View2D {
       g.closePath();
       const t = (((s.floor ?? 0) - lo) / (hi - lo || 1));
       const shut = (s.ceil ?? 256) <= (s.floor ?? 0);
+      /* OUTSIDE is the ground's green; INSIDE is a roof, tan and hatched */
+      const inside = isInside(s);
       g.fillStyle = selS?.has(s.id) ? 'rgba(255,157,61,0.28)' : s.id === hovS ? 'rgba(61,220,132,0.16)'
-        : shut ? 'rgba(90,90,90,0.35)' : `rgba(${30 + t * 40},${60 + t * 90},${50 + t * 40},0.22)`;
+        : shut ? 'rgba(90,90,90,0.35)' : inside ? `rgba(${120 + t * 60},${90 + t * 40},${55 + t * 20},0.32)`
+        : `rgba(${30 + t * 40},${60 + t * 90},${50 + t * 40},0.22)`;
       g.fill();
+      if (inside && this.scale > 0.02) {
+        g.save(); g.clip();
+        g.strokeStyle = 'rgba(230,190,130,0.16)'; g.lineWidth = 1;
+        const xs = r.map(v => this.sx(v[0])), ys = r.map(v => this.sy(v[1]));
+        const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+        g.beginPath();
+        for (let q = x0 - (y1 - y0); q < x1; q += 10) { g.moveTo(q, y0); g.lineTo(q + (y1 - y0), y1); }
+        g.stroke(); g.restore();
+      }
       if (FEATURES.slopes && (s.floorSlope || s.ceilSlope)) {
         /* a slope is hatched, so it can be found from above */
         g.save(); g.clip();
@@ -367,9 +421,14 @@ export class View2D {
       if (!a || !b) continue;
       const o = d.lines[l.key];
       const sel = selL?.has(l.key), hov = l.key === hovL;
-      g.strokeStyle = sel ? '#ff9d3d' : hov ? '#3ddc84' : o?.blocking ? '#ff6b6b' : l.sectors.length > 1 ? '#6d7a86' : '#e6edf0';
-      g.lineWidth = sel || hov ? 2.5 : l.sectors.length > 1 ? 1 : 1.6;
+      /* a building's outside wall is drawn like a one-sided wall, and a
+         doorway in one dashed */
+      const ext = exteriorWall(d, l), door = !ext && o?.opening;
+      g.strokeStyle = sel ? '#ff9d3d' : hov ? '#3ddc84' : o?.blocking ? '#ff6b6b' : ext ? '#f0dcb4' : door ? '#c9a46a' : l.sectors.length > 1 ? '#6d7a86' : '#e6edf0';
+      g.lineWidth = sel || hov ? 2.5 : ext ? 2 : l.sectors.length > 1 ? 1 : 1.6;
+      if (door) g.setLineDash([5, 4]);
       g.beginPath(); g.moveTo(this.sx(a[0]), this.sy(a[1])); g.lineTo(this.sx(b[0]), this.sy(b[1])); g.stroke();
+      if (door) g.setLineDash([]);
       if (ed.mode === 'lines' && (b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2 > (24 / this.scale) ** 2) {
         /* the Doom tick, on the line's front */
         const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, L = Math.hypot(b[0] - a[0], b[1] - a[1]);

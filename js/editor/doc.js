@@ -622,12 +622,24 @@ export function compileDoc(doc) {
     byPair.set(`${a[0]},${a[1]}|${b[0]},${b[1]}`, l);
     byPair.set(`${b[0]},${b[1]}|${a[0]},${a[1]}`, l);
   }
+  /* A DOCUMENT LINE CAN BE SEVERAL LEVEL LINES: the compiler splits an
+     edge at every vertex that lies on it (step 1), so a line is found as
+     every level line along it, not only the one that runs end to end */
+  const levelLinesOn = (a, b) => {
+    const whole = byPair.get(`${a[0]},${a[1]}|${b[0]},${b[1]}`);
+    if (whole) return [whole];
+    return level.lines.filter(l => {
+      const p = level.verts[l.v1], q = level.verts[l.v2];
+      return segDist(a[0], a[1], b[0], b[1], p[0], p[1]).d < 0.5 && segDist(a[0], a[1], b[0], b[1], q[0], q[1]).d < 0.5;
+    });
+  };
   for (const [k, o] of Object.entries(doc.lines || {})) {
     const [ai, bi] = k.split(',').map(Number);
     const a = V[ai], b = V[bi];
     if (!a || !b) continue;
-    const l = byPair.get(`${a[0]},${a[1]}|${b[0]},${b[1]}`);
-    if (!l) continue;
+    for (const l of levelLinesOn(a, b)) applyLine(l, o);
+  }
+  function applyLine(l, o) {
     if (o.blocking) l.blocking = true;
     if (o.blockSight) l.blockSight = true;
     /* A LINE'S OWN TEXTURES, locked so the level's own reassignment
@@ -657,6 +669,31 @@ export function compileDoc(doc) {
     if (o.yoff) l.yoff = o.yoff;
     if (o.unpegUpper) l.pegUpper = 'top';
     if (o.unpegLower) { l.pegLower = 'ceiling'; l.pegMiddle = 'bottom'; }
+  }
+
+  /* 5c. INSIDE MEETS OUTSIDE: A WALL. A sector is inside if it has a
+     roof (a ceiling that is not the sky) and outside if it is open to
+     the sky; where the two meet the map has the outside wall of a
+     building, from the inside floor up to its roof — a middle texture
+     standing in the opening, solid, blocking walking and sight — unless
+     the line says it is a doorway. Its texture is the line's middle if
+     it has one, or the inside sector's walls. */
+  for (const dl of linesOf(doc)) {
+    if (dl.sectors.length !== 2) continue;
+    const [sa, sb] = dl.sectors.map(i => doc.sectors[i]);
+    const inA = sa.ceilTex && sa.ceilTex !== 'SKY', inB = sb.ceilTex && sb.ceilTex !== 'SKY';
+    if (inA === inB) continue;
+    const o = doc.lines[dl.key] || {};
+    if (o.opening) continue;
+    const inside = inA ? sa : sb;
+    for (const l of levelLinesOn(V[dl.a], V[dl.b])) {
+      if (!l.bands) continue;
+      l.middle = o.midTex || inside.wallTex || 'GRIDWALL';
+      l.midHeight = undefined;
+      l.blocking = true;
+      l.blockSight = true;
+      l.exterior = true;
+    }
   }
 
   /* 5a. AN OPEN WORLD HAS NO SKY WALLS. Doom draws the upper texture
