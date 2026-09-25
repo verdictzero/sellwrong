@@ -407,11 +407,11 @@ check('ramps are monotonic in luma', ['grey', 'red', 'blue', 'fire'].every(k => 
     const fs3 = await import('node:fs');
     const html = fs3.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
     const main = fs3.readFileSync(new URL('../js/main.js', import.meta.url), 'utf8');
-    check('the tone is a ladder in the pause menu, GRID by default and remembered',
-      /id="opt-tone"/.test(html) && /TONE_SET = \[\{ v: 'grid'/.test(main) &&
+    check('the tone is a ladder in the pause menu, EARTH by default and remembered',
+      /id="opt-tone"/.test(html) && /TONE_SET = \[\{ v: 'earth'/.test(main) &&
       /tone: 0,/.test(main) && /ladder\('opt-tone', 'tone', TONE_SET/.test(main));
     check('and a saved tone from before the default moved is not kept alive',
-      /if \(was < 9\) delete saved\.tone/.test(main) && /PREF_VERSION = 9/.test(main));
+      /if \(was < 10\) \{ delete saved\.tone;/.test(main) && /PREF_VERSION = 10/.test(main));
     check('and a game that starts in the other one paints itself once, not twice',
       /setArtPalette\(TONE_SET\[prefs\.tone\]\.v\)/.test(main) &&
       main.indexOf('setArtPalette(TONE_SET') < main.indexOf('const textures = bakeTextures()'));
@@ -461,7 +461,14 @@ const tex = await import('../js/textures.js');
   for (const n of names) {
     const p = tex.TEXTURE_GENERATORS[n]();
     if (!check(`${n} produces pixels`, p && p.w > 0 && p.h > 0)) continue;
-    check(`${n} is 64px or under`, p.w <= 64 && p.h <= 64, `${p.w}x${p.h}`);
+    /* EXCEPT THE TWO RULED LINES. Every picture in this game is a
+       64-square painted out of the 256 and point sampled, which is the
+       look; the grid world's floor and wall are not pictures of a
+       surface, they are geometry standing in for geometry, and a ruled
+       line at that size aliases into nothing at the far end of a ten
+       thousand unit field. See the note over T.GRID in js/textures.js. */
+    const BIG = ['GRID', 'GRIDWALL'];
+    check(`${n} is 64px or under`, BIG.includes(n) || (p.w <= 64 && p.h <= 64), `${p.w}x${p.h}`);
     let a = 0;
     for (let i = 3; i < p.data.length; i += 4) if (p.data[i] > 8) a++;
     if (a === p.w * p.h) opaque++;
@@ -4375,38 +4382,34 @@ await (async () => {
     check(`and every step of it is less than the last`,
       !!l && l.every((e, i) => i === 0 || e.v < l[i - 1].v));
   }
-  check('the render ladder goes from a phone to a desktop',
-    /const DETAIL = \[120,/.test(main) && /960\]/.test(main));
-  /* WHAT THE GAME OPENS AT, which is two numbers and the user picked
-     both: 320 rows of chunky pixels off a 960-row render (240 off 720
-     before that, and 200 before that). The grid is the picture and the
-     render is how much is behind each square of it, so the default is
-     a coarse picture drawn off the finest buffer the game has ever had,
-     with exactly three rows of it behind every row you see. */
+  check('the render ladder goes from a phone to a desktop, and then to the window itself',
+    /const DETAIL = \[120,/.test(main) && /960, 0\]/.test(main) &&
+    /const detailRows = i => DETAIL\[i\] \|\| nativeRows\(\);/.test(main));
+  /* WHAT THE GAME OPENS AT, and it has moved off the ladder entirely.
+     It used to be two numbers the user picked — 240 rows of chunky
+     pixels off a 480-row render, and 320 off 960 before that. At the
+     user's request the test area opens in FULL COLOUR at the window's
+     own resolution: the chunky grid is off, so there is no picture size
+     separate from the buffer, and the buffer is however many rows the
+     screen actually has. Both ladders are still there, every rung of
+     them, and three presses puts the old look back — which is what
+     these check, because a setting that is off is not a setting that
+     is gone. */
   {
     const det = [...(main.match(/const DETAIL = \[([^\]]*)\]/) || ['', ''])[1].split(',').map(v => +v)];
     const pix = [...(main.match(/const PIXELS = \[([^\]]*)\]/) || ['', ''])[1].split(',').map(v => +v)];
-    const dDef = +(main.match(/const DEFAULT_DETAIL = (\d+)/) || [])[1];
-    const pDef = +(main.match(/const DEFAULT_PIXELS = (\d+)/) || [])[1];
-    note('what it opens at', `${pix[pDef]} rows of pixels off a ${det[dDef]}-row render`);
-    /* 480 AND 240, at the user's request and for the frame rate. It was
-       320 off 960, which is the finest buffer this game has ever drawn
-       and four times the shading of this one; a phone was paying for a
-       buffer whose extra rows were being averaged away by the grid in
-       front of it. The 3D IS 480 now — the check below is on the ladder
-       value and not on the index, because an index is a number that
-       means whatever the ladder happens to say that week. */
-    check('the game opens at 240P pixels off a 480P render, at the user\'s request',
-      pix[pDef] === 240 && det[dDef] === 480);
-    check('and the render is two rows to the pixel exactly, so the average is a true box',
-      det[dDef] === 2 * pix[pDef]);
-    check('and both defaults are real rungs of their own ladders',
-      det[dDef] !== undefined && pix[pDef] !== undefined &&
-      det.every((v, i) => i === 0 || v > det[i - 1]));
-    check('and the pixel grid is never finer than the buffer behind it',
-      pix[pDef] < det[dDef]);
-    check('and the finest rungs are still there for anyone who wants them',
-      det[det.length - 1] === 960 && pix.includes(320));
+    const dDef = eval((main.match(/const DEFAULT_DETAIL = ([^;]+);/) || [])[1].replace('DETAIL.length', String(det.length)));
+    const pDef = pix.length - 1;
+    note('what it opens at', `${pix[pDef] || 'no'} chunky pixels, off the ${det[dDef] || 'window\'s own'} render`);
+    check('the game opens at the window\'s own resolution, at the user\'s request',
+      det[dDef] === 0 && dDef === det.length - 1);
+    check('and with no chunky grid over it at all',
+      /const DEFAULT_PIXELS = PIXELS_OFF;/.test(main) && pix[pDef] === 0);
+    check('and every rung of both ladders is still there, so the look is three presses away',
+      det.filter(v => v > 0).every((v, i, a) => i === 0 || v > a[i - 1]) &&
+      det.includes(960) && det.includes(120) && pix.includes(320) && pix.includes(240));
+    check('and only the last rung of the render ladder is the window\'s own',
+      det.filter(v => v === 0).length === 1 && det[det.length - 1] === 0);
   }
 
   /* --- THE TWO SIZES, WHICH WERE ONE SIZE -------------------------
@@ -13058,7 +13061,7 @@ section('the box the screen can hold');
     /const wanted = PALETTE_SET\[prefs\.palette\]\?\.v;/.test(mainSrc) &&
     /if \(wanted && wanted !== displayName\) applyPalette\(wanted\);/.test(mainSrc));
   check('and the saved settings were versioned up, so an old one does not come back without it',
-    /const PREF_VERSION = 9;/.test(mainSrc) &&
+    /const PREF_VERSION = 10;/.test(mainSrc) &&
     /if \(was < 7\) \{ delete saved\.detail;/.test(mainSrc));
   const htmlQ = fsQ.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   check('and there is a button for it', /id="opt-palette"/.test(htmlQ));
@@ -13130,144 +13133,64 @@ section('the box the screen can hold');
 /* =====================================================================
    THE GRID
 
-   The world the game boots into, at the user's request, and the one the
-   burning was rewritten for: a finite field of green lines on black,
-   boxes two to seven cells a side standing on it, and a decay that is a
-   SHADER over one number per box rather than a simulation over a grid
-   of cells. js/maps/grid.js, js/boxes.js, and the switch in js/fire.js
-   that turns the old one off.
-
-   The superstore and the town are archived rather than deleted — every
-   test above this one still builds them — so what these check is that
-   the new world is a world: that you can stand in it, that the boxes
-   are solid, that they burn from the cap down, that the fire crosses
-   the field by itself and stops at a street, and that the brigade is
-   the only thing that comes.
+   The test area, and that is all it is: a large walled-off green grid
+   with a crowd on it and every gun in the rack. At the user's request
+   everything else was taken OUT and nothing was deleted — the store,
+   the town, the fire simulation, the burning boxes, the responders and
+   the lo-fi picture are all still here, still exported and still tested
+   by the sections above this one. What these check is that the test
+   area is what it says it is, that the switches which turn the rest of
+   it off are set, and that the picture is now full colour at the
+   window's own resolution with the art still painted in earth.
    ===================================================================== */
 section('the grid');
 {
   const GRID = await import('../js/maps/grid.js');
-  const BOX = await import('../js/boxes.js');
   const THREEG = await import('three');
   const { Game } = await import('../js/game.js');
   const fsG = await import('node:fs');
-  const gridSrc = fsG.readFileSync('js/boxes.js', 'utf8');
+  const mainG = fsG.readFileSync('js/main.js', 'utf8');
 
-  /* the fixtures this section needs of its own: the bank the world is
-     painted out of, and the fire truck, which is the only vehicle that
-     comes here */
   const gtex = tex.bakeTextures();
   const gsprites = spr.bakeSprites();
-  const truckDef = await (async () => {
-    const glb = await import('../js/glb.js');
-    const carM = await import('../js/car.js');
-    const bytes = fsG.readFileSync('assets/models/firetruck.glb');
-    const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-    const { json, bin } = glb.parseGLB(ab);
-    return carM.modelVehicle(json, bin, { length: carM.FIRE_LENGTH, id: 'firetruck', name: 'Fire truck', use: 'fire', lamp: 'fire' });
-  })();
-
   const lv = GRID.buildGrid();
-  note('the field', `${GRID.FIELD} units square, ${lv.sectors.length} sectors, ` +
-    `${lv.boxes.length} boxes, ${lv.things.filter(t => t.type === 'SHOPPER').length} people`);
+  note('the test area', `${GRID.FIELD} units square, ${lv.sectors.length} sector, ` +
+    `${lv.lines.length} walls, ${lv.things.filter(t => t.type === 'SHOPPER').length} people`);
 
-  /* ---- THE FIELD ---- */
-  check('it is large, finite, and square', GRID.FIELD >= 8192 && lv.field.x1 - lv.field.x0 === GRID.FIELD &&
-    lv.field.y1 - lv.field.y0 === GRID.FIELD);
-  check('and you start in it, on the floor, with a sky over you',
-    lv.things.some(t => t.type === 'START') &&
-    lv.sectorAt(lv.viewpoint.x, lv.viewpoint.y)?.ceilTex === 'SKY');
+  /* ---- A LARGE WALLED-OFF GREEN GRID, AND NOTHING ELSE ---- */
+  check('it is large, finite, and square', GRID.FIELD >= 8192 &&
+    lv.field.x1 - lv.field.x0 === GRID.FIELD && lv.field.y1 - lv.field.y0 === GRID.FIELD);
+  check('and it is ONE rectangle with four walls, now that nothing stands on it',
+    lv.sectors.length === 1 && lv.lines.length === 4 &&
+    lv.lines.every(l => l.back === null), `${lv.sectors.length} sectors, ${lv.lines.length} lines`);
   check('the floor is the green grid, anchored so a line lands on every cell edge',
-    lv.sectors.filter(s => s.name === 'field').every(s => s.floorTex === 'GRID' &&
-      s.floorAnchor && s.floorAnchor[0] === lv.field.x0 && s.floorAnchor[1] === lv.field.y0));
-  check('and one repeat of it is one cell, which is what makes that true',
-    tex.bakeTextures !== undefined && GRID.CELL === 64);
-  check('a hundred people stand in it, and none of them inside a box',
-    lv.things.filter(t => t.type === 'SHOPPER').length === GRID.CROWD &&
-    lv.things.filter(t => t.type === 'SHOPPER').every(t =>
-      !lv.boxes.some(b => t.x > b.x0 && t.x < b.x1 && t.y > b.y0 && t.y < b.y1)));
+    lv.sectors[0].floorTex === 'GRID' && lv.sectors[0].floorAnchor[0] === lv.field.x0 &&
+    lv.sectors[0].floorAnchor[1] === lv.field.y0 && GRID.CELL === 64);
+  check('and the wall round it is the same lattice, and it is over you',
+    lv.sectors[0].wallTex === 'GRIDWALL' && lv.sectors[0].ceilTex === 'SKY' &&
+    lv.sectors[0].ceil === GRID.WALL_H);
   check('and you cannot walk out of it: the edge is a wall, not an ending',
     lv.sightBlocked(lv.field.x0 + 100, lv.field.y0 + 4000, 40, lv.field.x0 - 400, lv.field.y0 + 4000, 40));
+  check('you start in it, and a crowd stands in the middle of it with you',
+    lv.things.some(t => t.type === 'START') &&
+    lv.things.filter(t => t.type === 'SHOPPER').length === GRID.CROWD && GRID.CROWD >= 100);
+  check('and there is nothing else in it at all: no boxes, no cars, no road, no exits',
+    lv.boxes.length === 0 && lv.carSlots.length === 0 && lv.roadEnds.length === 0 &&
+    !lv.swatRing && !lv.swatRoutes && lv.props.length === 0 && lv.plants.length === 0);
 
-  /* ---- THE BOXES, AS GEOMETRY ---- */
+  /* ---- THE THREE SWITCHES, WHICH TURN THINGS OFF RATHER THAN DELETE ---- */
+  check('the world says what it has not got: no cell fire, nothing catches, nobody is sent',
+    lv.noCellFire === true && lv.noBurn === true && lv.noSquads === true);
+  check('and every one of those is still in the repository, exported, and tested above',
+    ['js/maps/sellwrong.js', 'js/maps/town.js', 'js/fire.js', 'js/boxes.js',
+     'js/brigade.js', 'js/responders.js', 'js/lofi.js', 'js/palette.js'].every(f => fsG.existsSync(f)));
   {
-    const sizes = new Set(lv.boxes.map(b => b.cells));
-    check('the boxes come in the six sizes asked for, two cells to seven, and are cubes',
-      [2, 3, 4, 5, 6, 7].every(k => sizes.has(k)) && sizes.size === 6 &&
-      lv.boxes.every(b => b.x1 - b.x0 === b.cells * GRID.CELL && b.height === b.x1 - b.x0),
-      [...sizes].sort().join(','));
-    /* ON THE GRID, at the user's request: a box stands on whole cells
-       from the field's corner, so its foot follows the lines on the
-       floor and its faces line up with them. */
-    check('every box stands on the grid it is drawn on, to the cell',
-      lv.boxes.every(b => b.x0 % GRID.CELL === 0 && b.y0 % GRID.CELL === 0 &&
-        (b.x0 - lv.field.x0) % GRID.CELL === 0 && (b.y0 - lv.field.y0) % GRID.CELL === 0));
-    check('and every one of them is in the way: a floor at its own height you cannot step up',
-      lv.boxes.slice(0, 20).every(b => {
-        const mid = { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 };
-        const sec = lv.sectorAt(mid.x, mid.y);
-        return sec && sec.name === 'box' && sec.floor === b.height && sec.ceil > sec.floor &&
-          lv.sightBlocked(b.x0 - 150, mid.y, 40, b.x1 + 150, mid.y, 40);
-      }));
-    /* A RAISED FLOOR AND NOT A SHUT COLUMN, so a short box does not
-       hide what is behind it from somebody standing on a tall one —
-       and so the burning has somewhere to lower it to. */
-    check('but not a wall to the sky: you can see over a box from above it',
-      lv.boxes.slice(0, 10).every(b => {
-        const mid = (b.y0 + b.y1) / 2;
-        return !lv.sightBlocked(b.x0 - 150, mid, b.height + 90, b.x1 + 150, mid, b.height + 90);
-      }));
-    check('and a fire engine may drive on the field but not through a box',
-      lv.sectors.filter(s => s.name === 'box').every(s => !s.outdoor) &&
-      lv.sectors.filter(s => s.name === 'field').every(s => s.outdoor));
-    check('and draws nothing, because js/boxes.js draws all of them in one mesh',
-      lv.sectors.filter(s => s.name === 'box').every(s =>
-        s.floorTex === 'NONE' && s.wallTex === 'NONE' && s.lowerTex === 'NONE' && s.upperTex === 'NONE'));
-    /* THE STREETS. A field with no way into it is a field a fire engine
-       stops at the edge of — which is what it did. */
-    const gaps = [];
-    for (let i = 0; i < GRID.PLOTS; i++) if (i % GRID.STREET_EVERY === 0) gaps.push(i);
-    check('and there are streets between the blocks, clear of boxes all the way across',
-      gaps.length >= 3 && gaps.every(i => !lv.boxes.some(b =>
-        Math.floor(b.x0 / GRID.PLOT) === i || Math.floor(b.y0 / GRID.PLOT) === i)));
-    check('which the map hands over as driving lines for the brigade',
-      Array.isArray(lv.lanes) && lv.lanes.length >= 6 &&
-      lv.lanes.every(L => (L.axis === 'x' || L.axis === 'y') && L.to > L.from));
-  }
-
-  /* ---- WHAT THE WORLD SAYS ABOUT ITSELF ---- */
-  check('the cell fire is off in this world, and the squads are not sent',
-    lv.noCellFire === true && lv.noSquads === true);
-  check('and it still gives the brigade a road: a ring, two ways in, and bays',
-    lv.swatRing.length === 4 && Object.keys(lv.swatRoutes).join() === 'west,east' &&
-    lv.roadEnds.length === 2 && lv.roadEnds.every(e => lv.swatRoutes[e.side]) && lv.swatBays.length > 0);
-
-  /* ---- THE BURN, WHICH IS THE WHOLE POINT ---- */
-  {
-    /* THE SHADER IS A HEIGHT AND A NUMBER, and the test is against the
-       source because there is no GPU here. What it pins is the shape of
-       the thing: the front is in the box's OWN space, it comes DOWN,
-       and the coals are off the one ramp every fire in this game uses. */
-    check('the decay is driven by the height up the box in its own space, not by anything in the world',
-      /attribute float localH/.test(gridSrc) && /varying float vLight, vLocalH/.test(gridSrc) &&
-      /float above = vLocalH - front;/.test(gridSrc));
-    check('and the front comes DOWN from the cap, at the user\'s request',
-      /float front = 1\.0 \+ soft \+ tear - vBurn \* /.test(gridSrc));
-    /* IT GOES AWAY, at the user's request, and the alpha channel is how:
-       the burnt part crumbles in flecks off the same hash that tore the
-       front, and the last of them fade rather than popping. */
-    check('and what has burnt DISINTEGRATES: an alpha channel, and flecks discarded as they go',
-      /float gone = smoothstep\(/.test(gridSrc) && /if \(grain < gone \+ 0\.002\) discard;/.test(gridSrc) &&
-      /float alpha = smoothstep\(gone, gone \+ /.test(gridSrc) &&
-      /transparent: true/.test(gridSrc) && /gl_FragColor = vec4\(c \+ hue \* ember, alpha\);/.test(gridSrc));
-    check('and the front travels further than the box is tall, or the foot of it would never go',
-      BOX.SWEEP > 1 + BOX.DISS * 0.9 && BOX.standing(0) === 1 && BOX.standing(1) === 0);
-    check('and it is torn rather than ruled, off a hash of the face\'s own uv at two scales',
-      /float tearAt\(vec2 uv\)/.test(gridSrc) && /vec2\(11\.0, 17\.0\)/.test(gridSrc) && /vec2\(27\.0, 39\.0\)/.test(gridSrc));
-    check('and the coals are EMBER_RAMP, the same eight a burning fir and a burnt aisle use',
-      /emberRamp\[int\(floor\(idx \* 7\.0 \+ 0\.5\)\)\]/.test(gridSrc) && /WORLD_SHADE_GLSL/.test(gridSrc));
-    check('and there is no cell grid anywhere in it',
-      !/burnAt\(/.test(gridSrc) && !/burnGrid/.test(gridSrc));
+    /* the store still builds, which is the whole of what "archived"
+       has to mean — it is one import away from being the world again */
+    const store = MAP.buildSellWrong({ town: false });
+    check('the superstore still builds, it is simply not what the game opens',
+      store.sectors.length > 100 && /import \{ buildGrid \}/.test(mainG) &&
+      !/buildSellWrong\(\)/.test(mainG));
   }
 
   /* ---- AND IN A RUNNING GAME ---- */
@@ -13279,101 +13202,107 @@ section('the grid');
       hud: { message() {}, ticMessages() {} }, audio: null,
       input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
                attack: false, use: false, run: false, jump: false, sample() {}, sensitivity: 0 },
-      firetruck: { texture: {}, def: truckDef },
     });
-    const B = gg.boxes;
-    check('the game builds the boxes, one for every one the map put down',
-      B.count === gg.level.boxes.length && B.count > 60, `${B.count}`);
-    check('and the fire system is off in here, and says so',
-      gg.fire.off === true && gg.fire.tic() === undefined && gg.fire.burningCells === 0);
+    check('the crowd is on its feet and the guns are in your hands',
+      gg.actors.filter(a => a.type === 'SHOPPER' && !a.dead).length === GRID.CROWD &&
+      Object.keys(gg.player.owned).length >= 7 && gg.player.owned.FLAMER === true);
+    check('and nothing else came with them: no vehicles, no boxes, no fire to run',
+      gg.vehicles.count === 0 && gg.boxes.count === 0 && gg.fire.off === true &&
+      gg.brigade.trucks.length === 0);
 
-    /* A BOX CATCHES. The flamethrower and every other weapon call
-       fire.ignite; the boxes are lit from inside it, which is why not
-       one weapon had to learn what a box is. */
-    const one = B.list.find(b => b.cells >= 4);
-    gg.fire.ignite(one.x, one.y, 200, 90);
-    check('a call to the fire system lights the box that is standing there',
-      one.burning === true && B.lit === 1);
-    const at0 = one.front;
-    for (let k = 0; k < 40; k++) B.tic();
-    check('and the front comes down it, a little every tic', one.front > at0 && one.front < 1);
-    /* IT CANNOT BE UNBURNT. Water stops the front where it stands; what
-       has gone has gone, which is the promise FireSystem.douse makes
-       about a charred aisle and this makes about a box. */
-    const held = one.front;
-    for (let k = 0; k < 6; k++) gg.fire.douse(one.x, one.y, 200, 100);
-    check('water stops it where it stands, and does not put the box back',
-      one.burning === false && one.front === held && one.front > 0);
-    for (let k = 0; k < 20; k++) B.tic();
-    check('and a box that is out stays out', one.front === held);
+    /* NOTHING CATCHES, at the user's request. The flamethrower is still
+       a flamethrower — it still throws flame and the flame still hurts
+       — but no person and no thing in this world goes up. */
+    const who = gg.actors.find(a => a.type === 'SHOPPER' && !a.dead);
+    who.ignite(400);
+    check('a person the flame lands on does not catch, because this world does not burn',
+      who.burning === 0 && !who.lit);
+    const before = who.health;
+    gg.fire.ignite(who.x, who.y, 200, 90);
+    check('and a call to the fire system lights nothing anywhere',
+      gg.fire.burningCells === 0 && gg.fire.liveCells === 0);
+    /* but the gun still works: the stream is still a stream and it
+       still takes somebody down */
+    const o = { x: who.x - 60, y: who.y, z: who.z + 40 };
+    for (let k = 0; k < 30; k++) { gg.flame.fire(o, 0, 0); gg.flame.tic(); }
+    check('the flamethrower still throws flame, and it still hurts',
+      gg.flame.particles.count > 0 && who.health < before, `${before} -> ${who.health}`);
 
-    /* IT SPREADS, BY ITSELF, WITH NO GRID UNDER IT */
-    const pair = B.list.filter(b => b !== one).sort((a, b) =>
-      a.near2(one.x, one.y) - b.near2(one.x, one.y));
-    const seed = pair[0];
-    B.light(seed);
-    let caught = 0;
-    for (let k = 0; k < 900 && caught < 2; k++) { B.tic(); caught = B.lit - 2; }
-    note('the fire crossing the field', `${B.lit} boxes alight or spent after ${B.spentCount} went`);
-    check('one burning box lights the ones near it, with no cell grid to carry it',
-      B.lit > 2, `${B.lit} lit`);
-    /* AND IT BURNS OUT. A box is gone when its front reaches the foot,
-       and a gone box does not light anything. */
-    for (let k = 0; k < 3000 && B.burningCount > 0; k++) B.tic();
-    check('and every fire in the field goes out on its own once there is nothing left',
-      B.burningCount === 0 && B.spentCount > 0 &&
-      B.list.every(b => !b.burning && (b.front === 0 || b.front > 0)), `${B.spentCount} spent`);
-    check('a spent box is spent: its front is at the foot and it never burns again',
-      B.list.filter(b => b.spent).every(b => b.front >= 1 && !b.burning));
-    /* AND IT IS NOT THERE ANY MORE. A box that has burnt away leaves
-       nothing: not a husk to look at and not a thing to walk into. */
-    {
-      const dead = B.list.filter(b => b.spent);
-      const lvv = gg.level;
-      check('and a box that has burnt away is GONE: the floor is back, and you can walk and see through it',
-        dead.length > 0 && dead.every(b => {
-          const sec = lvv.sectors[b.def.sector];
-          const mid = { x: b.x, y: b.y };
-          return sec.floor === lvv.field.floor && sec.outdoor === true &&
-            !lvv.sightBlocked(b.def.x0 - 150, mid.y, 40, b.def.x1 + 150, mid.y, 40);
-        }), `${dead.length} gone`);
-      /* and one part way through is part way down: the sector follows
-         what is left of it rather than jumping at the end */
-      const half = B.list.find(b => b.front > 0.2 && b.front < 0.7);
-      if (half) {
-        const sec = lvv.sectors[half.def.sector];
-        check('and one caught half way down stands half way up, and is in the way that far',
-          sec.floor > 0 && sec.floor < half.height &&
-          Math.abs(sec.floor - half.height * BOX.standing(half.front)) <= 1,
-          `${sec.floor} of ${half.height}`);
-      }
-    }
+    let t = 0;
+    gg.player.shotsFired = 99;
+    for (; t < 700; t++) { gg.player.health = 100; gg.tic(); }
+    check('and a hundred shots fired brings nobody up a road',
+      gg.responders.vans.length === 0 && gg.responders.called === false &&
+      gg.brigade.called === false && (gg.gunships?.ships?.length || 0) === 0);
   }
 
-  /* ---- AND NOBODY COMES BUT THE BRIGADE ---- */
+  /* ---- THE PICTURE: FULL COLOUR, THE WINDOW'S OWN RESOLUTION ---- */
   {
-    (await import('../js/util.js')).pSeed();
-    const gq = new Game({
-      level: GRID.buildGrid(), scene: new THREEG.Scene(), camera: {},
-      textures: gtex, sprites: gsprites,
-      hud: { message() {}, ticMessages() {} }, audio: null,
-      input: { mode: 'desktop', pausePressed: false, look: { x: 0, y: 0 }, move: { x: 0, y: 0 },
-               attack: false, use: false, run: false, jump: false, sample() {}, sensitivity: 0 },
-      firetruck: { texture: {}, def: truckDef },
-    });
-    gq.player.shotsFired = 99;              // which in any other world is the sirens
-    const lit = gq.boxes.list.find(b => b.cells >= 5);
-    gq.boxes.light(lit);
-    for (let k = 0; k < 900; k++) { gq.player.health = 100; gq.tic(); }
-    note('who came', `${gq.brigade.trucks.length} fire trucks, ` +
-      `${gq.responders.vans.filter(v => v.force !== gq.brigade.force).length} of everybody else`);
-    check('a hundred shots fired and the SWAT do not come, because this world sends nobody',
-      gq.responders.called === false &&
-      gq.responders.vans.every(v => v.force === gq.brigade.force));
-    check('and the army stays home, and so does the gunship',
-      gq.responders.army.called === false && (gq.gunships?.ships?.length || 0) === 0);
-    check('but the fire brings the brigade, off the fire and not off you',
-      gq.brigade.called === true && gq.brigade.trucks.length >= 1);
+    check('the frame is not snapped to a palette and not dithered any more',
+      /dither: 0\.0, snap: 0\.0,/.test(mainG));
+    check('and there is no chunky grid over it: the filter is a straight copy',
+      /const DEFAULT_PIXELS = PIXELS_OFF;/.test(mainG) && /pixelHeight: PIXELS\[pixelIndex\]/.test(mainG));
+    check('and the buffer is the window\'s own, which is what the top of the ladder now means',
+      /const detailRows = i => DETAIL\[i\] \|\| nativeRows\(\);/.test(mainG) &&
+      /const DEFAULT_DETAIL = DETAIL\.length - 1;/.test(mainG) &&
+      /height: detailRows\(detailIndex\)/.test(mainG));
+    check('and it follows the window when the window moves',
+      /if \(!DETAIL\[detailIndex\]\) pipeline\.setHeight\(nativeRows\(\)\);/.test(mainG));
+    /* THE LOOK IS TURNED DOWN, NOT TAKEN OUT: every dial is still on the
+       menu and js/lofi.js still does all of it. */
+    const lofiSrc = fsG.readFileSync('js/lofi.js', 'utf8');
+    check('js/lofi.js still does every bit of it, so the look is three presses away',
+      /palSnap/.test(lofiSrc) && /uDither/.test(lofiSrc) && /setPixels/.test(lofiSrc) &&
+      /\$\('opt-pix-up'\)/.test(mainG) && /\$\('opt-res-up'\)/.test(mainG));
+    /* AND THE ART IS STILL EARTH, which is the other half of it and a
+       different question: the screen is not held to 256 colours, and
+       every texture and sprite is still PAINTED out of them. */
+    check('but the art is still painted in the earth box, at the user\'s request',
+      /TONE_SET = \[\{ v: 'earth'/.test(mainG) && /tone: 0,/.test(mainG) &&
+      pal.DEFAULT_ART === 'earth');
+    check('and a saved setting from before the picture moved is not kept alive',
+      /const PREF_VERSION = 10;/.test(mainG) && /if \(was < 10\)/.test(mainG));
+  }
+
+  /* ---- THE TWO PICTURES DRAWN IN FULL COLOUR ---- */
+  {
+    const g1 = gtex.get('GRID'), g2 = gtex.get('GRIDWALL');
+    note('the grid, as a picture', `${g1.pix.w}x${g1.pix.h} over ${g1.w} units, ` +
+      `${new Set(Array.from({ length: g1.pix.h }, (_, i) => g1.pix.get(40, i).join(','))).size} colours down one cell`);
+    check('the floor and the wall are drawn bigger than everything else, and smoothed',
+      g1.pix.w === 256 && g2.pix.w === 256 && g1.texture.magFilter === THREEG.LinearFilter &&
+      g1.texture.anisotropy > 1 && g2.texture.magFilter === THREEG.LinearFilter);
+    check('and one repeat of each is still one cell, so the lines land on the grid',
+      g1.w === GRID.CELL && g1.h === GRID.CELL && g2.w === GRID.CELL);
+    /* THEY CARRY THEIR OWN RGB. Everything else in the bank is painted
+       out of the 256; these two are a ruled line and would be a stack
+       of aliasing if they were. */
+    {
+      const inPalette = c => pal.PALETTE.some(p2 => p2[0] === c[0] && p2[1] === c[1] && p2[2] === c[2]);
+      let off = 0;
+      for (let x = 0; x < 256; x += 3) if (!inPalette(g1.pix.get(x, 0))) off++;
+      check('and they are NOT snapped to the palette: a line is a glow, not two flat colours',
+        off > 20, `${off} of 86 sampled texels are off the 256`);
+    }
+    /* and the line is brightest at the cell edge and dark in the middle
+       of the cell, which is what makes it a grid rather than a wash */
+    const lum = (x, y) => { const c = g1.pix.get(x, y); return c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11; };
+    check('the lattice is bright on the cell edge, dimmer at the half, dark between',
+      lum(0, 40) > lum(128, 40) * 2 && lum(128, 40) > lum(64, 40) * 1.5,
+      `${lum(0, 40).toFixed(0)} / ${lum(128, 40).toFixed(0)} / ${lum(64, 40).toFixed(0)}`);
+  }
+
+  /* ---- AND THE SKY ---- */
+  {
+    const skySrc = fsG.readFileSync('js/skyart.js', 'utf8');
+    check('the sky bake has a dial for the snap, and this world asks for none of it',
+      /uniform float uSnapAmt;/.test(skySrc) && /u\.uSnapAmt\.value = f\.snap \?\? 1;/.test(skySrc) &&
+      /snap: 0 \}/.test(mainG));
+    check('and it is still green at the horizon, dark green through, black overhead',
+      /horizon: '#1d9a48'/.test(mainG) && /zenith: '#000000'/.test(mainG) && /midPow: 0\.95/.test(mainG));
+    /* a fixed sky bakes once: the clock does not run and no cloud drifts */
+    check('and it is baked once and never again: no clock, no cloud, no haze',
+      /running: false, fireHaze: false,/.test(mainG) && /bare: true/.test(mainG));
   }
 }
 

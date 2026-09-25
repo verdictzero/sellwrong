@@ -68,8 +68,17 @@ const failed = text => { const s = $('load-status'); if (s) s.textContent = text
    pixel filter below is what decides how chunky the picture looks now
    and this one is free to be about detail. It is still the frame rate
    control; halving it quarters the pixels being shaded. */
-const DETAIL = [120, 150, 200, 240, 300, 400, 480, 600, 720, 960];
-const DEFAULT_DETAIL = 6;              // 480, at the user's request, for the frame rate (it was 960)
+const DETAIL = [120, 150, 200, 240, 300, 400, 480, 600, 720, 960, 0];
+/* THE LAST STEP IS THE WINDOW'S OWN, at the user's request: a fixed
+   number of rows upscaled to a modern monitor is not a high resolution,
+   it is a low one stretched. 0 means "however many rows are actually on
+   the screen", capped at twice the CSS size so a 3x phone does not ask
+   for nine times the fill rate. */
+const nativeRows = () => Math.round((typeof window === 'undefined' ? 720 : window.innerHeight)
+  * Math.min(2, (typeof devicePixelRatio === 'undefined' ? 1 : devicePixelRatio) || 1));
+const detailRows = i => DETAIL[i] || nativeRows();
+const detailName = i => (DETAIL[i] ? DETAIL[i] + 'P' : 'NATIVE');
+const DEFAULT_DETAIL = DETAIL.length - 1;   // native, at the user's request
 
 /* AND HOW BIG A PIXEL IS, which is a different question and used to be
    the same one. This is the grid the finished frame is filtered down
@@ -90,7 +99,7 @@ const DEFAULT_DETAIL = 6;              // 480, at the user's request, for the fr
    step nobody can see. */
 const PIXELS = [120, 150, 200, 240, 320, 400, 480, 600, 0];
 const PIXELS_OFF = PIXELS.length - 1;
-const DEFAULT_PIXELS = 3;              // 240, at the user's request, down from 320
+const DEFAULT_PIXELS = PIXELS_OFF;     // off, at the user's request: no chunky grid
 
 /* THE SHAPE OF ONE, width over height as displayed. 320x200 filling a
    4:3 monitor is not a square-pixel mode and never was: each pixel stood
@@ -160,16 +169,16 @@ const PALETTE_SET = [{ v: 'ramps', n: 'RAMPS' }, { v: 'uzebox', n: 'UZEBOX' }];
    made in; EARTH is the same fifteen, muted and warmed — see
    EARTH_RAMPS in js/palette.js and applyTone below.
 
-   GRID IS FIRST because the world the game boots into is the grid
-   (js/maps/grid.js) and neither of the other two can paint it: their
-   green is sixteen entries of polo shirt and their sky is twenty
-   entries of dawn, and a green world needs both of those to be green.
-   See GRID_RAMPS in js/palette.js. EARTH is the box the superstore was
-   in and is one press of the same button away; AS DRAWN is the fifteen
-   ramps the game was made in, and is still what tools/bake-art.mjs
-   quantises the photographs against, which is a different question and
-   is answered where it is asked. */
-const TONE_SET = [{ v: 'grid', n: 'GRID' }, { v: 'earth', n: 'EARTH' }, { v: 'stock', n: 'AS DRAWN' }];
+   EARTH IS FIRST AGAIN, at the user's request: it is the box the art is
+   PAINTED in, and it stays that whatever the screen is doing. GRID is
+   the green-forward box the field was painted out of while the picture
+   was still being snapped to 256 colours — it is not needed now that
+   the floor and the wall carry their own RGB (see T.GRID in
+   js/textures.js), and it is kept because the low-res look is kept.
+   AS DRAWN is the fifteen ramps the game was made in, and is still what
+   tools/bake-art.mjs quantises the photographs against, which is a
+   different question and is answered where it is asked. */
+const TONE_SET = [{ v: 'earth', n: 'EARTH' }, { v: 'stock', n: 'AS DRAWN' }, { v: 'grid', n: 'GRID' }];
 const FX     = [{ v: 1, n: 'FULL' }, { v: 0.5, n: 'FEWER' }, { v: 0.25, n: 'LEAST' }];
 const WOOD   = [{ v: 1, n: 'ALL OF IT' }, { v: 0.6, n: 'NEARER' }, { v: 0.35, n: 'NEAREST' }];
 
@@ -190,16 +199,16 @@ const PREF_KEY = 'sellwrong.prefs';
    so a saved 0 meant AS DRAWN and now means EARTH, which is the right
    answer for anybody who never touched it and the wrong one for
    anybody who did. Dropped rather than reinterpreted. */
-const PREF_VERSION = 9;
+const PREF_VERSION = 10;
 const DEFAULT_PREFS = { v: PREF_VERSION, sens: 1, invert: false, lefty: false, haptics: true,
                         detail: DEFAULT_DETAIL, pixels: DEFAULT_PIXELS, pixar: DEFAULT_PIXAR,
                         crowd: 0, fx: 0, wood: 0, fps: false,
                         /* the box of crayons: 0 is RAMPS, which is the game as
                            it was drawn. See PALETTE_SET and applyPalette. */
                         palette: 0,
-                        /* and the box it is PAINTED in: 0 is GRID, which is
-                           the world the game boots into. See TONE_SET and
-                           applyTone. */
+                        /* and the box it is PAINTED in: 0 is EARTH, at the
+                           user's request, whatever the screen is doing.
+                           See TONE_SET and applyTone. */
                         tone: 0,
                         /* the night's weather — see js/weather.js; the hour is not
                            kept, because a night starts at two */
@@ -237,6 +246,9 @@ function loadPrefs() {
       /* and again at 9, when the grid became the world and GRID became
          the box it is painted in: a saved 0 from before meant EARTH */
       if (was < 9) delete saved.tone;
+      /* and at 10, when the picture went full colour: EARTH is first
+         again, and the render and pixel ladders are not what they were */
+      if (was < 10) { delete saved.tone; delete saved.detail; delete saved.pixels; delete saved.pixar; }
       saved.v = PREF_VERSION;
     }
     return { ...DEFAULT_PREFS, ...saved };
@@ -330,13 +342,23 @@ async function boot() {
      loaded as it was exported and drawn as it is authored; js/car.js is
      the whole of it. The texture comes out of the same file, so there is
      nothing here to keep in step. */
-  const fleetP = loadVehicleModel('assets/models/van.glb')
+  /* NOBODY DRIVES IN THE TEST AREA, at the user's request, and this is
+     the one switch that says so. Every loader below is left exactly as
+     it was and every vehicle in js/vehicles.js still works; the grid
+     (js/maps/grid.js) has no car park to fill, no road to come up and
+     no fire to answer, so fetching ten megabytes of GLB to hand to
+     nothing is the load time the user asked to stop paying. Turn this
+     over and the fleet, the SWAT, the army, the brigade and the gunship
+     are all back. */
+  const VEHICLES = false;
+  const none = Promise.resolve(null);
+  const fleetP = !VEHICLES ? none : loadVehicleModel('assets/models/van.glb')
     .catch(e => { console.warn('no van, the car park stays empty:', e.message); return null; });
   /* and the police van, which comes up the road with the SWAT in it —
      the user's second model, loaded the same way, on its own sheet and
      never in the slab; see SwatVan in js/vehicles.js and POLICE_LENGTH
      in js/car.js for how long it is. Without it nobody comes. */
-  const policeP = loadVehicleModel('assets/models/police_assault.glb',
+  const policeP = !VEHICLES ? none : loadVehicleModel('assets/models/police_assault.glb',
       { length: POLICE_LENGTH, id: 'police', name: 'Assault van', use: 'police' })
     .catch(e => { console.warn('no police van, nobody comes:', e.message); return null; });
   /* and the ARMY'S CARRIER, which is the third vehicle and the first
@@ -347,23 +369,24 @@ async function boot() {
   /* and the FIRE TRUCK, which the fire calls rather than you: the
      police van repainted, with a water cannon on the roof — see
      js/brigade.js. Without it the fire burns until it is done. */
-  const fireP = loadVehicleModel('assets/models/firetruck.glb',
+  const fireP = !VEHICLES ? none : loadVehicleModel('assets/models/firetruck.glb',
       { length: FIRE_LENGTH, id: 'firetruck', name: 'Fire truck', use: 'fire', lamp: 'fire' })
     .catch(e => { console.warn('no fire truck, the fire burns:', e.message); return null; });
-  const apcP = loadVehicleModel('assets/models/apc.glb',
+  const apcP = !VEHICLES ? none : loadVehicleModel('assets/models/apc.glb',
       { length: APC_LENGTH, id: 'apc', name: 'Hover APC', use: 'army' })
     .catch(e => { console.warn('no APC, the army stays home:', e.message); return null; });
   /* and the AIR SUPPORT that comes with it: the user's VTOL gunship,
      the fourth model up the road and the first that never touches it.
      Its own loader, because it is not one mesh but a tree of them —
      see js/vtol.js. Without it the army comes alone. */
-  const vtolP = loadVtolModel('assets/models/vtol.glb')
+  const vtolP = !VEHICLES ? none : loadVtolModel('assets/models/vtol.glb')
     .catch(e => { console.warn('no gunship, the army comes alone:', e.message); return null; });
   /* and the troops themselves: the user's two sheets, cut by
      tools/prep-troops.mjs. Either one missing costs that force its
      faces and nothing else — js/sprites.js has already baked a body of
      the right height under every letter. */
-  const troopsP = Promise.all(['swat', 'army'].map(k => loadImage(`assets/people/${k}.png`)))
+  /* and the troops, who are not coming either — the same switch */
+  const troopsP = !VEHICLES ? none : Promise.all(['swat', 'army'].map(k => loadImage(`assets/people/${k}.png`)))
     .catch(e => { console.warn('no troop art, using the stand-ins:', e.message); return null; });
   /* and the music, fetched now and decoded on the start tap, which is
      the first moment a browser lets a page open a speaker — see
@@ -445,11 +468,32 @@ async function boot() {
      hour and the weather, and again as the night goes. It needs the
      palette atlas the post pass builds, so the pipeline comes first. */
   status('THE SKY', 0.62); await breathe();
+  /* FULL COLOUR AND FULL RESOLUTION, at the user's request, and it is a
+     SETTING rather than a removal. js/lofi.js is untouched and still
+     does everything it did — the buffer, the block average, the ordered
+     dither, the palette snap, the chunky grid — and js/palette.js still
+     builds the box of crayons that the art is painted in. What has
+     moved is the four numbers it is handed:
+
+       PIXELS off       the chunky grid becomes the buffer, so the
+                        filter is a straight copy
+       DITHER 0         nothing to spread, because
+       SNAP 0           nothing is being snapped: the frame goes to the
+                        screen in the colours it was shaded in
+       RENDER native    the buffer is the window, so the world is drawn
+                        at the size it is shown at
+
+     THE ART IS STILL EARTH, which is the other half of the user's
+     request and is a different question — see TONE_SET. Every texture
+     and every sprite in this game is still PAINTED out of the 256
+     earth ramps; what is gone is the screen being held to them as
+     well. The ladders in the pause menu all still work, so turning the
+     look back on is three presses. */
   const pipeline = new LofiPipeline(renderer, {
-    height: DETAIL[detailIndex],
+    height: detailRows(detailIndex),
     pixelHeight: PIXELS[pixelIndex],
     pixelAspect: PIXEL_ASPECT[pixarIndex].v,
-    dither: 1.0, snap: 1.0,
+    dither: 0.0, snap: 0.0,
   });
   /* THE SKY OVER THE GRID: green at the horizon, dark green through the
      middle of it and black overhead, at the user's request — and the
@@ -475,7 +519,10 @@ async function boot() {
               puts the dark green thirty degrees up — the top of the
               picture when you are looking level — and leaves the rest
               of the sky to the black. */
-           midAmt: 1, midPow: 0.95, bare: true },
+           midAmt: 1, midPow: 0.95, bare: true,
+           /* and the bake keeps its own colours, like everything else
+              now — see uSnapAmt in js/skyart.js */
+           snap: 0 },
   });
   const skyBaker = new SkyBaker(renderer, pipeline.lut, { seed: 11 });
   skyBaker.bake(weather.frame);
@@ -529,6 +576,10 @@ async function boot() {
   function resize() {
     const w = container.clientWidth || window.innerWidth;
     const h = container.clientHeight || window.innerHeight;
+    /* AND THE NATIVE STEP FOLLOWS THE WINDOW. Every other step on the
+       ladder is a fixed number of rows and a resize does not move it;
+       "the window's own" is a number that just changed. */
+    if (!DETAIL[detailIndex]) pipeline.setHeight(nativeRows());
     const r = pipeline.resize(w, h);
     camera.aspect = r.width / r.height;
     camera.updateProjectionMatrix();
@@ -667,10 +718,10 @@ async function boot() {
        pixels finer than the render did nothing. The tile has room for
        the setting and not for the proof of it. */
     $('opt-res').value = detailIndex;
-    $('opt-res-v').textContent = DETAIL[detailIndex] + 'P  ' + pipeline.width + '\u00d7' + pipeline.height;
+    $('opt-res-v').textContent = detailName(detailIndex) + '  ' + pipeline.width + '\u00d7' + pipeline.height;
     $('opt-res-down').disabled = detailIndex === 0;
     $('opt-res-up').disabled = detailIndex === DETAIL.length - 1;
-    face('res', DETAIL[detailIndex] + 'P', detailIndex / (DETAIL.length - 1));
+    face('res', detailName(detailIndex), detailIndex / (DETAIL.length - 1));
     $('opt-pix').value = pixelIndex;
     $('opt-pix-v').textContent = (PIXELS[pixelIndex] ? PIXELS[pixelIndex] + 'P' : 'OFF') +
       '  ' + pipeline.gridWidth + '\u00d7' + pipeline.gridHeight;
@@ -964,7 +1015,7 @@ async function boot() {
 
   function setDetail(i) {
     detailIndex = Math.max(0, Math.min(DETAIL.length - 1, i));
-    pipeline.setHeight(DETAIL[detailIndex]);
+    pipeline.setHeight(detailRows(detailIndex));
     resize();
     prefs.detail = detailIndex;
     savePrefs(prefs);

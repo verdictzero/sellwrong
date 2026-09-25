@@ -218,7 +218,7 @@ export class Game {
        cell grid is switched off. The fire system is handed them so that
        every weapon in the game lights one without knowing they exist —
        see the top of FireSystem.ignite. */
-    this.boxes = new Boxes(this, this.textures?.get('GRIDBOX')?.texture || null);
+    this.boxes = new Boxes(this, (this.level.boxes?.length && this.textures?.get('GRIDBOX')?.texture) || null);
     this.fire.boxes = this.boxes;
     this.boxes.attach(scene);
     /* AND THE AIR SUPPORT THAT COMES WITH THE ARMY: the user's VTOL

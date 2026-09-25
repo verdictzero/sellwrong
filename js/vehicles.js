@@ -467,6 +467,8 @@ class Vehicle {
 
   ignite(tics = CATCH_TICS) {
     if (!this.whole) return;
+    /* nothing in this world catches — see Actor.ignite */
+    if (this.fleet.game.level.noBurn) return;
     const first = this.burning <= 0;
     this.burning = Math.max(this.burning, tics);
     if (first) this.catch();

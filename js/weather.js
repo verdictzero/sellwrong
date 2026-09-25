@@ -290,6 +290,9 @@ export class Weather {
     if (k.horizon) f.horizon = hex(k.horizon);
     if (k.ground) f.ground = hex(k.ground);
     if (k.mid) { f.mid = hex(k.mid); f.midAmt = k.midAmt ?? 1; f.midPow = k.midPow ?? 1.0; }
+    /* whether the bake is snapped to the 256 at all — see uSnapAmt in
+       js/skyart.js; a world drawn in full colour asks for 0 */
+    if (k.snap !== undefined) f.snap = k.snap;
     /* AND NOTHING ELSE IN IT. A sky over a void has no cloud to drift,
        no town under it to glow, no stars and no dawn — and, because
        SkyBaker.update re-bakes for as long as there is cover, no cloud

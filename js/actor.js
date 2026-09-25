@@ -640,6 +640,13 @@ export class Actor {
      it worth having — it keeps setting light to the floor it walks over.
      ------------------------------------------------------------------ */
   ignite(tics = 350) {
+    /* AND SOME WORLDS DO NOT BURN AT ALL, at the user's request. The
+       grid (js/maps/grid.js) is a place to try guns in: the flamethrower
+       still throws flame and it still hurts, because that is the GUN,
+       but nothing in the world goes up as a result of it. One flag on
+       the map, read here and in Vehicle.ignite, and every source of
+       fire in the game is answered at once. */
+    if (this.game.level.noBurn) return;
     /* `flammable` is already false for anything fireproof — see the
        constructor — so a trooper is refused here without a second flag */
     if (!this.flammable || this.removed) return;

@@ -165,7 +165,7 @@ them rather than merely following them — a broken build that reaches the
 URL is worse than no deploy, because nobody files a bug against a game,
 they close the tab.
 
-  the smoke test         2617 checks, no install and no browser
+  the smoke test         2612 checks, no install and no browser
   art is in step         re-bakes art/ and fails if js/art-data.js moved
 
 That second one exists because baking the logo and the weapon into source
@@ -5275,123 +5275,94 @@ them has to remember to.
 
 THE GRID
 
-The world the game boots into, and the superstore is not in it. At the
-user's request the town and the store are ARCHIVED rather than removed:
-js/maps/sellwrong.js and js/maps/town.js are still here, still exported
-and still tested, and nothing calls them. js/main.js builds this
-instead.
+The test area, and that is all it is: a large walled-off green grid with
+a crowd standing on it and every gun in the rack in your hands. At the
+user's request it holds nothing else.
 
-  js/maps/grid.js    the field, the boxes' footprints, the streets
-  js/boxes.js        the boxes themselves, and how they burn
-  js/palette.js      GRID_RAMPS, the box of crayons it is painted in
+  js/maps/grid.js    the field, the wall and the crowd
+  js/textures.js     T.GRID and T.GRIDWALL, the only two pictures in
+                     this game drawn in full colour
+  js/main.js         the picture, the sky and the one switch that says
+                     no vehicles
 
-WHY. The burning was the expensive half of this game and the least
-controllable: a grid of fuel and heat 32 units a cell, spreading between
-neighbours, cooking the structure over it, repainting the world's
-textures as it went. It is a good simulation and it costs what a
-simulation costs. What you actually WATCH when a thing burns is a front
-crossing it, coals behind the front and a husk after — which is a
-SHADER over one number, not a grid over the world. So the cell fire is
-switched off here (`noCellFire`, read by FireSystem) and the boxes burn
-instead.
+WHAT IS ARCHIVED RATHER THAN GONE, because all of it comes back and none
+of it was deleted. Every one of these is still in the repository, still
+exported and still tested by the suite:
+
+  the superstore and the town   js/maps/sellwrong.js, js/maps/town.js
+  the fire simulation           js/fire.js, and `noCellFire`
+  the burning boxes             js/boxes.js, and `boxes`, now empty
+  the responders                js/responders.js, js/brigade.js, and
+                                `noSquads`
+  the vehicles and the gunship  js/vehicles.js, js/vtol.js, behind the
+                                VEHICLES switch in js/main.js
+  the lo-fi picture             js/lofi.js and js/palette.js, turned
+                                down to a pass-through
+
+Putting the world back is turning those switches over.
 
 THE FIELD is 10,240 units square — 160 cells of 64, which is Doom's own
-grid and the ruler the rest of the game is already cut to. Green lines
-on black, a green lattice wall round it you cannot walk out of, and a
-sky that is green at the horizon, dark green through the middle and
-black overhead. The air fades to a texel of that sky (js/material.js),
-so the far edge of the field goes to the same green the horizon is:
-the world ends rather than stopping at a wall.
+grid and the ruler the rest of the game is already cut to. It is ONE
+RECTANGLE and four one-sided lines: about ten triangles for the entire
+world, which is what a test area for guns and crowds ought to cost. The
+floor used to be cut into hundreds of strips because there were boxes
+standing in it and a sector here is one ring of points and cannot have
+an island in the middle; with nothing standing on it, there is nothing
+to cut around.
 
-THE BOXES are cubes, two cells to seven cells a side — 128 to 448 units,
-knee-high to a small building. One to a PLOT of eight cells, and ON THE
-GRID: a box stands on a whole number of cells from the field's own
-corner, so its foot follows the green lines on the floor and its faces,
-which wear one repeat of GRIDBOX a cell, line up with them. Where in its
-plot it stands is the only thing rolled for, which is what spaces them
-out and what lets the floor be cut around them: a sector here is one
-ring of points and cannot have an island in the middle, so a plot with a
-box in it is the box and the strips of floor left round it. Every fourth
-plot each way carries no box, which makes streets — and a street is both
-the way a fire engine gets in and a firebreak the fire will not cross.
+Two hundred people stand in the middle two thirds of it. A hundred over
+the whole field was one person every million square units, which is not
+a crowd, it is dust.
 
-A box's sector is a FLOOR AT ITS OWN HEIGHT and draws nothing. A raised
-floor rather than a shut column, which is the idiom this engine already
-uses for a shelf you can shoot over: both stop you walking in, but a
-shut column stops sight at every height, so a two-cell box would have
-hidden what was behind it from a man standing on a seven-cell one. It
-also gives the burning somewhere to go. All 146 of them are one mesh and
-one draw call, built in js/boxes.js.
+NOTHING CATCHES, at the user's request, and that is a different thing
+from having no weapons. The flamethrower still throws flame and it still
+hurts; the extinguisher still freezes people solid. What is gone is
+anything in the world going up as a result — one flag on the map
+(`noBurn`), read by Actor.ignite and Vehicle.ignite, answers every
+source of fire in the game at once.
 
-HOW THEY BURN. A box carries one number, `front`: how far the decay has
-swept down it. Everything you see comes off that number and the height
-of the fragment in the box's own space —
+THE PICTURE IS FULL COLOUR AT THE WINDOW'S OWN RESOLUTION, and this too
+is a setting rather than a removal. js/lofi.js is untouched and still
+does all of it — the buffer, the block average, the ordered dither, the
+palette snap, the chunky grid. What moved is the four numbers it is
+handed: PIXELS off, so the grid is the buffer and the filter is a
+straight copy; DITHER 0, because there is nothing to spread; SNAP 0, so
+the frame reaches the screen in the colours it was shaded in; and RENDER
+at the window's own row count, which is the new last rung of the render
+ladder (NATIVE). Every rung of both ladders is still on the pause menu,
+so the old look is three presses away.
 
-  above the front   burnt: the paint gone, the light gone, and coals
-                    that cool the further above the front they are,
-                    because further above means it burnt longer ago
-  at the front      the fire, a narrow band off EMBER_RAMP, torn by a
-                    hash of the face's own uv so it is a burn line and
-                    not a ruler
-  below the front   untouched
+THE ART IS STILL EARTH, which is the other half of the user's request
+and a different question. Every texture and every sprite is still
+PAINTED out of the 256 earth ramps — see EARTH_RAMPS. What is gone is
+the SCREEN being held to them as well. The GRID box of crayons is kept
+for the day the low-res look comes back; it is not needed now, because
+the two pictures that actually wanted green carry their own RGB.
 
-TOP TO BOTTOM, at the user's request, and it is the one thing in here
-that is a choice rather than a consequence: the front starts at the cap
-and descends. Turning it over is the sign of `front` in the fragment
-shader and nothing else.
+THE FLOOR AND THE WALL ARE THE ONLY PICTURES IN THIS GAME DRAWN IN FULL
+COLOUR, and the only two drawn bigger than 64 pixels. Everything else is
+a 64-square out of the palette, point sampled, and that is the whole
+look. A ruled line is the one thing that does not survive it: the grid
+is not a picture of a surface, it is geometry standing in for geometry,
+and at one repeat every 64 units over ten thousand units of field a line
+snapped to a palette and then point sampled is a stack of aliasing. So
+these two are 256 square, they carry their own RGB, and they ask the
+bank for the smooth filter with anisotropy. The line is a GLOW rather
+than a stripe — brightness falling off as a gaussian either side of the
+cell edge — which gives it a clean bright core and an edge the mipmaps
+can average without it vanishing at the far wall.
 
-It costs one vertex attribute the CPU writes — thirty floats a box, and
-only for the boxes actually alight. No cells, no texture swap, no
-geometry rebuild. The shader splices the same two GLSL strings the walls
-use (js/material.js), so a burning box stands in the same light as
-everything else and its coals are the same eight colours and the same
-clock as a burning fir.
+THE SKY is green at the horizon, dark green through the middle and black
+overhead, and now baked in full colour too: the snap in js/skyart.js is
+on a dial and this world asks for none of it. The clock does not run and
+the fire makes no haze, so it is baked exactly once. The air fades to a
+texel of that sky (js/material.js), so the far edge of the field goes to
+the same green the horizon is — the world ends rather than stopping at a
+wall.
 
-AND THEN IT DISINTEGRATES, at the user's request: a box does not leave a
-husk, it GOES. Above the front the paint is already gone; from there to
-a crumble-length higher the surface comes apart in FLECKS, speckled off
-the same hash that tore the front, with the last of them fading on an
-alpha channel rather than popping. By the end there is nothing on the
-grid where it stood.
 
-Which is why the front travels FURTHER than the box is tall — its own
-height plus the crumble (SWEEP in js/boxes.js). Sweeping only the height
-left the last handful of texels at the foot with nowhere to have gone,
-and a burnt-out box was a doormat that stood there for the rest of the
-night.
+THE FIRE TRUCK  (archived — see THE GRID)
 
-AND IT STOPS BEING IN THE WAY AS IT GOES. The floor under a box comes
-down with what is left of it, so a thing burnt to a stub is a stub you
-can see over and then step on; when there is nothing left the floor is
-the field's again and a fire engine may drive over the ash. What decides
-is what is STANDING rather than whether the front reached the bottom —
-a box the brigade puts out with nothing left of it is still nothing left
-of it.
-
-HOW THE FIRE MOVES, since there is no grid to carry it: a box properly
-alight lights its neighbours within 300 units of its FOOTPRINT, so a
-seven-cell box reaches as far past its own wall as a two-cell one does.
-A box that has nearly finished stops recruiting, because a husk does not
-light anything. Nothing crosses a street.
-
-WHAT PUTS IT OUT is water from the fire truck's cannon and CO2 from the
-extinguisher, both through FireSystem.douse, which hands every call to
-the boxes before it does anything of its own — which is also how every
-weapon in the game lights one without knowing boxes exist. Neither
-unburns anything: `front` only ever goes up. What they save is the
-bottom of the box the fire has not reached yet.
-
-AND NOBODY COMES BUT THE BRIGADE. `noSquads` keeps the SWAT and the army
-off the road, and with the army never called the gunship never flies.
-The fire brigade still answers the fire, drives in along the streets and
-plays its cannon on what it can see — see THE FIRE TRUCK. Two things
-were wrong with it in a field of solid boxes and both are fixed here: it
-was aiming at the MIDDLE of a box, which is inside a solid and can never
-be seen, and it only ever drove at a fire in a straight line from the
-ring, which stops at the first box. It aims at the burning face now, and
-the map hands it the streets.
-
-THE FIRE TRUCK
 
 The user's fire variant of the police van: the same body and wheels on
 a red sheet, with a water cannon on the roof. It is the first responder
@@ -5434,7 +5405,8 @@ anything.
 The truck stands in fire well: three times the squad van's fire armour
 and half again its fuse.
 
-THE POLICE VAN, AGAIN
+THE POLICE VAN, AGAIN  (archived — see THE GRID)
+
 
 The user's second assault van replaced the first, and it came in pieces
 the game can use: four wheel nodes and a light bar on a material of its
@@ -8051,7 +8023,7 @@ THE TEST
 
 No install and no browser — a stub stands in for three.js, since the
 bakeries, the map builder, the collision and the state tables are all pure.
-2617 checks. Every one of them earns its place by having caught something
+2612 checks. Every one of them earns its place by having caught something
 that had already reached a screenshot:
 
   a sprite whose art wrapped round the edge of its own canvas, so a forearm

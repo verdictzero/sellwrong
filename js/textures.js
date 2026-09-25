@@ -62,6 +62,19 @@ export class TextureBank {
        looking like a remaster. */
     tex.minFilter = THREE.NearestMipmapNearestFilter;
     tex.generateMipmaps = true;
+    /* SMOOTH, FOR THE ONE KIND OF PICTURE THAT WANTS IT. Everything in
+       this game is point sampled and that is the whole look — see the
+       note above. The grid's floor is not a picture of a surface, it is
+       a RULED LINE, and a ruled line drawn at four texels to the unit
+       and then point sampled across ten thousand units of field is a
+       stack of aliasing. So a texture may ask for the other filter, and
+       exactly two do. Anisotropy is clamped to the hardware's own limit
+       on upload, so asking for sixteen is asking for what there is. */
+    if (opts.smooth) {
+      tex.magFilter = THREE.LinearFilter;
+      tex.minFilter = THREE.LinearMipmapLinearFilter;
+      tex.anisotropy = 16;
+    }
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.needsUpdate = true;
@@ -254,41 +267,59 @@ T.KERB = () => {
 };
 
 /* ---------- the grid world ----------
-   The floor, the boundary and the boxes of js/maps/grid.js, which is
-   the world the game boots into: green lines on black, and nothing
-   else. Every one of these is drawn in the `green` ramp, which in the
-   GRID box of js/palette.js is a phosphor rather than a polo shirt.
+   The floor and the wall of js/maps/grid.js: green lines on black, and
+   nothing else in the world but a crowd.
 
-   THE LINE IS THREE TEXELS AND NOT ONE, which is the whole of what
-   there is to get wrong here. A texture in this bank is mipmapped
-   (TextureBank.add) and a one-texel line on black averages to black by
-   the second mip, so a grid drawn a texel wide is a grid that is there
-   when you stand on it and gone at the far end of the field. Three
-   texels over a 64-unit repeat is a three-unit painted line, which is
-   what the car park's bay lines are and they survive the same walk. */
-T.GRID = () => {
-  const p = new Pix(64, 64, 411);
-  p.fill('fire', 0.0);                                  // the one true black in the box
-  /* the cell's own edge, brightest at its centre */
-  for (const [k, t] of [[0, 0.62], [1, 0.95], [2, 0.62]]) {
-    p.hline(0, 63, k, 'green', t);
-    p.vline(k, 0, 63, 'green', t);
+   THESE TWO ARE THE ONLY PICTURES IN THE GAME DRAWN IN FULL COLOUR, and
+   the only two drawn bigger than 64 pixels. Everything else here is a
+   64-square painted out of a 256-colour box and point sampled, which is
+   the whole look — see the note on TextureBank and the header of
+   js/palette.js. A ruled line is the one thing that does not survive
+   it: the grid is not a picture of a surface, it is geometry standing
+   in for geometry, and at one repeat every 64 units over ten thousand
+   units of field a line snapped to a palette and then point sampled is
+   a stack of aliasing. So these are 256 square, they carry their own
+   RGB, and they ask the bank for the smooth filter (`smooth` in SIZES).
+
+   THE LINE IS A GLOW AND NOT A STRIPE. Four texels to the world unit,
+   with the brightness falling off as a gaussian either side of the
+   edge, which is what gives it a clean bright core and an edge the
+   mipmaps can average without it vanishing — the failure the low-res
+   version of this had, where the grid was there underfoot and gone at
+   the far wall. */
+const gridPix = (size, bg, line, half, lineW, halfW) => {
+  const p = new Pix(size, size, 411);
+  const mix = (a, b, t) => a + (b - a) * t;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      /* how far this texel is from the nearest cell edge, and from the
+         half-cell line; the edge wraps, so x and size-x both count */
+      const d = Math.min(Math.min(x, size - x), Math.min(y, size - y));
+      const h = Math.min(Math.abs(x - size / 2), Math.abs(y - size / 2));
+      const edge = Math.exp(-(d * d) / lineW);
+      const mid = Math.exp(-(h * h) / halfW) * 0.45;
+      let r = bg[0], g = bg[1], b = bg[2];
+      r = mix(r, half[0], mid); g = mix(g, half[1], mid); b = mix(b, half[2], mid);
+      r = mix(r, line[0], edge); g = mix(g, line[1], edge); b = mix(b, line[2], edge);
+      p.set(x, y, Math.round(r), Math.round(g), Math.round(b), 255);
+    }
   }
-  /* and a half-cell line, dim, so the floor has something to read at a
-     distance the cell lines are too far apart to give it */
-  p.hline(0, 63, 32, 'green', 0.30);
-  p.vline(32, 0, 63, 'green', 0.30);
-  /* the faintest wash inside the cell, so the black is a surface rather
-     than a hole — a floor you cannot see at all reads as the void */
-  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++)
-    if (((x * 7 + y * 13) & 31) === 0) p.ink(x, y, 'green', 0.10);
-  return p.snap(0);                                     // a hard line stays hard
+  return p;                            // NOT snapped: this one keeps its colours
 };
 
-/* The boxes' own skin: a green face with its edges lit, so a box reads
-   as a solid thing in the same lattice the floor is drawn in. What the
-   burn eats — see js/boxes.js, where the decay is a height in the
-   object's own space rather than anything in this picture. */
+/* the floor: a dark field with a bright green lattice on it */
+T.GRID = () => gridPix(256, [6, 11, 8], [70, 255, 140], [22, 104, 54], 20, 9);
+/* and the wall round it, the same lattice a shade cooler and dimmer, so
+   the edge of the world reads as a boundary rather than as more floor
+   standing on its end */
+T.GRIDWALL = () => gridPix(256, [5, 9, 9], [44, 190, 130], [16, 74, 52], 16, 7);
+
+/* AND THE BOXES' OWN SKIN, which nothing asks for today. The burning
+   boxes are archived rather than deleted (js/boxes.js, and `boxes` in
+   js/maps/grid.js, which is empty); this is the picture they were worn
+   in, kept here so that putting them back is putting them back. A
+   64-square out of the palette like everything else, because a box IS a
+   picture of a surface. */
 T.GRIDBOX = () => {
   const p = new Pix(64, 64, 412);
   p.fill('green', 0.16);
@@ -296,7 +327,6 @@ T.GRIDBOX = () => {
     const n = ((x * 13 + y * 29) % 17) / 17;
     p.wash(x, y, 'green', 0.10 + n * 0.14, 0.5);
   }
-  /* the panel: a frame inside the face and a cross through it */
   p.frame(0, 0, 64, 64, 'green', 0.72);
   p.frame(1, 1, 62, 62, 'green', 0.44);
   p.hline(0, 63, 32, 'green', 0.30);
@@ -4260,8 +4290,9 @@ const SIZES = {
   /* the grid world: one repeat is one CELL, which is what lets the
      floor's anchor put a line on every cell edge exactly — see
      floorAnchor in js/level.js and CELL in js/maps/grid.js */
-  GRID:     { w: 64, h: 64 },
-  GRIDBOX:  { w: 64, h: 64 },   // and one repeat is one cell up a box's face
+  GRID:     { w: 64, h: 64, smooth: true },
+  GRIDWALL: { w: 64, h: 64, smooth: true },
+  GRIDBOX:  { w: 64, h: 64 },   // one repeat is one cell up a box's face
   ASPHPARV: { w: 64, h: 192 },  // and along y
   STAIRTRD: { w: 64, h: 16 },   // one repeat is one step
   SKIRTING: { w: 64, h: 16 },

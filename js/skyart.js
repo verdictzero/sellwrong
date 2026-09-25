@@ -139,6 +139,7 @@ precision highp float;
 uniform vec3  uZenith, uHorizon, uGround;
 uniform vec3  uMid;
 uniform float uMidAmt, uMidPow;
+uniform float uSnapAmt;
 uniform vec3  uSunDir, uSunCol, uGlow;
 uniform float uGlowAmt, uSunUp;
 uniform vec3  uMoonDir;
@@ -295,7 +296,15 @@ void main() {
      per dither cell, the grain the 1024-wide sky had — off the same
      16 16 16 step as the post pass; snapped to the palette; and then
      linear. See the header for why each. */
-  vec3 snapped = palSnap(clamp(col + ditherAt(floor(gl_FragCoord.xy / ${cell}.0), uDither), 0.0, 1.0));
+  /* AND THE SNAP IS ON A DIAL, because a world drawn in full colour
+     wants a sky in full colour: at 1 this is the 256-colour sky the
+     rest of this comment describes, and at 0 the gradient is left
+     exactly as it was computed. The dither goes with it — a wobble
+     aimed at a box of crayons nobody is reaching for is just noise. */
+  vec3 raw = clamp(col, 0.0, 1.0);
+  vec3 snapped = mix(raw,
+    palSnap(clamp(col + ditherAt(floor(gl_FragCoord.xy / ${cell}.0), uDither), 0.0, 1.0)),
+    uSnapAmt);
   vec3 lin = pow((snapped + 0.055) / 1.055, vec3(2.4));
   lin = mix(snapped / 12.92, lin, step(0.04045, snapped));
   gl_FragColor = vec4(lin, 1.0);
@@ -352,6 +361,7 @@ export class SkyBaker {
         uSeed: { value: opts.seed ?? 0.0 },
         uZenith: { value: new V3() }, uHorizon: { value: new V3() }, uGround: { value: new V3() },
         uMid: { value: new V3() }, uMidAmt: { value: 0 }, uMidPow: { value: 1 },
+        uSnapAmt: { value: 1 },
         uSunDir: { value: new V3(1, 0, 0) }, uSunCol: { value: new V3() }, uGlow: { value: new V3() },
         uGlowAmt: { value: 0 }, uSunUp: { value: 0 },
         uMoonDir: { value: new V3(0, 1, 0) }, uMoonAmt: { value: 1 },
@@ -388,6 +398,7 @@ export class SkyBaker {
     set3('uMid', f.mid || f.horizon);
     u.uMidAmt.value = f.mid ? (f.midAmt ?? 1) : 0;
     u.uMidPow.value = f.midPow ?? 1;
+    u.uSnapAmt.value = f.snap ?? 1;
     set3('uSunCol', f.sunCol); set3('uGlow', f.glow);
     u.uSunDir.value.copy(dirOf(f.sunAz, f.sunAlt));
     u.uGlowAmt.value = f.glowAmt;
