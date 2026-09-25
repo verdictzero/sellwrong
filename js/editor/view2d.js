@@ -70,7 +70,11 @@ export class View2D {
   resize() {
     const r = this.canvas.parentElement.getBoundingClientRect();
     this.dpr = Math.min(2, devicePixelRatio || 1);
-    this.w = Math.max(1, r.width); this.h = Math.max(1, r.height);
+    /* THE SAME PIECE OF MAP IN VIEW when the view changes size — swapping
+       the inset for the big view shows the map big, not in a corner */
+    const nw = Math.max(1, r.width), nh = Math.max(1, r.height);
+    if (this.framed && this.w > 1 && this.h > 1) this.scale *= Math.min(nw / this.w, nh / this.h);
+    this.w = nw; this.h = nh;
     this.canvas.width = Math.round(this.w * this.dpr);
     this.canvas.height = Math.round(this.h * this.dpr);
     /* the first real size frames the map: at boot the panel may not
@@ -188,6 +192,7 @@ export class View2D {
     }
     /* THE RIGHT BUTTON, Doom Builder's way: a click on something is its
        properties; a drag on something moves it; a drag on nothing pans */
+    if (e.button === 2 && ed.mode === 'draw' && ed.path.length) { ed.closePath({ open: true }); return; }
     if (e.button === 2) {
       const hit = this.pick(p.x, p.y);
       this.drag = { type: 'right', hit, px: p.px, py: p.py, x: p.x, y: p.y, cx: this.cx, cy: this.cy };
@@ -213,7 +218,6 @@ export class View2D {
     /* Alt paints a new scatter even over an old one */
     const hit = mode === 'scatter' && e.altKey ? null : this.pick(p.x, p.y, kind);
     if (!hit) {
-      if (mode === 'things') { ed.addThing(p.x, p.y); return; }
       if (mode === 'props') { const a = [ed.snapV(p.x), ed.snapV(p.y)]; this.drag = { type: 'prop', a, b: a }; return; }
       if (mode === 'scatter') { const a = [ed.snapV(p.x), ed.snapV(p.y)]; this.drag = { type: 'brush', a, b: a }; return; }
       this.drag = { type: 'box', a: [p.x, p.y], b: [p.x, p.y], add: e.shiftKey };
@@ -304,7 +308,13 @@ export class View2D {
   }
 
   dbl(e) {
-    if (this.ed.mode === 'draw') { this.ed.closePath(); return; }
+    if (this.ed.mode === 'draw') { this.ed.closePath({ open: true }); return; }
+    /* a double-click on empty floor in things mode puts a thing there —
+       as does Insert; a single click selects */
+    if (this.ed.mode === 'things') {
+      const p = this.at(e);
+      if (!this.pick(p.x, p.y, 'thing')) { this.ed.addThing(p.x, p.y); return; }
+    }
     if (this.ed.sel.kind) this.ed.ui.showTab('insp');
   }
 

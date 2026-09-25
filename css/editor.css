@@ -34,7 +34,8 @@
 #ed-top {
   display: flex; align-items: center; gap: 6px;
   padding: 0 8px; background: var(--panel); border-bottom: 1px solid var(--line);
-  overflow: hidden; white-space: nowrap;
+  /* not hidden: the menus drop down out of it */
+  white-space: nowrap; position: relative; z-index: 20;
 }
 #ed-top .brand { font: 700 12px var(--mono); letter-spacing: .12em; color: var(--accent); margin-right: 6px; }
 #ed-top .sep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
@@ -268,3 +269,6 @@
 .ed-gd-body { padding: 14px; }
 .ed-gd-body .ed-row { grid-template-columns: 130px 1fr; align-items: start; margin-bottom: 10px; }
 .ed-gd-body .ed-row input[type=number] { width: 90px; height: 24px; background: #0f1317; border: 1px solid var(--line); border-radius: 4px; padding: 0 6px; }
+
+.ed-texgrid > .ed-note { grid-column: 1 / -1; }
+.ed-menu > .items { z-index: 30; }

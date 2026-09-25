@@ -124,7 +124,14 @@ export class View3D {
     canvas.addEventListener('pointermove', e => this.move(e));
     canvas.addEventListener('pointerup', e => this.up(e));
     canvas.addEventListener('pointercancel', e => this.up(e));
-    canvas.addEventListener('dblclick', () => { if (ed.mode === 'draw') ed.closePath(); else if (ed.sel.kind) ed.ui.showTab('insp'); });
+    canvas.addEventListener('dblclick', () => {
+      if (ed.mode === 'draw') { ed.closePath({ open: true }); return; }
+      if (ed.mode === 'things' && this.mouse) {
+        const R = this.ray(this.mouse[0], this.mouse[1]), h = this.pick(R);
+        if (h?.kind !== 'thing') { const g = this.ground(R, h); if (g) ed.addThing(g[0], g[1]); return; }
+      }
+      if (ed.sel.kind) ed.ui.showTab('insp');
+    });
     canvas.addEventListener('wheel', e => this.wheel(e), { passive: false });
     canvas.addEventListener('contextmenu', e => e.preventDefault());
     canvas.addEventListener('pointerenter', () => { ed.pointerView = '3d'; });
@@ -132,6 +139,7 @@ export class View3D {
     document.addEventListener('pointerlockchange', () => {
       if (document.pointerLockElement !== canvas && this.looking) this.stopLook();
       if (document.pointerLockElement !== canvas && this.visual) this.toggleVisual(false);
+      if (document.pointerLockElement === canvas) this.skipMove = performance.now() + 150;
     });
     addEventListener('keyup', e => this.keys.delete(e.code));
     addEventListener('blur', () => this.keys.clear());
@@ -439,6 +447,8 @@ export class View3D {
       if (r.length < 3) return;
       const [cx, cy] = centroid(r);
       for (const part of ['floor', 'ceil']) {
+        /* under the sky there is no ceiling to pick */
+        if (part === 'ceil' && s.ceilTex === 'SKY') continue;
         const sl = FEATURES.slopes ? (part === 'floor' ? s.floorSlope : s.ceilSlope) : null;
         const z0 = part === 'floor' ? (s.floor ?? 0) : (s.ceil ?? 256);
         const sx = sl?.dzdx || 0, sy = sl?.dzdy || 0;
@@ -523,6 +533,7 @@ export class View3D {
       /* the lock can be refused until the page is clicked; this click */
       try { this.canvas.requestPointerLock?.(); } catch (err) { /* keep going */ }
     }
+    if (e.button === 2 && this.ed.mode === 'draw' && this.ed.path.length) { this.ed.closePath({ open: true }); return; }
     if (e.button === 2 && !this.visual) {
       this.looking = true;
       this.canvas.parentElement.classList.add('look');
@@ -537,7 +548,9 @@ export class View3D {
     const hit = this.pick(R);
     const g = this.ground(R, hit);
     const sg = this.snapGround(g, px, py);
-    this.canvas.setPointerCapture(e.pointerId);
+    /* Chrome refuses a pointer capture while the pointer is locked, and
+       in visual mode it is */
+    if (!document.pointerLockElement) { try { this.canvas.setPointerCapture(e.pointerId); } catch (err) { /* fine */ } }
     const grab = (kind, id, z, at) => {
       if (e.shiftKey || e.ctrlKey) { ed.select(kind, [id], true); return; }
       if (!ed.isSel(kind, id)) ed.select(kind, [id]);
@@ -547,7 +560,9 @@ export class View3D {
     if (mode === 'draw') { if (sg) ed.addPathPoint(sg); return; }
     if (mode === 'rect') { if (sg) this.drag = { type: 'rect', z: g[2], a: sg, b: sg }; return; }
 
-    if (mode === 'vertices') {
+    /* VISUAL MODE picks surfaces and things, whatever mode the plan is
+       in, as Doom Builder's does */
+    if (mode === 'vertices' && !this.visual) {
       const v = this.nearestHandle(px, py);
       if (v === null) { if (!e.shiftKey) ed.clearSel(); return; }
       const p = ed.doc.vertices[v];
@@ -556,7 +571,8 @@ export class View3D {
     }
     if (mode === 'things') {
       if (hit?.kind === 'thing') { const t = ed.doc.things.find(q => q.id === hit.id); grab('thing', hit.id, this.floorZ(t.x, t.y), [t.x, t.y]); return; }
-      if (g) ed.addThing(g[0], g[1]);
+      /* a click on the floor lets go; a double-click (or Insert) places */
+      if (!e.shiftKey) ed.clearSel();
       return;
     }
     if (mode === 'props') {
@@ -606,6 +622,11 @@ export class View3D {
   }
 
   move(e) {
+    /* the first movement after the pointer locks is where the pointer
+       WAS, not a movement — Chrome reports it — and it spun the view */
+    if (this.skipMove && performance.now() < this.skipMove) return;
+    /* and a jump no hand made — Chrome sends a few after the lock */
+    if (document.pointerLockElement && (Math.abs(e.movementX) > 250 || Math.abs(e.movementY) > 250)) return;
     if (this.visual && this.cam && !this.drag) {
       this.cam.yaw -= e.movementX * LOOK;
       this.cam.pitch = Math.max(-1.5, Math.min(1.5, this.cam.pitch - e.movementY * LOOK));
@@ -737,7 +758,7 @@ export class View3D {
     }
     if (this.visual && e.key === 'Escape') { this.toggleVisual(false); return true; }
     if (c === 'KeyF' && !ctrl) { this.toStart(); return true; }
-    if (c === 'KeyB' && !ctrl) { this.setFullbright(!this.fullbright); return true; }
+
     const h = this.hover;
     if (ctrl && c === 'KeyC' && h?.kind === 'surface') {
       this.clip = this.textureOf(h);
@@ -767,11 +788,7 @@ export class View3D {
       ed.say(`offset ${o.xoff || 0}, ${o.yoff || 0}`);
       return true;
     }
-    if ((c === 'PageUp' || c === 'PageDown') && h?.kind === 'surface' && h.part !== 'wall') {
-      const s = ed.doc.sectors[h.sector];
-      ed.nudgeHeight(h.part, (c === 'PageUp' ? 1 : -1) * (e.shiftKey ? 1 : ed.grid), new Set([s.id]));
-      return true;
-    }
+
     return false;
   }
 
@@ -782,6 +799,15 @@ export class View3D {
     const o = d.lines[h.line] || {};
     if (h.band === 'upper') return o.upperTex || s.upperTex || s.wallTex || 'GRIDWALL';
     if (h.band === 'lower') return o.lowerTex || s.lowerTex || s.wallTex || 'GRIDWALL';
+    /* the middle: of a two-sided line, what stands in its opening (a
+       building's outside wall is the inside sector's walls) */
+    const two = this.ed.lines().find(l => l.key === h.line)?.sectors.length > 1;
+    if (two) {
+      if (o.midTex) return o.midTex;
+      const l = this.ed.lines().find(q => q.key === h.line);
+      const inside = l?.sectors.map(i => d.sectors[i]).find(x => x.ceilTex && x.ceilTex !== 'SKY');
+      return inside?.wallTex || s.wallTex || 'GRIDWALL';
+    }
     return o.wallTex || s.wallTex || 'GRIDWALL';
   }
 

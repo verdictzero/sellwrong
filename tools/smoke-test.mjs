@@ -13300,12 +13300,11 @@ await (async () => {
   const sid = edL.doc.sectors[0].id;
   check('a sector\'s brightness reads as Doom\'s 0 to 255', E.brightOf(edL.doc.sectors[0]) === Math.round(0.72 * 255));
   edL.nudgeLight(16, new Set([sid])); edL.nudgeLight(16, new Set([sid]));
-  check('and Ctrl+wheel moves it sixteen at a time, as one undo each', E.brightOf(edL.doc.sectors[0]) === 184 + 32 && edL.history.past.length === 2);
+  check('and Ctrl+wheel moves it sixteen at a time, a run of notches one undo', E.brightOf(edL.doc.sectors[0]) === 184 + 32 && edL.history.past.length === 1);
   for (let i = 0; i < 30; i++) edL.nudgeLight(16, new Set([sid]));
-  check('and never past 255, nor puts a step on the undo stack for trying', E.brightOf(edL.doc.sectors[0]) === 255 && edL.history.past.length === 5);
-  const topB = E.brightOf(edL.doc.sectors[0]);
-  edL.undo(); edL.undo(); edL.undo();
-  check('and undoes a step at a time', topB === 255 && E.brightOf(edL.doc.sectors[0]) < 255);
+  check('and never past 255', E.brightOf(edL.doc.sectors[0]) === 255 && edL.history.past.length === 1);
+  edL.undo();
+  check('and the whole run undoes in one', E.brightOf(edL.doc.sectors[0]) === 184);
 
   /* INSIDE AND OUTSIDE: a roofed room in the open is a building */
   const bd = D.newDoc('BLD', 2048);
@@ -13429,6 +13428,38 @@ await (async () => {
   edV.moveSel(-512, 0);
   check('a vertex welded onto another is let go, not left selecting a different one', edV.sel.kind === null);
   for (const x of [edR, edD, edK, edV]) { clearTimeout(x._compileT); clearTimeout(x._saveT); }
+
+  /* WHAT THE UX REVIEW FOUND, held down */
+  const edS = new E.Editor(null);
+  edS.history = new D.History(D.newDoc('S', 2048));
+  edS.addSector(Rq(512, 512, 1536, 1536));
+  edS.mode = 'draw'; edS.modeBeforeDraw = 'sectors';
+  edS.path = [[512, 1024], [1536, 1024]];
+  edS.closePath({ open: true });
+  const halves = edS.doc.sectors.filter(x => x.id !== 1).map(x => Math.abs(D.signedArea(D.ringOf(edS.doc, x))));
+  check('a line drawn from wall to wall splits the room in two, and drawing goes back to the mode it came from',
+    halves.length === 2 && halves.every(a => Math.abs(a - 1024 * 512) < 1) && edS.mode === 'sectors' &&
+    D.compileDoc(edS.doc).problems.length === 0, JSON.stringify(halves));
+  const edW = new E.Editor(null);
+  edW.history = new D.History(D.newDoc('W2', 1024));
+  const wid = new Set([edW.doc.sectors[0].id]);
+  const pastW = edW.history.past.length;
+  edW.nudgeHeight('floor', 8, wid); edW.nudgeHeight('floor', 8, wid); edW.nudgeHeight('floor', 8, wid);
+  check('a run of wheel notches is one undo step', edW.doc.sectors[0].floor === 24 && edW.history.past.length === pastW + 1);
+  edW.undo();
+  check('and one undo takes it all back', edW.doc.sectors[0].floor === 0);
+  let heard = 0;
+  edW.on('probe', () => { throw new Error('a broken panel'); });
+  edW.on('probe', () => { heard++; });
+  const errWas = console.error; console.error = () => {};
+  edW.emit('probe');
+  console.error = errWas;
+  check('one listener failing does not stop the next hearing (the 3D view once stopped rebuilding)', heard === 1);
+  const uiSrc2 = fsE.readFileSync('js/editor/ui.js', 'utf8');
+  check('the Scatter tab has the function it draws itself with', /const renderScatter = \(\) =>/.test(uiSrc2));
+  const cssSrc = fsE.readFileSync('css/editor.css', 'utf8');
+  check('the menu bar does not clip its own menus', !/#ed-top \{[^}]*overflow: hidden/s.test(cssSrc));
+  for (const x of [edS, edW]) { clearTimeout(x._compileT); clearTimeout(x._saveT); }
 
   /* THE GODOT EXPORT: a GLB that reads back, and a scene that says what
      it should (it was also checked by importing it into Godot 4.3) */

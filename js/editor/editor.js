@@ -109,7 +109,13 @@ export class Editor {
      events
      ------------------------------------------------------------------ */
   on(evt, fn) { (this.listeners.get(evt) || this.listeners.set(evt, []).get(evt)).push(fn); return this; }
-  emit(evt, ...a) { for (const fn of this.listeners.get(evt) || []) fn(...a); }
+  /* one listener's mistake must not stop the others hearing — a broken
+     panel once stopped the 3D view rebuilding */
+  emit(evt, ...a) {
+    for (const fn of this.listeners.get(evt) || []) {
+      try { fn(...a); } catch (e) { console.error(`the ${evt} listener failed:`, e); }
+    }
+  }
 
   get doc() { return this.history.doc; }
 
@@ -123,8 +129,13 @@ export class Editor {
      nothing anywhere in the editor mutates the map without the undo
      stack knowing.
      ------------------------------------------------------------------ */
-  edit(label, fn, { tidy = true } = {}) {
-    this.history.push(label);
+  edit(label, fn, { tidy = true, group = false } = {}) {
+    /* A RUN OF WHEEL NOTCHES IS ONE UNDO: the same nudge again within a
+       moment of the last does not push another step */
+    const now = performance.now();
+    const same = group && this._lastEdit && this._lastEdit.label === group && now - this._lastEdit.t < 1200;
+    if (!same) this.history.push(label);
+    this._lastEdit = group ? { label: group, t: now } : null;
     fn(this.doc);
     if (tidy) {
       /* the weld renumbers vertices, so a vertex or line selection would
@@ -222,6 +233,7 @@ export class Editor {
 
   setMode(m) {
     if (!MODES[m]) return;
+    if (m === 'draw' && this.mode !== 'draw') this.modeBeforeDraw = this.mode;
     this.mode = m;
     /* a selection only survives a mode that can show it */
     const keep = MODE_KIND[m];
@@ -369,7 +381,7 @@ export class Editor {
         if (part === 'floor') s.floor = (s.floor ?? 0) + dz;
         else s.ceil = (s.ceil ?? 256) + dz;
       }
-    }, { tidy: false });
+    }, { tidy: false, group: `height ${part} ${[...which].join(',')}` });
   }
 
   /** BRIGHTNESS, Doom's 0 to 255 — Ctrl and the wheel in UDB, over a
@@ -389,7 +401,7 @@ export class Editor {
         s.light = +(b / 255).toFixed(4);
         now = b;
       }
-    }, { tidy: false });
+    }, { tidy: false, group: `light ${[...which].join(',')}` });
     this.say(`brightness ${now}`);
   }
 
@@ -551,11 +563,51 @@ export class Editor {
     p.push([pt[0], pt[1]]);
     this.emit('path');
   }
-  closePath() {
+  /** FINISH THE DRAWING. Closed by clicking the first corner again, it is
+   *  a sector. Finished open (Enter, or the right button) with both ends
+   *  on the edge of one sector, it is a line across that sector that
+   *  SPLITS it in two, as it does in Doom Builder. */
+  closePath({ open = false } = {}) {
     const p = this.path;
     this.path = [];
-    if (p.length >= 3) this.addSector(p);
+    if (open && p.length >= 2 && this.splitByPath(p)) { /* done */ }
+    else if (p.length >= 3) this.addSector(p);
+    else if (p.length) this.say('a sector needs three corners — or draw from one wall to another to split a room');
     this.emit('path');
+    this.afterDraw();
+  }
+  /** Back to the mode the drawing started from, as Doom Builder does. */
+  afterDraw() {
+    if (this.mode === 'draw' && this.modeBeforeDraw && this.modeBeforeDraw !== 'draw') this.setMode(this.modeBeforeDraw);
+  }
+  splitByPath(pts) {
+    const d0 = this.doc;
+    const a = pts[0], b = pts[pts.length - 1];
+    /* the sector whose edge both ends lie on, and whose inside the rest
+       of the path runs through */
+    const onEdge = (s, [x, y]) => ringOf(d0, s).some((v, k, r) => segDist(v[0], v[1], r[(k + 1) % r.length][0], r[(k + 1) % r.length][1], x, y).d < 1);
+    const mid = pts.length > 2 ? pts[1] : [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    const s0 = d0.sectors.find(s => onEdge(s, a) && onEdge(s, b) && pointInPoly(ringOf(d0, s), mid[0], mid[1]));
+    if (!s0) return false;
+    let made = null;
+    this.edit('split sector', d => {
+      const u = vertexFor(d, a[0], a[1]), w = vertexFor(d, b[0], b[1]);
+      const inner = pts.slice(1, -1).map(([x, y]) => vertexFor(d, x, y));
+      const S = d.sectors.find(s => s.id === s0.id);
+      const r = S.verts, i = r.indexOf(u), j = r.indexOf(w);
+      if (i < 0 || j < 0 || u === w) return;
+      const arc = (from, to) => { const out = []; for (let k = from; ; k = (k + 1) % r.length) { out.push(r[k]); if (k === to) break; } return out; };
+      const one = [...arc(i, j), ...[...inner].reverse()];
+      const two = [...arc(j, i), ...inner];
+      if (one.length < 3 || two.length < 3) return;
+      S.verts = one;
+      made = { ...JSON.parse(JSON.stringify({ ...S, verts: undefined, id: undefined, name: '' })), id: takeId(d), verts: two };
+      d.sectors.push(made);
+    });
+    if (!made) return false;
+    this.select('sector', [made.id]);
+    this.say('split the sector in two');
+    return true;
   }
   cancelPath() { if (this.path.length) { this.path = []; this.emit('path'); } }
   setCursor(pt) { this.cursor = pt; this.emit('cursor'); }
@@ -682,6 +734,8 @@ export class Editor {
     };
     input.click();
   }
+
+  selectAllInMode() { selectAll(this); }
 
   /** EXPORT: the map as a Godot 4 scene — see js/editor/godot.js */
   async exportGodot() {
@@ -909,9 +963,20 @@ export async function startEditor() {
      it does not take comes here. Nothing fires while a field has focus,
      or typing a sector's name would change the mode. */
   addEventListener('keydown', e => {
+    /* A DIALOG OWNS THE KEYBOARD while it is open */
+    if (document.getElementById('ed-texed') || document.getElementById('ed-godot')) return;
     const tag = document.activeElement?.tagName;
     if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') {
-      if (e.key === 'Escape') document.activeElement.blur();
+      const el = document.activeElement;
+      if (e.key === 'Escape') el.blur();
+      /* Enter commits a field and gives the keys back to the map */
+      if (e.key === 'Enter' && el.closest?.('#ed-side')) { el.blur(); e.preventDefault(); }
+      /* and Ctrl+Z is the map's undo, as it always is in Doom Builder —
+         the field commits what was typed first */
+      if ((e.ctrlKey || e.metaKey) && /^[zy]$/i.test(e.key) && el.closest?.('#ed-side') && el.type !== 'text') {
+        e.preventDefault(); el.blur();
+        if (e.key.toLowerCase() === 'y' || e.shiftKey) ed.redo(); else ed.undo();
+      }
       return;
     }
     const k = e.key, ctrl = e.ctrlKey || e.metaKey;
@@ -943,9 +1008,10 @@ export async function startEditor() {
     if (k === 'Backspace' && ed.path.length) { e.preventDefault(); ed.path.pop(); ed.emit('path'); return; }
     if (k === 'Delete' || k === 'Backspace') {
       e.preventDefault();
-      /* nothing selected: the highlighted thing, as Doom Builder does */
-      if (!ed.sel.kind && ed.hovered && ed.hovered.kind !== 'surface') ed.select(ed.hovered.kind, [ed.hovered.id]);
-      ed.deleteSel();
+      /* nothing selected: the highlighted element of THIS mode, as Doom
+         Builder does with Delete — never a sector found under a thing */
+      if (!ed.sel.kind && k === 'Delete' && ed.hovered && ed.hovered.kind === MODE_KIND[ed.mode]) ed.select(ed.hovered.kind, [ed.hovered.id]);
+      if (ed.sel.kind) ed.deleteSel();
       return;
     }
     if (k === 'Insert') { e.preventDefault(); ed.insertAtCursor(); return; }
@@ -954,11 +1020,11 @@ export async function startEditor() {
          Shift for the ceiling */
       e.preventDefault();
       const ids = ed.targetOr('sector');
-      if (ids.size) ed.nudgeHeight(e.shiftKey ? 'ceil' : 'floor', (k === 'PageUp' ? 1 : -1) * ed.grid, ids);
+      if (ids.size) ed.nudgeHeight(e.shiftKey ? 'ceil' : 'floor', (k === 'PageUp' ? 1 : -1) * 8, ids);
       return;
     }
-    if (k === 'Escape') { if (ed.path.length) ed.cancelPath(); else ed.clearSel(); return; }
-    if (k === 'Enter' && ed.path.length) { ed.closePath(); return; }
+    if (k === 'Escape') { if (ed.path.length) { ed.cancelPath(); ed.afterDraw(); } else ed.clearSel(); return; }
+    if (k === 'Enter' && ed.path.length) { ed.closePath({ open: true }); return; }
     if (k === '[') { ed.gridStep(-1); return; }
     if (k === ']') { ed.gridStep(1); return; }
     const up = k.toUpperCase();
@@ -966,6 +1032,7 @@ export async function startEditor() {
     if (up === 'G') { ed.snap = !ed.snap; ed.emit('grid'); ed.say(`snap ${ed.snap ? 'on' : 'off'}`); return; }
     if (k === ' ') { e.preventDefault(); ed.setMode('draw'); return; }
     if (up === 'F') { ed.emit('frame'); return; }
+    if (up === 'B') { ed.view3d.setFullbright(!ed.view3d.fullbright); return; }
   });
 
   /* keep working when the tab is closed, and say so if there is

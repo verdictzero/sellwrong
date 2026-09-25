@@ -121,6 +121,10 @@ export function buildUI(ed) {
       ['Delete selection', 'Del', () => ed.deleteSel()],
       ['Clear selection', 'Esc', () => ed.clearSel()],
       '-',
+      ['Copy', 'Ctrl+C', () => ed.copySel()],
+      ['Paste at the cursor', 'Ctrl+V', () => ed.paste()],
+      ['Select all', 'Ctrl+A', () => ed.selectAllInMode?.()],
+      '-',
       ['Frame the map', 'F', () => ed.emit('frame')],
     ]),
     menu('Help', [
@@ -207,7 +211,9 @@ export function buildUI(ed) {
   const status = h('div', { id: 'ed-status' }, st.mode, st.grid, st.pos, st.sel, st.info, st.probs, st.msg);
   /* THE INFO BAR, Doom Builder's panel along the bottom: what is under
      the mouse, and what it is — in either view */
-  ed.on('hover', hv => {
+  ed.on('doc', () => showHover(ed.hovered));
+  ed.on('hover', hv => showHover(hv));
+  const showHover = hv => {
     const d = ed.doc;
     let t = '';
     if (hv?.kind === 'sector') {
@@ -232,7 +238,7 @@ export function buildUI(ed) {
       if (x) t = `<b>Scatter</b> ${x.name} · ${ed.compiled?.grown?.get(x.id)?.grown ?? '…'} grown`;
     }
     st.info.innerHTML = t;
-  });
+  };
   const toast = h('div', { id: 'ed-toast' });
 
   root.append(top, h('div', { id: 'ed-main' }, views, side), status, toast);
@@ -429,7 +435,7 @@ export function buildUI(ed) {
               ...PLANT_KINDS.map(k => h('option', { value: k, ...(k === t.kind ? { selected: true } : {}) }, k)))),
              row('Scale', num(t.scale ?? 1, v => each('plant scale', x => { x.scale = Math.max(0.2, Math.min(4, v)); }), { step: 0.1 }))]
           : [row('Variant', num(t.variant ?? '', v => each('thing variant', x => { x.variant = Math.max(0, Math.round(v)); })))]),
-        h('p', { class: 'ed-note' }, 'In Things mode, click empty floor to place the type chosen in the Things tab. , and . turn the selection.'));
+        h('p', { class: 'ed-note' }, 'In Things mode, double-click empty floor (or press Insert) to place the type chosen in the Things tab; , and . turn the selection.'));
       return;
     }
 
@@ -599,7 +605,7 @@ export function buildUI(ed) {
     const eachSel = (label, fn) => ed.edit(label, dd => { for (const t of dd.things) if (ed.sel.ids.has(t.id)) fn(t); }, { tidy: false });
     put(p, 
       h('h4', { class: 'ed-sub0' }, 'Place'),
-      h('p', { class: 'ed-note' }, 'Pick a type, then click the floor in Things mode (T) — on the plan or in 3D.'),
+      h('p', { class: 'ed-note' }, 'Pick a type, then in Things mode (T) double-click the floor or press Insert — on the plan or in 3D.'),
       h('div', { class: 'ed-things' }, ...Object.entries(THING_TYPES).filter(([k]) => k !== 'PLANT').map(([k, t]) =>
         h('button', { class: k === ed.thingType ? 'on' : '', onclick: () => { ed.thingType = k; ed.setMode('things'); renderThings(); } },
           h('i', { style: `background:${t.color}` }), t.name))),
@@ -648,6 +654,33 @@ export function buildUI(ed) {
   renderThings();
 
   /* ------------------------------------------------------------------
+     THE SCATTER TAB: the mixes, the brush, and every scatter in the map
+     ------------------------------------------------------------------ */
+  const renderScatter = () => {
+    const p = panes.scatter;
+    p.textContent = '';
+    const d = ed.doc;
+    put(p, h('h3', {}, 'Scatter'),
+      h('p', { class: 'ed-note' }, 'Spread sprite people and decorations procedurally. Pick a mix, then in Scatter mode (X) drag a circle out from its middle — on the plan or in 3D. Or fill selected sectors. Every scatter stays a live rule: change its dials and it re-grows.'),
+      h('h4', {}, 'Mix'),
+      h('div', { class: 'ed-presets' }, ...Object.entries(PRESETS).map(([k, pr]) =>
+        h('button', { class: k === ed.scatterPreset ? 'on' : '', onclick: () => { ed.scatterPreset = k; ed.setMode('scatter'); renderScatter(); renderInsp(); } },
+          h('span', { class: 'sw' }, ...pr.items.slice(0, 4).map(it => h('i', { style: `background:${it.type.startsWith('PLANT:') ? plantColour(it.type.slice(6)) : THING_TYPES[it.type]?.color}` }))),
+          pr.name))),
+      row('Brush radius', num(ed.brushRadius || 512, v => { ed.brushRadius = Math.max(16, v); }, { step: 64, title: 'for a click without a drag' })),
+      h('div', { class: 'ed-small-btns' },
+        h('button', { class: 'ed-btn', onclick: () => ed.setMode('scatter') }, 'Brush (X)'),
+        h('button', { class: 'ed-btn', onclick: () => ed.scatterSectors() }, 'Fill selected sectors')),
+      h('h4', {}, `In this map (${d.scatters.length})`),
+      d.scatters.length ? h('div', {}, ...d.scatters.map(c => {
+        const g = ed.compiled?.grown?.get(c.id);
+        return h('div', { class: 'ed-listrow' + (ed.isSel('scatter', c.id) ? ' on' : ''),
+          onclick: () => { ed.setMode('scatter'); ed.select('scatter', [c.id]); ed.emit('frameSel'); showTab('insp'); } },
+          h('span', {}, c.name || `scatter ${c.id}`), h('small', {}, g ? `${g.grown}` : ''));
+      })) : h('p', { class: 'ed-note' }, 'None yet.'));
+  };
+
+  /* ------------------------------------------------------------------
      THE MAP: its name, the world round it, and what is wrong with it
      ------------------------------------------------------------------ */
   const setWorld = (label, fn) => ed.edit(label, d => { d.world = d.world || {}; fn(d.world); }, { tidy: false });
@@ -674,7 +707,10 @@ export function buildUI(ed) {
       h('p', { class: 'ed-note' }, 'The sky is re-baked in the 3D view as you change it.'),
       h('h4', {}, `Problems (${uniq.length})`),
       uniq.length ? h('div', {}, ...uniq.map(x => h('div', { class: 'ed-prob', onclick: () => {
-        if (x.id !== undefined && x.kind === 'sector') { ed.setMode('sectors'); ed.select('sector', [x.id]); ed.emit('frameSel'); }
+        if (x.id !== undefined && x.kind === 'sector') {
+          const both = (x.msg.match(/sectors (\d+) and (\d+)/) || []).slice(1).map(Number);
+          ed.setMode('sectors'); ed.select('sector', both.length ? both : [x.id]); ed.emit('frameSel');
+        }
       } }, x.msg))) : h('div', { class: 'ed-ok' }, 'None. The map will build.'),
       h('h4', {}, 'Counts'),
       h('p', { class: 'ed-note' }, `${d.sectors.length} sectors · ${ed.lines().length} lines · ${d.vertices.length} vertices · ${d.things.length} things · ${d.props.length} props`));
@@ -683,7 +719,12 @@ export function buildUI(ed) {
   /* ------------------------------------------------------------------
      WIRING
      ------------------------------------------------------------------ */
-  const inspFocused = () => panes.insp.contains(document.activeElement) || panes.map.contains(document.activeElement);
+  /* a field being typed in is not redrawn under the typist; a button that
+     was just clicked is, or the panel shows what was there before it */
+  const inspFocused = () => {
+    const a = document.activeElement;
+    return !!a && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName) && (panes.insp.contains(a) || panes.map.contains(a));
+  };
   ed.on('sel', () => { refreshBar(); if (!ui.picking) renderInsp(); renderTex(); if (ui.tab === 'things') renderThings(); });
   ed.on('mode', refreshBar);
   ed.on('grid', refreshBar);
@@ -710,9 +751,9 @@ const HELP2D = {
   vertices: 'click select · drag move · shift add · Del delete\nwheel zoom · right-drag/MMB pan · Ctrl+wheel light · [ ] grid',
   lines: 'click select · drag move · Del joins sectors\nwheel zoom · right-drag/MMB pan · Ctrl+wheel light · [ ] grid',
   sectors: 'click select · drag move · dbl-click inspect\nwheel zoom · right-drag/MMB pan · Ctrl+wheel light · [ ] grid',
-  things: 'click empty to place · drag move · , . turn\nwheel zoom · right-drag/MMB pan · Ctrl+wheel light',
+  things: 'dbl-click / Insert place · drag move · , . turn\nwheel zoom · right-drag/MMB pan · Ctrl+wheel light',
   props: 'drag empty to draw a box · drag to move\nwheel zoom · right-drag/MMB pan · Ctrl+wheel light',
-  draw: 'click points · click the first to close · Enter close\nBackspace undo point · Esc cancel',
+  draw: 'click corners · click the first to close a sector\nEnter / right-click / dbl-click: finish — wall to wall splits a room · Esc cancel',
   rect: 'drag a rectangle into a new sector\nEsc cancel',
 };
 

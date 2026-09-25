@@ -62,7 +62,14 @@ export function openTextureEditor(ed, name = null, from = 'GRIDWALL') {
   ed.root.append(overlay);
 
   const close = () => { overlay.remove(); removeEventListener('keydown', onKey, true); };
-  const onKey = e => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+  /* Escape asks before throwing away layers that were never saved */
+  const startedAs = JSON.stringify(def);
+  const onKey = e => {
+    if (e.key !== 'Escape') return;
+    e.stopPropagation();
+    if (JSON.stringify(def) !== startedAs && !confirm('Close the texture editor without saving?')) return;
+    close();
+  };
   addEventListener('keydown', onKey, true);
 
   function save() {

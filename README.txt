@@ -5392,26 +5392,54 @@ IT BEHAVES LIKE ULTIMATE DOOM BUILDER AND SLADE3 where they agree, at
 the user's request:
 
   Q               visual mode: the 3D view alone, the mouse looking, a
-                  crosshair to pick with, WASD to fly, Space and C for
-                  up and down; Q or Esc to leave
+                  crosshair to pick with (surfaces and things, whatever
+                  the plan's mode), WASD to fly, Space and C for up and
+                  down; Q or Esc to leave
   wheel (3D)      raise or lower the floor or ceiling under the mouse,
                   8 a notch (Shift: 1), every selected sector with it
   Ctrl+wheel      SECTOR BRIGHTNESS, on the plan or in 3D: Doom's 0-255
                   in its sixteen steps (Shift: 1). Over a thing, the
                   sector it stands in. The inspector has it as a slider.
-  PgUp / PgDn     floor up or down a grid step (Shift: the ceiling)
+  PgUp / PgDn     floor of the selected or highlighted sectors up or
+                  down 8 (Shift: the ceiling), on the plan or in 3D
   right-click     the thing under the mouse, in the inspector (its
                   properties); right-drag moves it; on nothing, pans
   Insert          a thing at the cursor, or a vertex (in vertex mode,
-                  splitting the line it lands on)
-  Delete          the selection, or the highlighted thing if nothing is
-                  selected
+                  splitting the line it lands on); in things mode a
+                  double-click on the floor places one too, and a click
+                  or a drag on empty floor selects, as in every mode
+  Delete          the selection, or the highlighted element of the
+                  current mode if nothing is selected
+  finishing       in draw mode, Enter, the right button or a double-
+                  click finishes: a line drawn from wall to wall SPLITS
+                  the room it crosses; clicking the first corner closes
+                  a new sector; either way drawing hands back to the
+                  mode it started from
+  undo            a run of wheel notches is one step; Ctrl+Z is the
+                  map's undo even with an inspector field focused
+  B               fullbright, from either view
   Ctrl+C / Ctrl+V copy the selection and paste it at the cursor
                   (sectors, things, props, scatters); in 3D over a
                   surface, its texture
   arrows (3D)     a wall's texture offsets, 1 at a time (Shift: 8)
   V L S T         vertices, lines, sectors, things, as in Doom Builder
   [ ] G           the grid, and snapping to it
+
+NOT YET LIKE DOOM BUILDER, and said here so nobody hunts for them: a line
+has one set of textures, not a front and a back sidedef; drawing across
+an existing line does not split it where they cross (draw up to it
+instead); and there is no brightness shading view on the plan.
+
+AN ADVERSARIAL REVIEW, by two separate reviewers — one driving the editor
+with a real mouse and keyboard as a Doom Builder mapper would, one
+attacking the compiler, the undo stack, test runs and the Godot export
+with real Godot — found, among others: menus the bar clipped, a Scatter
+tab that stopped the 3D view rebuilding, visual-mode clicks that did
+nothing, Delete taking a whole sector, dialogs that let keys through,
+rooms side by side with no wall between them, merges that lost rooms
+drawn the other way round, doorways lost on a split, colours shared
+between sectors. All of them are fixed and each one is held down by a
+check in the smoke test.
 
 THE INFO BAR along the bottom says what is under the mouse, in either
 view: a sector's floor, ceiling, brightness, whether it is inside, and
