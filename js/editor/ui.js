@@ -15,7 +15,7 @@
 import { PACK, PACK_SKIES, animOf, ownImage } from '../texpack.js';
 import { THING_TYPES, problemsOf, ringOf, signedArea, COLOR_PARTS } from './doc.js';
 import { openTextureEditor } from './texeditor.js';
-import { MODES, GRIDS, brightOf, isInside } from './editor.js';
+import { MODES, GRIDS, GRID_MAX, brightOf, isInside } from './editor.js';
 import { PRESETS, SCATTER_TYPES, PLANT_KINDS, SCATTER_MAX } from './scatter.js';
 import { plantColour } from './view2d.js';
 
@@ -110,8 +110,21 @@ export function buildUI(ed) {
     return b;
   });
 
-  const gridSel = h('select', { title: 'Grid size  [ ]', onchange: e => ed.setGrid(+e.target.value) },
-    ...GRIDS.map(g => h('option', { value: g }, `grid ${g}`)));
+  /* THE GRID: the ladder, a size of your own if you have one, and
+     Custom… to type one — any whole number from 1 to GRID_MAX */
+  const customOpt = h('option', { value: '' }, '');
+  const gridSel = h('select', { title: 'Grid size  [ ]  — Custom… for any size', onchange: e => {
+    const v = e.target.value;
+    if (v === 'custom') {
+      const got = prompt(`Grid size, in map units (1–${GRID_MAX})`, String(ed.grid));
+      const n = Math.round(+got);
+      if (got !== null && n >= 1 && n <= GRID_MAX) ed.setGrid(n);
+      else { if (got !== null) ed.say(`a grid is 1 to ${GRID_MAX} units`); refreshBar(); }
+      return;
+    }
+    ed.setGrid(+v);
+  } },
+    ...GRIDS.map(g => h('option', { value: g }, `grid ${g}`)), customOpt, h('option', { value: 'custom' }, 'Custom…'));
   const snapBtn = h('button', { class: 'ed-btn', title: 'Snap to grid (G)', onclick: () => { ed.snap = !ed.snap; ed.emit('grid'); } }, 'Snap', h('kbd', {}, 'G'));
   const layoutBtns = {
     combined: h('button', { class: 'ed-btn', title: 'Both at once: 3D with the plan inset (Tab swaps them)', onclick: () => ed.setLayout(ed.layout === 'combined' ? 'combined2d' : 'combined') }, 'Combined'),
@@ -144,6 +157,11 @@ export function buildUI(ed) {
       ['Paste at the cursor', 'Ctrl+V', () => ed.paste()],
       ['Select all', 'Ctrl+A', () => ed.selectAllInMode?.()],
       '-',
+      ['Snap selection to grid', 'Shift+G', () => ed.snapSelToGrid()],
+      ['Grid finer', '[', () => ed.gridStep(-1)],
+      ['Grid coarser', ']', () => ed.gridStep(1)],
+      ['Snap on / off', 'G', () => { ed.snap = !ed.snap; ed.emit('grid'); ed.say(`snap ${ed.snap ? 'on' : 'off'}`); }],
+      '-',
       ['Frame the map', 'F', () => ed.emit('frame')],
     ]),
     menu('Help', [
@@ -159,7 +177,10 @@ export function buildUI(ed) {
       ['Right-click: properties · right-drag: move', '', () => {}],
       ['Insert: thing / vertex at the cursor', '', () => {}],
       ['Ctrl+C / Ctrl+V: copy / paste selection', '', () => {}],
-      ['PgUp/PgDn: floor ±grid (Shift: ceiling)', '', () => {}],
+      ['PgUp/PgDn: floor ±8 (Shift: ceiling)', '', () => {}],
+      ['[ ] grid size · G snap · Shift+G snap selection', '', () => {}],
+      ['Corners snap to vertices (□), lines (◇), then grid', '', () => {}],
+      ['Arrows nudge a grid step (1 with snap off), Shift ×4', '', () => {}],
       ['Tab swaps the big view and the inset', '', () => {}],
       ['3D: hold right mouse to look, WASD QE fly', '', () => {}],
       ['3D: wheel raises the floor/ceiling under it', '', () => {}],
@@ -275,10 +296,18 @@ export function buildUI(ed) {
     toast.textContent = msg; toast.classList.add('show');
     clearTimeout(toastT); toastT = setTimeout(() => toast.classList.remove('show'), 1800);
   };
-  ui.setPos = (x, y) => { st.pos.innerHTML = x === null ? '' : `<b>${Math.round(x)}</b>, <b>${Math.round(y)}</b>`; };
+  /* where the cursor is, exactly: a point snapped onto a diagonal line
+     is not a whole number, and rounding it would be a lie */
+  const coord = v => (Number.isInteger(v) ? v : +v.toFixed(2));
+  ui.setPos = (x, y) => { st.pos.innerHTML = x === null ? '' : `<b>${coord(x)}</b>, <b>${coord(y)}</b>`; };
 
   const refreshBar = () => {
     for (const [m, b] of Object.entries(modeBtns)) b.classList.toggle('on', ed.mode === m);
+    /* a custom size is on the list while it is the grid */
+    const custom = !GRIDS.includes(ed.grid);
+    customOpt.hidden = !custom;
+    customOpt.value = custom ? String(ed.grid) : '';
+    customOpt.textContent = custom ? `grid ${ed.grid}` : '';
     gridSel.value = String(ed.grid);
     snapBtn.classList.toggle('on', ed.snap);
     for (const [l, b] of Object.entries(layoutBtns)) b.classList.toggle('on', ed.layout === l);

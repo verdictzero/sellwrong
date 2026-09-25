@@ -417,7 +417,12 @@ export function holeParents(doc) {
  *  the document it was given. Called after every edit that moves or
  *  deletes, which is what makes dragging one vertex onto another JOIN
  *  them, the way it does in a Doom editor. */
-export function compact(doc, weld = 1) {
+/** How near two vertices are the SAME vertex, in units. Under half a
+ *  unit: vertices sit on whole units (or exactly on a line, see
+ *  Editor.snapAt), so this welds a corner dragged onto another and
+ *  never two corners one unit apart, which at grid 1 is detail. */
+export const WELD = 0.49;
+export function compact(doc, weld = WELD) {
   const V = doc.vertices;
   /* weld: every vertex to the first one within `weld` of it */
   const to = V.map((_, i) => i);
@@ -433,8 +438,9 @@ export function compact(doc, weld = 1) {
     /* two neighbours the same is a zero-length edge */
     s.verts = s.verts.filter((v, k, a) => v !== a[(k + 1) % a.length]);
   }
+  /* a sector with no area is gone; a one-unit square is detail */
   doc.sectors = doc.sectors.filter(s => s.verts.length >= 3 &&
-    Math.abs(signedArea(s.verts.map(i => V[i]))) > 1);
+    Math.abs(signedArea(s.verts.map(i => V[i]))) > 0.25);
   /* keep only the vertices somebody uses, in order */
   const used = new Set();
   for (const s of doc.sectors) for (const v of s.verts) used.add(v);

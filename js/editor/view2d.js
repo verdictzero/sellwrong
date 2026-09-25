@@ -171,11 +171,13 @@ export class View2D {
     return this.ed.lines();
   }
 
-  /** A point for drawing: an existing vertex near the cursor, or the grid. */
+  /** A point for drawing: an existing vertex near the cursor, a point
+   *  on a line near it, or the grid (Editor.snapAt). What it snapped to
+   *  is kept for the cursor to show. */
   snapPoint(x, y) {
-    const v = this.pick(x, y, 'vertex');
-    if (v) return [...this.ed.doc.vertices[v.id]];
-    return [this.ed.snapV(x), this.ed.snapV(y)];
+    const s = this.ed.snapAt(x, y, PICK_PX / this.scale);
+    this.snapKind = s.kind;
+    return s.pt;
   }
 
   /* ------------------------------------------------------------------
@@ -232,7 +234,9 @@ export class View2D {
     const ed = this.ed;
     const p = this.at(e);
     this.mouse = { x: p.x, y: p.y };
-    const snapped = ed.mode === 'draw' || ed.mode === 'rect' ? this.snapPoint(p.x, p.y) : [ed.snapV(p.x), ed.snapV(p.y)];
+    this.snapKind = 'grid';
+    const snapped = ['draw', 'rect', 'vertices'].includes(ed.mode) ? this.snapPoint(p.x, p.y) : [ed.snapV(p.x), ed.snapV(p.y)];
+    ed.cursorKind = this.snapKind;
     ed.setCursor(snapped);
     ed.ui.setPos(snapped[0], snapped[1]);
     const dr = this.drag;
@@ -264,7 +268,12 @@ export class View2D {
       /* nothing moves until the mouse has, a little — a click is not a drag */
       if (!dr.moved && Math.hypot(p.px - dr.px, p.py - dr.py) < 4) return;
       dr.moved = true;
-      ed.dragMove(dr.mv, [p.x, p.y]);
+      ed.dragMove(dr.mv, [p.x, p.y], PICK_PX / this.scale);
+      /* the corner being dragged, and what it has snapped onto */
+      const at = [dr.mv.ref[0] + dr.mv.done[0], dr.mv.ref[1] + dr.mv.done[1]];
+      ed.cursorKind = dr.mv.onto || 'grid';
+      ed.setCursor(at);
+      ed.ui.setPos(at[0], at[1]);
     }
     this.dirty = true;
   }
@@ -361,7 +370,9 @@ export class View2D {
     }
     const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] };
     if (arrows[k] && ed.sel.kind) {
-      const s = e.shiftKey ? ed.grid * 4 : ed.grid;
+      /* a grid step, or one unit with snap off — Shift for four */
+      const step = ed.snap ? ed.grid : 1;
+      const s = e.shiftKey ? step * 4 : step;
       ed.moveSel(arrows[k][0] * s, arrows[k][1] * s, 'nudge');
       return true;
     }
@@ -616,23 +627,34 @@ export class View2D {
       for (const [x, y] of pts) g.fillRect(this.sx(x) - 3, this.sy(y) - 3, 6, 6);
       if (path.length >= 3) { g.strokeStyle = '#3ddc84'; g.beginPath(); g.arc(this.sx(path[0][0]), this.sy(path[0][1]), PICK_PX + 2, 0, Math.PI * 2); g.stroke(); }
       if (path.length && ed.cursor && ed.mode === 'draw') {
+        /* the line being drawn: its length, and its angle, Doom's way
+           (0 is east, anticlockwise) */
         const [a, b] = [path[path.length - 1], ed.cursor];
+        const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        const ang = ((Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI) + 360) % 360;
         g.fillStyle = '#ffd9a6'; g.font = '11px ui-monospace, monospace';
-        g.fillText(`${Math.round(Math.hypot(b[0] - a[0], b[1] - a[1]))}`, this.sx((a[0] + b[0]) / 2) + 6, this.sy((a[1] + b[1]) / 2) - 6);
+        g.fillText(`${+len.toFixed(1)}  ${+ang.toFixed(1)}°`, this.sx((a[0] + b[0]) / 2) + 6, this.sy((a[1] + b[1]) / 2) - 6);
       }
     }
     /* and the snapped cursor, in the drawing modes */
-    if (ed.cursor && ['draw', 'rect', 'props', 'things', 'scatter'].includes(ed.mode) && !dr) {
+    if (ed.cursor && (['draw', 'rect', 'props', 'things', 'scatter', 'vertices'].includes(ed.mode) && !dr || dr?.type === 'move' && dr.moved)) {
       const x = this.sx(ed.cursor[0]), y = this.sy(ed.cursor[1]);
       g.strokeStyle = '#ffb454'; g.lineWidth = 1;
       g.beginPath(); g.moveTo(x - 8, y); g.lineTo(x + 8, y); g.moveTo(x, y - 8); g.lineTo(x, y + 8); g.stroke();
+      /* WHAT IT SNAPPED TO: a square on a vertex, a diamond on a line */
+      if (ed.cursorKind === 'vertex') { g.strokeStyle = '#3ddc84'; g.lineWidth = 2; g.strokeRect(x - 6, y - 6, 12, 12); }
+      if (ed.cursorKind === 'line') {
+        g.strokeStyle = '#3ddc84'; g.lineWidth = 2;
+        g.beginPath(); g.moveTo(x, y - 7); g.lineTo(x + 7, y); g.lineTo(x, y + 7); g.lineTo(x - 7, y); g.closePath(); g.stroke();
+      }
     }
   }
 
   drawGrid() {
     const g = this.g, ed = this.ed;
     let step = ed.grid;
-    while (step * this.scale < 7) step *= 2;
+    while (step * this.scale < 6) step *= 2;
+    this.shownStep = step;
     const x0 = this.mx(0), x1 = this.mx(this.w), y0 = this.my(this.h), y1 = this.my(0);
     const major = step * 8;
     const lineSet = (st, colour) => {
@@ -642,14 +664,23 @@ export class View2D {
       for (let y = Math.floor(y0 / st) * st; y <= y1; y += st) { const py = Math.round(this.sy(y)) + 0.5; g.moveTo(0, py); g.lineTo(this.w, py); }
       g.stroke();
     };
-    lineSet(step, '#10161b');
-    lineSet(major, '#18222a');
+    /* bright enough to place a corner by, at any zoom: the step lines,
+       every eighth a shade stronger */
+    lineSet(step, '#18222b');
+    lineSet(major, '#26343f');
     /* the origin */
     g.strokeStyle = '#2a3a44';
     g.beginPath();
     g.moveTo(Math.round(this.sx(0)) + 0.5, 0); g.lineTo(Math.round(this.sx(0)) + 0.5, this.h);
     g.moveTo(0, Math.round(this.sy(0)) + 0.5); g.lineTo(this.w, Math.round(this.sy(0)) + 0.5);
     g.stroke();
+    /* ZOOMED OUT PAST THE GRID: the lines drawn are coarser than the
+       snap, and it says so rather than leaving you to wonder why a
+       corner lands between them */
+    if (step !== ed.grid && ed.snap) {
+      g.fillStyle = '#6f8391'; g.font = '11px ui-monospace, monospace';
+      g.fillText(`grid ${ed.grid} · lines every ${step} at this zoom — zoom in to see it`, 8, this.h - 8);
+    }
   }
 }
 

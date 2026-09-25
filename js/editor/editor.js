@@ -40,7 +40,7 @@ import { Weather } from '../weather.js';
 import {
   History, compileDoc, gridDoc, newDoc, parseDoc, serialise, compact,
   THING_TYPES, SECTOR_DEFAULTS, takeId, ringOf, pointInPoly, signedArea, linesOf, lineKey,
-  segDist, strictlyInside, selfCrosses, segCross,
+  segDist, strictlyInside, selfCrosses, segCross, WELD,
 } from './doc.js';
 import { View2D } from './view2d.js';
 import { View3D } from './view3d.js';
@@ -55,6 +55,8 @@ export const PLAY_KEY = 'gss-edit:play';
 
 /* the grid ladder: Doom Builder's own, powers of two */
 export const GRIDS = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024];
+/** and the largest a custom one may be */
+export const GRID_MAX = 4096;
 
 export const MODES = {
   vertices: { key: 'V', name: 'Vertices' },
@@ -244,16 +246,112 @@ export class Editor {
     this.say(`${MODES[m].name} mode`);
   }
 
+  /** Any whole number of units from 1 to GRID_MAX — the ladder's
+   *  powers of two, or a size of your own (24, 48, 96…), as Doom
+   *  Builder's custom grid. */
   setGrid(g) {
-    this.grid = Math.max(GRIDS[0], Math.min(GRIDS[GRIDS.length - 1], g));
+    g = Math.round(+g);
+    if (!(g >= 1)) return;
+    this.grid = Math.min(GRID_MAX, g);
     this.emit('grid');
-    this.say(`grid ${this.grid}`);
+    this.say(`grid ${this.grid}${this.snap ? '' : ' (snap is off: G)'}`);
   }
+  /** [ and ]: the next size on the ladder, from wherever the grid is —
+   *  a custom 24 goes down to 16 and up to 32 */
   gridStep(dir) {
-    const i = GRIDS.indexOf(this.grid);
-    this.setGrid(GRIDS[Math.max(0, Math.min(GRIDS.length - 1, (i < 0 ? 6 : i) + dir))]);
+    const g = this.grid;
+    const next = dir > 0 ? GRIDS.find(x => x > g) : [...GRIDS].reverse().find(x => x < g);
+    if (next) this.setGrid(next);
+    else this.say(`grid ${g} is the ${dir > 0 ? 'largest' : 'smallest'} there is`);
   }
   snapV(v) { return this.snap ? Math.round(v / this.grid) * this.grid : Math.round(v); }
+
+  /**
+   * WHERE A POINT GOES, the way Doom Builder decides it: onto a VERTEX
+   * within `r` map units of it; else onto a LINE within `r` — where the
+   * line crosses a grid line, nearest the mouse, with snap on, or the
+   * nearest point of the line with it off, so a corner can be put on a
+   * wall anywhere along it and the wall is split there (vertexFor);
+   * else onto the GRID. Returns { pt, kind: 'vertex'|'line'|'grid', id }.
+   * @param opts.exclude  vertex indices not to snap to (what is being
+   *                      dragged), nor to the lines that end at them
+   * @param opts.lines    whether lines count
+   */
+  snapAt(x, y, r, { exclude = null, lines = true, vertices = true } = {}) {
+    const d = this.doc;
+    if (vertices && r > 0) {
+      let best = -1, bd = r * r;
+      d.vertices.forEach((v, i) => {
+        if (exclude?.has(i)) return;
+        const q = (v[0] - x) ** 2 + (v[1] - y) ** 2;
+        if (q < bd) { bd = q; best = i; }
+      });
+      if (best >= 0) return { pt: [...d.vertices[best]], kind: 'vertex', id: best };
+    }
+    if (lines && r > 0) {
+      let best = null, bd = r;
+      for (const l of this.lines()) {
+        if (exclude && (exclude.has(l.a) || exclude.has(l.b))) continue;
+        const a = d.vertices[l.a], b = d.vertices[l.b];
+        const { d: dist, t } = segDist(a[0], a[1], b[0], b[1], x, y);
+        if (dist < bd && t > 0 && t < 1) { bd = dist; best = { l, a, b, t }; }
+      }
+      if (best) {
+        const { a, b } = best;
+        const on = [];
+        if (this.snap) {
+          /* where the line crosses the grid near the mouse */
+          const g = this.grid, ex = b[0] - a[0], ey = b[1] - a[1];
+          const near = (c, lo, hi) => { for (let k = Math.floor((c - r) / g); k <= Math.ceil((c + r) / g); k++) { const v = k * g; if (v >= lo - 1e-9 && v <= hi + 1e-9) on.push(v); } };
+          const xs = [], ys = [];
+          if (Math.abs(ex) > 1e-9) { on.length = 0; near(x, Math.min(a[0], b[0]), Math.max(a[0], b[0])); xs.push(...on); }
+          if (Math.abs(ey) > 1e-9) { on.length = 0; near(y, Math.min(a[1], b[1]), Math.max(a[1], b[1])); ys.push(...on); }
+          on.length = 0;
+          for (const gx of xs) { const t = (gx - a[0]) / ex; if (t > 1e-9 && t < 1 - 1e-9) on.push([gx, a[1] + ey * t]); }
+          for (const gy of ys) { const t = (gy - a[1]) / ey; if (t > 1e-9 && t < 1 - 1e-9) on.push([a[0] + ex * t, gy]); }
+        }
+        let pick = null, pd = r;
+        for (const q of on) { const dq = Math.hypot(q[0] - x, q[1] - y); if (dq < pd) { pd = dq; pick = q; } }
+        if (!pick) {
+          /* the nearest point of the line itself */
+          const ex = b[0] - a[0], ey = b[1] - a[1];
+          const t = Math.max(0, Math.min(1, ((x - a[0]) * ex + (y - a[1]) * ey) / (ex * ex + ey * ey)));
+          pick = [a[0] + ex * t, a[1] + ey * t];
+        }
+        /* whole units where the point is whole, three places where it
+           is not: exactly on a diagonal, never a rounding off it */
+        const tidy = v => (Math.abs(v - Math.round(v)) < 1e-6 ? Math.round(v) : +v.toFixed(3));
+        return { pt: [tidy(pick[0]), tidy(pick[1])], kind: 'line', id: best.l.key };
+      }
+    }
+    return { pt: [this.snapV(x), this.snapV(y)], kind: 'grid' };
+  }
+
+  /** The vertices the selection would move. */
+  movingVerts() {
+    const d = this.doc, { kind, ids } = this.sel, out = new Set();
+    if (kind === 'vertex') ids.forEach(i => out.add(i));
+    if (kind === 'line') ids.forEach(k => k.split(',').forEach(i => out.add(+i)));
+    if (kind === 'sector') d.sectors.forEach(s => { if (ids.has(s.id)) s.verts.forEach(i => out.add(i)); });
+    return out;
+  }
+
+  /** SNAP THE SELECTION TO THE GRID (Shift+G): every corner of it, or
+   *  every thing or box, to the nearest grid point; what lands on
+   *  another vertex welds to it. */
+  snapSelToGrid() {
+    const { kind, ids } = this.sel;
+    if (!kind || !ids.size) { this.say('select something to snap to the grid'); return; }
+    const g = this.grid, r = v => Math.round(v / g) * g;
+    const verts = this.movingVerts();
+    this.edit(`snap to grid ${g}`, d => {
+      for (const i of verts) if (d.vertices[i]) d.vertices[i] = [r(d.vertices[i][0]), r(d.vertices[i][1])];
+      if (kind === 'thing') for (const t of d.things) if (ids.has(t.id)) { t.x = r(t.x); t.y = r(t.y); }
+      if (kind === 'prop') for (const p of d.props) if (ids.has(p.id)) { p.x0 = r(p.x0); p.y0 = r(p.y0); p.x1 = r(p.x1); p.y1 = r(p.y1); }
+    });
+    if (verts.size) this.clearSel();
+    this.say(`snapped to grid ${g}`);
+  }
 
   setLayout(l) { this.layout = l; this.emit('layout', l); }
 
@@ -689,7 +787,7 @@ export class Editor {
     const a = pts[0], b = pts[pts.length - 1];
     /* the sector whose edge both ends lie on, and whose inside the rest
        of the path runs through */
-    const onEdge = (s, [x, y]) => ringOf(d0, s).some((v, k, r) => segDist(v[0], v[1], r[(k + 1) % r.length][0], r[(k + 1) % r.length][1], x, y).d < 1);
+    const onEdge = (s, [x, y]) => ringOf(d0, s).some((v, k, r) => segDist(v[0], v[1], r[(k + 1) % r.length][0], r[(k + 1) % r.length][1], x, y).d < ON_LINE);
     const mid = pts.length > 2 ? pts[1] : [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
     const s0 = d0.sectors.find(s => onEdge(s, a) && onEdge(s, b) && pointInPoly(ringOf(d0, s), mid[0], mid[1]));
     if (!s0) return false;
@@ -714,9 +812,22 @@ export class Editor {
      when it is let go.
      ------------------------------------------------------------------ */
   beginMove(ref, at) { return { ref: [...ref], start: [...at], done: [0, 0], pushed: false }; }
-  dragMove(dr, at) {
-    const tx = this.snapV(dr.ref[0] + at[0] - dr.start[0]) - dr.ref[0];
-    const ty = this.snapV(dr.ref[1] + at[1] - dr.start[1]) - dr.ref[1];
+  /**
+   * @param r  how near, in map units, counts as ON something (the views
+   *           pass their pick radius): what is dragged by a corner
+   *           snaps that corner onto another vertex within it, and a
+   *           single vertex onto a line too — the grid otherwise
+   */
+  dragMove(dr, at, r = 0) {
+    let tx = this.snapV(dr.ref[0] + at[0] - dr.start[0]) - dr.ref[0];
+    let ty = this.snapV(dr.ref[1] + at[1] - dr.start[1]) - dr.ref[1];
+    if (r > 0 && ['vertex', 'line', 'sector'].includes(this.sel.kind)) {
+      const moving = this.movingVerts();
+      const s = this.snapAt(dr.ref[0] + at[0] - dr.start[0], dr.ref[1] + at[1] - dr.start[1], r,
+        { exclude: moving, lines: this.sel.kind === 'vertex' && moving.size === 1 });
+      if (s.kind !== 'grid') { tx = s.pt[0] - dr.ref[0]; ty = s.pt[1] - dr.ref[1]; }
+      dr.onto = s.kind;
+    }
     const ddx = tx - dr.done[0], ddy = ty - dr.done[1];
     if (!ddx && !ddy) return;
     if (!dr.pushed) { this.history.push(`move ${this.sel.kind}`); dr.pushed = true; }
@@ -726,6 +837,9 @@ export class Editor {
   }
   endMove(dr) {
     if (!dr?.pushed) return;
+    /* A CORNER LET GO ON A WALL becomes a corner of the sector on the
+       other side of it too, so the two meet rather than overlap */
+    for (const i of this.movingVerts()) splitLinesAt(this.doc, i);
     const before = this.doc.vertices.length;
     compact(this.doc);
     if (this.doc.vertices.length !== before && (this.sel.kind === 'vertex' || this.sel.kind === 'line')) this.clearSel();
@@ -852,9 +966,11 @@ export class Editor {
 /** The vertex at (x, y): an existing one within a unit, one inserted
  *  into a line it lands on, or a new one. */
 export function vertexFor(d, x, y) {
+  /* THE SAME POINT, not a nearby one: at grid 1 two corners a unit
+     apart are two corners (WELD in js/editor/doc.js) */
   for (let i = 0; i < d.vertices.length; i++) {
     const v = d.vertices[i];
-    if (Math.abs(v[0] - x) <= 1 && Math.abs(v[1] - y) <= 1) return i;
+    if (Math.abs(v[0] - x) <= WELD && Math.abs(v[1] - y) <= WELD) return i;
   }
   const i = d.vertices.length;
   d.vertices.push([x, y]);
@@ -864,7 +980,7 @@ export function vertexFor(d, x, y) {
     for (let k = 0; k < s.verts.length; k++) {
       const a = d.vertices[s.verts[k]], b = d.vertices[s.verts[(k + 1) % s.verts.length]];
       const { d: dist, t } = segDist(a[0], a[1], b[0], b[1], x, y);
-      if (dist < 0.75 && t > 0.0001 && t < 0.9999) {
+      if (dist < ON_LINE && t > 0.0001 && t < 0.9999) {
         s.verts.splice(k + 1, 0, i);
         /* and what the line said — a doorway, a texture, an offset — is
            said by both halves of it now */
@@ -876,6 +992,31 @@ export function vertexFor(d, x, y) {
     }
   }
   return i;
+}
+
+/** How near a line a point is ON it, in units. */
+const ON_LINE = 0.5;
+
+/** Vertex `i`, if it lies on an edge of a sector it is not a corner of,
+ *  made a corner of that sector there — as vertexFor does for a new
+ *  one — with what the line said carried to both halves. */
+export function splitLinesAt(d, i) {
+  const [x, y] = d.vertices[i] || [];
+  if (x === undefined) return;
+  for (const s of d.sectors) {
+    if (s.verts.includes(i)) continue;
+    for (let k = 0; k < s.verts.length; k++) {
+      const a = d.vertices[s.verts[k]], b = d.vertices[s.verts[(k + 1) % s.verts.length]];
+      const { d: dist, t } = segDist(a[0], a[1], b[0], b[1], x, y);
+      if (dist < ON_LINE && t > 0.0001 && t < 0.9999) {
+        const old = lineKey(s.verts[k], s.verts[(k + 1) % s.verts.length]);
+        s.verts.splice(k + 1, 0, i);
+        const o = d.lines?.[old];
+        if (o) { d.lines[lineKey(s.verts[k], i)] = { ...o }; d.lines[lineKey(i, s.verts[(k + 2) % s.verts.length])] = { ...o }; delete d.lines[old]; }
+        break;
+      }
+    }
+  }
 }
 
 /**
@@ -1174,6 +1315,7 @@ export async function startEditor() {
     if (k === ']') { ed.gridStep(1); return; }
     const up = k.toUpperCase();
     for (const [m, def] of Object.entries(MODES)) if (def.key === up && !e.altKey) { ed.setMode(m); return; }
+    if (up === 'G' && e.shiftKey) { ed.snapSelToGrid(); return; }
     if (up === 'G') { ed.snap = !ed.snap; ed.emit('grid'); ed.say(`snap ${ed.snap ? 'on' : 'off'}`); return; }
     if (k === ' ') { e.preventDefault(); ed.setMode('draw'); return; }
     if (up === 'F') { ed.emit('frame'); return; }

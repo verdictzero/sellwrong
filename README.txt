@@ -5606,6 +5606,31 @@ writes js/texpack-data.js. The game loads only the pack pictures an
 edited map wears. The editor loads those first, then the rest in the
 background.
 
+THE GRID AND THE SNAP, for detailed sector work. The grid is any whole
+number of units from 1 to 4096. The box on the top bar has the powers
+of two, and Custom… takes any other size (24, 48, 96). [ and ] step to
+the next power of two from wherever it is, so 24 goes down to 16 and
+up to 32. G turns snap off and on. Shift+G snaps every corner of the
+selection to the grid, welding what lands on another vertex.
+
+A point goes where Doom Builder puts it: onto a VERTEX near the mouse;
+else onto a LINE, where the line crosses the grid nearest the mouse (or
+the nearest point of the line with snap off); else onto the GRID. That
+holds for drawing, rectangles and Insert in vertex mode, on the plan and
+in 3D. A corner put on a line splits it. A point on a diagonal sits
+exactly on it, not rounded off it, and the readout shows it to two
+places. The cursor shows what it snapped to: a square on a vertex, a
+diamond on a line. The line being drawn shows its length and its angle.
+
+Dragging does the same: a dragged corner snaps onto another vertex (and
+welds when let go), and a single vertex onto a line, where it becomes a
+corner of the sector beyond the wall too, so the two meet rather than
+overlap. The arrows nudge by a grid step, or one unit with snap off
+(Shift: four). Two corners one unit apart stay two corners, and a
+one-unit square is a sector: vertices weld only when they are the same
+point (under half a unit). Zoomed out past the grid, the plan draws
+coarser lines and says so at the bottom.
+
 THE TEXTURE EDITOR (js/editor/texeditor.js, drawn by texcompose.js).
 Textures tab > + New, or double-click any game texture to start from
 it. A texture of the map is a stack of LAYERS. Each layer is one of the

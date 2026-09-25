@@ -419,8 +419,18 @@ export class View3D {
   snapGround(g, px, py) {
     if (!g) return null;
     const v = this.nearestHandle(px, py);
-    if (v !== null) { const p = this.ed.doc.vertices[v]; return [p[0], p[1]]; }
-    return [this.ed.snapV(g[0]), this.ed.snapV(g[1])];
+    if (v !== null) { const p = this.ed.doc.vertices[v]; this.snapKind = 'vertex'; return [p[0], p[1]]; }
+    /* then a line, as on the plan (Editor.snapAt), within what the
+       handle's pixels are worth at that distance */
+    const s = this.ed.snapAt(g[0], g[1], this.pxToMap(g, HANDLE_PX), { vertices: false });
+    this.snapKind = s.kind;
+    return s.pt;
+  }
+  /** How many map units `n` pixels are, at a point on the ground. */
+  pxToMap(g, n) {
+    const c = this.camera.position;
+    const dist = Math.hypot(g[0] - c.x, (g[2] ?? 0) - c.y, -g[1] - c.z);
+    return dist * 2 * Math.tan(this.camera.fov * Math.PI / 360) / Math.max(1, this.h) * n;
   }
 
   /** Where a map point is on the screen, or null behind the camera. */
@@ -668,7 +678,7 @@ export class View3D {
       if (dr.type === 'move') {
         if (!dr.moved && Math.hypot(px - dr.px, py - dr.py) < 4) return;
         dr.moved = true;
-        this.ed.dragMove(dr.mv, [p[0], p[1]]);
+        this.ed.dragMove(dr.mv, [p[0], p[1]], this.pxToMap([p[0], p[1], dr.z], HANDLE_PX));
       } else {
         dr.b = dr.type === 'rect' ? (this.snapGround(p, px, py) || dr.b) : [this.ed.snapV(p[0]), this.ed.snapV(p[1])];
         this.overlayDirty = true;

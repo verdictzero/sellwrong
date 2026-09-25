@@ -14316,6 +14316,128 @@ section('the texture pack');
   }
 }
 
+/* ---------- the grid and the snap ---------- */
+section('the grid and the snap');
+{
+  /* Detailed sector work, at the user's request: any grid size, and a
+     point that goes where it is meant to — a vertex, a line, the grid —
+     at one unit as surely as at sixty-four. */
+  const E = await import('../js/editor/editor.js');
+  const D = await import('../js/editor/doc.js');
+  const fsG = await import('node:fs');
+  const Rq = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+  const mk = () => { const e = new E.Editor(null); e.history = new D.History(D.newDoc('G', 4096)); return e; };
+  const vAt = (e, x, y) => e.doc.vertices.findIndex(v => v[0] === x && v[1] === y);
+
+  /* THE SIZE */
+  const g = mk();
+  g.setGrid(24);
+  check('a grid can be any size: 24', g.grid === 24);
+  g.gridStep(-1); const down = g.grid; g.setGrid(24); g.gridStep(1);
+  check('and [ ] step to the ladder from it: 24 goes down to 16 and up to 32', down === 16 && g.grid === 32);
+  g.setGrid(0); const z = g.grid; g.setGrid('junk'); const j = g.grid; g.setGrid(1e6);
+  check('nothing below 1 or not a number is a grid, and nothing above the most', z === 32 && j === 32 && g.grid === E.GRID_MAX);
+  g.setGrid(1); g.gridStep(-1);
+  check('and 1 is as fine as it goes', g.grid === 1);
+  g.setGrid(1024); g.gridStep(1);
+  check('and the ladder tops out at 1024 for ]', g.grid === 1024);
+
+  /* ONE UNIT IS DETAIL, NOT A WELD */
+  const u = mk();
+  u.setGrid(1);
+  u.addSector(Rq(100, 100, 101, 101));
+  check('a one-unit square is a sector', u.doc.sectors.length === 2 && u.doc.sectors[1].verts.length === 4, `${u.doc.sectors.length}`);
+  u.addSector(Rq(102, 100, 103, 101));
+  check('and one a unit away is another, not welded to it',
+    u.doc.sectors.length === 3 && vAt(u, 101, 100) >= 0 && vAt(u, 102, 100) >= 0 && vAt(u, 101, 100) !== vAt(u, 102, 100));
+  const nv = u.doc.vertices.length;
+  E.vertexFor(u.doc, 101, 101);
+  check('the same point is the same vertex', u.doc.vertices.length === nv);
+  E.vertexFor(u.doc, 104, 104);
+  check('a point one unit off is a new one', u.doc.vertices.length === nv + 1);
+  check('the weld is under half a unit', D.WELD < 0.5 && D.WELD > 0.4);
+
+  /* SNAPPING: vertex, then line, then grid */
+  const s = mk();
+  s.addSector(Rq(1024, 1024, 1536, 1536));
+  const sv = s.snapAt(1030, 1020, 16);
+  check('a point near a vertex goes onto it', sv.kind === 'vertex' && sv.pt[0] === 1024 && sv.pt[1] === 1024);
+  const sl = s.snapAt(1100, 1030, 16);
+  check('near a line, onto the line where it crosses the grid nearest the mouse',
+    sl.kind === 'line' && sl.pt[0] === 1088 && sl.pt[1] === 1024, JSON.stringify(sl));
+  s.snap = false;
+  const sf = s.snapAt(1100, 1030, 16);
+  check('and with snap off, onto the nearest point of the line', sf.kind === 'line' && sf.pt[0] === 1100 && sf.pt[1] === 1024, JSON.stringify(sf));
+  s.snap = true;
+  const sg = s.snapAt(1300, 1300, 16);
+  check('and away from both, onto the grid', sg.kind === 'grid' && sg.pt[0] === 1280 && sg.pt[1] === 1280);
+  s.setGrid(8);
+  const s8 = s.snapAt(1100, 1027, 16);
+  check('a finer grid gives a finer point on the line', s8.kind === 'line' && s8.pt[0] === 1096 && s8.pt[1] === 1024, JSON.stringify(s8));
+  /* a diagonal: the point is exactly on it, not rounded off it */
+  const dg = mk();
+  dg.addSector([[0, 0], [300, 100], [0, 100]]);
+  const sd = dg.snapAt(130, 40, 32);
+  check('on a diagonal line the point is exactly on it: x on the grid, y where the line is',
+    sd.kind === 'line' && sd.pt[0] === 128 && Math.abs(sd.pt[1] - 42.667) < 1e-9, JSON.stringify(sd));
+  /* and a corner there splits the line */
+  const before = dg.doc.sectors[1].verts.length;
+  dg.cursor = sd.pt; dg.mode = 'vertices';
+  dg.insertAtCursor();
+  check('and a vertex put there is a corner of the sector — the line is split, not crossed',
+    dg.doc.sectors[1].verts.length === before + 1);
+
+  /* DRAGGING: a corner onto a line, onto a vertex */
+  const dr = mk();
+  dr.addSector(Rq(0, 0, 512, 512));
+  dr.addSector(Rq(600, 128, 856, 384));
+  const vi = vAt(dr, 600, 128);
+  dr.select('vertex', [vi]);
+  let mv = dr.beginMove(dr.grabPoint([600, 128]), [600, 128]);
+  dr.dragMove(mv, [515, 200], 16);
+  check('a vertex dragged near a line snaps onto it, where it crosses the grid', mv.onto === 'line' && mv.done[0] === -88 && mv.done[1] === 64, JSON.stringify(mv));
+  dr.endMove(mv);
+  const on = vAt(dr, 512, 192);
+  const A = dr.doc.sectors.find(x => D.ringOf(dr.doc, x).some(p => p[0] === 0 && p[1] === 0));
+  check('and let go, it is a corner of the sector whose wall it is on too — they meet, not overlap',
+    on >= 0 && A.verts.includes(on), `${on}`);
+  const nvD = dr.doc.vertices.length;
+  const vj = vAt(dr, 600, 384);
+  dr.select('vertex', [vj]);
+  mv = dr.beginMove(dr.grabPoint([600, 384]), [600, 384]);
+  dr.dragMove(mv, [509, 507], 16);
+  check('a vertex dragged near another snaps onto it exactly, off the grid or not', mv.onto === 'vertex' && mv.done[0] === -88 && mv.done[1] === 128);
+  dr.endMove(mv);
+  check('and let go, the two weld into one', dr.doc.vertices.length === nvD - 1 && vAt(dr, 512, 512) >= 0);
+
+  /* SNAP THE SELECTION TO THE GRID */
+  const sn = mk();
+  sn.setGrid(1);
+  sn.addSector(Rq(1001, 1003, 1101, 1099));
+  sn.setGrid(64);
+  sn.select('sector', [sn.doc.sectors[1].id]);
+  sn.snapSelToGrid();
+  const ringS = D.ringOf(sn.doc, sn.doc.sectors[1]);
+  check('Shift+G puts every corner of the selection on the grid',
+    ringS.every(([x, y]) => x % 64 === 0 && y % 64 === 0) && ringS.some(p => p[0] === 1024 && p[1] === 1024) && ringS.some(p => p[0] === 1088 && p[1] === 1088), JSON.stringify(ringS));
+
+  /* THE VIEWS */
+  const v2 = fsG.readFileSync(new URL('../js/editor/view2d.js', import.meta.url), 'utf8');
+  const v3 = fsG.readFileSync(new URL('../js/editor/view3d.js', import.meta.url), 'utf8');
+  const uiG = fsG.readFileSync(new URL('../js/editor/ui.js', import.meta.url), 'utf8');
+  const edG = fsG.readFileSync(new URL('../js/editor/editor.js', import.meta.url), 'utf8');
+  check('the plan snaps drawing, rectangles and new vertices through the one rule', /this\.ed\.snapAt\(x, y, PICK_PX \/ this\.scale\)/.test(v2) && /\['draw', 'rect', 'vertices'\]\.includes\(ed\.mode\)/.test(v2));
+  check('and drags with its pick radius, both views', /ed\.dragMove\(dr\.mv, \[p\.x, p\.y\], PICK_PX \/ this\.scale\)/.test(v2) && /dragMove\(dr\.mv, \[p\[0\], p\[1\]\], this\.pxToMap/.test(v3));
+  check('the 3D view snaps to lines too', /this\.ed\.snapAt\(g\[0\], g\[1\], this\.pxToMap\(g, HANDLE_PX\)/.test(v3));
+  check('the cursor shows what it snapped to: a square on a vertex, a diamond on a line', /cursorKind === 'vertex'/.test(v2) && /cursorKind === 'line'/.test(v2));
+  check('the line being drawn shows its length and its angle', /\$\{\+ang\.toFixed\(1\)\}°/.test(v2));
+  check('the plan says when the zoom hides the grid it is snapping to', /lines every \$\{step\} at this zoom/.test(v2));
+  check('the arrows nudge a grid step, or one unit with snap off', /const step = ed\.snap \? ed\.grid : 1;/.test(v2));
+  check('the grid box has a custom size, and shows it while it is the grid', /Custom…/.test(uiG) && /customOpt\.hidden = !custom/.test(uiG));
+  check('Shift+G snaps the selection, and the Edit menu has it', /up === 'G' && e\.shiftKey\) \{ ed\.snapSelToGrid\(\)/.test(edG) && /'Snap selection to grid', 'Shift\+G'/.test(uiG));
+  check('the position readout is exact, not rounded', /Number\.isInteger\(v\) \? v : \+v\.toFixed\(2\)/.test(uiG));
+}
+
 /* ---------- the download ---------- */
 section('the download');
 {
