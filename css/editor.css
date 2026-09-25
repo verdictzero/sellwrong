@@ -1,0 +1,162 @@
+/* =====================================================================
+   GSS-EDIT — the map editor's look
+   =====================================================================
+   A modern tool in the Doom Builder mould: a dark workspace, the map in
+   the middle, the 3D view beside it, an inspector down the right and a
+   status line along the bottom. Nothing here belongs to the game; it
+   is loaded only when the editor is. */
+
+#editor {
+  --bg: #0d1013;
+  --panel: #151a1f;
+  --panel2: #1b2128;
+  --line: #2a323b;
+  --text: #cfd8dc;
+  --dim: #7d8a93;
+  --accent: #3ddc84;
+  --accent2: #ffb454;
+  --danger: #ff5c5c;
+  --sel: #ff9d3d;
+  --font: 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
+  --mono: ui-monospace, 'Cascadia Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
+
+  position: fixed; inset: 0; z-index: 50;
+  display: grid;
+  grid-template-rows: 36px 1fr 24px;
+  background: var(--bg); color: var(--text);
+  font: 12px/1.35 var(--font);
+  user-select: none;
+}
+#editor * { box-sizing: border-box; }
+#editor button, #editor input, #editor select { font: inherit; color: inherit; }
+
+/* ---------- the bar along the top ---------- */
+#ed-top {
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 8px; background: var(--panel); border-bottom: 1px solid var(--line);
+  overflow: hidden; white-space: nowrap;
+}
+#ed-top .brand { font: 700 12px var(--mono); letter-spacing: .12em; color: var(--accent); margin-right: 6px; }
+#ed-top .sep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
+.ed-btn {
+  height: 26px; padding: 0 9px; border: 1px solid var(--line); border-radius: 4px;
+  background: var(--panel2); cursor: pointer; display: inline-flex; align-items: center; gap: 5px;
+}
+.ed-btn:hover { border-color: #3c4753; background: #212831; }
+.ed-btn.on { border-color: var(--accent); color: #fff; background: #17301f; }
+.ed-btn kbd { font: 10px var(--mono); color: var(--dim); }
+.ed-btn.play { border-color: #2f7d4d; background: #163322; color: #bff5d2; font-weight: 600; }
+.ed-btn.play:hover { background: #1c4029; }
+.ed-menu { position: relative; }
+.ed-menu > .items {
+  display: none; position: absolute; top: 30px; left: 0; min-width: 220px; z-index: 5;
+  background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 4px;
+  box-shadow: 0 10px 30px #0008;
+}
+.ed-menu.open > .items { display: block; }
+.ed-menu .items button {
+  display: flex; width: 100%; justify-content: space-between; gap: 20px;
+  padding: 6px 10px; border: 0; background: none; text-align: left; border-radius: 4px; cursor: pointer;
+}
+.ed-menu .items button:hover { background: #26303a; }
+.ed-menu .items button kbd { color: var(--dim); font: 10px var(--mono); }
+.ed-menu .items hr { border: 0; border-top: 1px solid var(--line); margin: 4px 2px; }
+#ed-top select, #ed-top input[type=number] {
+  height: 26px; background: var(--panel2); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px;
+}
+#ed-top .spacer { flex: 1; }
+
+/* ---------- the workspace ---------- */
+#ed-main { display: grid; grid-template-columns: 1fr 300px; min-height: 0; }
+#ed-views { position: relative; display: grid; min-width: 0; min-height: 0; background: #07090b; }
+#ed-views.split { grid-template-columns: 1fr 1fr; }
+#ed-views.only2d { grid-template-columns: 1fr; }
+#ed-views.only2d #ed-3d-wrap { display: none; }
+#ed-views.only3d { grid-template-columns: 1fr; }
+#ed-views.only3d #ed-2d-wrap { display: none; }
+.ed-view { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+#ed-2d-wrap { border-right: 1px solid var(--line); }
+.ed-view canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.ed-view .tag {
+  position: absolute; left: 8px; top: 6px; font: 10px var(--mono); letter-spacing: .1em;
+  color: var(--dim); pointer-events: none; text-shadow: 0 1px 2px #000;
+}
+.ed-view .help {
+  position: absolute; right: 8px; bottom: 6px; font: 10px var(--mono); color: #6b7780;
+  pointer-events: none; text-align: right; text-shadow: 0 1px 2px #000; white-space: pre;
+}
+#ed-3d-wrap.look { cursor: none; }
+
+/* ---------- the side panel ---------- */
+#ed-side {
+  display: grid; grid-template-rows: auto 1fr; min-height: 0;
+  background: var(--panel); border-left: 1px solid var(--line);
+}
+.ed-tabs { display: flex; border-bottom: 1px solid var(--line); }
+.ed-tabs button {
+  flex: 1; height: 30px; border: 0; background: none; color: var(--dim); cursor: pointer;
+  border-bottom: 2px solid transparent; font-weight: 600; letter-spacing: .04em;
+}
+.ed-tabs button.on { color: #fff; border-bottom-color: var(--accent); }
+.ed-pane { overflow: auto; min-height: 0; padding: 10px; display: none; }
+.ed-pane.on { display: block; }
+
+.ed-insp h3 { margin: 0 0 8px; font: 600 12px var(--font); color: #fff; display: flex; justify-content: space-between; }
+.ed-insp h3 small { color: var(--dim); font-weight: 400; }
+.ed-insp h4 { margin: 12px 0 6px; font: 600 10px var(--mono); letter-spacing: .1em; color: var(--dim); text-transform: uppercase; }
+.ed-row { display: grid; grid-template-columns: 92px 1fr; align-items: center; gap: 6px; margin-bottom: 5px; }
+.ed-row label { color: var(--dim); }
+.ed-row input[type=text], .ed-row input[type=number], .ed-row select {
+  width: 100%; height: 24px; padding: 0 6px; background: #0f1317; border: 1px solid var(--line); border-radius: 4px;
+}
+.ed-row input:focus, .ed-row select:focus { outline: none; border-color: var(--accent); }
+.ed-row input[type=checkbox] { justify-self: start; accent-color: var(--accent); }
+.ed-row.two { grid-template-columns: 92px 1fr 1fr; }
+.ed-tex {
+  display: flex; align-items: center; gap: 6px; height: 28px; padding: 2px; border: 1px solid var(--line);
+  border-radius: 4px; background: #0f1317; cursor: pointer; overflow: hidden;
+}
+.ed-tex:hover { border-color: var(--accent); }
+.ed-tex canvas, .ed-tex img { width: 22px; height: 22px; image-rendering: pixelated; border-radius: 2px; flex: none; }
+.ed-tex span { font: 11px var(--mono); overflow: hidden; text-overflow: ellipsis; }
+.ed-tex.picking { border-color: var(--accent2); box-shadow: 0 0 0 1px var(--accent2) inset; }
+.ed-note { color: var(--dim); margin: 6px 0; }
+.ed-small-btns { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.ed-small-btns .ed-btn { height: 24px; font-size: 11px; }
+.ed-prob { color: var(--danger); margin: 3px 0; cursor: pointer; }
+.ed-prob:hover { text-decoration: underline; }
+.ed-ok { color: var(--accent); }
+.ed-storey { border: 1px solid var(--line); border-radius: 6px; padding: 6px; margin-bottom: 6px; background: #12161a; }
+
+/* the texture browser */
+.ed-texfilter { width: 100%; height: 26px; padding: 0 8px; margin-bottom: 8px; background: #0f1317; border: 1px solid var(--line); border-radius: 4px; }
+.ed-texgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 6px; }
+.ed-texcell { border: 1px solid var(--line); border-radius: 4px; padding: 3px; cursor: pointer; background: #0f1317; }
+.ed-texcell:hover { border-color: #4d5a66; }
+.ed-texcell.on { border-color: var(--accent2); }
+.ed-texcell canvas { width: 100%; aspect-ratio: 1; image-rendering: pixelated; display: block; border-radius: 2px; }
+.ed-texcell span { display: block; font: 9px var(--mono); color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+
+/* the thing palette */
+.ed-things { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.ed-things button { text-align: left; height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 4px; background: #0f1317; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+.ed-things button.on { border-color: var(--accent2); }
+.ed-things i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+
+/* ---------- the status line ---------- */
+#ed-status {
+  display: flex; align-items: center; gap: 14px; padding: 0 10px;
+  background: var(--panel); border-top: 1px solid var(--line);
+  font: 11px var(--mono); color: var(--dim); white-space: nowrap; overflow: hidden;
+}
+#ed-status b { color: var(--text); font-weight: 600; }
+#ed-status .msg { color: var(--accent); flex: 1; overflow: hidden; text-overflow: ellipsis; }
+#ed-status .bad { color: var(--danger); }
+
+/* a toast for things said once */
+#ed-toast {
+  position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%); z-index: 60;
+  background: #1d2a22; color: #d6ffe6; border: 1px solid #2f7d4d; border-radius: 6px;
+  padding: 8px 14px; font: 12px var(--font); opacity: 0; transition: opacity .2s; pointer-events: none;
+}
+#ed-toast.show { opacity: 1; }

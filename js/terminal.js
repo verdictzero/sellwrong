@@ -46,6 +46,11 @@ const $ = id => document.getElementById(id);
    run along three rows of the keyboard — and it is kept out of view the
    same way. */
 const KEYS = ['30af7bc7', '8ce4dd6b'];
+/* AND THE EDITOR, at the user's request: GSS-EDIT, the map editor
+   (js/editor/editor.js), opened by typing its program name — EDIT,
+   GSS-EDIT or GSS-EDIT.EXE. Hashed like the answers above, for the same
+   reason and with the same honesty about what that is worth. */
+const EDIT_KEYS = ['077e1c11', 'a800a207', 'e1d497e9'];
 const hash = s => {
   let h = 0x811c9dc5;
   for (const c of s) { h ^= c.codePointAt(0); h = Math.imul(h, 0x01000193) >>> 0; }
@@ -82,6 +87,12 @@ const REFUSED = entry => [
 ];
 
 /* And what it says on the way in. */
+/* what it says for the editor */
+const EDITOR = [
+  'GSS-EDIT  —  MAP EDITOR',
+  'LOADING WORKSPACE',
+];
+
 const GRANTED = [
   'ACCESS GRANTED',
   'LOADING',
@@ -310,6 +321,7 @@ class Terminal {
     this.history.push(raw.trim());
     this.hist = this.history.length;
     if (KEYS.includes(hash(entry))) { await this.open(); return; }
+    if (EDIT_KEYS.includes(hash(entry))) { await this.open('./editor/editor.js'); return; }
     this.sfx.error();
     await this.tell(REFUSED(entry));
     await this.prompt();
@@ -321,13 +333,17 @@ class Terminal {
      the import fails it says so in the terminal's own voice and offers
      the prompt again; a failure inside the boot is the game's to report
      on its own loading screen, and it does. */
-  async open() {
+  async open(program = './main.js') {
     this.sfx.grant();
-    await this.tell(GRANTED);
+    await this.tell(program === './main.js' ? GRANTED : EDITOR);
     this.line('');
     this.cur.remove();
     let mod;
-    try { mod = import('./main.js'); await mod; }
+    try {
+      mod = await import(program);
+      /* the editor does not start itself on import, the game does */
+      if (mod.startEditor) await mod.startEditor();
+    }
     catch (e) {
       console.error(e);
       await this.tell(['ERROR  —  PROGRAM DID NOT LOAD', '']);
@@ -351,5 +367,18 @@ class Terminal {
   }
 }
 
-const term = new Terminal($('term'));
-term.boot();
+/* STRAIGHT PAST THE DOOR, for the two round trips the editor makes:
+   `?edit` is the way back from a test run (F2 in the game) and opens
+   the editor with no terminal; `?play` is a test run of an edited map,
+   which js/main.js picks up on its own. Anything else is the terminal. */
+const params = new URLSearchParams(location.search);
+if (params.has('edit') || params.has('play')) {
+  $('term').remove();
+  const go = params.has('edit')
+    ? import('./editor/editor.js').then(m => m.startEditor())
+    : import('./main.js');
+  go.catch(e => { console.error(e); document.body.append(`did not load: ${e.message}`); });
+} else {
+  const term = new Terminal($('term'));
+  term.boot();
+}

@@ -12995,6 +12995,153 @@ section('the town on fire');
   check('and neither is the supermarket', shop === 0, `${shop} regions`);
 }
 
+/* ---------- the editor ---------- */
+/* GSS-EDIT (js/editor/), the map editor opened from the terminal with
+   EDIT. What can be checked without a browser is everything that is not
+   drawing: the document, the compiler that turns it into the same Level
+   the game runs, the edits the views make, the undo stack, and the two
+   doors — the terminal's word for it, and the round trip to the game
+   and back. The 2D and 3D views are checked in a browser. */
+section('the editor');
+await (async () => {
+  const fsE = await import('node:fs');
+  const D = await import('../js/editor/doc.js');
+  const E = await import('../js/editor/editor.js');
+  const R = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+
+  /* THE GRID, as a document, compiles into a level the game can run */
+  const g = D.gridDoc();
+  const cg = D.compileDoc(g);
+  note('THE GRID as a document', `${g.sectors.length} sector, ${g.things.length} things`);
+  check('the grid document compiles with no problems', cg.problems.length === 0, JSON.stringify(cg.problems));
+  check('into one sector, 10240 square, with the start in it',
+    cg.level.sectors.length === 1 && cg.level.things.some(t => t.type === 'START') && cg.level.bounds[2] === 10240);
+  check('and the world it runs in is the grid\'s: nothing burns and nobody comes',
+    cg.level.noBurn && cg.level.noSquads && cg.level.noCellFire && cg.level.sky?.horizon === '#1d9a48');
+  check('and every field the game reads off a level is there',
+    ['props', 'roofs', 'plants', 'exits', 'roadEnds', 'boxes', 'carSlots', 'slideDoors'].every(k => Array.isArray(cg.level[k])) &&
+    cg.level.viewpoint && cg.level.field && cg.level.salesFloor && cg.level.fromEditor === true);
+
+  /* A HOLE: a pillar standing in a room, which this engine's single-ring
+     sectors cannot hold without the compiler's slit */
+  const d = D.newDoc('T');
+  d.vertices = [...R(0, 0, 1024, 1024), ...R(448, 448, 576, 576)];
+  d.sectors = [{ id: 1, verts: [0, 1, 2, 3], ...D.SECTOR_DEFAULTS }, { id: 2, verts: [4, 5, 6, 7], ...D.SECTOR_DEFAULTS, floor: 0, ceil: 0 }];
+  d.nextId = 3;
+  const ch = D.compileDoc(d);
+  const Lh = ch.level;
+  check('a sector drawn inside another is a hole in it, and compiles', ch.problems.length === 0, JSON.stringify(ch.problems));
+  check('and the pillar is where it was drawn', Lh.sectorAt(512, 512)?.ceil === 0);
+  check('and it blocks sight through it and not past it',
+    Lh.sightBlocked(100, 512, 41, 900, 512, 41) && !Lh.sightBlocked(100, 200, 41, 900, 200, 41));
+  const hl = D.linesOf(d).filter(l => l.sectors.includes(1));
+  check('and its edges are two-sided, the room on the far side', hl.length === 4 && hl.every(l => l.sectors.length === 2 && l.sectors.includes(0)));
+
+  /* SLOPES, which the user asked back for */
+  const ds = D.newDoc('S');
+  ds.sectors[0].floorSlope = { dzdx: 0.1, dzdy: 0 };
+  ds.sectors[0].ceil = 512;
+  const Ls = D.compileDoc(ds).level;
+  const s0 = Ls.sectorAt(512, 512);
+  check('a sloped floor is a plane through the middle of its sector',
+    Math.abs(Ls.floorAt(s0, 0, 512) + 51.2) < 0.01 && Math.abs(Ls.floorAt(s0, 1024, 512) - 51.2) < 0.01 && Math.abs(Ls.floorAt(s0, 512, 512)) < 0.01);
+  ds.sectors[0].ceilSlope = { dzdx: 0, dzdy: -0.1 };
+  const Lc = D.compileDoc(ds).level;
+  const c0 = Lc.sectorAt(512, 512);
+  check('and so is a sloped ceiling', !!c0.slopeCeil);
+
+  /* ROOM OVER ROOM */
+  const dr = D.newDoc('R');
+  dr.sectors[0].ceil = 200; dr.sectors[0].outdoor = false;
+  dr.sectors[0].storeys = [{ floor: 232, ceil: 432, outdoor: true }];
+  const cr = D.compileDoc(dr);
+  check('a storey over a room compiles into a column of two', cr.problems.length === 0 && cr.level.sectors.length === 2 &&
+    cr.level.sectors.some(s => s.floor === 232 && s.ceil === 432));
+  dr.sectors[0].storeys = [{ floor: 100, ceil: 300 }];
+  check('and one that does not stack is a reported problem, not a crash', D.compileDoc(dr).problems.some(p => p.kind === 'sector'));
+
+  /* A LINE'S OWN TEXTURES survive the level reassigning them */
+  const dl = D.newDoc('L');
+  dl.vertices.push(...R(256, 256, 512, 512));
+  dl.sectors.push({ id: 9, verts: [4, 5, 6, 7], ...D.SECTOR_DEFAULTS, floor: 32 });
+  dl.lines[D.lineKey(4, 5)] = { lowerTex: 'BRICK', blocking: true };
+  dl.lines[D.lineKey(0, 1)] = { wallTex: 'BRICK' };
+  const Ll = D.compileDoc(dl).level;
+  const two = Ll.lines.find(l => l.texLocked && l.bands);
+  const one = Ll.lines.find(l => l.texLocked && !l.bands);
+  check('a step\'s own texture is on the step, locked', two && two.lower === 'BRICK' && two.bands.every(b => b.kind !== 'lower' || b.tex === 'BRICK') && two.blocking);
+  check('and a wall\'s own texture is on the wall, locked', one && one.middle === 'BRICK');
+
+  /* THE FILE */
+  const text = D.serialise(g);
+  const back = D.parseDoc(text);
+  check('a map saves and loads back the same', D.serialise(back) === text);
+  let refused = false;
+  try { D.parseDoc('{"format":"doom-wad"}'); } catch (e) { refused = true; }
+  check('and a file that is not a map is refused, not half-loaded', refused);
+
+  /* UNDO */
+  const hdoc = D.newDoc('H');
+  const H = new D.History(hdoc);
+  H.push('a'); H.doc.sectors[0].floor = 64;
+  H.push('b'); H.doc.sectors[0].floor = 128;
+  H.undo();
+  const u1 = H.doc.sectors[0].floor;
+  H.undo();
+  const u2 = H.doc.sectors[0].floor;
+  H.redo();
+  check('undo goes back a step at a time and redo comes forward', u1 === 64 && u2 === 0 && H.doc.sectors[0].floor === 64);
+
+  /* THE WELD: a vertex dragged onto another becomes it */
+  const dw = D.newDoc('W');
+  dw.vertices.push(...R(1024, 0, 2048, 1024).map(([x, y]) => [x + (x === 1024 ? 0.4 : 0), y]));
+  dw.sectors.push({ id: 5, verts: [4, 5, 6, 7], ...D.SECTOR_DEFAULTS });
+  D.compact(dw);
+  check('a vertex dropped on another is welded to it', dw.vertices.length === 6);
+  check('and the two rooms then share a two-sided line', D.linesOf(dw).filter(l => l.sectors.length === 2).length === 1);
+
+  /* THE EDITS THE VIEWS MAKE */
+  const dc = D.gridDoc();
+  const ring = R(0, 0, 1024, 1024).map(([x, y]) => E.vertexFor(dc, x, y));
+  const P = dc.sectors[0];
+  check('a corner landing on a wall splits the wall', P.verts.length === 6);
+  check('and a room drawn in a corner is cut out of the room it is in', E.cutFrom(dc, P, ring) && P.verts.length === 6);
+  dc.sectors.push({ id: 99, verts: ring, ...D.SECTOR_DEFAULTS });
+  const cc = D.compileDoc(dc);
+  check('so the two do not overlap', cc.problems.length === 0, JSON.stringify(cc.problems));
+  const area = Math.abs(D.signedArea(D.ringOf(dc, P)));
+  check('and the field has lost exactly that corner', Math.abs(area - (10240 * 10240 - 1024 * 1024)) < 1);
+  const key = D.linesOf(dc).find(l => l.sectors.length === 2).key;
+  E.mergeAcross(dc, key);
+  check('deleting a line between two rooms joins them into one',
+    dc.sectors.length === 1 && Math.abs(Math.abs(D.signedArea(D.ringOf(dc, dc.sectors[0]))) - 10240 * 10240) < 1 &&
+    !D.selfCrosses(D.ringOf(dc, dc.sectors[0])) && new Set(dc.sectors[0].verts).size === dc.sectors[0].verts.length);
+  const mt = D.newDoc('M');
+  E.moveThings(mt, 'sector', new Set([1]), 64, 0);
+  check('moving a sector moves its corners and what stands in it',
+    mt.vertices[0][0] === 64 && mt.things[0].x === 512 + 64);
+
+  /* THE DOORS */
+  const term = fsE.readFileSync('js/terminal.js', 'utf8');
+  const main = fsE.readFileSync('js/main.js', 'utf8');
+  const edsrc = fsE.readFileSync('js/editor/editor.js', 'utf8');
+  const fnv = s => {
+    let h = 0x811c9dc5;
+    for (const c of s) { h ^= c.codePointAt(0); h = Math.imul(h, 0x01000193) >>> 0; }
+    return h.toString(16).padStart(8, '0');
+  };
+  const ek = ((term.match(/const EDIT_KEYS = \[([^\]]*)\]/) || [])[1] || '').match(/[0-9a-f]{8}/g) || [];
+  check('the terminal opens the editor on EDIT, GSS-EDIT and GSS-EDIT.EXE',
+    ['EDIT', 'GSS-EDIT', 'GSS-EDIT.EXE'].every(w => ek.includes(fnv(w))) && /open\('\.\/editor\/editor\.js'\)/.test(term));
+  check('and ?edit opens it with no terminal, and ?play runs the game',
+    /params\.has\('edit'\)/.test(term) && /m\.startEditor\(\)/.test(term) && /import\('\.\/main\.js'\)/.test(term));
+  check('the game plays the map the editor stored, under the same key',
+    E.PLAY_KEY === 'gss-edit:play' && main.includes(`localStorage.getItem('${E.PLAY_KEY}')`) && /compileDoc\(parseDoc\(/.test(main));
+  check('and F2 in the game goes back to the editor', /e\.code === 'F2'[^\n]*\?edit/.test(main));
+  check('the editor brings its own stylesheet, and it exists',
+    edsrc.includes("'css/editor.css'") && fsE.existsSync('css/editor.css'));
+})();
+
 /* ---------- the site ---------- */
 /* ---------- what it costs to draw ----------
 

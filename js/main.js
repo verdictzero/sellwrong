@@ -32,6 +32,7 @@ import { CELLS, GIBLETS, BLAST_SPRITE, addStandees, addSplats, addTroops } from 
    js/maps/sellwrong.js and js/maps/town.js are still in the repository,
    still exported and still tested; nothing builds them any more. */
 import { buildGrid } from './maps/grid.js';
+import { compileDoc, parseDoc } from './editor/doc.js';
 import { Game } from './game.js';
 import { Hud } from './hud.js';
 import { Audio } from './audio.js';
@@ -505,6 +506,11 @@ async function boot() {
      Between them they also mean the sky is baked exactly once — see
      SkyBaker.update, which re-bakes for a moved hour or a drifting
      cloud and now has neither. */
+  /* A MAP FROM THE EDITOR, if this is a test run of one: GSS-EDIT
+     (js/editor/editor.js) stores the document and reloads with `?play`,
+     and it is compiled here by the same compiler the editor's 3D view
+     uses. Anything wrong with it and this is THE GRID as usual. */
+  const played = playedMap();
   const weather = new Weather({
     hour: 2.0, kind: WEATHER_ORDER[prefs.weather] || 'clear',
     running: false, fireHaze: false,
@@ -519,7 +525,12 @@ async function boot() {
               puts the dark green thirty degrees up — the top of the
               picture when you are looking level — and leaves the rest
               of the sky to the black. */
-           midAmt: 1, midPow: 0.95, bare: true,
+           midAmt: 1, midPow: 0.95,
+           /* an edited map's own colours over those, if this is a test
+              run of one (see playedMap) — and whatever it says, the
+              rest stays as this world has it: */
+           ...(played?.level.sky || {}),
+           bare: true,
            /* and the bake keeps its own colours, like everything else
               now — see uSnapAmt in js/skyart.js */
            snap: 0 },
@@ -529,7 +540,7 @@ async function boot() {
   world.skyTex.value = skyBaker.texture;
 
   status('BUILDING THE GRID', 0.68); await breathe();
-  const level = buildGrid();
+  const level = played ? played.level : buildGrid();
   const fleet = await fleetP;
   const police = await policeP;
   const apc = await apcP;
@@ -1010,6 +1021,8 @@ async function boot() {
       u.value = u.value > 0.5 ? 0 : 1;
     }
     if (e.code === 'Backquote') { prefs.fps = !prefs.fps; applyPrefs(); }
+    /* BACK TO THE EDITOR, from a test run or from anywhere */
+    if (e.code === 'F2') { e.preventDefault(); location.href = location.pathname + '?edit'; }
   });
   renderer.domElement.addEventListener('mousedown', () => { if (!started) start(); else audio.resume(); });
 
@@ -1245,3 +1258,16 @@ boot().catch(e => {
   const s = $('load-status');
   if (s) s.style.color = '#f44';
 });
+
+/** The map GSS-EDIT handed over for a test run, compiled — or null, and
+ *  the game plays THE GRID. See PLAY_KEY in js/editor/editor.js. */
+function playedMap() {
+  if (!new URLSearchParams(location.search).has('play')) return null;
+  try {
+    const text = localStorage.getItem('gss-edit:play');
+    return text ? compileDoc(parseDoc(text)) : null;
+  } catch (e) {
+    console.error('the edited map did not compile; playing THE GRID', e);
+    return null;
+  }
+}

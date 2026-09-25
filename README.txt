@@ -40,7 +40,9 @@ ships: js/terminal.js holds a hash of each and compares what is typed
 against those, so view-source is no help. On the match it
 imports js/main.js, which boots the game exactly as the page used to,
 and the terminal fades off in front of the loading screen. Nothing
-under js/main.js knows the terminal exists.
+under js/main.js knows the terminal exists. And EDIT, GSS-EDIT or
+GSS-EDIT.EXE opens the map editor instead: see GSS-EDIT, THE MAP EDITOR
+below.
 
 Open index.html in a browser. No install, no build step. Every texture,
 every sprite, every sound and the whole level are generated in the page
@@ -5271,6 +5273,103 @@ at the moment something happens, so every way of ending a charge — the
 trigger coming up, the shot going off, the weapon being swapped, dying
 with it in your hands — stops the loop through one line, and none of
 them has to remember to.
+
+
+GSS-EDIT, THE MAP EDITOR
+
+At the user's request: a map editor for this game in the mould of SLADE
+and Ultimate Doom Builder. Type any of
+
+  EDIT
+  GSS-EDIT
+  GSS-EDIT.EXE
+
+at the terminal, or open index.html?edit to go straight in. It is the
+Doom mapping workflow: sectors drawn on a grid, vertices dragged, the
+plan and the 3D view side by side, a floor raised with the mouse wheel,
+and one key to test the map. But the engine under it is actually 3D, so
+it also edits what Doom never had: rooms stacked over rooms, sloped
+floors and ceilings, and free boxes standing anywhere in space.
+
+  js/editor/doc.js     the map as a JSON document, the undo stack, and
+                       the compiler that turns the document into a Level
+  js/editor/editor.js  the state everything shares, the edits, the
+                       keyboard, and the boot
+  js/editor/view2d.js  the plan, which is the Doom Builder half
+  js/editor/view3d.js  the 3D view, drawn by the game's own renderer
+  js/editor/ui.js      the bars, the inspector and the texture browser
+  css/editor.css       its look, loaded only with it
+
+WHAT YOU SEE IS WHAT YOU PLAY. The 3D view is js/mapgeo.js building the
+level the compiler made, with the game's own textures, its world shader
+and its baked sky. There is no second renderer to drift from the first.
+PLAY (F5) stores the document and reloads with ?play. js/main.js
+compiles it with the same compiler and runs it instead of THE GRID, and
+F2 in the game comes back to the editor with ?edit. The map is autosaved
+in the browser as you work. File > Save writes a .gssmap.json, and
+File > Open reads one back.
+
+THE MODES, one key each, as in Doom Builder:
+
+  V  vertices      click, drag, Shift adds, Del removes
+  L  lines         Del joins the two sectors on a line into one
+  S  sectors       click, drag, box-select on empty ground
+  T  things        click empty floor to place; , and . turn them
+  P  props         drag on empty ground to draw a box in space
+  D  draw          click the corners, click the first to close (Enter
+                   closes, Backspace takes a corner back, Space enters)
+  R  rectangle     drag a sector out
+
+A corner that lands on an existing vertex uses it. One that lands on a
+line splits it, in every sector the line belongs to. A sector drawn
+inside another takes that one's heights and textures. Drawn clear of its
+walls, it is a hole, and the compiler cuts it in with a slit, because a
+sector in this engine is one ring. Drawn against the wall, it is cut out
+of the parent, and one drawn wall to wall splits the parent in two. A
+vertex dropped on another is welded to it when the button comes up. [
+and ] step the grid through Doom Builder's own powers of two. G toggles
+snap, F frames the map, Tab flips between the 2D and 3D views, and
+Ctrl+Z / Ctrl+Y undo and redo everything, drags included.
+
+THE 3D VIEW. Hold the right button to look. WASD, Q and E fly, and Shift
+flies faster. Click a floor, ceiling, wall, thing or prop to pick it.
+The wheel over a floor or ceiling raises it (8 a notch, 1 with Shift),
+with every selected sector if it is one of them. Over a wall it moves
+the step, and over a prop it lifts the prop. With a surface picked,
+clicking a texture in the browser paints it. C over a surface copies its
+texture and V pastes it. B turns fullbright on and off, and F goes back
+to the start. The wall textures of THE GRID are black between their
+lines, so every edge in the map is also drawn faintly, where a wall is
+whether its texture shows it or not. Picking is worked out against the
+document, not the triangles: a ray against every sector's floor and
+ceiling planes, every line and every prop. The answer is therefore a
+sector of the map and a part of it, which is what an edit needs.
+
+THE INSPECTOR edits everything selected at once:
+
+  sectors  name, floor, ceiling, light, open sky; floor and ceiling
+           SLOPES (rise per unit east and north, through the middle of
+           the sector, with Ramp E / Ramp N / Flatten / Ceil = floor);
+           floor, ceiling, wall, upper and lower textures; and STOREYS,
+           rooms stacked over this one in the same outline
+  lines    blocks walking, blocks sight, and the line's own textures:
+           the wall on a one-sided line, the upper and lower steps on a
+           two-sided one, locked so the level keeps them
+  things   type, place, facing, variant
+  props    the box's extent, bottom, top, and side and top textures
+
+The Map tab holds the map's name, whether anything burns, whether anyone
+is sent, the four colours of its sky (re-baked in the 3D view as you
+change them) and the PROBLEMS list: overlapping sectors, crossed rings,
+a ceiling under its floor, storeys that do not stack, and no start. None
+of them stops the map compiling. A map with no start gets one, and one
+with nothing buildable gets a room, so a test run always has somewhere
+to stand.
+
+The smoke test holds the compiler against the game's own Level: THE
+GRID as a document, a hole, slopes, storeys, a line's own textures, the
+file round trip, undo, the weld, the cut, the merge, and both doors in
+and out.
 
 
 THE GRID
