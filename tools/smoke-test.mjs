@@ -14153,7 +14153,7 @@ section('the texture pack');
   /* a PNG's size is in its header, sixteen bytes in */
   const pngSize = f => { const b = fsP.readFileSync(new URL('../' + f, import.meta.url)); return [b.readUInt32BE(16), b.readUInt32BE(20)]; };
 
-  note('the pack', `${TP.PACK.length} textures in ${TP.PACK_GROUPS.length} groups, ${Object.keys(TP.ANIMS).length} animated runs, ${Object.keys(TP.SKIES).length} skies`);
+  note('the pack', `${TP.PACK.length} textures, ${Object.keys(TP.ANIMS).length} animated runs, ${Object.keys(TP.SKIES).length} skies`);
   check('both archives are in it: 245 textures', TP.PACK.length === 245, `${TP.PACK.length}`);
   check('every name is one the bank and a map can use as it stands',
     TP.PACK_NAMES.every(n => TCp.cleanName(n) === n), TP.PACK_NAMES.filter(n => TCp.cleanName(n) !== n).join(' '));
@@ -14236,7 +14236,15 @@ section('the texture pack');
     /await loadPack\(bank, packNamesIn\(ed\.doc\)\)/.test(edit) && /loadPack\(bank\)\.then/.test(edit));
   check('and a map texture cannot take a pack texture\'s name', /builtInTextures = new Set\(\[\.\.\.bank\.map\.keys\(\), \.\.\.PACK_NAMES\]\)/.test(edit));
   check('the editor animates them in whichever view is up', /ed\.anim\?\.tick\(dt\)/.test(v3));
-  check('the browser lists the pack by group, a run as one cell', /Pack · \$\{g\}/.test(ui) && /dataset\.frame/.test(ui));
+  check('the browser shelves every texture by shape — animated, square, non-square — a run as one cell',
+    /export const TEX_SHAPES = \['Animated', 'Square', 'Non-square'\]/.test(ui) && /for \(const shape of TEX_SHAPES\)/.test(ui) && /dataset\.frame/.test(ui));
+  check('and a shape is judged by the size on a wall: in a run first, then width against height',
+    /if \(animOf\(name\)\) return 'Animated';/.test(ui) && /e\.w !== e\.h \? 'Non-square' : 'Square'/.test(ui));
+  {
+    const sq = TP.PACK.filter(p => !TP.animOf(p.name) && p.w === p.h).length, ns = TP.PACK.filter(p => !TP.animOf(p.name) && p.w !== p.h).length;
+    note('pack shelves', `${Object.keys(TP.ANIMS).length} animated runs, ${sq} square, ${ns} non-square`);
+    check('the pack has something on every shelf', sq > 0 && ns > 0 && TP.PACK.some(p => TP.animOf(p.name)));
+  }
   check('and the Map tab picks a skybox', /row\('Skybox'/.test(ui) && /PACK_SKIES\.map/.test(ui));
   check('the 3D view swaps the sky for a skybox', /loadSky\(box\)/.test(v3));
   check('a map texture is drawn from a pack texture\'s own frame, not whichever one it is showing', /e\?\.own \|\| e\?\.texture\?\.image/.test(src('js/editor/texcompose.js')));

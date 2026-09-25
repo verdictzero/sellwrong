@@ -12,7 +12,7 @@
    every write is one `ed.edit`, so it undoes like anything else.
    ===================================================================== */
 
-import { PACK, PACK_GROUPS, PACK_SKIES, animOf, ownImage } from '../texpack.js';
+import { PACK, PACK_SKIES, animOf, ownImage } from '../texpack.js';
 import { THING_TYPES, problemsOf, ringOf, signedArea, COLOR_PARTS } from './doc.js';
 import { openTextureEditor } from './texeditor.js';
 import { MODES, GRIDS, brightOf, isInside } from './editor.js';
@@ -42,6 +42,15 @@ const put = (el, ...kids) => el.append(...kids.flat(Infinity).filter(k => k !== 
 /** A texture's picture, small, for a swatch. Drawn from the bank's own
  *  canvas, so it is what the wall will show. */
 const PACK_BY_NAME = new Map(PACK.map(p => [p.name, p]));
+/** The browser's three shelves, in order. */
+export const TEX_SHAPES = ['Animated', 'Square', 'Non-square'];
+/** Which shelf a texture goes on: animated if it is in a run, else
+ *  square or not by the size it is on a wall. */
+export function shapeOf(ed, name) {
+  if (animOf(name)) return 'Animated';
+  const e = PACK_BY_NAME.get(name) || ed.bank?.map.get(name);
+  return e && e.w !== e.h ? 'Non-square' : 'Square';
+}
 function swatch(ed, name, size = 22) {
   const c = h('canvas', { width: size, height: size });
   /* a pack texture still on its way is a blank, not MISSING's magenta */
@@ -559,17 +568,16 @@ export function buildUI(ed) {
   const texCells = new Map();
   const texHead = h('div');
   const mineGrid = h('div', { class: 'ed-texgrid' });
-  const gameGrid = h('div', { class: 'ed-texgrid' });
   const packWrap = h('div');
   const packGroups = [];          // [{ head, grid, names }]
   const mineHead = h('div', { class: 'ed-texsec' });
   const texFilter = h('input', { class: 'ed-texfilter', type: 'text', placeholder: 'filter textures…', oninput: e => { filter = e.target.value.toUpperCase(); renderTex(); } });
-  panes.tex.append(texHead, texFilter, mineHead, mineGrid, h('div', { class: 'ed-texsec' }, h('span', {}, 'Game textures')), gameGrid, packWrap);
+  panes.tex.append(texHead, texFilter, mineHead, mineGrid, packWrap);
   /* THE CELLS, made again when the map's own textures change — a new
      one, a repainted one, one gone */
   const buildCells = () => {
     texCells.clear();
-    mineGrid.textContent = ''; gameGrid.textContent = ''; packWrap.textContent = '';
+    mineGrid.textContent = ''; packWrap.textContent = '';
     packGroups.length = 0;
     const cell = (name, mine) => {
       const a = animOf(name);
@@ -590,11 +598,16 @@ export function buildUI(ed) {
       return c;
     };
     for (const n of ed.mapTextureNames || []) mineGrid.append(cell(n, true));
-    for (const n of ed.gameTextureNames || ed.textureNames) gameGrid.append(cell(n, false));
-    /* THE PACK, by the folder it came in (js/texpack.js) */
-    for (const g of PACK_GROUPS) {
-      const names = PACK.filter(p => p.group === g).map(p => p.name);
-      const head = h('div', { class: 'ed-texsec' }, h('span', {}, `Pack · ${g}`));
+    /* EVERY OTHER TEXTURE, the game's own and the pack's (js/texpack.js)
+       together, sorted by SHAPE at the user's request: what animates,
+       what is square, and what is not — by its size on a wall, so a
+       64 by 112 window is not square whatever its picture is */
+    const all = [...new Set([...(ed.gameTextureNames || []), ...PACK.map(p => p.name)])].sort();
+    for (const shape of TEX_SHAPES) {
+      const names = all.filter(n => shapeOf(ed, n) === shape);
+      if (!names.length) continue;
+      const shown = names.filter(n => !animOf(n) || animOf(n).i === 0).length;
+      const head = h('div', { class: 'ed-texsec' }, h('span', {}, `${shape} (${shown})`));
       const grid = h('div', { class: 'ed-texgrid' }, ...names.map(n => cell(n, false)));
       packGroups.push({ head, grid, names });
       packWrap.append(head, grid);

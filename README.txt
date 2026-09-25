@@ -5553,7 +5553,10 @@ sets of pictures the user handed over, 245 textures in all: concrete,
 grass, dirt, cliffs, the ops-room panels and doors, water, an office,
 backdrops, test and debug tiles. They are files, not drawn, and go into
 the same TextureBank as the game's own, so any surface can wear one.
-The Textures tab lists them under "Pack", by the folder they came in.
+The Textures tab puts every texture, the game's own and the pack's, on
+one of three shelves: Animated, Square and Non-square. Shape is judged
+by the size on a wall, so the 64 by 112 windows are non-square. Your
+map's own textures stay at the top.
 A pack picture spans half its pixel size in world units, because it is
 drawn at twice Doom's resolution: the doors come out 64 by 128, a Doom
 door. DR1 and the test tiles (64TEST says "64px" on it) are one to one.
