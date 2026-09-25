@@ -13037,7 +13037,19 @@ await (async () => {
   const hl = D.linesOf(d).filter(l => l.sectors.includes(1));
   check('and its edges are two-sided, the room on the far side', hl.length === 4 && hl.every(l => l.sectors.length === 2 && l.sectors.includes(0)));
 
-  /* SLOPES, which the user asked back for */
+  /* SLOPES AND STOREYS ARE SWITCHED OFF, at the user's request, and the
+     compiler ignores them while they are — but it still knows how, so
+     they are checked with the switch thrown, and then put back */
+  check('slopes and storeys are switched off for now', D.FEATURES.slopes === false && D.FEATURES.storeys === false);
+  const dOff = D.newDoc('O');
+  dOff.sectors[0].floorSlope = { dzdx: 0.1, dzdy: 0 };
+  dOff.sectors[0].storeys = [{ floor: 300, ceil: 500 }];
+  const LOff = D.compileDoc(dOff).level;
+  check('and a map that has them from before is built flat and single-storey',
+    LOff.sectors.length === 1 && !LOff.sectorAt(512, 512).slopeFloor);
+  const uiSrc = fsE.readFileSync('js/editor/ui.js', 'utf8');
+  check('and the inspector does not offer them', !/'Slopes'/.test(uiSrc) && !/Storeys above/.test(uiSrc));
+  D.FEATURES.slopes = D.FEATURES.storeys = true;
   const ds = D.newDoc('S');
   ds.sectors[0].floorSlope = { dzdx: 0.1, dzdy: 0 };
   ds.sectors[0].ceil = 512;
@@ -13059,6 +13071,7 @@ await (async () => {
     cr.level.sectors.some(s => s.floor === 232 && s.ceil === 432));
   dr.sectors[0].storeys = [{ floor: 100, ceil: 300 }];
   check('and one that does not stack is a reported problem, not a crash', D.compileDoc(dr).problems.some(p => p.kind === 'sector'));
+  D.FEATURES.slopes = D.FEATURES.storeys = false;
 
   /* A LINE'S OWN TEXTURES survive the level reassigning them */
   const dl = D.newDoc('L');
@@ -13120,6 +13133,94 @@ await (async () => {
   E.moveThings(mt, 'sector', new Set([1]), 64, 0);
   check('moving a sector moves its corners and what stands in it',
     mt.vertices[0][0] === 64 && mt.things[0].x === 512 + 64);
+
+  /* THE SCATTERS: rules that grow sprite people and plants */
+  const SC = await import('../js/editor/scatter.js');
+  const sd = D.gridDoc();
+  sd.things = sd.things.slice(0, 1);
+  sd.scatters.push(SC.scatterFrom('crowd', { kind: 'circle', x: 5120, y: 5120, r: 1500 }, sd.nextId++, 7));
+  sd.scatters.push(SC.scatterFrom('forest', { kind: 'rect', x0: 0, y0: 0, x1: 2048, y1: 2048 }, sd.nextId++, 8));
+  sd.scatters.push(SC.scatterFrom('scrub', { kind: 'sectors', ids: [1] }, sd.nextId++, 9));
+  const t0 = performance.now();
+  const cs = D.compileDoc(sd);
+  const ms = performance.now() - t0;
+  const g1 = cs.grown.get(sd.scatters[0].id), g2 = cs.grown.get(sd.scatters[1].id), g3 = cs.grown.get(sd.scatters[2].id);
+  note('three scatters', `${cs.scattered.length} grown in ${ms.toFixed(0)}ms (${g1.grown} people, ${g2.grown} trees, ${g3.grown} scrub)`);
+  check('a scatter grows as many as its density asks for over its area',
+    g1.wanted === Math.round(16 * Math.PI * 1500 * 1500 / SC.DENSITY_AREA) && g1.grown === g1.wanted && g2.grown === g2.wanted);
+  check('and never more than its ceiling', g3.wanted === SC.SCATTER_MAX && g3.grown <= SC.SCATTER_MAX);
+  check('and quickly', ms < 2000, `${ms.toFixed(0)}ms`);
+  const people = cs.scattered.filter(t => t.scatter === sd.scatters[0].id);
+  check('the people stand inside their circle', people.every(t => (t.x - 5120) ** 2 + (t.y - 5120) ** 2 <= 1500 * 1500 + 1));
+  let close = 0;
+  for (let i = 0; i < people.length; i++) for (let j = i + 1; j < people.length; j++)
+    if ((people[i].x - people[j].x) ** 2 + (people[i].y - people[j].y) ** 2 < 109 ** 2) close++;
+  check('and no two nearer than its spacing', close === 0, `${close} pairs`);
+  check('the people go to the game as actors, the plants as level.plants',
+    cs.level.things.filter(t => t.type === 'SHOPPER').length === g1.grown &&
+    cs.level.plants.length === cs.scattered.filter(t => t.type === 'PLANT').length &&
+    cs.level.plants.every(p => SC.plantKind(p.kind)));
+  const cells = new Set();
+  let twice = 0;
+  for (const p of cs.level.plants) {
+    if (!SC.isCanopyKind(p.kind)) continue;
+    const k = `${Math.floor(p.x / 64)},${Math.floor(p.y / 64)}`;
+    if (cells.has(k)) twice++; else cells.add(k);
+  }
+  check('and never two trees in one 64 cell, which the wood would not draw', twice === 0, `${twice}`);
+  const cs2 = D.compileDoc(sd);
+  check('the same seed grows the same spread, every time', JSON.stringify(cs2.scattered) === JSON.stringify(cs.scattered));
+  sd.scatters[0].seed = 8;
+  check('and another seed grows another', JSON.stringify(D.compileDoc(sd).scattered.slice(0, 20)) !== JSON.stringify(cs.scattered.slice(0, 20)));
+  sd.scatters[0].seed = 7;
+  const flat = SC.growScatter({ ...sd.scatters[0], clump: 0 }, { rings: new Map(), standable: () => 1 });
+  const lumpy = SC.growScatter({ ...sd.scatters[0], clump: 1, density: 40 }, { rings: new Map(), standable: () => 1 });
+  const spread = list => {
+    const n = new Map();
+    for (const t of list) { const k = `${Math.floor(t.x / 512)},${Math.floor(t.y / 512)}`; n.set(k, (n.get(k) || 0) + 1); }
+    const v = [...n.values()], m = v.reduce((a, b) => a + b, 0) / v.length;
+    return Math.sqrt(v.reduce((a, b) => a + (b - m) ** 2, 0) / v.length) / m;
+  };
+  check('clumping gathers a spread into drifts', spread(lumpy.items) > spread(flat.items) * 1.3,
+    `${spread(flat.items).toFixed(2)} even against ${spread(lumpy.items).toFixed(2)} clumped`);
+  const pd = D.newDoc('P');
+  pd.vertices.push([200, 200], [400, 200], [400, 400], [200, 400]);
+  pd.sectors.push({ id: 5, verts: [4, 5, 6, 7], ...D.SECTOR_DEFAULTS, ceil: 0 });
+  pd.props.push({ id: 6, x0: 600, y0: 600, x1: 900, y1: 900, z0: 0, z1: 64, tex: 'GRIDWALL' });
+  pd.scatters.push({ ...SC.scatterFrom('scrub', { kind: 'sectors', ids: [1] }, 7, 3), density: 200 });
+  pd.nextId = 8;
+  const pc = D.compileDoc(pd);
+  check('nothing is grown in a pillar or under a prop',
+    pc.scattered.length > 50 && pc.scattered.every(t => !(t.x > 200 && t.x < 400 && t.y > 200 && t.y < 400) && !(t.x > 590 && t.x < 910 && t.y > 590 && t.y < 910)));
+  const tight = D.newDoc('T');
+  tight.scatters.push({ ...SC.scatterFrom('crowd', { kind: 'circle', x: 512, y: 512, r: 400 }, 9, 1), density: 400, spacing: 200 });
+  tight.nextId = 10;
+  check('a scatter asked for more than fits says so', D.compileDoc(tight).problems.some(p => p.kind === 'scatter'));
+
+  /* AND THE GAME GROWS THEM: a map with plants and no wood gets a
+     forest of exactly its plants, and nothing else */
+  const FO = await import('../js/forest.js');
+  const wood = new FO.Forest(cs.level);
+  check('the game grows exactly the plants the map placed, and no wood around them',
+    wood.plantsOnly && wood.plantCount === cs.level.plants.length && wood.fuelCells === wood.treeCount);
+  const aTree = cs.level.plants.find(p => SC.isCanopyKind(p.kind));
+  check('and a tree stops you', wood.blocks(aTree.x, aTree.y, 16));
+  check('and in a world where nothing burns, it does not', wood.ignite(aTree.x, aTree.y, 200) === 0);
+
+  /* THE EDITOR'S OWN SCATTER EDITS: bake, and move */
+  const ed2 = new E.Editor(null);
+  ed2.history = new D.History(D.parseDoc(D.serialise(sd)));
+  ed2.compile();
+  const before = ed2.compiled.scattered.filter(t => t.scatter === sd.scatters[0].id).length;
+  ed2.select('scatter', [sd.scatters[0].id]);
+  ed2.bake();
+  check('baking a scatter turns what it grew into ordinary things, and drops the rule',
+    ed2.doc.scatters.length === 2 && ed2.doc.things.filter(t => t.type === 'SHOPPER').length === before);
+  ed2.undo();
+  check('and undoes', ed2.doc.scatters.length === 3);
+  E.moveThings(ed2.doc, 'scatter', new Set([sd.scatters[0].id]), 64, -64);
+  check('a scatter moves by its area', ed2.doc.scatters[0].area.x === 5184 && ed2.doc.scatters[0].area.y === 5056);
+  clearTimeout(ed2._compileT); clearTimeout(ed2._saveT);
 
   /* THE DOORS */
   const term = fsE.readFileSync('js/terminal.js', 'utf8');

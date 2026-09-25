@@ -74,6 +74,24 @@
 #ed-views.only2d #ed-3d-wrap { display: none; }
 #ed-views.only3d { grid-template-columns: 1fr; }
 #ed-views.only3d #ed-2d-wrap { display: none; }
+/* THE COMBINED WORKSPACE, and the editor opens in it: one view big and
+   the other inset in its bottom-left corner, both live, every mode
+   working in both. Tab (or the ⤢ on the inset) swaps them. */
+#ed-views.combined, #ed-views.combined2d { grid-template-columns: 1fr; }
+#ed-views.combined #ed-2d-wrap, #ed-views.combined2d #ed-3d-wrap {
+  position: absolute; left: 10px; bottom: 10px; z-index: 3;
+  width: 34%; height: 42%; min-width: 240px; min-height: 170px;
+  border: 1px solid #3a4652; border-radius: 6px; box-shadow: 0 10px 30px #000c;
+}
+#ed-views.combined #ed-2d-wrap { border-right: 1px solid #3a4652; }
+.ed-swap {
+  display: none; position: absolute; right: 6px; top: 4px; z-index: 2;
+  width: 24px; height: 22px; border: 1px solid var(--line); border-radius: 4px;
+  background: #151a1fcc; cursor: pointer; font-size: 13px; line-height: 1;
+}
+.ed-swap:hover { border-color: var(--accent); }
+#ed-views.combined #ed-2d-wrap .ed-swap, #ed-views.combined2d #ed-3d-wrap .ed-swap { display: block; }
+#ed-views.combined #ed-2d-wrap .help, #ed-views.combined2d #ed-3d-wrap .help { display: none; }
 .ed-view { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
 #ed-2d-wrap { border-right: 1px solid var(--line); }
 .ed-view canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
@@ -94,7 +112,7 @@
 }
 .ed-tabs { display: flex; border-bottom: 1px solid var(--line); }
 .ed-tabs button {
-  flex: 1; height: 30px; border: 0; background: none; color: var(--dim); cursor: pointer;
+  flex: 1; height: 30px; font-size: 11px; padding: 0 2px; border: 0; background: none; color: var(--dim); cursor: pointer;
   border-bottom: 2px solid transparent; font-weight: 600; letter-spacing: .04em;
 }
 .ed-tabs button.on { color: #fff; border-bottom-color: var(--accent); }
@@ -112,6 +130,7 @@
 .ed-row input:focus, .ed-row select:focus { outline: none; border-color: var(--accent); }
 .ed-row input[type=checkbox] { justify-self: start; accent-color: var(--accent); }
 .ed-row.two { grid-template-columns: 92px 1fr 1fr; }
+.ed-row.item { grid-template-columns: 44px 1fr 86px; }
 .ed-tex {
   display: flex; align-items: center; gap: 6px; height: 28px; padding: 2px; border: 1px solid var(--line);
   border-radius: 4px; background: #0f1317; cursor: pointer; overflow: hidden;
@@ -142,6 +161,24 @@
 .ed-things button { text-align: left; height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 4px; background: #0f1317; cursor: pointer; display: flex; align-items: center; gap: 6px; }
 .ed-things button.on { border-color: var(--accent2); }
 .ed-things i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.ed-sub { margin-top: 14px !important; }
+.ed-plants { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.ed-plants button { border: 1px solid var(--line); border-radius: 4px; background: #0f1317; cursor: pointer; padding: 3px; }
+.ed-plants button.on { border-color: var(--accent2); }
+.ed-plants img { display: block; width: 100%; height: 56px; object-fit: contain; image-rendering: pixelated; }
+.ed-plants span { display: block; font: 9px var(--mono); color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* the scatter tab */
+.ed-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+.ed-presets button { text-align: left; min-height: 34px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 4px; background: #0f1317; cursor: pointer; }
+.ed-presets button.on { border-color: #c878ff; background: #1d1526; }
+.ed-presets .sw { display: flex; gap: 2px; margin-bottom: 2px; }
+.ed-presets .sw i, .ed-dot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
+.ed-listrow { display: flex; justify-content: space-between; padding: 5px 8px; border: 1px solid var(--line); border-radius: 4px; margin-bottom: 4px; cursor: pointer; background: #0f1317; }
+.ed-listrow:hover { border-color: #4d5a66; }
+.ed-listrow.on { border-color: var(--sel); }
+.ed-listrow small { color: var(--dim); font: 10px var(--mono); }
+.ed-row input[type=range] { width: 100%; accent-color: #c878ff; }
 
 /* ---------- the status line ---------- */
 #ed-status {

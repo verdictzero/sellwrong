@@ -274,8 +274,15 @@ export class Forest {
     const b = level.forestBounds || [0, 0, 0, 0];
     this.bounds = b;
     this.originX = b[0]; this.originY = b[1];
-    this.cols = rects.length ? Math.ceil((b[2] - b[0]) / CELL) : 0;
-    this.rows = rects.length ? Math.ceil((b[3] - b[1]) / CELL) : 0;
+    /* PLANTS AND NO WOOD: a map that places its own plants and has no
+       forest floor for a scatter to grow over — a map made in GSS-EDIT
+       (js/editor/), whose decorations are placed or spread there. The
+       grid is laid over the map so the plants have cells to stand in
+       and collide by, and nothing else is grown. */
+    const plantsOnly = !rects.length && !!level.plants?.length;
+    this.plantsOnly = plantsOnly;
+    this.cols = rects.length || plantsOnly ? Math.ceil((b[2] - b[0]) / CELL) : 0;
+    this.rows = rects.length || plantsOnly ? Math.ceil((b[3] - b[1]) / CELL) : 0;
     const n = Math.max(1, this.cols * this.rows);
 
     this.fuel = new Uint8Array(n);        // 1 where there is forest floor
@@ -302,6 +309,11 @@ export class Forest {
          lawn — placed by js/maps/town.js, which knows where the paths
          are, and grown here because this is where plants are drawn. */
       if (level.plants && level.plants.length) this._plantTown(level.plants);
+    } else if (plantsOnly) {
+      const none = () => ({ x: new Float32Array(0), y: new Float32Array(0), kind: new Uint8Array(0), scale: new Float32Array(0),
+                            flip: new Uint8Array(0), seed: new Float32Array(0), cell: new Int32Array(0), n: 0 });
+      this.trees = none(); this.covers = none();
+      this._plantTown(level.plants);
     }
   }
 
@@ -475,7 +487,8 @@ export class Forest {
      ------------------------------------------------------------------ */
   /** Light every green cell within `radius` of a point. Returns how many. */
   ignite(x, y, radius = 40) {
-    if (!this.cols) return 0;
+    /* and in a world where nothing catches, no plant does either */
+    if (!this.cols || this.level.noBurn) return 0;
     const cx0 = this.cellX(x - radius), cx1 = this.cellX(x + radius);
     const cy0 = this.cellY(y - radius), cy1 = this.cellY(y + radius);
     let lit = 0;

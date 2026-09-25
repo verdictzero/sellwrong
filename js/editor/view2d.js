@@ -4,10 +4,15 @@
 
    The Doom Builder half: the map from above on a grid, north up. Every
    mode edits one kind of thing — vertices, lines, sectors, things,
-   props — and two draw: DRAW clicks out a sector a corner at a time and
-   RECT drags one out. Drag anything to move it; drag on nothing to
-   box-select; the wheel zooms about the cursor and the right or middle
-   button pans.
+   props, scatters — and two draw: DRAW clicks out a sector a corner at
+   a time and RECT drags one out. Drag anything to move it; drag on
+   nothing to box-select; the wheel zooms about the cursor and the right
+   or middle button pans. In SCATTER mode a drag paints a circle of the
+   chosen mix, from its middle out.
+
+   EVERY MODE WORKS IN THE 3D VIEW TOO (js/editor/view3d.js), and the two
+   share what is half-done: the outline being drawn, the drag, the
+   cursor. So a room can be started in one and finished in the other.
 
    A DRAG IS ONE UNDO. The first move of a drag pushes the undo step and
    every move after it shifts the same selection further, so a drag is
@@ -16,8 +21,8 @@
    dropped on another becomes one vertex.
    ===================================================================== */
 
-import { THING_TYPES, ringOf, segDist, compact, signedArea } from './doc.js';
-import { moveThings } from './editor.js';
+import { THING_TYPES, ringOf, segDist, signedArea, FEATURES } from './doc.js';
+import { MODE_KIND } from './editor.js';
 
 const PICK_PX = 8;           // how near, in pixels, counts as on it
 
@@ -32,7 +37,6 @@ export class View2D {
     this.mouse = null;       // { x, y } in map units, snapped separately
     this.hover = null;       // { kind, id }
     this.drag = null;
-    this.path = [];          // the sector being drawn
     this.dirty = true;
 
     const ro = new ResizeObserver(() => this.resize());
@@ -47,10 +51,9 @@ export class View2D {
     canvas.addEventListener('wheel', e => this.wheel(e), { passive: false });
     canvas.addEventListener('contextmenu', e => e.preventDefault());
     canvas.addEventListener('pointerenter', () => { ed.pointerView = '2d'; });
-    canvas.addEventListener('pointerleave', () => { this.mouse = null; this.hover = null; ed.ui.setPos(null); this.dirty = true; });
+    canvas.addEventListener('pointerleave', () => { this.mouse = null; this.hover = null; ed.ui.setPos(null); ed.setCursor(null); this.dirty = true; });
 
-    for (const ev of ['doc', 'sel', 'mode', 'grid', 'layout', 'compiled']) ed.on(ev, () => { this.dirty = true; });
-    ed.on('mode', () => { this.path = []; });
+    for (const ev of ['doc', 'sel', 'mode', 'grid', 'layout', 'compiled', 'path', 'cursor']) ed.on(ev, () => { this.dirty = true; });
     ed.on('layout', () => setTimeout(() => this.resize(), 0));
     ed.on('frame', () => this.frame());
     ed.on('frameSel', () => this.frameSel());
@@ -112,6 +115,7 @@ export class View2D {
     if (kind === 'sector') d.sectors.forEach(s => ids.has(s.id) && out.push(...ringOf(d, s)));
     if (kind === 'thing') d.things.forEach(t => ids.has(t.id) && out.push([t.x, t.y]));
     if (kind === 'prop') d.props.forEach(p => ids.has(p.id) && out.push([p.x0, p.y0], [p.x1, p.y1]));
+    if (kind === 'scatter') d.scatters.forEach(c => ids.has(c.id) && out.push(...scatterBox(d, c)));
     return out;
   }
 
@@ -119,6 +123,7 @@ export class View2D {
      WHAT IS UNDER THE MOUSE, in the current mode
      ------------------------------------------------------------------ */
   pick(x, y, kind = modeKind(this.ed.mode)) {
+    if (kind === 'scatter') { const c = scatterAt(this.ed.doc, x, y); return c ? { kind, id: c.id } : null; }
     const d = this.ed.doc;
     const r = PICK_PX / this.scale;
     if (kind === 'vertex') {
@@ -185,13 +190,9 @@ export class View2D {
 
     if (mode === 'draw') {
       const pt = this.snapPoint(p.x, p.y);
-      const first = this.path[0];
-      if (first && this.path.length >= 3 && Math.hypot(first[0] - pt[0], first[1] - pt[1]) * this.scale < PICK_PX + 2) {
-        this.closePath();
-      } else if (!this.path.length || pt[0] !== this.path[this.path.length - 1][0] || pt[1] !== this.path[this.path.length - 1][1]) {
-        this.path.push(pt);
-      }
-      this.dirty = true;
+      const first = ed.path[0];
+      if (first && ed.path.length >= 3 && Math.hypot(first[0] - pt[0], first[1] - pt[1]) * this.scale < PICK_PX + 2) ed.closePath();
+      else ed.addPathPoint(pt);
       return;
     }
     if (mode === 'rect') {
@@ -201,28 +202,18 @@ export class View2D {
     }
 
     const kind = modeKind(mode);
-    const hit = this.pick(p.x, p.y, kind);
+    /* Alt paints a new scatter even over an old one */
+    const hit = mode === 'scatter' && e.altKey ? null : this.pick(p.x, p.y, kind);
     if (!hit) {
       if (mode === 'things') { ed.addThing(p.x, p.y); return; }
       if (mode === 'props') { const a = [ed.snapV(p.x), ed.snapV(p.y)]; this.drag = { type: 'prop', a, b: a }; return; }
+      if (mode === 'scatter') { const a = [ed.snapV(p.x), ed.snapV(p.y)]; this.drag = { type: 'brush', a, b: a }; return; }
       this.drag = { type: 'box', a: [p.x, p.y], b: [p.x, p.y], add: e.shiftKey };
       return;
     }
     if (e.shiftKey || e.ctrlKey) { ed.select(kind, [hit.id], true); return; }
     if (!ed.isSel(kind, hit.id)) ed.select(kind, [hit.id]);
-    /* THE REFERENCE POINT the drag snaps: the thing grabbed, or the
-       corner of it nearest the mouse, so a room dragged on a 64 grid
-       stays on the 64 grid */
-    const d = ed.doc;
-    let ref = [p.x, p.y];
-    if (kind === 'vertex') ref = [...d.vertices[hit.id]];
-    else if (kind === 'thing') { const t = d.things.find(t => t.id === hit.id); ref = [t.x, t.y]; }
-    else if (kind === 'prop') { const q = d.props.find(q => q.id === hit.id); ref = [q.x0, q.y0]; }
-    else {
-      let bd = Infinity;
-      for (const v of this.selPoints()) { const q = Math.hypot(v[0] - p.x, v[1] - p.y); if (q < bd) { bd = q; ref = [...v]; } }
-    }
-    this.drag = { type: 'move', start: [p.x, p.y], ref, done: [0, 0], pushed: false, px: p.px, py: p.py };
+    this.drag = { type: 'move', mv: ed.beginMove(ed.grabPoint([p.x, p.y]), [p.x, p.y]), px: p.px, py: p.py, moved: false };
   }
 
   move(e) {
@@ -230,7 +221,7 @@ export class View2D {
     const p = this.at(e);
     this.mouse = { x: p.x, y: p.y };
     const snapped = ed.mode === 'draw' || ed.mode === 'rect' ? this.snapPoint(p.x, p.y) : [ed.snapV(p.x), ed.snapV(p.y)];
-    this.cursor = snapped;
+    ed.setCursor(snapped);
     ed.ui.setPos(snapped[0], snapped[1]);
     const dr = this.drag;
     if (!dr) {
@@ -241,20 +232,13 @@ export class View2D {
     if (dr.type === 'pan') {
       this.cx = dr.cx - (p.px - dr.px) / this.scale;
       this.cy = dr.cy + (p.py - dr.py) / this.scale;
-    } else if (dr.type === 'box' || dr.type === 'rect' || dr.type === 'prop') {
+    } else if (dr.type === 'box' || dr.type === 'rect' || dr.type === 'prop' || dr.type === 'brush') {
       dr.b = dr.type === 'box' ? [p.x, p.y] : dr.type === 'rect' ? this.snapPoint(p.x, p.y) : [ed.snapV(p.x), ed.snapV(p.y)];
     } else if (dr.type === 'move') {
       /* nothing moves until the mouse has, a little — a click is not a drag */
-      if (!dr.pushed && Math.hypot(p.px - dr.px, p.py - dr.py) < 4) return;
-      const tx = ed.snapV(dr.ref[0] + p.x - dr.start[0]) - dr.ref[0];
-      const ty = ed.snapV(dr.ref[1] + p.y - dr.start[1]) - dr.ref[1];
-      const ddx = tx - dr.done[0], ddy = ty - dr.done[1];
-      if (ddx || ddy) {
-        if (!dr.pushed) { ed.history.push(`move ${ed.sel.kind}`); dr.pushed = true; }
-        moveThings(ed.doc, ed.sel.kind, ed.sel.ids, ddx, ddy);
-        dr.done = [tx, ty];
-        ed.changed();
-      }
+      if (!dr.moved && Math.hypot(p.px - dr.px, p.py - dr.py) < 4) return;
+      dr.moved = true;
+      ed.dragMove(dr.mv, [p.x, p.y]);
     }
     this.dirty = true;
   }
@@ -279,19 +263,17 @@ export class View2D {
       }
     } else if (dr.type === 'prop') {
       ed.addProp(dr.a[0], dr.a[1], dr.b[0], dr.b[1]);
-    } else if (dr.type === 'move' && dr.pushed) {
+    } else if (dr.type === 'brush') {
+      paintBrush(ed, dr.a, dr.b);
+    } else if (dr.type === 'move') {
       /* THE WELD, now the drag is over */
-      const before = ed.doc.vertices.length;
-      compact(ed.doc);
-      if (ed.doc.vertices.length !== before && (ed.sel.kind === 'vertex' || ed.sel.kind === 'line')) ed.clearSel();
-      ed.changed({ now: true });
-      ed.say(`moved ${dr.done[0]}, ${dr.done[1]}`);
+      ed.endMove(dr.mv);
     }
     this.dirty = true;
   }
 
   dbl(e) {
-    if (this.ed.mode === 'draw') { this.closePath(); return; }
+    if (this.ed.mode === 'draw') { this.ed.closePath(); return; }
     if (this.ed.sel.kind) this.ed.ui.showTab('insp');
   }
 
@@ -313,23 +295,13 @@ export class View2D {
     if (kind === 'sector') for (const s of d.sectors) if (ringOf(d, s).every(v => inB(v[0], v[1]))) out.push(s.id);
     if (kind === 'thing') for (const t of d.things) if (inB(t.x, t.y)) out.push(t.id);
     if (kind === 'prop') for (const p of d.props) if (inB(p.x0, p.y0) && inB(p.x1, p.y1)) out.push(p.id);
+    if (kind === 'scatter') for (const c of d.scatters) { const [a, b] = scatterBox(d, c); if (inB(a[0], a[1]) && inB(b[0], b[1])) out.push(c.id); }
     return out;
-  }
-
-  closePath() {
-    if (this.path.length >= 3) this.ed.addSector(this.path);
-    this.path = [];
-    this.dirty = true;
   }
 
   /** Keys the plan takes before the editor does. True if it took it. */
   key(e) {
     const ed = this.ed, k = e.key;
-    if (ed.mode === 'draw' && this.path.length) {
-      if (k === 'Enter') { this.closePath(); return true; }
-      if (k === 'Escape') { this.path = []; this.dirty = true; return true; }
-      if (k === 'Backspace') { this.path.pop(); this.dirty = true; return true; }
-    }
     if ((k === ',' || k === '.') && ed.sel.kind === 'thing') {
       const da = (k === ',' ? 1 : -1) * Math.PI / 4;
       ed.edit('turn', d => { for (const t of d.things) if (ed.sel.ids.has(t.id)) t.angle = ((t.angle || 0) + da + Math.PI * 2) % (Math.PI * 2); }, { tidy: false });
@@ -374,7 +346,7 @@ export class View2D {
       g.fillStyle = selS?.has(s.id) ? 'rgba(255,157,61,0.28)' : s.id === hovS ? 'rgba(61,220,132,0.16)'
         : shut ? 'rgba(90,90,90,0.35)' : `rgba(${30 + t * 40},${60 + t * 90},${50 + t * 40},0.22)`;
       g.fill();
-      if (s.floorSlope || s.ceilSlope) {
+      if (FEATURES.slopes && (s.floorSlope || s.ceilSlope)) {
         /* a slope is hatched, so it can be found from above */
         g.save(); g.clip();
         g.strokeStyle = 'rgba(255,180,84,0.18)'; g.lineWidth = 1;
@@ -422,6 +394,47 @@ export class View2D {
       if (x1 - x0 > 40 && y1 - y0 > 14) { g.fillStyle = '#9fd6ff'; g.fillText(`${p.z0}–${p.z1}`, x0 + 3, y0 + 11); }
     }
 
+    /* THE SCATTERS: each rule's area, dashed, and what it grew, as dots
+       a little dimmer than things placed by hand — they are a rule's
+       output and can only be changed by changing the rule */
+    const selC = ed.sel.kind === 'scatter' ? ed.sel.ids : null;
+    const hovC = this.hover?.kind === 'scatter' ? this.hover.id : null;
+    for (const c of d.scatters || []) {
+      const sel = selC?.has(c.id), hov = c.id === hovC;
+      g.strokeStyle = sel ? '#ff9d3d' : hov ? '#3ddc84' : 'rgba(200,120,255,0.7)';
+      g.fillStyle = sel ? 'rgba(255,157,61,0.08)' : 'rgba(200,120,255,0.05)';
+      g.lineWidth = sel || hov ? 2 : 1;
+      g.setLineDash([6, 4]);
+      g.beginPath();
+      const a = c.area;
+      if (a.kind === 'circle') g.arc(this.sx(a.x), this.sy(a.y), a.r * this.scale, 0, Math.PI * 2);
+      else if (a.kind === 'rect') g.rect(this.sx(Math.min(a.x0, a.x1)), this.sy(Math.max(a.y0, a.y1)), Math.abs(a.x1 - a.x0) * this.scale, Math.abs(a.y1 - a.y0) * this.scale);
+      else for (const s of d.sectors) {
+        if (!(a.ids || []).includes(s.id)) continue;
+        ringOf(d, s).forEach(([x, y], k) => (k ? g.lineTo(this.sx(x), this.sy(y)) : g.moveTo(this.sx(x), this.sy(y))));
+        g.closePath();
+      }
+      g.fill(); g.stroke(); g.setLineDash([]);
+      if (sel || hov || this.scale > 0.05) {
+        const [b0] = scatterBox(d, c);
+        g.fillStyle = sel ? '#ffcf9a' : '#d7b4ff'; g.font = '10px ui-monospace, monospace';
+        const n = ed.compiled?.grown?.get(c.id);
+        g.fillText(`${c.name || 'scatter'}${n ? ` · ${n.grown}` : ''}`, this.sx(b0[0]) + 3, this.sy(b0[1]) - 4);
+      }
+    }
+    const sc = ed.compiled?.scattered || [];
+    if (sc.length) {
+      const r = Math.max(1.2, Math.min(4, 14 * this.scale));
+      for (const t of sc) {
+        const x = this.sx(t.x), y = this.sy(t.y);
+        if (x < -4 || y < -4 || x > this.w + 4 || y > this.h + 4) continue;
+        g.fillStyle = t.type === 'PLANT' ? plantColour(t.kind) : (THING_TYPES[t.type]?.color || '#f0f');
+        g.globalAlpha = selC?.has(t.scatter) ? 1 : 0.75;
+        g.fillRect(x - r, y - r, r * 2, r * 2);
+      }
+      g.globalAlpha = 1;
+    }
+
     /* THE VERTICES, in vertex mode or close enough to click */
     if (ed.mode === 'vertices' || ed.mode === 'draw' || this.scale > 0.2) {
       const selV = ed.sel.kind === 'vertex' ? ed.sel.ids : null;
@@ -444,9 +457,10 @@ export class View2D {
       const x = this.sx(t.x), y = this.sy(t.y);
       if (x < -20 || y < -20 || x > this.w + 20 || y > this.h + 20) continue;
       const def = THING_TYPES[t.type] || { color: '#f0f', radius: 16 };
+      const colour = t.type === 'PLANT' ? plantColour(t.kind) : def.color;
       const r = Math.max(3, def.radius * this.scale);
       const sel = selT?.has(t.id), hov = t.id === hovT;
-      g.fillStyle = def.color;
+      g.fillStyle = colour;
       g.globalAlpha = ed.mode === 'things' || sel ? 1 : 0.7;
       g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
       g.globalAlpha = 1;
@@ -479,6 +493,13 @@ export class View2D {
       const w = Math.abs(dr.b[0] - dr.a[0]) * this.scale, hh = Math.abs(dr.b[1] - dr.a[1]) * this.scale;
       g.fillRect(x, y, w, hh); g.strokeRect(x, y, w, hh); g.setLineDash([]);
     }
+    if (dr?.type === 'brush') {
+      const r = Math.hypot(dr.b[0] - dr.a[0], dr.b[1] - dr.a[1]);
+      g.strokeStyle = '#c878ff'; g.fillStyle = 'rgba(200,120,255,0.12)'; g.setLineDash([6, 4]);
+      g.beginPath(); g.arc(this.sx(dr.a[0]), this.sy(dr.a[1]), r * this.scale, 0, Math.PI * 2); g.fill(); g.stroke(); g.setLineDash([]);
+      g.fillStyle = '#e6ccff'; g.font = '11px ui-monospace, monospace';
+      g.fillText(`r ${Math.round(r)}`, this.sx(dr.a[0]) + 6, this.sy(dr.a[1]) - 6);
+    }
     if (dr?.type === 'rect' || dr?.type === 'prop') {
       g.strokeStyle = dr.type === 'prop' ? '#58b9ff' : '#ffb454'; g.fillStyle = dr.type === 'prop' ? 'rgba(88,185,255,0.12)' : 'rgba(255,180,84,0.12)';
       const x = this.sx(Math.min(dr.a[0], dr.b[0])), y = this.sy(Math.max(dr.a[1], dr.b[1]));
@@ -487,25 +508,26 @@ export class View2D {
       g.fillStyle = '#ffd9a6'; g.font = '11px ui-monospace, monospace';
       g.fillText(`${Math.abs(dr.b[0] - dr.a[0])} × ${Math.abs(dr.b[1] - dr.a[1])}`, x + 4, y - 4);
     }
-    if (ed.mode === 'draw' && (this.path.length || this.cursor)) {
-      const pts = [...this.path];
-      if (this.cursor && this.mouse) pts.push(this.cursor);
+    const path = ed.path;
+    if (path.length || (ed.mode === 'draw' && ed.cursor)) {
+      const pts = [...path];
+      if (ed.mode === 'draw' && ed.cursor) pts.push(ed.cursor);
       g.strokeStyle = '#ffb454'; g.lineWidth = 2;
       g.beginPath();
       pts.forEach(([x, y], k) => (k ? g.lineTo(this.sx(x), this.sy(y)) : g.moveTo(this.sx(x), this.sy(y))));
       g.stroke();
       g.fillStyle = '#ffb454';
       for (const [x, y] of pts) g.fillRect(this.sx(x) - 3, this.sy(y) - 3, 6, 6);
-      if (this.path.length >= 3) { g.strokeStyle = '#3ddc84'; g.beginPath(); g.arc(this.sx(this.path[0][0]), this.sy(this.path[0][1]), PICK_PX + 2, 0, Math.PI * 2); g.stroke(); }
-      if (this.path.length && this.cursor) {
-        const [a, b] = [this.path[this.path.length - 1], this.cursor];
+      if (path.length >= 3) { g.strokeStyle = '#3ddc84'; g.beginPath(); g.arc(this.sx(path[0][0]), this.sy(path[0][1]), PICK_PX + 2, 0, Math.PI * 2); g.stroke(); }
+      if (path.length && ed.cursor && ed.mode === 'draw') {
+        const [a, b] = [path[path.length - 1], ed.cursor];
         g.fillStyle = '#ffd9a6'; g.font = '11px ui-monospace, monospace';
         g.fillText(`${Math.round(Math.hypot(b[0] - a[0], b[1] - a[1]))}`, this.sx((a[0] + b[0]) / 2) + 6, this.sy((a[1] + b[1]) / 2) - 6);
       }
     }
     /* and the snapped cursor, in the drawing modes */
-    if (this.cursor && this.mouse && ['draw', 'rect', 'props', 'things'].includes(ed.mode) && !dr) {
-      const x = this.sx(this.cursor[0]), y = this.sy(this.cursor[1]);
+    if (ed.cursor && ['draw', 'rect', 'props', 'things', 'scatter'].includes(ed.mode) && !dr) {
+      const x = this.sx(ed.cursor[0]), y = this.sy(ed.cursor[1]);
       g.strokeStyle = '#ffb454'; g.lineWidth = 1;
       g.beginPath(); g.moveTo(x - 8, y); g.lineTo(x + 8, y); g.moveTo(x, y - 8); g.lineTo(x, y + 8); g.stroke();
     }
@@ -536,5 +558,67 @@ export class View2D {
 }
 
 export function modeKind(mode) {
-  return { vertices: 'vertex', lines: 'line', sectors: 'sector', things: 'thing', props: 'prop' }[mode] || 'sector';
+  return MODE_KIND[mode] || 'sector';
+}
+
+/** The scatter whose area a point is in — the smallest, so a small one
+ *  painted inside a big one can still be picked. */
+export function scatterAt(d, x, y) {
+  let best = null, ba = Infinity;
+  for (const c of d.scatters || []) {
+    const a = c.area;
+    let inside = false, size = 0;
+    if (a.kind === 'circle') { inside = (x - a.x) ** 2 + (y - a.y) ** 2 <= a.r * a.r; size = a.r * a.r * Math.PI; }
+    else if (a.kind === 'rect') {
+      inside = x >= Math.min(a.x0, a.x1) && x <= Math.max(a.x0, a.x1) && y >= Math.min(a.y0, a.y1) && y <= Math.max(a.y0, a.y1);
+      size = Math.abs((a.x1 - a.x0) * (a.y1 - a.y0));
+    } else {
+      for (const s of d.sectors) {
+        if (!(a.ids || []).includes(s.id)) continue;
+        const r = ringOf(d, s);
+        if (pointIn(r, x, y)) { inside = true; }
+        size += Math.abs(signedArea(r));
+      }
+    }
+    if (inside && size < ba) { ba = size; best = c; }
+  }
+  return best;
+}
+function pointIn(r, x, y) {
+  let c = false;
+  for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+    const [xi, yi] = r[i], [xj, yj] = r[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c;
+  }
+  return c;
+}
+
+/** The two corners of a scatter's area. */
+export function scatterBox(d, c) {
+  const a = c.area;
+  if (a.kind === 'circle') return [[a.x - a.r, a.y - a.r], [a.x + a.r, a.y + a.r]];
+  if (a.kind === 'rect') return [[Math.min(a.x0, a.x1), Math.min(a.y0, a.y1)], [Math.max(a.x0, a.x1), Math.max(a.y0, a.y1)]];
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const s of d.sectors) if ((a.ids || []).includes(s.id)) for (const [x, y] of ringOf(d, s)) {
+    x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+  }
+  return x0 < Infinity ? [[x0, y0], [x1, y1]] : [[0, 0], [0, 0]];
+}
+
+/** The scatter brush let go: a circle of the current mix from where it
+ *  was pressed to where it was let go — or, for a click, a circle of
+ *  the brush's own size. */
+export function paintBrush(ed, a, b) {
+  let r = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  if (r < 16) r = ed.brushRadius || 512;
+  ed.brushRadius = Math.round(r);
+  ed.addScatter({ kind: 'circle', x: a[0], y: a[1], r: Math.round(r) });
+}
+
+/* a plant's dot: firs dark, bushes mid, cover light, street trees teal */
+export function plantColour(kind = '') {
+  if (kind.startsWith('fir')) return '#2f8f4a';
+  if (kind.startsWith('bush')) return '#5fbf5a';
+  if (kind.startsWith('street')) return '#3fb8a0';
+  return '#a8e07a';
 }

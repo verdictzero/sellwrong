@@ -14,6 +14,11 @@
 
 import { THING_TYPES, problemsOf, ringOf, signedArea } from './doc.js';
 import { MODES, GRIDS } from './editor.js';
+import { PRESETS, SCATTER_TYPES, PLANT_KINDS, SCATTER_MAX } from './scatter.js';
+import { plantColour } from './view2d.js';
+
+/* the mode buttons' own short names */
+const SHORT = { vertices: 'Verts', lines: 'Lines', sectors: 'Sectors', things: 'Things', props: 'Props', draw: 'Draw', rect: 'Rect', scatter: 'Scatter' };
 
 const h = (tag, attrs = {}, ...kids) => {
   const el = document.createElement(tag);
@@ -76,7 +81,7 @@ export function buildUI(ed) {
   const modeBtns = {};
   const modes = Object.entries(MODES).map(([m, def]) => {
     const b = h('button', { class: 'ed-btn', title: `${def.name} (${def.key})`, onclick: () => ed.setMode(m) },
-      def.name.split(' ')[0], h('kbd', {}, def.key));
+      SHORT[m] || def.name, h('kbd', {}, def.key));
     modeBtns[m] = b;
     return b;
   });
@@ -85,6 +90,7 @@ export function buildUI(ed) {
     ...GRIDS.map(g => h('option', { value: g }, `grid ${g}`)));
   const snapBtn = h('button', { class: 'ed-btn', title: 'Snap to grid (G)', onclick: () => { ed.snap = !ed.snap; ed.emit('grid'); } }, 'Snap', h('kbd', {}, 'G'));
   const layoutBtns = {
+    combined: h('button', { class: 'ed-btn', title: 'Both at once: 3D with the plan inset (Tab swaps them)', onclick: () => ed.setLayout(ed.layout === 'combined' ? 'combined2d' : 'combined') }, 'Combined'),
     only2d: h('button', { class: 'ed-btn', title: '2D only (Tab)', onclick: () => ed.setLayout('only2d') }, '2D'),
     split: h('button', { class: 'ed-btn', title: 'Side by side', onclick: () => ed.setLayout('split') }, 'Split'),
     only3d: h('button', { class: 'ed-btn', title: '3D only (Tab)', onclick: () => ed.setLayout('only3d') }, '3D'),
@@ -116,18 +122,21 @@ export function buildUI(ed) {
       ['2D: middle / right drag pans, wheel zooms', '', () => {}],
       ['D: click points, click the first to close', '', () => {}],
       ['R: drag a rectangle into a sector', '', () => {}],
-      ['3D: hold right mouse to look, WASD QE', '', () => {}],
-      ['3D: wheel raises the picked floor/ceiling', '', () => {}],
+      ['X: drag a circle to scatter the chosen mix', '', () => {}],
+      ['Every mode works in the 3D view too', '', () => {}],
+      ['Tab swaps the big view and the inset', '', () => {}],
+      ['3D: hold right mouse to look, WASD QE fly', '', () => {}],
+      ['3D: wheel raises the floor/ceiling under it', '', () => {}],
       ['3D: click a texture to paint the pick', '', () => {}],
-      ['3D: C copies a texture, V pastes it', '', () => {}],
-      ['3D: B toggles fullbright', '', () => {}],
+      ['3D: Ctrl+C copies a texture, Ctrl+V pastes', '', () => {}],
+      ['3D: B toggles fullbright, F goes to start', '', () => {}],
     ]),
     h('span', { class: 'sep' }),
     ...modes,
     h('span', { class: 'sep' }),
     gridSel, snapBtn,
     h('span', { class: 'sep' }),
-    layoutBtns.only2d, layoutBtns.split, layoutBtns.only3d,
+    layoutBtns.combined, layoutBtns.split, layoutBtns.only2d, layoutBtns.only3d,
     h('span', { class: 'spacer' }),
     h('button', { class: 'ed-btn play', title: 'Test the map (F5)', onclick: () => ed.play() }, '▶ PLAY', h('kbd', {}, 'F5')),
   );
@@ -139,11 +148,14 @@ export function buildUI(ed) {
   ui.canvas3d = h('canvas', { tabindex: 0 });
   ui.help2d = h('div', { class: 'help' });
   ui.help3d = h('div', { class: 'help' },
-    'hold RMB look · WASD/QE fly · Shift fast · F start\nclick pick · wheel height · C/V copy/paste texture · B fullbright');
+    'hold RMB: look + WASD/QE fly · every mode works here\nwheel height · Ctrl+C/V texture · B fullbright · F start');
   const wrap2d = h('div', { id: 'ed-2d-wrap', class: 'ed-view' }, ui.canvas2d, h('div', { class: 'tag' }, 'MAP  2D'), ui.help2d);
   const wrap3d = h('div', { id: 'ed-3d-wrap', class: 'ed-view' }, ui.canvas3d, h('div', { class: 'tag' }, 'VISUAL  3D'), ui.help3d);
   ui.wrap2d = wrap2d; ui.wrap3d = wrap3d;
-  const views = h('div', { id: 'ed-views', class: 'split' }, wrap2d, wrap3d);
+  /* in the combined workspace, a button on the inset to swap it big */
+  for (const w of [wrap2d, wrap3d]) w.append(h('button', { class: 'ed-swap', title: 'Swap the big view and the inset (Tab)',
+    onclick: () => ed.setLayout(ed.layout === 'combined' ? 'combined2d' : 'combined') }, '⤢'));
+  const views = h('div', { id: 'ed-views', class: ed.layout }, wrap2d, wrap3d);
 
   /* ------------------------------------------------------------------
      THE SIDE PANEL
@@ -152,6 +164,7 @@ export function buildUI(ed) {
     insp: h('div', { class: 'ed-pane ed-insp on' }),
     tex: h('div', { class: 'ed-pane' }),
     things: h('div', { class: 'ed-pane' }),
+    scatter: h('div', { class: 'ed-pane ed-insp' }),
     map: h('div', { class: 'ed-pane ed-insp' }),
   };
   const tabBtns = {};
@@ -160,10 +173,11 @@ export function buildUI(ed) {
     for (const [k, b] of Object.entries(tabBtns)) b.classList.toggle('on', k === t);
     ui.tab = t;
     if (t === 'map') renderMap();
+    if (t === 'scatter') renderScatter();
   };
   ui.showTab = showTab;
   const tabs = h('div', { class: 'ed-tabs' },
-    ...[['insp', 'Inspect'], ['tex', 'Textures'], ['things', 'Things'], ['map', 'Map']].map(([k, n]) =>
+    ...[['insp', 'Inspect'], ['tex', 'Textures'], ['things', 'Things'], ['scatter', 'Scatter'], ['map', 'Map']].map(([k, n]) =>
       (tabBtns[k] = h('button', { onclick: () => showTab(k) }, n))));
   tabBtns.insp.classList.add('on');
   const side = h('div', { id: 'ed-side' }, tabs, h('div', { style: 'min-height:0;display:grid' }, ...Object.values(panes)));
@@ -226,6 +240,7 @@ export function buildUI(ed) {
       if (kind === 'sector') d.sectors.forEach(s => ids.has(s.id) && fn(s));
       if (kind === 'thing') d.things.forEach(t => ids.has(t.id) && fn(t));
       if (kind === 'prop') d.props.forEach(p => ids.has(p.id) && fn(p));
+      if (kind === 'scatter') d.scatters.forEach(p => ids.has(p.id) && fn(p));
       if (kind === 'vertex') ids.forEach(i => d.vertices[i] && fn(d.vertices[i]));
       if (kind === 'line') ids.forEach(k => { d.lines[k] = d.lines[k] || {}; fn(d.lines[k]); if (!Object.keys(d.lines[k]).length) delete d.lines[k]; });
     }, { tidy: kind === 'vertex' });
@@ -261,41 +276,16 @@ export function buildUI(ed) {
         row('Ceiling', num(s.ceil, v => each('ceiling height', x => { x.ceil = v; }), { step: 8 })),
         row('Light', num(s.light ?? 0.72, v => each('light', x => { x.light = Math.max(0, Math.min(1.5, v)); }), { step: 0.05 })),
         row('Open sky', chk(s.outdoor !== false, v => each('outdoor', x => { x.outdoor = v; }))),
-        h('h4', {}, 'Slopes'),
-        h('p', { class: 'ed-note' }, 'Units of rise per unit east (x) and north (y), through the middle of the sector. 0.25 is a steep ramp.'),
-        h('div', { class: 'ed-row two' }, h('label', {}, 'Floor x / y'),
-          num(s.floorSlope?.dzdx ?? 0, v => each('floor slope', x => setSlope(x, 'floorSlope', 'dzdx', v)), { step: 0.05 }),
-          num(s.floorSlope?.dzdy ?? 0, v => each('floor slope', x => setSlope(x, 'floorSlope', 'dzdy', v)), { step: 0.05 })),
-        h('div', { class: 'ed-row two' }, h('label', {}, 'Ceiling x / y'),
-          num(s.ceilSlope?.dzdx ?? 0, v => each('ceiling slope', x => setSlope(x, 'ceilSlope', 'dzdx', v)), { step: 0.05 }),
-          num(s.ceilSlope?.dzdy ?? 0, v => each('ceiling slope', x => setSlope(x, 'ceilSlope', 'dzdy', v)), { step: 0.05 })),
-        h('div', { class: 'ed-small-btns' },
-          h('button', { class: 'ed-btn', onclick: () => each('flatten', x => { delete x.floorSlope; delete x.ceilSlope; }) }, 'Flatten'),
-          h('button', { class: 'ed-btn', title: 'Floor rises 1 in 4 to the east', onclick: () => each('ramp east', x => { x.floorSlope = { dzdx: 0.25, dzdy: 0 }; }) }, 'Ramp E'),
-          h('button', { class: 'ed-btn', title: 'Floor rises 1 in 4 to the north', onclick: () => each('ramp north', x => { x.floorSlope = { dzdx: 0, dzdy: 0.25 }; }) }, 'Ramp N'),
-          h('button', { class: 'ed-btn', title: 'Ceiling follows the floor', onclick: () => each('ceiling follows floor', x => { if (x.floorSlope) x.ceilSlope = { ...x.floorSlope }; }) }, 'Ceil = floor')),
         h('h4', {}, 'Textures'),
         texField(s.floorTex, 'floorTex', 'Floor'),
         texField(s.ceilTex, 'ceilTex', 'Ceiling'),
         texField(s.wallTex, 'wallTex', 'Walls'),
         texField(s.upperTex, 'upperTex', 'Upper', { allowNone: true }),
         texField(s.lowerTex, 'lowerTex', 'Lower', { allowNone: true }),
-        h('h4', {}, 'Storeys above'),
-        h('p', { class: 'ed-note' }, 'Rooms stacked over this one in the same outline — true room-over-room. Each must start above the one below it ends.'),
-        ...(s.storeys || []).map((stn, k) => h('div', { class: 'ed-storey' },
-          h('div', { class: 'ed-row two' }, h('label', {}, `Storey ${k + 1}`),
-            num(stn.floor, v => each('storey floor', x => { if (x.storeys?.[k]) x.storeys[k].floor = v; }), { step: 8, title: 'floor' }),
-            num(stn.ceil, v => each('storey ceiling', x => { if (x.storeys?.[k]) x.storeys[k].ceil = v; }), { step: 8, title: 'ceiling' })),
-          h('div', { class: 'ed-row' }, h('label', {}, 'Open sky'), chk(stn.outdoor, v => each('storey outdoor', x => { if (x.storeys?.[k]) x.storeys[k].outdoor = v; }))),
-          h('div', { class: 'ed-small-btns' },
-            h('button', { class: 'ed-btn', onclick: () => each('remove storey', x => { x.storeys?.splice(k, 1); if (!x.storeys?.length) delete x.storeys; }) }, 'Remove')))),
+        h('h4', {}, 'Spread'),
         h('div', { class: 'ed-small-btns' },
-          h('button', { class: 'ed-btn', onclick: () => each('add storey', x => {
-            const below = x.storeys?.length ? x.storeys[x.storeys.length - 1] : x;
-            const f = (below.ceil ?? 256) + 32;
-            (x.storeys = x.storeys || []).push({ floor: f, ceil: f + 192, outdoor: x.outdoor !== false });
-            if (x.storeys.length === 1 && x.outdoor !== false) x.outdoor = false;
-          }) }, '+ Storey')),
+          h('button', { class: 'ed-btn', title: 'Fill the selected sectors with the mix chosen in the Scatter tab',
+            onclick: () => ed.scatterSectors() }, `Scatter ${PRESETS[ed.scatterPreset]?.name || ''} here`)),
       );
       return;
     }
@@ -338,7 +328,11 @@ export function buildUI(ed) {
         n === 1 ? row('X', num(t.x, v => each('thing x', x => { x.x = v; }))) : null,
         n === 1 ? row('Y', num(t.y, v => each('thing y', x => { x.y = v; }))) : null,
         row('Facing °', num(Math.round((t.angle || 0) * 180 / Math.PI), v => each('thing angle', x => { x.angle = v * Math.PI / 180; }), { step: 45 })),
-        row('Variant', num(t.variant ?? '', v => each('thing variant', x => { x.variant = Math.max(0, Math.round(v)); }))),
+        t.type === 'PLANT'
+          ? [row('Plant', h('select', { onchange: e => each('plant kind', x => { x.kind = e.target.value; }) },
+              ...PLANT_KINDS.map(k => h('option', { value: k, ...(k === t.kind ? { selected: true } : {}) }, k)))),
+             row('Scale', num(t.scale ?? 1, v => each('plant scale', x => { x.scale = Math.max(0.2, Math.min(4, v)); }), { step: 0.1 }))]
+          : row('Variant', num(t.variant ?? '', v => each('thing variant', x => { x.variant = Math.max(0, Math.round(v)); }))),
         h('p', { class: 'ed-note' }, 'In Things mode, click empty floor to place the type chosen in the Things tab. , and . turn the selection.'));
       return;
     }
@@ -357,6 +351,60 @@ export function buildUI(ed) {
         texField(pr.tex, 'tex', 'Sides'),
         texField(pr.topTex, 'topTex', 'Top', { allowNone: true }));
     }
+
+    if (kind === 'scatter') p.append(...scatterInspector(d.scatters.find(x => ids.has(x.id)), n));
+  };
+
+  /* ------------------------------------------------------------------
+     A SCATTER: the rule, every dial of it, and what it grew
+     ------------------------------------------------------------------ */
+  const scatterInspector = (c, n) => {
+    if (!c) return [];
+    const g = ed.compiled?.grown?.get(c.id);
+    const a = c.area;
+    const total = c.items.reduce((s2, i) => s2 + (i.w || 0), 0) || 1;
+    const setItems = (label, fn) => each(label, x => { fn(x.items); });
+    const range = (value, min, max, step, onset) => h('input', { type: 'range', min, max, step, value, onchange: e => onset(+e.target.value) });
+    return [
+      h('h3', {}, `Scatter · ${c.name || c.id}`, h('small', {}, n > 1 ? `${n} selected` : '')),
+      h('p', { class: 'ed-note' }, g ? `grew ${g.grown} of ${g.wanted}${g.grown < g.wanted * 0.9 ? ' — no room for the rest' : ''}` : 'growing…',
+        ' · a rule, re-grown every time it changes'),
+      row('Name', txt(c.name, v => each('rename scatter', x => { x.name = v; }))),
+      h('h4', {}, 'Where'),
+      a.kind === 'circle'
+        ? h('div', { class: 'ed-row two' }, h('label', {}, 'Centre / radius'),
+            h('span', { class: 'ed-note' }, `${Math.round(a.x)}, ${Math.round(a.y)}`),
+            num(a.r, v => each('scatter radius', x => { if (x.area.kind === 'circle') x.area.r = Math.max(16, v); }), { step: 32 }))
+        : a.kind === 'rect'
+          ? h('p', { class: 'ed-note' }, `a rectangle, ${Math.abs(a.x1 - a.x0)} × ${Math.abs(a.y1 - a.y0)}`)
+          : h('p', { class: 'ed-note' }, `filling ${a.ids.length} sector${a.ids.length > 1 ? 's' : ''}`),
+      h('h4', {}, 'How'),
+      row('Density', h('div', { style: 'display:flex;gap:6px;align-items:center' },
+        range(c.density, 0, 120, 0.5, v => each('density', x => { x.density = v; })),
+        num(c.density, v => each('density', x => { x.density = Math.max(0, v); }), { step: 0.5, title: 'per 1024 × 1024' }))),
+      row('Spacing', num(c.spacing, v => each('spacing', x => { x.spacing = Math.max(0, v); }), { step: 8 })),
+      row('Clumping', range(c.clump ?? 0, 0, 1, 0.05, v => each('clumping', x => { x.clump = v; }))),
+      h('div', { class: 'ed-row two' }, h('label', {}, 'Scale min / max'),
+        num(c.scaleMin ?? 1, v => each('scale', x => { x.scaleMin = v; }), { step: 0.05 }),
+        num(c.scaleMax ?? 1, v => each('scale', x => { x.scaleMax = v; }), { step: 0.05 })),
+      h('p', { class: 'ed-note' }, `density is things per 1024 × 1024 of floor · at most ${SCATTER_MAX} per scatter`),
+      h('h4', {}, 'What'),
+      ...c.items.map((it, k) => h('div', { class: 'ed-row item' },
+        h('label', {}, h('i', { class: 'ed-dot', style: `background:${it.type.startsWith('PLANT:') ? plantColour(it.type.slice(6)) : THING_TYPES[it.type]?.color}` }),
+          ` ${Math.round((it.w || 0) / total * 100)}%`),
+        h('select', { onchange: e => setItems('scatter item', list => { if (list[k]) list[k].type = e.target.value; }) },
+          ...SCATTER_TYPES.map(t => h('option', { value: t, ...(t === it.type ? { selected: true } : {}) }, typeName(t)))),
+        h('div', { style: 'display:flex;gap:4px' },
+          num(it.w, v => setItems('weight', list => { if (list[k]) list[k].w = Math.max(0, v); }), { step: 1, title: 'weight' }),
+          h('button', { class: 'ed-btn', title: 'remove', onclick: () => setItems('remove item', list => { list.splice(k, 1); }) }, '×')))),
+      h('div', { class: 'ed-small-btns' },
+        h('button', { class: 'ed-btn', onclick: () => setItems('add item', list => { list.push({ type: 'SHOPPER', w: 1 }); }) }, '+ Item')),
+      h('h4', {}, 'Seed'),
+      h('div', { class: 'ed-small-btns' },
+        h('button', { class: 'ed-btn', title: 'Roll it again: the same rule, a different spread', onclick: () => ed.reseed() }, '🎲 Reseed'),
+        h('button', { class: 'ed-btn', title: 'Turn what it grew into ordinary things, and drop the rule', onclick: () => ed.bake() }, 'Bake into things'),
+        h('button', { class: 'ed-btn', onclick: () => ed.emit('frameSel') }, 'Frame')),
+    ];
   };
 
   /* ------------------------------------------------------------------
@@ -412,7 +460,40 @@ export function buildUI(ed) {
     panes.things.append(h('p', { class: 'ed-note' }, 'Pick a type, then click in the map in Things mode (T) to place it.'),
       h('div', { class: 'ed-things' }, ...Object.entries(THING_TYPES).map(([k, t]) =>
         h('button', { class: k === ed.thingType ? 'on' : '', onclick: () => { ed.thingType = k; ed.setMode('things'); renderThings(); } },
-          h('i', { style: `background:${t.color}` }), t.name))));
+          h('i', { style: `background:${t.color}` }), t.name))),
+      h('h4', { class: 'ed-sub' }, 'Plants — sprite decorations'),
+      h('p', { class: 'ed-note' }, 'Pick one to place it with Things mode, or use the Scatter tab to spread many.'),
+      h('div', { class: 'ed-plants' }, ...PLANT_KINDS.map(k =>
+        h('button', { class: ed.thingType === 'PLANT' && ed.plantKind === k ? 'on' : '', title: k,
+          onclick: () => { ed.thingType = 'PLANT'; ed.plantKind = k; ed.setMode('things'); renderThings(); } },
+          h('img', { src: `assets/forest/${k}.png`, alt: '' }), h('span', {}, k.replace(/_/g, ' '))))));
+  };
+
+  /* ------------------------------------------------------------------
+     THE SCATTER TAB: the mixes, the brush, and every scatter in the map
+     ------------------------------------------------------------------ */
+  const renderScatter = () => {
+    const p = panes.scatter;
+    p.textContent = '';
+    const d = ed.doc;
+    p.append(h('h3', {}, 'Scatter'),
+      h('p', { class: 'ed-note' }, 'Spread sprite people and decorations procedurally. Pick a mix, then in Scatter mode (X) drag a circle out from its middle — on the plan or in 3D. Or fill selected sectors. Every scatter stays a live rule: change its dials and it re-grows.'),
+      h('h4', {}, 'Mix'),
+      h('div', { class: 'ed-presets' }, ...Object.entries(PRESETS).map(([k, pr]) =>
+        h('button', { class: k === ed.scatterPreset ? 'on' : '', onclick: () => { ed.scatterPreset = k; ed.setMode('scatter'); renderScatter(); renderInsp(); } },
+          h('span', { class: 'sw' }, ...pr.items.slice(0, 4).map(it => h('i', { style: `background:${it.type.startsWith('PLANT:') ? plantColour(it.type.slice(6)) : THING_TYPES[it.type]?.color}` }))),
+          pr.name))),
+      row('Brush radius', num(ed.brushRadius || 512, v => { ed.brushRadius = Math.max(16, v); }, { step: 64, title: 'for a click without a drag' })),
+      h('div', { class: 'ed-small-btns' },
+        h('button', { class: 'ed-btn', onclick: () => ed.setMode('scatter') }, 'Brush (X)'),
+        h('button', { class: 'ed-btn', onclick: () => ed.scatterSectors() }, 'Fill selected sectors')),
+      h('h4', {}, `In this map (${d.scatters.length})`),
+      d.scatters.length ? h('div', {}, ...d.scatters.map(c => {
+        const g = ed.compiled?.grown?.get(c.id);
+        return h('div', { class: 'ed-listrow' + (ed.isSel('scatter', c.id) ? ' on' : ''),
+          onclick: () => { ed.setMode('scatter'); ed.select('scatter', [c.id]); ed.emit('frameSel'); showTab('insp'); } },
+          h('span', {}, c.name || `scatter ${c.id}`), h('small', {}, g ? `${g.grown}` : ''));
+      })) : h('p', { class: 'ed-note' }, 'None yet.'));
   };
   renderThings();
 
@@ -457,6 +538,8 @@ export function buildUI(ed) {
   ed.on('layout', refreshBar);
   ed.on('doc', () => { if (!inspFocused()) { renderInsp(); if (ui.tab === 'map') renderMap(); } });
   ed.on('compiled', c => {
+    if (ed.sel.kind === 'scatter' && !inspFocused()) renderInsp();
+    if (ui.tab === 'scatter') renderScatter();
     const n = c.problems.length;
     st.probs.innerHTML = n ? `<span class="bad">${n} problem${n > 1 ? 's' : ''}</span>` : '';
     if (ui.tab === 'map' && !inspFocused()) renderMap();
@@ -465,12 +548,6 @@ export function buildUI(ed) {
   refreshBar();
   renderInsp();
   return ui;
-}
-
-function setSlope(s, field, axis, v) {
-  const o = { dzdx: 0, dzdy: 0, ...(s[field] || {}) };
-  o[axis] = v;
-  if (!o.dzdx && !o.dzdy) delete s[field]; else s[field] = o;
 }
 
 const HELP2D = {
@@ -483,3 +560,7 @@ const HELP2D = {
   rect: 'drag a rectangle into a new sector\nEsc cancel',
 };
 
+function typeName(t) {
+  if (t.startsWith('PLANT:')) return `plant: ${t.slice(6).replace(/_/g, ' ')}`;
+  return THING_TYPES[t]?.name || t;
+}

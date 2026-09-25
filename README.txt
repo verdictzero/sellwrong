@@ -5286,17 +5286,34 @@ and Ultimate Doom Builder. Type any of
 
 at the terminal, or open index.html?edit to go straight in. It is the
 Doom mapping workflow: sectors drawn on a grid, vertices dragged, the
-plan and the 3D view side by side, a floor raised with the mouse wheel,
+plan and the 3D view together, a floor raised with the mouse wheel,
 and one key to test the map. But the engine under it is actually 3D, so
-it also edits what Doom never had: rooms stacked over rooms, sloped
-floors and ceilings, and free boxes standing anywhere in space.
+every mode works in the 3D view as well as on the plan. It also places
+free boxes anywhere in space, and it spreads sprite people and
+decorations procedurally.
+
+ONE WORKSPACE, BOTH VIEWS. The editor opens in the COMBINED layout: the
+3D view fills the window and the plan is inset in its bottom-left
+corner. Both are live, and Tab (or the button on the inset) swaps which
+one is big. Split, 2D-only and 3D-only are on the bar too. The two views
+share what is half-done: the outline being drawn, the drag and the
+cursor. So a room can be started on the plan and finished in 3D, and
+the 3D camera is drawn on the plan.
+
+SLOPES AND STOREYS ARE SWITCHED OFF FOR NOW, at the user's request.
+FEATURES in js/editor/doc.js is the switch. The inspector does not offer
+them, and the compiler ignores them, so a map that has some is built
+flat and single-storey, exactly as it can be edited. The code is still
+there and still tested, with the switch thrown.
 
   js/editor/doc.js     the map as a JSON document, the undo stack, and
                        the compiler that turns the document into a Level
   js/editor/editor.js  the state everything shares, the edits, the
                        keyboard, and the boot
   js/editor/view2d.js  the plan, which is the Doom Builder half
-  js/editor/view3d.js  the 3D view, drawn by the game's own renderer
+  js/editor/view3d.js  the 3D view, drawn by the game's own renderer,
+                       with every mode working in it
+  js/editor/scatter.js the procedural spreads
   js/editor/ui.js      the bars, the inspector and the texture browser
   css/editor.css       its look, loaded only with it
 
@@ -5319,6 +5336,8 @@ THE MODES, one key each, as in Doom Builder:
   D  draw          click the corners, click the first to close (Enter
                    closes, Backspace takes a corner back, Space enters)
   R  rectangle     drag a sector out
+  X  scatter       drag a circle out from its middle to spread the mix
+                   chosen in the Scatter tab (Alt paints over another)
 
 A corner that lands on an existing vertex uses it. One that lands on a
 line splits it, in every sector the line belongs to. A sector drawn
@@ -5331,14 +5350,24 @@ and ] step the grid through Doom Builder's own powers of two. G toggles
 snap, F frames the map, Tab flips between the 2D and 3D views, and
 Ctrl+Z / Ctrl+Y undo and redo everything, drags included.
 
-THE 3D VIEW. Hold the right button to look. WASD, Q and E fly, and Shift
-flies faster. Click a floor, ceiling, wall, thing or prop to pick it.
-The wheel over a floor or ceiling raises it (8 a notch, 1 with Shift),
-with every selected sector if it is one of them. Over a wall it moves
-the step, and over a prop it lifts the prop. With a surface picked,
-clicking a texture in the browser paints it. C over a surface copies its
-texture and V pastes it. B turns fullbright on and off, and F goes back
-to the start. The wall textures of THE GRID are black between their
+THE 3D VIEW. Every mode works here as it does on the plan. Vertices have
+handles you drag across the floor. Clicking a wall picks its line, and
+clicking a floor or ceiling picks its sector; either can then be
+dragged. Things are placed by clicking the floor. Props, rectangles and
+scatter circles are dragged out across the floor. Draw mode clicks
+corners on the floor. A drag moves across a level plane at the height
+it was grabbed at, on the same grid as the plan, and it is the same
+drag, so it undoes the same way. Hold the right button to look; while
+it is held, WASD, Q and E fly (Shift faster). While it is not held,
+those letters are the mode keys. The wheel over a floor or ceiling
+raises it (8 a notch, 1 with Shift), with every selected sector if it
+is one of them. Over a wall it moves the step, and over a prop it lifts
+the prop. With a surface picked, clicking a texture in the browser
+paints it. Ctrl+C over a surface copies its texture and Ctrl+V pastes
+it. B turns fullbright on and off, and F goes back to the start. Plants
+and people are drawn as the game draws them: billboards standing on the
+floor and turning to face you. Plants use their own pictures from
+assets/forest/, and people are figures in their type's colour. The wall textures of THE GRID are black between their
 lines, so every edge in the map is also drawn faintly, where a wall is
 whether its texture shows it or not. Picking is worked out against the
 document, not the triangles: a ray against every sector's floor and
@@ -5347,16 +5376,15 @@ sector of the map and a part of it, which is what an edit needs.
 
 THE INSPECTOR edits everything selected at once:
 
-  sectors  name, floor, ceiling, light, open sky; floor and ceiling
-           SLOPES (rise per unit east and north, through the middle of
-           the sector, with Ramp E / Ramp N / Flatten / Ceil = floor);
-           floor, ceiling, wall, upper and lower textures; and STOREYS,
-           rooms stacked over this one in the same outline
+  sectors  name, floor, ceiling, light, open sky; floor, ceiling, wall,
+           upper and lower textures; and a button to scatter the chosen
+           mix into them
   lines    blocks walking, blocks sight, and the line's own textures:
            the wall on a one-sided line, the upper and lower steps on a
            two-sided one, locked so the level keeps them
-  things   type, place, facing, variant
+  things   type, place, facing, variant; a plant's kind and scale
   props    the box's extent, bottom, top, and side and top textures
+  scatters everything below
 
 The Map tab holds the map's name, whether anything burns, whether anyone
 is sent, the four colours of its sky (re-baked in the 3D view as you
@@ -5366,9 +5394,58 @@ of them stops the map compiling. A map with no start gets one, and one
 with nothing buildable gets a room, so a test run always has somewhere
 to stand.
 
+SPREADING THINGS PROCEDURALLY. At the user's request, sprite people
+and sprite decorations can be spread over a map, not only placed one at
+a time. A SCATTER is a rule, not a pile of things. It holds:
+
+  - an area: a circle painted with the brush, a rectangle, or a set of
+    sectors to fill
+  - a mix: what to put down, by weight
+  - a density, in things per 1024 x 1024 of floor
+  - a spacing, a clumping from even to drifts, a scale range, and a seed
+
+The compiler runs every rule on every compile, so changing any dial
+re-grows the whole spread at once on the plan, in 3D and in the game.
+Reseed rolls it again. Bake turns what it grew into ordinary things you
+can move by hand, and drops the rule.
+
+HOW IT GROWS (js/editor/scatter.js):
+
+  - Darts are thrown from the seed. A dart is thrown away if it lands
+    outside the area, in a sector nobody could stand in, under a prop,
+    or nearer than the spacing to anything already down.
+  - A smooth noise field from the same seed decides how likely a dart
+    is to be kept, which is what the clumping dial turns up.
+  - It stops at the count, or at 4000.
+  - A scatter that cannot find room for what it asked for says so in
+    the problems list.
+
+WHAT CAN BE SPREAD is anything the game draws standing on the floor:
+
+  - the people: SHOPPER and TOWNIE, each a random variant facing a
+    random way
+  - the furniture: crates, trolleys, bollards, fuel cans, gravestones
+    and street lamps
+  - every plant js/forest.js draws: firs, bushes, ferns, grass and the
+    town's street trees
+
+The Scatter tab has mixes ready to start from: Crowd, Townsfolk,
+Forest, Scrub & grass, Street trees, Clutter and Graveyard. Single
+plants can also be placed from the Things tab.
+
+The plants reach the game as level.plants. js/forest.js grows a map
+with plants and no wood as exactly those plants and nothing else
+(plantsOnly there). Trees stop you, and in a world where nothing burns
+they do not burn. The wood keeps one tree to a 64-unit cell, so the
+compiler leaves out a second one rather than let the editor show a tree
+the game will not.
+
 The smoke test holds the compiler against the game's own Level: THE
-GRID as a document, a hole, slopes, storeys, a line's own textures, the
-file round trip, undo, the weld, the cut, the merge, and both doors in
+GRID as a document, a hole, the feature switch, a line's own textures,
+the file round trip, undo, the weld, the cut, the merge, the scatters
+(count, area, spacing, determinism, clumping, pillars and props, the
+one-tree-to-a-cell rule, the too-dense report), the game's forest
+growing exactly the placed plants, bake and move, and both doors in
 and out.
 
 

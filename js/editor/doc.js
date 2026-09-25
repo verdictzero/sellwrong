@@ -28,6 +28,9 @@
                js/level.js — so a building can have an upstairs
      SLOPES    a floor or a ceiling may TILT, as a plane through the
                middle of the sector
+               (both of these are SWITCHED OFF for now, at the user's
+               request — see FEATURES below; the compiler still knows
+               how, and ignores them while the switch is off)
      PROPS     free boxes anywhere in 3D, with a bottom and a top that
                have nothing to do with any floor — the engine's
                `level.props`, the same thing the superstore's shelving
@@ -65,6 +68,15 @@
    ===================================================================== */
 
 import { MapBuilder, planeSlope } from '../level.js';
+import { growScatter, plantKind, isCanopyKind } from './scatter.js';
+
+/* WHAT THE EDITOR OFFERS, and what it is holding back. Slopes and
+   storeys were in the first cut of the editor and, at the user's
+   request, are out of it for now: the inspector does not show them and
+   the compiler ignores them, so a map that has some from before is
+   drawn flat and single-storey — exactly as it can be edited. Turning
+   either back on is this line. */
+export const FEATURES = { slopes: false, storeys: false };
 
 export const DOC_FORMAT = 'gss-map';
 export const DOC_VERSION = 1;
@@ -82,6 +94,10 @@ export const THING_TYPES = {
   LAMP:       { name: 'Ceiling lamp', color: '#ffe', radius: 12 },
   STREETLAMP: { name: 'Street lamp', color: '#ff8', radius: 10 },
   GRAVESTONE: { name: 'Gravestone', color: '#999', radius: 14 },
+  /* A SPRITE PLANT — a fir, a bush, a fern, a street tree: one of the
+     pictures js/forest.js draws, placed by hand. `kind` says which. The
+     game gets these as level.plants, not as actors. */
+  PLANT:      { name: 'Plant', color: '#5c5', radius: 14 },
 };
 
 /* What a new sector is, until somebody says otherwise. */
@@ -195,6 +211,8 @@ export function newDoc(name = 'UNTITLED') {
     lines: {},
     things: [{ id: 1, type: 'START', x: 512, y: 256, angle: Math.PI / 2 }],
     props: [],
+    /* THE PROCEDURAL SPREADS: rules, not things — see js/editor/scatter.js */
+    scatters: [],
     world: defaultWorld(),
     nextId: 2,
   };
@@ -443,9 +461,9 @@ function sectorProps(s, poly) {
      sector at its own height, rising dzdx a unit east and dzdy a unit
      north. The simplest slope a person can type and the one a Doom
      editor's "slope" dialog asks for. */
-  if (s.floorSlope && (s.floorSlope.dzdx || s.floorSlope.dzdy))
+  if (FEATURES.slopes && s.floorSlope && (s.floorSlope.dzdx || s.floorSlope.dzdy))
     p.slopeFloor = planeSlope(cx, cy, p.floor, s.floorSlope.dzdx || 0, s.floorSlope.dzdy || 0);
-  if (s.ceilSlope && (s.ceilSlope.dzdx || s.ceilSlope.dzdy))
+  if (FEATURES.slopes && s.ceilSlope && (s.ceilSlope.dzdx || s.ceilSlope.dzdy))
     p.slopeCeil = planeSlope(cx, cy, p.ceil, s.ceilSlope.dzdx || 0, s.ceilSlope.dzdy || 0);
   /* the floor's grid lines land on the map's own origin, so two sectors
      side by side run one grid across the seam */
@@ -502,7 +520,7 @@ export function compileDoc(doc) {
     const poly = holes.length ? bridge(rings[i], holes) : rings[i];
     const base = sectorProps(s, plain[i]);
     try {
-      if (s.storeys?.length) {
+      if (FEATURES.storeys && s.storeys?.length) {
         /* ROOM OVER ROOM: the ground storey and every one above it, one
            outline — see MapBuilder.column, which throws if they do not
            stack, and that is a problem worth reporting rather than a
@@ -517,10 +535,38 @@ export function compileDoc(doc) {
     }
   });
 
-  /* 4. the things */
+  /* 4. the things, and what the scatters grow. The scatters go down
+     after everything placed by hand and keep clear of it, in the order
+     they were made, each keeping clear of the ones before. */
+  const scattered = [];
+  const grown = new Map();
+  if (doc.scatters?.length) {
+    const ringById = new Map(doc.sectors.map(s => [s.id, ringOf(doc, s)]));
+    const areas = doc.sectors.map((s, i) => [s, plain[i], Math.abs(signedArea(plain[i]))]).filter(e => e[1].length >= 3);
+    /* where a thing can stand: the smallest sector the point is in, if
+       that sector is a room with head-room rather than a pillar */
+    const standable = (x, y) => {
+      let best = null, ba = Infinity;
+      for (const [s, r, a] of areas) if (a < ba && pointInPoly(r, x, y)) { ba = a; best = s; }
+      return best && (best.ceil ?? 256) - (best.floor ?? 0) >= 64 ? best.id : null;
+    };
+    const blocked = (x, y, r) => (doc.props || []).some(p =>
+      x > Math.min(p.x0, p.x1) - r && x < Math.max(p.x0, p.x1) + r && y > Math.min(p.y0, p.y1) - r && y < Math.max(p.y0, p.y1) + r &&
+      Math.min(p.z0, p.z1) < 64);
+    const taken = doc.things.map(t => [t.x, t.y]);
+    for (const sc of doc.scatters) {
+      const g = growScatter(sc, { rings: ringById, standable, blocked, taken });
+      grown.set(sc.id, g);
+      scattered.push(...g.items);
+      if (g.grown < g.wanted * 0.9) {
+        problems.push({ kind: 'scatter', id: sc.id,
+          msg: `scatter "${sc.name || sc.id}" wanted ${g.wanted} and found room for ${g.grown} — lower the density or the spacing` });
+      }
+    }
+  }
   let started = false;
-  for (const t of doc.things) {
-    if (!THING_TYPES[t.type]) continue;
+  for (const t of [...doc.things, ...scattered]) {
+    if (!THING_TYPES[t.type] || t.type === 'PLANT') continue;
     if (t.type === 'START') { if (started) continue; started = true; }
     mb.thing(t.type, t.x, t.y, t.angle || 0, t.variant !== undefined ? { variant: t.variant } : {});
   }
@@ -586,7 +632,23 @@ export function compileDoc(doc) {
     tex: p.tex || 'GRIDWALL', topTex: p.topTex || p.tex || 'GRIDWALL', light: p.light ?? 0.66, sky: 0,
   }));
   level.roofs = [];
+  /* THE PLANTS, placed and spread: the list js/forest.js grows a town's
+     gardens from, and — with no wood on this map — the only thing it
+     grows (see plantsOnly there). The forest keeps ONE TREE TO A 64
+     CELL, so a second tree in a cell would never appear; it is left out
+     here instead, so the editor shows what the game will. */
   level.plants = [];
+  const treeCells = new Set(), dropped = new Set();
+  const [ox, oy] = level.bounds;
+  for (const t of [...doc.things, ...scattered]) {
+    if (t.type !== 'PLANT' || !plantKind(t.kind)) continue;
+    if (isCanopyKind(t.kind)) {
+      const c = `${Math.floor((t.x - ox) / 64)},${Math.floor((t.y - oy) / 64)}`;
+      if (treeCells.has(c)) { dropped.add(t); continue; }
+      treeCells.add(c);
+    }
+    level.plants.push({ kind: t.kind, x: t.x, y: t.y, scale: t.scale ?? 1 });
+  }
   level.forestRects = [];
   level.forestBounds = level.bounds;
   level.clearing = level.fireBounds;
@@ -603,7 +665,7 @@ export function compileDoc(doc) {
   level.field = { x0: b[0], y0: b[1], x1: b[2], y1: b[3], cell: 64, floor: 0, ceil: 1024 };
   level.fromEditor = true;
 
-  return { level, problems, index };
+  return { level, problems, index, scattered: scattered.filter(t => !dropped.has(t)), dropped: dropped.size, grown };
 }
 
 /* ---------------------------------------------------------------------
@@ -622,9 +684,10 @@ export function parseDoc(text) {
   d.lines = d.lines || {};
   d.things = d.things || [];
   d.props = d.props || [];
+  d.scatters = d.scatters || [];
   d.world = { ...defaultWorld(), ...(d.world || {}) };
   let top = 1;
-  for (const x of [...d.sectors, ...d.things, ...d.props]) top = Math.max(top, (x.id | 0) + 1);
+  for (const x of [...d.sectors, ...d.things, ...d.props, ...d.scatters]) top = Math.max(top, (x.id | 0) + 1);
   d.nextId = Math.max(d.nextId | 0, top);
   return d;
 }

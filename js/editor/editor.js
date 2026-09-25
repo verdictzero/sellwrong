@@ -45,6 +45,7 @@ import {
 import { View2D } from './view2d.js';
 import { View3D } from './view3d.js';
 import { buildUI } from './ui.js';
+import { scatterFrom } from './scatter.js';
 
 /* where the editor keeps its work in the browser */
 export const AUTOSAVE_KEY = 'gss-edit:autosave';
@@ -61,7 +62,11 @@ export const MODES = {
   props:    { key: 'P', name: 'Props' },
   draw:     { key: 'D', name: 'Draw sectors' },
   rect:     { key: 'R', name: 'Draw rectangle' },
+  scatter:  { key: 'X', name: 'Scatter' },
 };
+
+/* what each mode selects */
+export const MODE_KIND = { vertices: 'vertex', lines: 'line', sectors: 'sector', things: 'thing', props: 'prop', scatter: 'scatter' };
 
 export class Editor {
   constructor(root) {
@@ -71,6 +76,16 @@ export class Editor {
     this.grid = 64;
     this.snap = true;
     this.thingType = 'SHOPPER';
+    /* the plant a PLANT thing is placed as, and the mix the scatter
+       brush paints with */
+    this.plantKind = 'fir_tall_1';
+    this.scatterPreset = 'crowd';
+    /* THE SECTOR BEING DRAWN, shared: corners clicked in the plan and in
+       the 3D view go into the same outline, so one room can be drawn
+       half in each */
+    this.path = [];
+    /* and where the mouse is on the map, from whichever view it is in */
+    this.cursor = null;
     this.propTex = 'GRIDWALL';
     /* THE SELECTION is one kind of thing at a time, the way a Doom
        editor's modes are: vertices by index, lines by their key, the
@@ -82,7 +97,10 @@ export class Editor {
     this.compiled = null;
     this._compileT = 0;
     this._saveT = 0;
-    this.layout = 'split';
+    /* ONE WORKSPACE, both views at once: the 3D view filling it and the
+       plan inset in its corner, every mode working in both — see the
+       combined layout in css/editor.css. Tab swaps which is big. */
+    this.layout = 'combined';
     this.status = '';
   }
 
@@ -183,7 +201,8 @@ export class Editor {
     if (!MODES[m]) return;
     this.mode = m;
     /* a selection only survives a mode that can show it */
-    const keep = { vertices: 'vertex', lines: 'line', sectors: 'sector', things: 'thing', props: 'prop' }[m];
+    const keep = MODE_KIND[m];
+    if (m !== 'draw') this.cancelPath();
     if (keep && this.sel.kind && this.sel.kind !== keep) this.clearSel();
     this.emit('mode', m);
     this.say(`${MODES[m].name} mode`);
@@ -216,6 +235,7 @@ export class Editor {
       if (kind === 'sector') d.sectors = d.sectors.filter(s => !ids.has(s.id));
       if (kind === 'thing') d.things = d.things.filter(t => !ids.has(t.id));
       if (kind === 'prop') d.props = d.props.filter(p => !ids.has(p.id));
+      if (kind === 'scatter') d.scatters = d.scatters.filter(p => !ids.has(p.id));
       if (kind === 'vertex') {
         /* a vertex comes out of every sector it is in; a sector left with
            fewer than three corners goes with it (compact) */
@@ -243,7 +263,9 @@ export class Editor {
     const type = this.thingType;
     this.edit(`add ${type}`, d => {
       if (THING_TYPES[type]?.one) d.things = d.things.filter(t => t.type !== type);
-      d.things.push({ id: takeId(d), type, x: this.snapV(x), y: this.snapV(y), angle: Math.PI / 2 });
+      const t = { id: takeId(d), type, x: this.snapV(x), y: this.snapV(y), angle: Math.PI / 2 };
+      if (type === 'PLANT') t.kind = this.plantKind;
+      d.things.push(t);
     });
     const t = this.doc.things[this.doc.things.length - 1];
     this.select('thing', [t.id]);
@@ -353,6 +375,111 @@ export class Editor {
       this.propTex = name;
       this.say(`${name} is the texture for new props`);
     }
+  }
+
+  /* ------------------------------------------------------------------
+     THE OUTLINE BEING DRAWN, from either view
+     ------------------------------------------------------------------ */
+  addPathPoint(pt) {
+    const p = this.path, first = p[0], last = p[p.length - 1];
+    if (first && p.length >= 3 && first[0] === pt[0] && first[1] === pt[1]) { this.closePath(); return; }
+    if (last && last[0] === pt[0] && last[1] === pt[1]) return;
+    p.push([pt[0], pt[1]]);
+    this.emit('path');
+  }
+  closePath() {
+    const p = this.path;
+    this.path = [];
+    if (p.length >= 3) this.addSector(p);
+    this.emit('path');
+  }
+  cancelPath() { if (this.path.length) { this.path = []; this.emit('path'); } }
+  setCursor(pt) { this.cursor = pt; this.emit('cursor'); }
+
+  /* ------------------------------------------------------------------
+     A DRAG, from either view: begun at a reference point (the thing
+     grabbed, or the corner of it nearest the mouse, so a room dragged
+     on a 64 grid stays on it), moved with the raw map point under the
+     mouse, and ended — one undo step for the whole of it, and the weld
+     when it is let go.
+     ------------------------------------------------------------------ */
+  beginMove(ref, at) { return { ref: [...ref], start: [...at], done: [0, 0], pushed: false }; }
+  dragMove(dr, at) {
+    const tx = this.snapV(dr.ref[0] + at[0] - dr.start[0]) - dr.ref[0];
+    const ty = this.snapV(dr.ref[1] + at[1] - dr.start[1]) - dr.ref[1];
+    const ddx = tx - dr.done[0], ddy = ty - dr.done[1];
+    if (!ddx && !ddy) return;
+    if (!dr.pushed) { this.history.push(`move ${this.sel.kind}`); dr.pushed = true; }
+    moveThings(this.doc, this.sel.kind, this.sel.ids, ddx, ddy);
+    dr.done = [tx, ty];
+    this.changed();
+  }
+  endMove(dr) {
+    if (!dr?.pushed) return;
+    const before = this.doc.vertices.length;
+    compact(this.doc);
+    if (this.doc.vertices.length !== before && (this.sel.kind === 'vertex' || this.sel.kind === 'line')) this.clearSel();
+    this.changed({ now: true });
+    this.say(`moved ${dr.done[0]}, ${dr.done[1]}`);
+  }
+  /** Where a drag of the current selection grabs it, nearest `at`. */
+  grabPoint(at) {
+    const d = this.doc, { kind, ids } = this.sel;
+    const pts = [];
+    if (kind === 'vertex') ids.forEach(i => d.vertices[i] && pts.push(d.vertices[i]));
+    if (kind === 'line') ids.forEach(k => k.split(',').forEach(i => d.vertices[+i] && pts.push(d.vertices[+i])));
+    if (kind === 'sector') d.sectors.forEach(s => ids.has(s.id) && pts.push(...ringOf(d, s)));
+    if (kind === 'thing') d.things.forEach(t => ids.has(t.id) && pts.push([t.x, t.y]));
+    if (kind === 'prop') d.props.forEach(p => ids.has(p.id) && pts.push([p.x0, p.y0], [p.x1, p.y1]));
+    if (kind === 'scatter') d.scatters.forEach(c => ids.has(c.id) && c.area.kind === 'circle' && pts.push([c.area.x, c.area.y]));
+    let best = at, bd = Infinity;
+    for (const v of pts) { const q = Math.hypot(v[0] - at[0], v[1] - at[1]); if (q < bd) { bd = q; best = v; } }
+    return best;
+  }
+
+  /* ------------------------------------------------------------------
+     THE SCATTERS
+     ------------------------------------------------------------------ */
+  /** A new scatter of the current mix over `area`, selected. */
+  addScatter(area, preset = this.scatterPreset) {
+    let made = null;
+    this.edit('scatter', d => {
+      made = scatterFrom(preset, area, takeId(d), (Math.random() * 4294967296) >>> 0);
+      d.scatters.push(made);
+    }, { tidy: false });
+    this.select('scatter', [made.id]);
+    this.changed({ now: true });
+    return made;
+  }
+  /** Over the selected sectors, filling them. */
+  scatterSectors(preset = this.scatterPreset) {
+    if (this.sel.kind !== 'sector' || !this.sel.ids.size) { this.say('select sectors to scatter into'); return null; }
+    return this.addScatter({ kind: 'sectors', ids: [...this.sel.ids] }, preset);
+  }
+  /** Roll the selected scatters again. */
+  reseed() {
+    if (this.sel.kind !== 'scatter') return;
+    this.edit('reseed', d => { for (const c of d.scatters) if (this.sel.ids.has(c.id)) c.seed = (Math.random() * 4294967296) >>> 0; }, { tidy: false });
+  }
+  /** BAKE: the selected scatters' things as ordinary things, placed
+   *  for good, and the rules gone — for moving one tree by hand. */
+  bake() {
+    if (this.sel.kind !== 'scatter' || !this.compiled?.scattered) return;
+    this.compile();
+    const ids = this.sel.ids;
+    const items = this.compiled.scattered.filter(t => ids.has(t.scatter));
+    this.edit(`bake ${items.length}`, d => {
+      for (const t of items) {
+        const o = { id: takeId(d), type: t.type, x: t.x, y: t.y, angle: +t.angle.toFixed(3) };
+        if (t.kind) o.kind = t.kind;
+        if (t.type !== 'PLANT') o.variant = t.variant;
+        if (t.scale && t.scale !== 1) o.scale = t.scale;
+        d.things.push(o);
+      }
+      d.scatters = d.scatters.filter(c => !ids.has(c.id));
+    }, { tidy: false });
+    this.clearSel();
+    this.say(`baked ${items.length} things`);
   }
 
   /* ------------------------------------------------------------------
@@ -486,6 +613,12 @@ function sectorContaining(d, x, y) {
 export function moveThings(d, kind, ids, dx, dy) {
   if (kind === 'thing') for (const t of d.things) { if (ids.has(t.id)) { t.x += dx; t.y += dy; } }
   if (kind === 'prop') for (const p of d.props) { if (ids.has(p.id)) { p.x0 += dx; p.x1 += dx; p.y0 += dy; p.y1 += dy; } }
+  if (kind === 'scatter') for (const c of d.scatters || []) {
+    if (!ids.has(c.id)) continue;
+    const a = c.area;
+    if (a.kind === 'circle') { a.x += dx; a.y += dy; }
+    if (a.kind === 'rect') { a.x0 += dx; a.x1 += dx; a.y0 += dy; a.y1 += dy; }
+  }
   const verts = new Set();
   if (kind === 'vertex') for (const i of ids) verts.add(i);
   if (kind === 'sector') for (const s of d.sectors) if (ids.has(s.id)) for (const v of s.verts) verts.add(v);
@@ -601,17 +734,23 @@ export async function startEditor() {
     if (ctrl && k.toLowerCase() === 's') { e.preventDefault(); ed.fileSave(); return; }
     if (ctrl && k.toLowerCase() === 'o') { e.preventDefault(); ed.fileOpen(); return; }
     if (ctrl && k.toLowerCase() === 'a') { e.preventDefault(); selectAll(ed); return; }
+    if (ctrl && ed.pointerView === '3d' && ed.view3d.key(e)) { e.preventDefault(); return; }
     if (ctrl) return;
     const target = ed.pointerView === '3d' ? ed.view3d : ed.view2d;
     if (target.key?.(e)) { e.preventDefault(); return; }
     if (k === 'F5') { e.preventDefault(); ed.play(); return; }
     if (k === 'Tab') {
       e.preventDefault();
-      ed.setLayout(ed.layout === 'only3d' ? 'only2d' : ed.layout === 'only2d' ? 'only3d' : (ed.pointerView === '3d' ? 'only3d' : 'only2d'));
+      /* in the combined workspace Tab swaps which view is big; in the
+         others it flips between the two on their own */
+      const next = { combined: 'combined2d', combined2d: 'combined', only3d: 'only2d', only2d: 'only3d' }[ed.layout];
+      ed.setLayout(next || (ed.pointerView === '3d' ? 'only3d' : 'only2d'));
       return;
     }
+    if (k === 'Backspace' && ed.path.length) { e.preventDefault(); ed.path.pop(); ed.emit('path'); return; }
     if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); ed.deleteSel(); return; }
-    if (k === 'Escape') { ed.clearSel(); return; }
+    if (k === 'Escape') { if (ed.path.length) ed.cancelPath(); else ed.clearSel(); return; }
+    if (k === 'Enter' && ed.path.length) { ed.closePath(); return; }
     if (k === '[') { ed.gridStep(-1); return; }
     if (k === ']') { ed.gridStep(1); return; }
     const up = k.toUpperCase();
@@ -628,7 +767,7 @@ export async function startEditor() {
   /* a handle for the console and the tests, as the game has SELLWRONG */
   window.GSSEDIT = ed;
   ed.emit('frame');
-  ed.say(doc ? 'opened your last map' : 'THE GRID — press D to draw a sector, Tab for the 3D view, F5 to play');
+  ed.say(doc ? 'opened your last map' : 'THE GRID — D draws a sector, X scatters, every mode works in 3D; Tab swaps the views, F5 plays');
   return ed;
 }
 
@@ -639,6 +778,7 @@ function selectAll(ed) {
   else if (m === 'lines') ed.select('line', ed.lines().map(l => l.key));
   else if (m === 'things') ed.select('thing', d.things.map(t => t.id));
   else if (m === 'props') ed.select('prop', d.props.map(p => p.id));
+  else if (m === 'scatter') ed.select('scatter', d.scatters.map(p => p.id));
   else ed.select('sector', d.sectors.map(s => s.id));
 }
 
