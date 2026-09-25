@@ -276,3 +276,5 @@
 /* the plan's view selector */
 .ed-planview { position: absolute; left: 62px; top: 3px; z-index: 2; height: 20px; font-size: 10px !important;
   background: #151a1fcc; border: 1px solid var(--line); border-radius: 4px; color: var(--dim); }
+/* an animated texture from the pack (js/texpack.js) */
+.ed-texcell.anim { border-style: dashed; }

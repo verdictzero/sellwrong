@@ -12,6 +12,7 @@
    every write is one `ed.edit`, so it undoes like anything else.
    ===================================================================== */
 
+import { PACK, PACK_GROUPS, PACK_SKIES, animOf, ownImage } from '../texpack.js';
 import { THING_TYPES, problemsOf, ringOf, signedArea, COLOR_PARTS } from './doc.js';
 import { openTextureEditor } from './texeditor.js';
 import { MODES, GRIDS, brightOf, isInside } from './editor.js';
@@ -40,9 +41,11 @@ const put = (el, ...kids) => el.append(...kids.flat(Infinity).filter(k => k !== 
 
 /** A texture's picture, small, for a swatch. Drawn from the bank's own
  *  canvas, so it is what the wall will show. */
+const PACK_BY_NAME = new Map(PACK.map(p => [p.name, p]));
 function swatch(ed, name, size = 22) {
   const c = h('canvas', { width: size, height: size });
-  const e = name && ed.bank.get(name);
+  /* a pack texture still on its way is a blank, not MISSING's magenta */
+  const e = name && (ed.bank.map.get(name) || (PACK_BY_NAME.has(name) ? null : ed.bank.get(name)));
   if (name === 'SKY') {
     /* the sky is not a picture on the ceiling, it is the sky: the map's
        own, horizon to overhead */
@@ -53,7 +56,7 @@ function swatch(ed, name, size = 22) {
   } else if (e?.texture?.image) {
     const g = c.getContext('2d');
     g.imageSmoothingEnabled = false;
-    g.drawImage(e.texture.image, 0, 0, size, size);
+    g.drawImage(ownImage(e), 0, 0, size, size);
   }
   return c;
 }
@@ -550,24 +553,46 @@ export function buildUI(ed) {
   const texHead = h('div');
   const mineGrid = h('div', { class: 'ed-texgrid' });
   const gameGrid = h('div', { class: 'ed-texgrid' });
+  const packWrap = h('div');
+  const packGroups = [];          // [{ head, grid, names }]
   const mineHead = h('div', { class: 'ed-texsec' });
   const texFilter = h('input', { class: 'ed-texfilter', type: 'text', placeholder: 'filter textures…', oninput: e => { filter = e.target.value.toUpperCase(); renderTex(); } });
-  panes.tex.append(texHead, texFilter, mineHead, mineGrid, h('div', { class: 'ed-texsec' }, h('span', {}, 'Game textures')), gameGrid);
+  panes.tex.append(texHead, texFilter, mineHead, mineGrid, h('div', { class: 'ed-texsec' }, h('span', {}, 'Game textures')), gameGrid, packWrap);
   /* THE CELLS, made again when the map's own textures change — a new
      one, a repainted one, one gone */
   const buildCells = () => {
     texCells.clear();
-    mineGrid.textContent = ''; gameGrid.textContent = '';
+    mineGrid.textContent = ''; gameGrid.textContent = ''; packWrap.textContent = '';
+    packGroups.length = 0;
     const cell = (name, mine) => {
-      const c = h('div', { class: 'ed-texcell' + (mine ? ' mine' : ''), title: mine ? `${name} — double-click to edit` : `${name} — double-click to make a texture from it`,
+      const a = animOf(name);
+      const p = PACK_BY_NAME.get(name);
+      const what = a ? `, animated: ${a.run.length} frames, ${a.tics} tics each` : '';
+      const size = p ? ` (${p.w}×${p.h})` : '';
+      const c = h('div', { class: 'ed-texcell' + (mine ? ' mine' : '') + (a ? ' anim' : ''),
+        title: mine ? `${name} — double-click to edit` : `${name}${size}${what} — double-click to make a texture from it`,
         onclick: () => pickTexture(name),
         ondblclick: () => (mine ? openTextureEditor(ed, name) : openTextureEditor(ed, null, name)) },
-        swatch(ed, name, 64), h('span', {}, name));
+        swatch(ed, name, 64), h('span', {}, a && a.i === 0 ? `${name} ▶${a.run.length}` : name));
+      /* A RUN IS ONE CELL, its first frame, the way a browser that lists
+         seventy-five frames of a test card is no use; typing in the filter
+         shows every frame that matches, since in Doom any of them can be
+         put on a wall and starts the cycle there */
+      if (a && a.i > 0) c.dataset.frame = '1';
       texCells.set(name, c);
       return c;
     };
     for (const n of ed.mapTextureNames || []) mineGrid.append(cell(n, true));
     for (const n of ed.gameTextureNames || ed.textureNames) gameGrid.append(cell(n, false));
+    /* THE PACK, by the folder it came in (js/texpack.js) */
+    for (const g of PACK_GROUPS) {
+      const names = PACK.filter(p => p.group === g).map(p => p.name);
+      const head = h('div', { class: 'ed-texsec' }, h('span', {}, `Pack · ${g}`));
+      const grid = h('div', { class: 'ed-texgrid' }, ...names.map(n => cell(n, false)));
+      packGroups.push({ head, grid, names });
+      packWrap.append(head, grid);
+    }
+    if (ed.packLoading) packWrap.prepend(h('p', { class: 'ed-note' }, 'Loading the texture pack…'));
     renderMineHead();
     if (!(ed.mapTextureNames || []).length) mineGrid.append(h('p', { class: 'ed-note' }, 'None yet. + New starts one; double-click any game texture to start from it.'));
   };
@@ -612,8 +637,13 @@ export function buildUI(ed) {
     if (!texCells.size) buildCells();
     else renderMineHead();
     for (const [name, cell] of texCells) {
-      cell.style.display = !filter || name.includes(filter) ? '' : 'none';
+      const shown = filter ? name.includes(filter) : (!cell.dataset.frame || name === ui.current);
+      cell.style.display = shown ? '' : 'none';
       cell.classList.toggle('on', name === ui.current);
+    }
+    for (const g of packGroups) {
+      const any = g.names.some(n => texCells.get(n)?.style.display !== 'none');
+      g.head.style.display = g.grid.style.display = any ? '' : 'none';
     }
   };
   ed.on('textures', () => { buildCells(); renderTex(); });
@@ -736,6 +766,10 @@ export function buildUI(ed) {
       row('Doom sky walls', chk(w.skyWalls, v => setWorld('skyWalls', ww => { if (v) ww.skyWalls = true; else delete ww.skyWalls; }))),
       h('p', { class: 'ed-note' }, 'Off (the default): an open world — a roofed room under the sky has a roof and no wall running up to the sky. On: Doom\'s way, the upper wall goes up to the sky height.'),
       h('h4', {}, 'Sky'),
+      row('Skybox', h('select', { onchange: e => setWorld('skybox', ww => { if (e.target.value) ww.skybox = e.target.value; else delete ww.skybox; }) },
+        h('option', { value: '' }, 'painted (the colours below)'),
+        ...PACK_SKIES.map(n => h('option', { value: n, ...(n === w.skybox ? { selected: true } : {}) }, n)))),
+      w.skybox ? h('p', { class: 'ed-note' }, `The ${w.skybox} skybox from the texture pack. The air far off fades to its horizon; the colours below are kept for when it is set back to painted, and for the Godot export's ground.`) : null,
       colour('horizon', 'Horizon'), colour('mid', 'Middle'), colour('zenith', 'Overhead'), colour('ground', 'Below'),
       h('p', { class: 'ed-note' }, 'The sky is re-baked in the 3D view as you change it.'),
       h('h4', {}, `Problems (${uniq.length})`),

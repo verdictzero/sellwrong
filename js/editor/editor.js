@@ -47,6 +47,7 @@ import { View3D } from './view3d.js';
 import { buildUI } from './ui.js';
 import { scatterFrom } from './scatter.js';
 import { registerTextures } from './texcompose.js';
+import { PACK_NAMES, loadPack, packNamesIn, PackAnimator } from '../texpack.js';
 
 /* where the editor keeps its work in the browser */
 export const AUTOSAVE_KEY = 'gss-edit:autosave';
@@ -177,7 +178,7 @@ export class Editor {
     try { await registerTextures(this.bank, this.doc.textures || [], this.builtInTextures); }
     catch (e) { console.warn(e); this.say(`a map texture did not draw: ${e.message}`); }
     this.mapTextureNames = mine.filter(n => this.bank.map.has(n) && !this.builtInTextures.has(n));
-    this.textureNames = [...this.mapTextureNames, ...(this.gameTextureNames || [])];
+    this.textureNames = [...this.mapTextureNames, ...(this.gameTextureNames || []), ...(this.packTextureNames || [])];
     this.emit('textures');
     this.compile();
   }
@@ -1070,14 +1071,23 @@ export async function startEditor() {
   const ed = new Editor(root);
   ed.bank = bank;
   ed.gameTextureNames = TEXTURE_NAMES.filter(n => n !== 'MISSING').sort();
-  ed.builtInTextures = new Set(bank.map.keys());
+  /* THE TEXTURE PACK (js/texpack.js): the pictures the user handed
+     over, as files. Its names are the game's as far as a map texture is
+     concerned — a map cannot make one called CONC_1 */
+  ed.packTextureNames = PACK_NAMES;
+  ed.builtInTextures = new Set([...bank.map.keys(), ...PACK_NAMES]);
   ed.mapTextureNames = [];
-  ed.textureNames = [...ed.gameTextureNames];
+  ed.textureNames = [...ed.gameTextureNames, ...PACK_NAMES];
+  ed.anim = new PackAnimator(bank);
 
   /* the map: what you were last working on, or THE GRID */
   let doc = null;
   try { const t = localStorage.getItem(AUTOSAVE_KEY); if (t) doc = parseDoc(t); } catch (e) { doc = null; }
   ed.history = new History(doc || gridDoc());
+  /* what the map wears from the pack is loaded before it is first
+     built; the rest comes in behind it, for the browser (see below) */
+  ed.packLoading = true;
+  await loadPack(bank, packNamesIn(ed.doc));
 
   const ui = buildUI(ed);
   ed.ui = ui;
@@ -1085,6 +1095,13 @@ export async function startEditor() {
   ed.view3d = new View3D(ed, ui.canvas3d);
   ed._texKey = textureKey(ed.doc);
   await ed.refreshTextures();
+  /* THE REST OF THE PACK, in the background: forty megabytes the map
+     does not need to open, and the browser fills in when it lands. A
+     wall that asked for one before it arrived is built again then. */
+  loadPack(bank).then(() => {
+    ed.packLoading = false;
+    ed.refreshTextures();
+  });
 
   /* THE KEYBOARD, which is most of what a Doom editor is. The view the
      mouse is over gets first refusal (the 3D view flies with WASD); what

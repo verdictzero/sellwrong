@@ -34,6 +34,7 @@ import { CELLS, GIBLETS, BLAST_SPRITE, addStandees, addSplats, addTroops } from 
 import { buildGrid } from './maps/grid.js';
 import { compileDoc, parseDoc } from './editor/doc.js';
 import { registerTextures } from './editor/texcompose.js';
+import { loadPack, loadSky, packNamesIn, PackAnimator } from './texpack.js';
 import { Game } from './game.js';
 import { Hud } from './hud.js';
 import { Audio } from './audio.js';
@@ -539,6 +540,11 @@ async function boot() {
   const skyBaker = new SkyBaker(renderer, pipeline.lut, { seed: 11 });
   skyBaker.bake(weather.frame);
   world.skyTex.value = skyBaker.texture;
+  /* or A SKYBOX FROM THE TEXTURE PACK, if the edited map asks for one:
+     the sphere wears it and the air fades to its horizon, and the baker
+     goes on baking a sky nobody is shown (js/texpack.js) */
+  const skybox = played?.level.skybox ? await loadSky(played.level.skybox) : null;
+  if (skybox) world.skyTex.value = skybox;
 
   status('BUILDING THE GRID', 0.68); await breathe();
   const level = played ? played.level : buildGrid();
@@ -557,11 +563,18 @@ async function boot() {
   const input = new Input(renderer.domElement);
   /* AN EDITED MAP'S OWN TEXTURES, drawn and put in the bank before
      anything is built that could wear one — see js/editor/texcompose.js */
+  /* and THE TEXTURE PACK's pictures it wears, first — a map texture can
+     be made of one — with every frame of any animated run among them */
+  const packAnim = new PackAnimator(textures);
+  if (played) {
+    const want = packNamesIn(played.doc);
+    if (want.length) { status('LOADING TEXTURES', 0.8); await loadPack(textures, want); }
+  }
   if (played?.doc.textures?.length) {
     try { await registerTextures(textures, played.doc.textures, new Set(textures.map.keys())); }
     catch (e) { console.warn('the map\'s own textures did not draw:', e); }
   }
-  const game = new Game({ level, scene, camera, textures, sprites, hud, audio, input, sky: skyBaker.texture,
+  const game = new Game({ level, scene, camera, textures, sprites, hud, audio, input, sky: skybox || skyBaker.texture,
                          flameAtlas: streamAtlas, bodyAtlas: flameAtlas, fxAtlases, gibAtlases, rainAtlas,
                          fleet, police, apc, firetruck, vtol, weather });
   hud.game = game;
@@ -1065,6 +1078,8 @@ async function boot() {
     last = now;
 
     if (started) game.update(dt);
+    /* the pack's animated textures, at Doom's eight tics a frame */
+    if (started) packAnim.tick(dt);
     music.tick();
     /* HOW BIG A PIXEL IS THIS FRAME, for the geometry LOD — see
        minSolidFor in js/mapgeo.js. The GRID and not the buffer: the

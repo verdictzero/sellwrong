@@ -878,6 +878,8 @@ export function compileDoc(doc) {
   level.noSquads = !!w.noSquads;
   level.noCellFire = !!w.noCellFire;
   level.sky = w.sky;
+  /* a skybox from the texture pack (js/texpack.js), by name, or none */
+  level.skybox = w.skybox || null;
   level.carSlots = [];
   level.slideDoors = [];
   level.props = (doc.props || []).map(p => ({

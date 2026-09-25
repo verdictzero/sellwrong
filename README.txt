@@ -5548,6 +5548,47 @@ and sits a one-sided middle on the floor. In 3D, the arrow keys over a
 wall move its texture, 1 at a time or 8 with Shift, as they do in Doom
 Builder's visual mode.
 
+THE TEXTURE PACK (js/texpack.js, assets/textures, assets/skies). Two
+sets of pictures the user handed over, 245 textures in all: concrete,
+grass, dirt, cliffs, the ops-room panels and doors, water, an office,
+backdrops, test and debug tiles. They are files, not drawn, and go into
+the same TextureBank as the game's own, so any surface can wear one.
+The Textures tab lists them under "Pack", by the folder they came in.
+A pack picture spans half its pixel size in world units, because it is
+drawn at twice Doom's resolution: the doors come out 64 by 128, a Doom
+door. DR1 and the test tiles (64TEST says "64px" on it) are one to one.
+
+THE ANIMATED ONES run Doom's way (ANIMATED, p_spec.c). Each frame is
+held for 8 tics of 35 a second, and every frame of a run animates from
+its own place in it, so DEVPAN1E starts its cycle at E. The runs:
+DEVPAN1A-L, DEVPAN2A-H, DR1_01-12, EYEDOOR0-8, EYEDORC0-4 (EYEDOORC
+stays still), REACTB00-04, WFALLA1-4, WAT201-224 and TESTPA00-74. The
+last two are moving pictures, 24 frames of water and 75 of a test card,
+and are held for 4 and 2 tics, the way GZDoom's ANIMDEFS gives a run
+its own speed; at 8 the card took seventeen seconds to go round. A run
+is one cell in the browser with its frame count on it; type in the
+filter to see every frame. They animate in the editor's views, in a
+test run, and in a Godot export, where doom_anim.gd steps the materials
+at the same rate.
+
+THE SKYBOXES. Seven, picked on the Map tab (Skybox): BSKY1, BSKY2,
+LSKYA, NSKY1, OSKY1, UNSKY, XSKY. The sky here is a sphere wearing a
+panorama, so each six-face box was joined into one by
+tools/build-texpack.py. It finds the order of the four sides by
+matching the edges that touch, and turns the top and bottom to meet
+them, since no two tools agree on which face is "left". NSKY1 came
+without its right face, and the build makes one from the two beside it.
+A skybox is worn on the sphere and in the air the far walls fade to;
+the painted colours are kept for when it is set back. In the Godot
+export it is a PanoramaSkyMaterial.
+
+The build is tools/build-texpack.py SRC..., run on the unpacked
+archives. It drops empty alpha, halves anything over 2048 (keeping its
+world size), puts the 75-frame card in 256 colours at half size, and
+writes js/texpack-data.js. The game loads only the pack pictures an
+edited map wears. The editor loads those first, then the rest in the
+background.
+
 THE TEXTURE EDITOR (js/editor/texeditor.js, drawn by texcompose.js).
 Textures tab > + New, or double-click any game texture to start from
 it. A texture of the map is a stack of LAYERS. Each layer is one of the
@@ -5635,7 +5676,10 @@ undo, the weld, the cut, the merge, the scatters
 (count, area, spacing, determinism, clumping, pillars and props, the
 one-tree-to-a-cell rule, the too-dense report), the game's forest
 growing exactly the placed plants, bake and move, and both doors in
-and out.
+and out. "the texture pack" checks the list against the files (every
+name, size and scale), the runs and Doom's clock, the animator, what a
+map needs loaded, the skies, the Godot sky and script, and the wiring
+in the game, the editor and the site.
 
 
 THE GRID

@@ -47,6 +47,7 @@
 import * as THREE from 'three';
 import { buildLevelGeometry } from '../mapgeo.js';
 import { buildSky, followSky } from '../sky.js';
+import { loadSky } from '../texpack.js';
 import { world } from '../material.js';
 import { Weather } from '../weather.js';
 import { THING_TYPES, ringOf, centroid, pointInPoly, FEATURES } from './doc.js';
@@ -154,6 +155,9 @@ export class View3D {
     const tick = now => {
       const dt = Math.min(0.1, (now - this.last) / 1000);
       this.last = now;
+      /* the pack's animated textures step on at Doom's rate, whichever
+         view is showing them (js/texpack.js) */
+      ed.anim?.tick(dt);
       if (ed.layout !== 'only2d') this.frame(dt);
       requestAnimationFrame(tick);
     };
@@ -235,6 +239,14 @@ export class View3D {
       this.skyKey = key;
       const sky = { ...(this.ed.doc.world?.sky || {}), midAmt: 1, bare: true, snap: 0 };
       this.baker.bake(new Weather({ hour: 2.0, kind: 'clear', running: false, fireHaze: false, sky }).frame);
+    }
+    /* A SKYBOX FROM THE PACK in place of the painted sky, on the sphere
+       and in the air the far walls fade to (world.skyTex) */
+    const box = this.ed.doc.world?.skybox || null;
+    if (box !== this.skybox) {
+      this.skybox = box;
+      const use = t => { if (this.skybox !== box) return; const tex = t || this.baker.texture; this.sky.material.uniforms.map.value = tex; world.skyTex.value = tex; };
+      if (box) loadSky(box).then(use); else use(null);
     }
     this.buildMarkers();
     this.buildSprites();

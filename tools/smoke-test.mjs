@@ -14135,6 +14135,116 @@ section('what it costs to draw');
   }
 }
 
+/* ---------- the texture pack ---------- */
+section('the texture pack');
+{
+  /* The pictures the user handed over (js/texpack.js), as files in
+     assets/textures and assets/skies, loaded at run time. Nothing here
+     draws one — that takes a browser — so this checks that the list and
+     the files agree, that the animated runs run Doom's way, and that the
+     editor, the game and the Godot export are all wired to them. */
+  const fsP = await import('node:fs');
+  const TP = await import('../js/texpack.js');
+  const { TEXTURE_NAMES } = await import('../js/textures.js');
+  const TCp = await import('../js/editor/texcompose.js');
+  const DOCp = await import('../js/editor/doc.js');
+  const GDp = await import('../js/editor/godot.js');
+  const src = f => fsP.readFileSync(new URL('../' + f, import.meta.url), 'utf8');
+  /* a PNG's size is in its header, sixteen bytes in */
+  const pngSize = f => { const b = fsP.readFileSync(new URL('../' + f, import.meta.url)); return [b.readUInt32BE(16), b.readUInt32BE(20)]; };
+
+  note('the pack', `${TP.PACK.length} textures in ${TP.PACK_GROUPS.length} groups, ${Object.keys(TP.ANIMS).length} animated runs, ${Object.keys(TP.SKIES).length} skies`);
+  check('both archives are in it: 245 textures', TP.PACK.length === 245, `${TP.PACK.length}`);
+  check('every name is one the bank and a map can use as it stands',
+    TP.PACK_NAMES.every(n => TCp.cleanName(n) === n), TP.PACK_NAMES.filter(n => TCp.cleanName(n) !== n).join(' '));
+  check('and none of them is the name of a texture the game draws',
+    TP.PACK_NAMES.every(n => !TEXTURE_NAMES.includes(n)), TP.PACK_NAMES.filter(n => TEXTURE_NAMES.includes(n)).join(' '));
+  check('and no two are the same', new Set(TP.PACK_NAMES).size === TP.PACK_NAMES.length);
+  const wrong = TP.PACK.filter(p => { const f = `assets/textures/${p.name}.png`; if (!fsP.existsSync(new URL('../' + f, import.meta.url))) return true; const [w, h] = pngSize(f); return w !== p.px[0] || h !== p.px[1]; });
+  check('every one is a file, the size the list says it is', !wrong.length, wrong.map(p => p.name).join(' '));
+  const onDisk = fsP.readdirSync(new URL('../assets/textures/', import.meta.url)).filter(f => f.endsWith('.png')).map(f => f.slice(0, -4));
+  check('and every file is in the list: nothing shipped that the editor cannot show',
+    onDisk.every(n => TP.PACK_NAMES.includes(n)), onDisk.filter(n => !TP.PACK_NAMES.includes(n)).join(' '));
+  const P = n => TP.PACK.find(p => p.name === n);
+  check('a pack picture spans half its pixels: a door is 64 by 128, as in Doom',
+    P('EYEDOOR0').w === 64 && P('EYEDOOR0').h === 128 && P('CONC_1').w === 128);
+  check('except the ones drawn one to one: DR1, and the test tiles that say their size',
+    P('DR1_01').w === 64 && P('DR1_01').h === 128 && P('64TEST').w === 64 && P('512TEST').w === 512);
+  check('and a picture the build made smaller still covers what it did: the test card is 423 wide, and the cliff 1373 tall',
+    P('TESTPA00').w === 423 && P('CLIFF1').h === 1373, `${P('TESTPA00').w} ${P('CLIFF1').h}`);
+  check('the backdrops and the waterfall are cut out; the concrete is not',
+    P('TREELINE').masked && P('MNTN0001').masked && !P('CONC_1').masked);
+
+  /* THE ANIMATION */
+  const frames = Object.values(TP.ANIMS).flatMap(a => a.frames);
+  check('every frame of every animated run is in the pack', frames.every(n => TP.PACK_NAMES.includes(n)),
+    frames.filter(n => !TP.PACK_NAMES.includes(n)).join(' '));
+  check('the runs are the ones in the pack: DEVPAN1 12, DEVPAN2 8, DR1 12, EYEDOOR 9, EYEDORC 5, REACTB 5, WFALLA 4, WAT2 24, TESTPA 75',
+    ['DEVPAN1:12', 'DEVPAN2:8', 'DR1:12', 'EYEDOOR:9', 'EYEDORC:5', 'REACTB:5', 'WFALLA:4', 'WAT2:24', 'TESTPA:75']
+      .every(s => { const [k, n] = s.split(':'); return TP.ANIMS[k]?.frames.length === +n; }));
+  check('EYEDOORC, the door held on green, is not in a run', !TP.animOf('EYEDOORC') && TP.animOf('EYEDORC0'));
+  check('Doom\'s clock: 35 tics a second, eight to a frame, and a Doom-length run gets eight',
+    TP.TICRATE === 35 && TP.ANIM_TICS === 8 && TP.ANIMS.DEVPAN1.tics === 8 && TP.ANIMS.REACTB.tics === 8 && TP.ANIMS.WFALLA.tics === 8);
+  check('and the two long runs, drawn as moving pictures, go faster', TP.ANIMS.WAT2.tics === 4 && TP.ANIMS.TESTPA.tics === 2);
+  check('a frame is held for its tics and then steps on',
+    TP.frameAt('DEVPAN1A', 0) === 'DEVPAN1A' && TP.frameAt('DEVPAN1A', 7) === 'DEVPAN1A' && TP.frameAt('DEVPAN1A', 8) === 'DEVPAN1B');
+  check('every frame animates, from its own place in the run, as in Doom',
+    TP.frameAt('DEVPAN1E', 0) === 'DEVPAN1E' && TP.frameAt('DEVPAN1E', 8) === 'DEVPAN1F');
+  check('and round again at the end', TP.frameAt('REACTB04', 8) === 'REACTB00' && TP.frameAt('WAT224', 4) === 'WAT201');
+  check('a texture that does not animate is always itself', TP.frameAt('CONC_1', 999) === 'CONC_1');
+  /* the animator, on a bank of stand-ins */
+  {
+    const mk = n => ({ texture: { image: null, needsUpdate: false }, own: { n } });
+    const bank = { map: new Map(TP.ANIMS.REACTB.frames.map(n => [n, mk(n)])) };
+    for (const e of bank.map.values()) e.texture.image = e.own;
+    const A = new TP.PackAnimator(bank);
+    A.tick(0.01);
+    const at0 = bank.map.get('REACTB02').texture.image.n;
+    A.tick(8 / 35);
+    const at8 = bank.map.get('REACTB02').texture.image.n;
+    check('the animator points each texture at the frame it should show, eight tics on', at0 === 'REACTB02' && at8 === 'REACTB03', `${at0} ${at8}`);
+    check('and keeps each one\'s own picture for an export', bank.map.get('REACTB02').own.n === 'REACTB02');
+  }
+
+  /* WHAT A MAP NEEDS */
+  const want = TP.packNamesIn({ sectors: [{ wallTex: 'DEVPAN2C', floorTex: 'CONC_1' }], note: 'CONC_10 is not a name' });
+  check('what a map wears from the pack is found in it, with every frame of a run it wears',
+    want.includes('CONC_1') && TP.ANIMS.DEVPAN2.frames.every(n => want.includes(n)) && want.length === 9, want.join(' '));
+  check('and nothing that is not a whole name', TP.packNamesIn({ a: 'XCONC_1', b: 'GRIDWALL' }).length === 0);
+
+  /* THE SKIES */
+  check('seven skies, each a panorama twice as wide as it is tall',
+    Object.keys(TP.SKIES).length === 7 && Object.values(TP.SKIES).every(f => { const [w, h] = pngSize(f); return w === 2 * h; }));
+  check('the compiler hands a map\'s skybox to the level', /level\.skybox = w\.skybox \|\| null;/.test(src('js/editor/doc.js')));
+  const tscnBox = GDp.buildTSCN({ name: 'Skied', world: { skybox: 'XSKY' } }, [], new Map(), { sky: 'sky/XSKY.png', anim: 'doom_anim.gd' });
+  check('a Godot scene with a skybox wears it as a panorama',
+    /type="PanoramaSkyMaterial"/.test(tscnBox) && /path="sky\/XSKY\.png"/.test(tscnBox) && !/ProceduralSkyMaterial/.test(tscnBox));
+  check('and one with an animated texture has the script that runs it, on a node of its own',
+    /\[ext_resource type="Script" path="doom_anim\.gd"/.test(tscnBox) && /\[node name="DoomAnimated" type="Node" parent="\."\]\nscript = ExtResource/.test(tscnBox));
+  check('and one without either has neither',
+    !/Panorama|DoomAnimated/.test(GDp.buildTSCN({ name: 'Plain', world: {} }, [], new Map(), {})));
+  const gd = GDp.animScript([TP.animOf('REACTB00'), TP.animOf('WAT201')]);
+  check('the Godot script carries each run with its tics, and steps materials found by name',
+    /"REACTB": \{"tics": 8, "frames": \["REACTB00", /.test(gd) && /"WAT2": \{"tics": 4/.test(gd) && /m\.resource_name/.test(gd) && /TICRATE := 35\.0/.test(gd));
+
+  /* THE WIRING */
+  const main = src('js/main.js'), edit = src('js/editor/editor.js'), ui = src('js/editor/ui.js'), v3 = src('js/editor/view3d.js'), site = src('tools/build-site.sh'), gdsrc = src('js/editor/godot.js');
+  check('the game loads what a played map wears from the pack before building it', /loadPack\(textures, want\)/.test(main) && main.indexOf('loadPack(textures, want)') < main.indexOf('registerTextures(textures'));
+  check('and runs the animation', /packAnim\.tick\(dt\)/.test(main));
+  check('and wears the map\'s skybox, on the sphere and in the air', /sky: skybox \|\| skyBaker\.texture/.test(main) && /world\.skyTex\.value = skybox/.test(main));
+  check('the editor loads the map\'s pack textures before the first build, and the rest behind it',
+    /await loadPack\(bank, packNamesIn\(ed\.doc\)\)/.test(edit) && /loadPack\(bank\)\.then/.test(edit));
+  check('and a map texture cannot take a pack texture\'s name', /builtInTextures = new Set\(\[\.\.\.bank\.map\.keys\(\), \.\.\.PACK_NAMES\]\)/.test(edit));
+  check('the editor animates them in whichever view is up', /ed\.anim\?\.tick\(dt\)/.test(v3));
+  check('the browser lists the pack by group, a run as one cell', /Pack · \$\{g\}/.test(ui) && /dataset\.frame/.test(ui));
+  check('and the Map tab picks a skybox', /row\('Skybox'/.test(ui) && /PACK_SKIES\.map/.test(ui));
+  check('the 3D view swaps the sky for a skybox', /loadSky\(box\)/.test(v3));
+  check('a map texture is drawn from a pack texture\'s own frame, not whichever one it is showing', /e\?\.own \|\| e\?\.texture\?\.image/.test(src('js/editor/texcompose.js')));
+  check('and so is the Godot export, with every frame of a run it wears', /e\?\.own \|\| e\?\.texture\?\.image/.test(gdsrc) && /textures\/\$\{f\}\.png/.test(gdsrc));
+  check('the site carries the pack and the skies', /assets\/textures assets\/skies/.test(site));
+  check('and the pack can be built again from the archives', fsP.existsSync(new URL('../tools/build-texpack.py', import.meta.url)));
+}
+
 /* ---------- the download ---------- */
 section('the download');
 {

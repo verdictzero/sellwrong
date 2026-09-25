@@ -51,6 +51,7 @@
 
 import { plantKind } from './scatter.js';
 import { THING_TYPES } from './doc.js';
+import { animOf, loadPack, SKIES } from '../texpack.js';
 
 export const UNITS_PER_METRE = 32;
 
@@ -247,8 +248,13 @@ export function buildTSCN(doc, things, sprites, opts = {}) {
   for (const [kind, sp] of sprites) addExt('Texture2D', sp.file);
 
   const sky = doc.world?.sky || {};
+  /* a skybox from the texture pack is a panorama in Godot too — the
+     same picture the game's sky sphere wears (js/texpack.js) */
+  const skyId = opts.sky ? addExt('Texture2D', opts.sky) : null;
+  const animId = opts.anim ? addExt('Script', opts.anim) : null;
   const subs = [
-    `[sub_resource type="ProceduralSkyMaterial" id="SkyMat"]
+    skyId ? `[sub_resource type="PanoramaSkyMaterial" id="SkyMat"]
+panorama = ExtResource("${skyId}")` : `[sub_resource type="ProceduralSkyMaterial" id="SkyMat"]
 sky_top_color = ${colour(sky.zenith, '#000000')}
 sky_horizon_color = ${colour(sky.horizon, '#1d9a48')}
 ground_bottom_color = ${colour(sky.ground, '#05180c')}
@@ -270,6 +276,8 @@ tonemap_mode = 0`,
       `transform = Transform3D(1, 0, 0, 0, 0.5, 0.866025, 0, -0.866025, 0.5, 0, 10, 0)`, '');
   }
   lines.push(`[node name="World" parent="." instance=ExtResource("${glbId}")]`, '');
+  /* the animated textures, stepped on by a script (animScript) */
+  if (animId) lines.push(`[node name="DoomAnimated" type="Node" parent="."]`, `script = ExtResource("${animId}")`, '');
 
   /* the facing: the map's angle 0 is east and turns anticlockwise seen
      from above; a Godot node looks down its -Z. Rotating about Y by
@@ -360,10 +368,31 @@ export async function exportGodot(ed, opts = {}) {
   const images = new Map(), texFiles = [];
   for (const name of surfaces.keys()) {
     const e = ed.bank.map.get(name);
-    if (!e?.texture?.image) continue;
-    const png = await canvasPng(e.texture.image);
+    const own = e?.own || e?.texture?.image;
+    if (!own) continue;
+    const png = await canvasPng(own);
     images.set(name, { png, masked: !!e.masked, smooth: e.texture.magFilter === 1006 });
     texFiles.push([`textures/${name}.png`, png]);
+  }
+  /* AN ANIMATED TEXTURE brings the rest of its run, as files, for the
+     script that steps through them (animScript) */
+  const runs = new Map();
+  for (const name of surfaces.keys()) { const a = animOf(name); if (a) runs.set(a.stem, a); }
+  if (runs.size) {
+    const frames = [...runs.values()].flatMap(a => a.run);
+    await loadPack(ed.bank, frames);
+    for (const f of frames) {
+      if (images.has(f)) continue;
+      const own = ed.bank.map.get(f)?.own;
+      if (own) texFiles.push([`textures/${f}.png`, await canvasPng(own)]);
+    }
+  }
+  /* and the skybox, if the map has one */
+  let skyFile = null, skyPng = null;
+  const box = ed.doc.world?.skybox;
+  if (box && SKIES[box]) {
+    try { skyPng = new Uint8Array(await (await fetch(SKIES[box])).arrayBuffer()); skyFile = `sky/${box}.png`; }
+    catch (e) { console.warn('no skybox picture for', box, e); }
   }
 
   say('writing world.glb');
@@ -404,7 +433,8 @@ export async function exportGodot(ed, opts = {}) {
   }
 
   say('writing the scene');
-  const tscn = buildTSCN(ed.doc, placed, sprites, { scale, glb: 'world.glb', bake: opts.bake !== false });
+  const tscn = buildTSCN(ed.doc, placed, sprites, { scale, glb: 'world.glb', bake: opts.bake !== false,
+    sky: skyFile, anim: runs.size ? 'doom_anim.gd' : null });
   const counts = {
     surfaces: surfaces.size, triangles: [...surfaces.values()].reduce((a, s) => a + s.pos.length / 9, 0),
     sprites: placed.filter(t => t.type === 'PLANT' && sprites.has(t.kind)).length,
@@ -416,8 +446,71 @@ export async function exportGodot(ed, opts = {}) {
   zip.add(`${folder}/world.glb`, glb);
   for (const [n, b] of texFiles) zip.add(`${folder}/${n}`, b);
   for (const [n, b] of spriteFiles) zip.add(`${folder}/${n}`, b);
+  if (skyFile) zip.add(`${folder}/${skyFile}`, skyPng);
+  if (runs.size) zip.addText(`${folder}/doom_anim.gd`, animScript([...runs.values()]));
   zip.addText(`${folder}/README.txt`, readme(ed.doc, folder, opts, counts));
   return { blob: zip.close(), name: `${folder}-godot.zip`, counts, tscn, glb };
+}
+
+/**
+ * THE ANIMATED TEXTURES, in Godot: a script that steps every material
+ * wearing a frame of a run on through the run, Doom's way — each frame
+ * held for its run's tics of 35 a second, each wall from the frame it
+ * was given (js/texpack.js). The materials are found by name, which the
+ * GLB gives them: a material is named after its texture.
+ * @param runs  [{ stem, run: [frame names], tics }]
+ */
+export function animScript(runs) {
+  const R = runs.map(a => `\t"${a.stem}": {"tics": ${a.tics}, "frames": [${a.run.map(f => `"${f}"`).join(', ')}]},`).join('\n');
+  return `extends Node
+## Doom's animated textures, as GSS-EDIT runs them: every frame of a run
+## is held for the run's number of tics, 35 to the second, and every
+## surface wearing any frame of it steps on through it from that frame.
+
+const TICRATE := 35.0
+const RUNS := {
+${R}
+}
+
+var _tex := {}
+var _mats := []
+var _t := 0.0
+var _tic := -1
+
+func _ready() -> void:
+\tvar dir: String = get_script().resource_path.get_base_dir() + "/textures/"
+\tvar where := {}
+\tfor stem in RUNS:
+\t\tvar r: Dictionary = RUNS[stem]
+\t\tvar frames: Array = r["frames"]
+\t\tfor i in frames.size():
+\t\t\twhere[frames[i]] = [frames, i, int(r["tics"])]
+\t\t\t_tex[frames[i]] = load(dir + frames[i] + ".png")
+\t_scan(get_parent(), where, {})
+
+func _scan(n: Node, where: Dictionary, seen: Dictionary) -> void:
+\tif n is MeshInstance3D and n.mesh:
+\t\tfor s in n.mesh.get_surface_count():
+\t\t\tvar m = n.mesh.surface_get_material(s)
+\t\t\tif m is BaseMaterial3D and where.has(m.resource_name) and not seen.has(m):
+\t\t\t\tseen[m] = true
+\t\t\t\tvar w: Array = where[m.resource_name]
+\t\t\t\t_mats.append([m, w[0], w[1], w[2]])
+\tfor c in n.get_children():
+\t\t_scan(c, where, seen)
+
+func _process(delta: float) -> void:
+\t_t += delta
+\tvar tic := int(_t * TICRATE)
+\tif tic == _tic:
+\t\treturn
+\t_tic = tic
+\tfor e in _mats:
+\t\tvar frames: Array = e[1]
+\t\tvar f: String = frames[(int(e[2]) + tic / int(e[3])) % frames.size()]
+\t\tif _tex[f]:
+\t\t\te[0].albedo_texture = _tex[f]
+`;
 }
 
 function readme(doc, folder, opts, n) {
@@ -435,7 +528,11 @@ What is in it
                    put your own scenes on; PlayerStart is the start.
   world.glb        every surface, UV-mapped, textures packed inside:
                    ${n.surfaces} textures, ${n.triangles} triangles
-  textures/        the same textures as PNG files
+  textures/        the same textures as PNG files, and every frame of
+                   any animated one
+  doom_anim.gd     (if the map wears an animated texture) steps them
+                   on at Doom's rate; it is on the DoomAnimated node
+  sky/             (if the map has a skybox) the panorama the sky wears
   sprites/         the billboards' pictures
 
 Made with

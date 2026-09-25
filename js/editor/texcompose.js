@@ -80,7 +80,9 @@ function loadImage(src) {
 async function sourceOf(bank, layer) {
   if (layer.image) { try { return await loadImage(layer.image); } catch (e) { return null; } }
   const e = layer.tex && bank.map?.get(layer.tex);
-  return e?.texture?.image || null;
+  /* its own picture: an animated one from the pack is showing some
+     other frame just now (js/texpack.js) */
+  return e?.own || e?.texture?.image || null;
 }
 
 /**

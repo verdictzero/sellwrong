@@ -43,7 +43,9 @@ cp -r css js vendor "$OUT/"
 # and the music: the user's three tracks, played in a loop by js/music.js
 # assets/sky is not in this list: the sky is baked in the page now
 # (js/skyart.js) and the photograph in there is kept, not shipped.
-cp -r assets/forest assets/people assets/models assets/fonts assets/music assets/sfx "$OUT/assets/"
+# and the texture pack and its skies (js/texpack.js): pictures the user
+# handed over, loaded when a map wears one or the editor opens
+cp -r assets/forest assets/people assets/models assets/fonts assets/music assets/sfx assets/textures assets/skies "$OUT/assets/"
 
 # THE PACKING LIST, for the DOWNLOAD in the pause menu. The page has no
 # way to ask a static host what is on it, so the site carries a list of
