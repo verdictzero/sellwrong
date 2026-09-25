@@ -5571,6 +5571,20 @@ filter to see every frame. They animate in the editor's views, in a
 test run, and in a Godot export, where doom_anim.gd steps the materials
 at the same rate.
 
+NOT SQUARE, AND TALL. A texture's width and height are separate
+numbers everywhere. Walls repeat along a line by the width and up it by
+the height, and floors do the same on each axis. The browser draws each
+thumbnail in its own shape, so a tall door is tall and a treeline is a
+strip. A map texture started from another keeps its shape: one too big
+is brought down evenly, and it keeps the source's size on a wall. The
+middle texture of a two-sided line (a fence, a door, a treeline in a
+gap) is drawn ONCE, its own height, as Doom draws one, and repeats only
+along the line. A 64 by 128 DR1 in a 1024-high opening is 128 tall, not
+eight doors stacked up. It stands on the floor, since an open world's
+gaps reach the cloud base, and the y offset lifts it. A line given a
+Middle height keeps that height, and the outside wall of a building
+still fills its opening.
+
 THE SKYBOXES. Seven, picked on the Map tab (Skybox): BSKY1, BSKY2,
 LSKYA, NSKY1, OSKY1, UNSKY, XSKY. The sky here is a sphere wearing a
 panorama, so each six-face box was joined into one by

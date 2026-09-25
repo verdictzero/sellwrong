@@ -54,9 +54,16 @@ function swatch(ed, name, size = 22) {
     gr.addColorStop(0, sky.horizon || '#1d9a48'); gr.addColorStop(0.5, sky.mid || '#06301a'); gr.addColorStop(1, sky.zenith || '#000');
     g.fillStyle = gr; g.fillRect(0, 0, size, size);
   } else if (e?.texture?.image) {
+    /* IN ITS OWN SHAPE: a tall door is tall in the browser, a strip of
+       treeline is a strip, fitted to the square and centred, and never
+       squashed into a square it is not */
     const g = c.getContext('2d');
     g.imageSmoothingEnabled = false;
-    g.drawImage(ownImage(e), 0, 0, size, size);
+    const img = ownImage(e);
+    const aw = e.w || img.width, ah = e.h || img.height;
+    const k = size / Math.max(aw, ah);
+    const dw = Math.max(1, Math.round(aw * k)), dh = Math.max(1, Math.round(ah * k));
+    g.drawImage(img, (size - dw) >> 1, (size - dh) >> 1, dw, dh);
   }
   return c;
 }

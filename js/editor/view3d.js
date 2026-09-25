@@ -857,8 +857,13 @@ export class View3D {
         if (h.band === 'lower') return [Math.min(...fl), Math.max(...fl)];
         if (h.band === 'upper') return [Math.min(...ce), Math.max(...ce)];
         if (ss.length > 1) {
-          const top = Math.min(...ce), mh = d.lines[h.line]?.midHeight;
-          return [Math.max(...fl), mh && !exteriorWall(d, l) ? Math.min(top, Math.max(...fl) + mh) : top];
+          const top = Math.min(...ce), o = d.lines[h.line] || {}, mh = o.midHeight;
+          if (exteriorWall(d, l)) return [Math.max(...fl), top];
+          if (mh) return [Math.max(...fl), Math.min(top, Math.max(...fl) + mh)];
+          /* a middle is drawn once, its own height (midOnce, js/mapgeo.js) */
+          const tex = o.midTex || Object.values(o.sides || {}).find(x => x.midTex)?.midTex;
+          const th = tex && this.ed.bank.map.get(tex)?.h;
+          return [Math.max(...fl), th ? Math.min(top, Math.max(...fl) + th) : top];
         }
         return [fl[0], ce[0]];
       };

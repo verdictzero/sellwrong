@@ -14243,6 +14243,69 @@ section('the texture pack');
   check('and so is the Godot export, with every frame of a run it wears', /e\?\.own \|\| e\?\.texture\?\.image/.test(gdsrc) && /textures\/\$\{f\}\.png/.test(gdsrc));
   check('the site carries the pack and the skies', /assets\/textures assets\/skies/.test(site));
   check('and the pack can be built again from the archives', fsP.existsSync(new URL('../tools/build-texpack.py', import.meta.url)));
+
+  /* NOT SQUARE, AND TALL: a texture's width and height are two numbers */
+  {
+    const MGs = await import('../js/mapgeo.js');
+    const bankS = (await import('../js/textures.js')).bakeTextures();
+    const pixS = bankS.map.get('GRIDWALL').pix;
+    bankS.add('DR1_01', pixS, { w: 64, h: 128, masked: true });
+    bankS.add('TREELINE', pixS, { w: 256, h: 128, masked: true });
+    const sd = DOCp.newDoc('M', 1024);
+    const Rv = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+    sd.vertices.push(...Rv(256, 256, 512, 512));
+    sd.sectors.push({ id: 9, verts: [4, 5, 6, 7], ...DOCp.SECTOR_DEFAULTS, floor: 0 });
+    sd.nextId = 10;
+    sd.lines[DOCp.lineKey(4, 5)] = { midTex: 'DR1_01' };
+    sd.lines[DOCp.lineKey(5, 6)] = { midTex: 'TREELINE', yoff: 32 };
+    sd.lines[DOCp.lineKey(6, 7)] = { midTex: 'TREELINE', midHeight: 300 };
+    const cS = DOCp.compileDoc(sd);
+    const mids = cS.level.lines.filter(l => l.middle === 'DR1_01' || l.middle === 'TREELINE');
+    check('a middle texture from the editor is drawn once, Doom\'s way', mids.length === 3 && mids.every(l => l.midOnce));
+    const geoS = MGs.buildLevelGeometry(cS.level, bankS);
+    const zs = new Map();
+    const walkS = o => {
+      const pos = o.geometry?.attributes?.position;
+      if (pos) { const k = o.name.split('|').pop(); const a = zs.get(k) || zs.set(k, []).get(k); for (let i = 1; i < pos.array.length; i += 3) a.push(pos.array[i]); }
+      for (const ch of o.children || []) walkS(ch);
+    };
+    walkS(geoS.group);
+    const span = k => { const a = zs.get(k) || []; return a.length ? [Math.min(...a), Math.max(...a)] : null; };
+    const dr = span('DR1_01');
+    check('a 64 by 128 door in a 1024-high opening is 128 tall, standing on the floor, not stacked eight high',
+      dr && dr[0] === 0 && dr[1] === 128, JSON.stringify(dr));
+    const tr = span('TREELINE');
+    check('a wide one is its own height too, lifted by its y offset — and a line given a height keeps that height',
+      tr && tr[0] === 0 && tr[1] === 300 && (zs.get('TREELINE') || []).some(z => z === 160) && (zs.get('TREELINE') || []).some(z => z === 32),
+      JSON.stringify(tr));
+    /* the wall's u runs along the line in texture widths and v up it in texture heights */
+    const drG = []; const findG = o => { if (o.geometry && o.name.split('|').pop() === 'DR1_01') drG.push(o.geometry); for (const ch of o.children || []) findG(ch); };
+    findG(geoS.group);
+    const uv = drG[0]?.attributes?.uv?.array || [];
+    const us = [], vs = []; for (let i = 0; i < uv.length; i += 2) { us.push(uv[i]); vs.push(uv[i + 1]); }
+    check('and it repeats along the line by its width (256 units is four 64-wide doors) and not up it',
+      uv.length && Math.abs((Math.max(...us) - Math.min(...us)) - 4) < 1e-6 && Math.abs((Math.max(...vs) - Math.min(...vs)) - 1) < 1e-6,
+      `${Math.max(...us) - Math.min(...us)} ${Math.max(...vs) - Math.min(...vs)}`);
+    const ext = DOCp.newDoc('E', 1024);
+    ext.vertices.push(...Rv(256, 256, 512, 512));
+    ext.sectors.push({ id: 9, verts: [4, 5, 6, 7], ...DOCp.SECTOR_DEFAULTS, floor: 0, ceil: 128, ceilTex: 'CEIL' });
+    ext.nextId = 10;
+    const cE = DOCp.compileDoc(ext);
+    check('but the outside wall of a building fills its opening: it is a wall, not a thing in a gap',
+      cE.level.lines.filter(l => l.exterior).length === 4 && cE.level.lines.filter(l => l.exterior).every(l => !l.midOnce));
+    /* the texture editor keeps a source's shape and wall size */
+    const TE = await import('../js/editor/texeditor.js');
+    const edS = { bank: { map: new Map() }, doc: { textures: [] } };
+    const cliff = TE.fromTexture(edS, 'CLIFF1', { w: 512, h: 1373 }, { width: 512, height: 1373 });
+    check('a map texture started from a tall one keeps its shape, brought down evenly',
+      cliff.h === 512 && cliff.w === 191 && Math.abs(cliff.layers[0].sy - 512 / 1373) < 1e-9 && Math.abs(cliff.layers[0].sx - 191 / 512) < 1e-9,
+      `${cliff.w}x${cliff.h}`);
+    check('and covers the wall it did: the world size is the source\'s', cliff.worldW === 512 && cliff.worldH === 1373);
+    const small = TE.fromTexture(edS, 'DR1_01', { w: 64, h: 128 }, { width: 64, height: 128 });
+    check('and one that fits is left as it is', small.w === 64 && small.h === 128 && small.layers[0].sx === 1 && small.worldH === 128);
+    check('the browser draws a texture in its own shape, not squashed square',
+      /const k = size \/ Math\.max\(aw, ah\)/.test(src('js/editor/ui.js')));
+  }
 }
 
 /* ---------- the download ---------- */

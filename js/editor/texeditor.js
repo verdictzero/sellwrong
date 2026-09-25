@@ -35,12 +35,27 @@ const h = (tag, attrs = {}, ...kids) => {
  * @param name  the map texture to edit, or null for a new one
  * @param from  for a new one, the game texture its first layer is
  */
+/* A NEW TEXTURE FROM ANOTHER keeps its SHAPE and the size it is on a
+   wall. A picture bigger than a map texture may be (TEX_MAX) is brought
+   down evenly — a 512 by 1373 cliff was made 512 square when each side
+   was capped on its own — and the layer is scaled to fill it; and the
+   world size is the source's, so a pack texture drawn at twice Doom's
+   resolution covers the same wall after as before. */
+export function fromTexture(ed, from, src, img) {
+  const w = img?.width || 128, h = img?.height || 128;
+  const k = Math.min(1, TEX_MAX / Math.max(w, h));
+  const def = newTexture(uniqueName(ed, from), from, [Math.max(1, Math.round(w * k)), Math.max(1, Math.round(h * k))]);
+  if (k < 1) { def.layers[0].sx = def.w / w; def.layers[0].sy = def.h / h; }
+  if (src?.w && src?.h) { def.worldW = src.w; def.worldH = src.h; }
+  return def;
+}
+
 export function openTextureEditor(ed, name = null, from = 'GRIDWALL') {
   document.getElementById('ed-texed')?.remove();
   const existing = name ? (ed.doc.textures || []).find(t => t.name === name) : null;
-  const size = ed.bank.map.get(from)?.texture?.image;
-  const def = existing ? JSON.parse(JSON.stringify(existing))
-    : newTexture(uniqueName(ed, from), from, [Math.min(TEX_MAX, size?.width || 128), Math.min(TEX_MAX, size?.height || 128)]);
+  const src = ed.bank.map.get(from);
+  const size = src?.own || src?.texture?.image;
+  const def = existing ? JSON.parse(JSON.stringify(existing)) : fromTexture(ed, from, src, size);
   const original = existing ? existing.name : null;
   let sel = def.layers.length - 1;
   let tiled = true;

@@ -797,6 +797,11 @@ export function compileDoc(doc) {
     /* THE MIDDLE OF A TWO-SIDED LINE: what stands IN the opening — a
        grating, a fence, a window — Doom's masked middle texture */
     if (o.midTex && l.bands) { l.middle = o.midTex; if (o.midHeight) l.midHeight = o.midHeight; }
+    /* and it is drawn ONCE, its own height, as Doom draws one, unless
+       the line gives it a height of its own (see midOnce in
+       js/mapgeo.js). The game's own levels fill their openings with
+       glass; a map from here puts a thing in one. */
+    if (l.bands && (o.midTex || Object.values(o.sides || {}).some(x => x.midTex))) l.midOnce = true;
     /* THE OFFSETS AND THE PEGGING, Doom's sidedef x and y offsets and its
        two unpegged flags, in this engine's terms (see pegOf in
        js/mapgeo.js): upper unpegged hangs the upper texture from the
@@ -836,6 +841,8 @@ export function compileDoc(doc) {
       if (!l.bands) continue;
       l.middle = o.midTex || inside.wallTex || 'GRIDWALL';
       l.midHeight = undefined;
+      /* a wall fills the opening; it is not a thing standing in it */
+      l.midOnce = false;
       l.blocking = true;
       l.blockSight = true;
       l.exterior = true;

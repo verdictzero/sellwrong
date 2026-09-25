@@ -1194,6 +1194,20 @@ function addLine(set, level, l, bank, pick = null) {
         const tex = sd.mid || l.middle;
         if (!tex || tex === 'NONE') continue;
         const th = bank.get(tex).h;
+        if (l.midOnce && l.midHeight == null) {
+          /* DOOM'S RULE for a masked middle: drawn ONCE, its own height,
+             never tiled up the opening — a 128-tall treeline is 128 tall
+             and a DR1 door is a door, however high the gap. It stands
+             on the floor (an open world's gaps go up to the cloud base,
+             and a fence hung from there is in the sky); the y offset
+             lifts it; the opening clips it */
+          const peg = bot + th + sd.l.yoff;
+          const b0 = Math.max(bot, peg - th), b1 = Math.min(top, peg);
+          if (b1 <= b0) continue;
+          PAINT = paintWall(sec, b0, b1);
+          addQuad(set, sd.l, bank, tex, b0, b1, face, peg, sec.light + l.contrast, skyOf(sec), charOf(sec));
+          continue;
+        }
         const peg = l.pegMiddle === 'bottom' ? bot + th : top;
         PAINT = paintWall(sec, bot, top);
         addQuad(set, sd.l, bank, tex, bot, top, face, peg + sd.l.yoff, sec.light + l.contrast, skyOf(sec), charOf(sec));
