@@ -5693,40 +5693,74 @@ began, so a line of sight over a street of kerbs and roofs is not
 banded by each one's slightly different height. The game's own levels,
 which have no fog, are untouched.
 
-THE SPRAWL, THE DEMO LEVEL (js/maps/sprawl.js). At the user's request:
-a sprawling level made of every asset the user has given and none that
-were generated. IT IS THE GAME'S OWN WORLD, at the user's request:
-GSS at the terminal (a short name for the game) opens it, and so does a
-reload. DEMO and index.html?demo say so outright; index.html?grid is
+THE SPRAWL, THE GAME'S OWN WORLD (js/maps/sprawl.js). At the user's
+request: a sprawling level made of every asset the user has given and
+none that were generated. GSS at the terminal opens it, and so does a
+reload; DEMO and index.html?demo say so outright; index.html?grid is
 THE GRID, the test area the game used to open in. Or open it in the
-editor
-(File > Open demo: THE SPRAWL) to take it apart. It is an editor
-document built in code, the same every time.
+editor (File > Open demo: THE SPRAWL) to take it apart. It is an
+editor document built in code, the same every time.
 
   THE LAYOUT  sixteen blocks, 3200 units square, on a four by four grid
-              with roads 768 wide, about half a kilometre across. Cliffs
-              wall it in, and the pack's painted backdrops (TREEBACK,
-              MEADOWBG, MOUNTBG, CLOUDS01/02, TREELINE, MNTN0001,
-              RUINLINE) stand in front of them. You start at the
+              with roads 768 wide, about half a kilometre across, on a
+              floor sunk 686 units into a grass plateau. The plateau's
+              inner face is the pack's lawn-topped cliff (LWNCLIF1 and
+              2, 686 tall, so one fits exactly; the two alternate every
+              1024 along the rim, offset, so it is not one picture
+              repeated), and the plateau has NO outer wall (wallTex
+              NONE): what is past it is the sky. On the plateau, seen
+              over the cliff edge from the streets, stand the pack's
+              painted horizons — a tree line or a meadow at the edge
+              (512 tall), mountains behind (256), and clouds (128) on a
+              raised strip over the mountains whose face is not drawn,
+              so they float — and firs along the edge. You start at the
               crossroads in the middle. Every block has a pavement with
-              the user's photographed street lamps and street trees.
+              the user's photographed street lamps and street trees,
+              and a crossing at each corner.
+  THE SCALE   where every texture goes is decided by what it is, at its
+              own size: the pack is 2 pixels to the unit, so a 256-pixel
+              panel is 128 units, and the walls, doors, screens and
+              consoles are cut to those sizes so a panel is a panel and
+              not a quarter of one. A door (DR1, EYEDOOR) is 64 by 128,
+              standing in a jamb of its own height notched into the
+              building; a monitor and a keyboard are 256 by 128 — wall
+              screens and console decks; the cubicle panel (OFCCUB01) is
+              256 tall and the cube farm's walls are that tall; the
+              mansion's panelling (MANINT1) is 512 tall in two rows and
+              its walls are one row. The coloured checkers (XTX_5..8)
+              and the TEST and DEBUG sets are test cards, and they live
+              in the test chamber only. Every building wears a facade
+              outside and its own walls inside, by the line's two sides
+              (sides in js/editor/doc.js), and a roof of its own.
   THE BLOCKS  south to north, west to east:
-                the park (lawn, pond, ivy hedges) · the car park and a
-                kiosk · the cube farm (cubicles, desks, monitors) · the
-                plaza (a stage with the test card on a screen, the
+                the park (a mown lawn, slab paths, a pond, ivy hedges) ·
+                the car park (bays, a hatched strip, a kiosk with
+                roller shutters) · the cube farm (panel walls, cubicles,
+                a meeting screen, green-glass windows, eye doors) · the
+                plaza (inlays, a stage with the test card on a screen
+                between ribbed pillars and a monitor each side, the
                 GZDOOM badge)
-                the cemetery (the iron, stones in ranks, mist, a
-                mausoleum) · the ops centre (animated panels, a red
-                reactor room, a DR1 door) · the mansion round a
-                courtyard with a fountain · the market square
-                the wood (firs, undergrowth, green mist) · the quarry
-                (twelve climbable terraces of cliff and a spring whose
-                walls are the waterfall) · the brutalist hall (pillars
-                and a pit in the gloom) · the yard (containers, a water
-                channel)
+                the cemetery (the iron, stones in ranks, an earth path,
+                mist, a ribbed mausoleum with a shut eye door) · the ops
+                centre (riveted outside; a band of the pack's panels at
+                their own size inside, console decks of keyboard and
+                monitor, a red reactor room with the glowing beam round
+                its top, three doors) · the mansion (one row of
+                panelling, windows, a courtyard with a fountain reached
+                by arches) · the market square (wood counters, metal
+                posts, cloth awnings, a pavilion)
+                the wood (firs, undergrowth, a track, a mossy outcrop,
+                green mist) · the quarry (a pit of six climbable
+                terraces faced in the three rock faces to a pool, and a
+                rock mass 512 up faced in the tall cliff, with the
+                waterfall coming down a notch into a plunge pool) · the
+                brutalist hall (ribbed facade, pillars, a light well
+                open to the sky with a pit in it) · the yard (pads, a
+                channel, containers with roller shutters, a shed)
                 the meadow · the test chamber (the TEST and DEBUG sets,
-                the squirrel, the two checkers) · the lake with islands
-                · the ruins
+                the four checkers on plinths, the squirrel, the test
+                card, the badge) · the lake with islands and a jetty ·
+                the ruins
   ITS ASSETS  every texture in the pack, every animated run (the smoke
               test checks this); the BSKY2 skybox; the wood's firs,
               bushes, ferns and grass and the six street trees; the
@@ -5736,24 +5770,7 @@ document built in code, the same every time.
               hedge), and the drawn trolley, bollard, crate, fuel can
               and ceiling lamp. The smoke test walks every surface of
               the compiled level and holds each name it wears to the
-              pack, the iron and the sky.
-
-PEOPLE ON FIRE, at the user's request:
-  - THEY CATCH EVERYWHERE. A person (anything with a burn state: the
-    shoppers and townsfolk) catches from the flame even in a world
-    marked "nothing burns" — THE GRID, THE SPRAWL, every editor map.
-    The flag still keeps the floor, the wood, the vehicles and the
-    furniture out of it (Actor.ignite).
-  - THEY RUN. Catching puts them in their burn state, a panicked run
-    until they go off, and frightens everybody near them away.
-  - THEY SPREAD IT. Every 8 tics a burning person reaches anyone within
-    4 units of touching, who catches with a chance of 64 in 255
-    (Actor.setAlight, CATCH_EVERY / CATCH_REACH / CATCH_CHANCE). This is
-    person to person and needs no burning floor; where the floor can
-    burn, the trail they drag spreads it too. The numbers are low on
-    purpose: at four times the reach and odds, a packed store went up
-    in one chain and nobody reached the doors; at these, about half of
-    it gets out.
+              pack, the iron, the sky and NONE.
 
 EARTH TONES AND THE PIXEL DITHER ARE BACK, at the user's request. The
 finished frame is Bayer-dithered and snapped to the earth box again,
