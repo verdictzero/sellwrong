@@ -54,6 +54,10 @@ import { THING_TYPES } from './doc.js';
 import { animOf, loadPack, SKIES } from '../texpack.js';
 
 export const UNITS_PER_METRE = 32;
+/** The things that are STATIC DECOR: a billboard of the game's own
+ *  picture in the export, not a marker. The street lamp and the ceiling
+ *  lamp are geometry and light in the game, and stay markers. */
+export const DECOR_TYPES = ['TROLLEY', 'BOLLARD', 'CRATE', 'FUELCAN', 'GRAVESTONE'];
 
 /* glTF numbers */
 const FLOAT = 5126, ARRAY_BUFFER = 34962, TRIANGLES = 4;
@@ -293,7 +297,13 @@ tonemap_mode = 0`,
       `transform = ${xform(start.x, start.y, start.z, start.angle)}`, `metadata/type = "START"`, '');
   }
   const plants = things.filter(t => t.type === 'PLANT' && sprites.has(t.kind));
-  const actors = things.filter(t => t.type !== 'PLANT' && t.type !== 'START' && THING_TYPES[t.type]);
+  /* STATIC DECOR — a trolley, a bollard, a crate, a fuel can, a
+     headstone — is a billboard of the game's own picture, as a plant is */
+  const decor = things.filter(t => t.type !== 'PLANT' && sprites.has(`thing:${t.type}`));
+  const actors = things.filter(t => t.type !== 'PLANT' && t.type !== 'START' && THING_TYPES[t.type] && !sprites.has(`thing:${t.type}`));
+  /* the sector's light and colour on a billboard, when the lighting is
+     baked, as the geometry has them in its vertex colours */
+  const modulate = t => (opts.bake !== false && t.mod ? [`modulate = Color(${t.mod.map(v => f(Math.min(1, Math.max(0, v)))).join(', ')}, 1)`] : []);
   if (plants.length) {
     lines.push(`[node name="Sprites" type="Node3D" parent="."]`, '');
     const n = new Map();
@@ -312,7 +322,28 @@ tonemap_mode = 0`,
         `shaded = false`,
         `alpha_cut = 1`,
         `texture_filter = 0`,
+        ...modulate(t),
         `texture = ExtResource("${extId.get(sp.file)}")`,
+        '');
+    }
+  }
+  if (decor.length) {
+    lines.push(`[node name="Decor" type="Node3D" parent="."]`, '');
+    const n = new Map();
+    for (const t of decor) {
+      const sp = sprites.get(`thing:${t.type}`);
+      const i = (n.get(t.type) || 0) + 1; n.set(t.type, i);
+      lines.push(`[node name="${nodeName(t.type)}_${i}" type="Sprite3D" parent="Decor"]`,
+        `transform = ${xform(t.x, t.y, t.z, 0)}`,
+        `offset = Vector2(0, ${f(sp.h / 2)})`,
+        `pixel_size = ${f((sp.worldH * (t.scale ?? 1) * k) / sp.h)}`,
+        `billboard = 2`,
+        `shaded = false`,
+        `alpha_cut = 1`,
+        `texture_filter = 0`,
+        ...modulate(t),
+        `texture = ExtResource("${extId.get(sp.file)}")`,
+        `metadata/type = "${t.type}"`,
         '');
     }
   }
@@ -409,7 +440,13 @@ export async function exportGodot(ed, opts = {}) {
     const st = L.things.find(t => t.type === 'START');
     if (st) things = [{ type: 'START', x: st.x, y: st.y, angle: st.angle || 0 }, ...things];
   }
-  const placed = things.map(t => ({ ...t, z: floorZ(t.x, t.y) }));
+  /* each on the floor under it, with the light and thing colour of the
+     sector it stands in (for a billboard's modulate) */
+  const placed = things.map(t => {
+    const s = L.sectorAt(t.x, t.y);
+    const l = Math.min(1, s?.light ?? 1), c = s?.tint?.thing || [1, 1, 1];
+    return { ...t, z: floorZ(t.x, t.y), mod: [c[0] * l, c[1] * l, c[2] * l] };
+  });
 
   say('drawing the sprites');
   const sprites = new Map(), spriteFiles = [];
@@ -432,13 +469,33 @@ export async function exportGodot(ed, opts = {}) {
     } catch (e) { console.warn('no picture for', kind, e); }
   }
 
+  /* AND THE DECOR'S PICTURES: the game's own sprites, drawn here as the
+     game draws them, front view */
+  const decorTypes = [...new Set(placed.map(t => t.type))].filter(ty => ty !== 'PLANT' && DECOR_TYPES.includes(ty));
+  if (decorTypes.length) {
+    say('drawing the decor');
+    const { bakeSprites } = await import('../sprites.js');
+    const { STATES, ACTORS } = await import('../states.js');
+    const bankS = bakeSprites();
+    for (const ty of decorTypes) {
+      const st = STATES[ACTORS[ty]?.spawn];
+      if (!st) continue;
+      const e = bankS.get(st.sprite, st.frame);
+      if (!e?.views?.[0]) continue;
+      const cv = e.views[0].toCanvas();
+      const file = `sprites/${ty.toLowerCase()}.png`;
+      sprites.set(`thing:${ty}`, { file, w: cv.width, h: cv.height, worldH: e.h * (e.scale || 1) });
+      spriteFiles.push([file, await canvasPng(cv)]);
+    }
+  }
+
   say('writing the scene');
   const tscn = buildTSCN(ed.doc, placed, sprites, { scale, glb: 'world.glb', bake: opts.bake !== false,
     sky: skyFile, anim: runs.size ? 'doom_anim.gd' : null });
   const counts = {
     surfaces: surfaces.size, triangles: [...surfaces.values()].reduce((a, s) => a + s.pos.length / 9, 0),
-    sprites: placed.filter(t => t.type === 'PLANT' && sprites.has(t.kind)).length,
-    markers: placed.filter(t => t.type !== 'PLANT').length,
+    sprites: placed.filter(t => (t.type === 'PLANT' && sprites.has(t.kind)) || sprites.has(`thing:${t.type}`)).length,
+    markers: placed.filter(t => t.type !== 'PLANT' && !sprites.has(`thing:${t.type}`)).length,
   };
 
   const zip = new Zip();

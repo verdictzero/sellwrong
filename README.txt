@@ -5485,15 +5485,20 @@ map goes out as a zip that unpacks into one folder for a Godot 4
 project:
 
   <name>.tscn    the scene to open: a WorldEnvironment with the map's
-                 sky, the level, the plants as Sprite3D billboards
-                 (fixed-Y, cut out, point sampled, feet on the floor),
-                 the game's actors as Marker3D nodes carrying their
-                 type, variant and facing, and the player start
+                 sky, the level, the plants and the static decor
+                 (trolleys, bollards, crates, fuel cans, headstones, in
+                 the game's own drawings) as Sprite3D billboards
+                 (fixed-Y, cut out, point sampled, feet on the floor,
+                 their sector's light and colour baked into modulate),
+                 the game's actors and the lamps as Marker3D nodes
+                 carrying their type, variant and facing, and the
+                 player start
   world.glb      every surface of the level, from the game's own
                  geometry: one primitive per texture, UV-mapped as the
                  game maps it, textures packed inside
   textures/      the same textures as PNG files
-  sprites/       the billboards' pictures, drawn at each plant's aspect
+  sprites/       the billboards' pictures: each plant's, drawn at its
+                 aspect, and each decor thing's, front view
   README.txt
 
 Sector brightness and Doom 64 colours are baked into the vertex colours
@@ -5636,6 +5641,14 @@ take all three. A 3D box takes the sector under its middle when the map
 is compiled, unless it has a light of its own. The grid is only laid
 down for a map from the editor; the game's own levels light their
 things themselves.
+
+AND WHAT MOVES EASES ACROSS. A person or monster walking from one sector
+into another does not snap to the new light, colour and fog: it eases
+there with a time constant of 0.06 seconds, so it is most of the way in
+a tenth of a second and all of it in a quarter (tweenLook in
+js/sectorgrid.js). The eased fog goes to the sprite batch per instance
+(iFog in js/standees.js). A fog coming in from none takes its colour at
+once and only thickens, so nobody is greyed on the way into a blue fog.
 
 THE SKYBOXES. Seven, picked on the Map tab (Skybox): BSKY1, BSKY2,
 LSKYA, NSKY1, OSKY1, UNSKY, XSKY. The sky here is a sphere wearing a

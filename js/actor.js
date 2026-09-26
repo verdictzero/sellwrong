@@ -41,6 +41,8 @@ import { STATES, ACTORS, stateOf } from './states.js';
 import { angleNorm, angleDiff, pRandom, dist, dist2 } from './util.js';
 import { swayOf } from './people.js';
 import { climate } from './weather.js';
+import { world } from './material.js';
+import { tweenLook } from './sectorgrid.js';
 
 /* Doom's eight, in Doom's order. Index 8 is "nowhere to go". */
 export const DI = { EAST: 0, NORTHEAST: 1, NORTH: 2, NORTHWEST: 3, WEST: 4, SOUTHWEST: 5, SOUTH: 6, SOUTHEAST: 7, NODIR: 8 };
@@ -1247,6 +1249,18 @@ export class Actor {
        the batcher's answer, which is about buffer room and is nobody
        else's business. */
     this.drawn = true;
+    /* IN A MAP FROM THE EDITOR, its sector's light, colour and fog,
+       eased into rather than snapped to as it crosses from one sector to
+       the next (tweenLook in js/sectorgrid.js) */
+    if (world.sectorOn.value > 0.5) {
+      const now = performance.now() / 1000;
+      const look = tweenLook(this, this.sector, now - (this._lookAt ?? now));
+      this._lookAt = now;
+      this.game.standees.add(this._tex, this.drawX, this.drawY, this.drawZ,
+                             this._w, this._h, look.light * (this.info.lit || 1), sky, fullbright, frost, ash, alight,
+                             this.monster ? 1 : 0, look.tint, look.fog);
+      return;
+    }
     this.game.standees.add(this._tex, this.drawX, this.drawY, this.drawZ,
                            this._w, this._h, light, sky, fullbright, frost, ash, alight,
                            this.monster ? 1 : 0, this.sector?.tint?.thing || null);

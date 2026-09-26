@@ -14584,6 +14584,54 @@ section('light and fog');
     walkP(geoP.group);
     check('and its faces carry that fog', boxFog > blue, `${boxFog} against ${blue} without the boxes`);
   }
+  /* A THING CROSSING INTO ANOTHER SECTOR eases into its look, fast */
+  {
+    const SG = await import('../js/sectorgrid.js');
+    const obj = {};
+    const a = SG.tweenLook(obj, field, 0);
+    check('a thing that has just appeared takes its sector\'s look at once', a.light === field.light && near(a.tint, [1, 1, 1]));
+    const b1 = SG.tweenLook(obj, room, 0.016);
+    check('stepping into another sector it does not snap: one frame in, its colour is part of the way there',
+      b1.tint[1] < 1 && b1.tint[1] > room.tint.thing[1] + 0.05, `${b1.tint}`);
+    check('a fog coming in from none takes its colour at once, and only its density eases',
+      near(b1.fog.slice(0, 3), [0, 0, 1]) && b1.fog[3] > 0 && b1.fog[3] < 40);
+    SG.tweenLook(obj, room, 0.25);
+    check('and a quarter of a second later it is all the way there', Math.abs(obj._look.tint[1] - room.tint.thing[1]) < 0.01 && Math.abs(obj._look.fog[3] - 40) < 0.5);
+    const dim = { ...room, light: 0.2 };
+    const lo = SG.tweenLook(obj, dim, 0.016).light;
+    check('and so does its light', lo < room.light && lo > 0.2);
+    check('fast: most of the way in a tenth of a second', SG.LOOK_TAU <= 0.08);
+    const act = fsL.readFileSync(new URL('../js/actor.js', import.meta.url), 'utf8');
+    const std = fsL.readFileSync(new URL('../js/standees.js', import.meta.url), 'utf8');
+    check('the game\'s moving things use it, handing their eased fog to the batch',
+      /tweenLook\(this, this\.sector, now - \(this\._lookAt \?\? now\)\)/.test(act) && /look\.tint, look\.fog\);/.test(act) &&
+      /g\.setAttribute\('iFog', a\.fog\);/.test(std) && /if \(iFog\.w >= 0\.0\) vFog = iFog;/.test(fsL.readFileSync(new URL('../js/material.js', import.meta.url), 'utf8')));
+  }
+
+  /* THE GODOT EXPORT'S STATIC THINGS: trees and decor as billboards,
+     with the sector's baked light on them */
+  {
+    const GD = await import('../js/editor/godot.js');
+    const spr = new Map([['fir_tall_1', { file: 'sprites/fir_tall_1.png', w: 128, h: 256 }],
+                         ['thing:CRATE', { file: 'sprites/crate.png', w: 32, h: 42, worldH: 58 }]]);
+    const tscn = GD.buildTSCN({ name: 'Decor', world: {} }, [
+      { type: 'START', x: 0, y: 0, z: 0, angle: 0 },
+      { type: 'PLANT', kind: 'fir_tall_1', x: 64, y: 64, z: 0, mod: [0.5, 0.25, 0.2] },
+      { type: 'CRATE', x: 128, y: 0, z: 0, mod: [0.5, 0.25, 0.2] },
+      { type: 'STREETLAMP', x: 256, y: 0, z: 0 },
+      { type: 'SHOPPER', x: 300, y: 0, z: 0 },
+    ], spr, { scale: 1 / 32 });
+    check('static decor is a billboard of its picture, at its size in the game',
+      /\[node name="CRATE_1" type="Sprite3D" parent="Decor"\]/.test(tscn) && tscn.includes(`pixel_size = ${+((58 / 32) / 42).toFixed(5)}`));
+    check('and trees and decor carry the baked light and colour of their sector',
+      (tscn.match(/modulate = Color\(0\.5, 0\.25, 0\.2, 1\)/g) || []).length === 2);
+    check('a street lamp (geometry in the game) and a person (not static) stay markers',
+      /\[node name="STREETLAMP_1" type="Marker3D"/.test(tscn) && /\[node name="SHOPPER_1" type="Marker3D"/.test(tscn));
+    check('the decor list is the static things with a picture', GD.DECOR_TYPES.join() === 'TROLLEY,BOLLARD,CRATE,FUELCAN,GRAVESTONE');
+    const lit = GD.buildTSCN({ name: 'L', world: {} }, [{ type: 'CRATE', x: 0, y: 0, z: 0, mod: [0.5, 0.5, 0.5] }], spr, { scale: 1 / 32, bake: false });
+    check('with lit materials the billboards are left for Godot\'s lights', !/modulate/.test(lit));
+  }
+
 
 }
 

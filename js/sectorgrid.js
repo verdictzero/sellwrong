@@ -95,3 +95,42 @@ export function applySectorGrid(level) {
   world.sectorOn.value = 1;
   return g;
 }
+
+/* ---------------------------------------------------------------------
+   A THING CROSSING INTO ANOTHER SECTOR
+   ---------------------------------------------------------------------
+   At the user's request, what moves does not SNAP from one sector's
+   light, colour and fog to the next: it eases there, fast — a time
+   constant of LOOK_TAU seconds, so it is most of the way in a tenth of
+   a second and all of it in a quarter. Something that has just appeared
+   takes its sector's look at once. Static things (trees, boxes) never
+   cross anything and read the grid (or their own vertices) instead. */
+export const LOOK_TAU = 0.06;
+
+/** What a sector says a thing in it looks like: its light, its thing
+ *  colour, and its fog — the map's default fog where it has none. */
+export function sectorLook(s) {
+  const t = s?.tint?.thing || [1, 1, 1];
+  const d = world.fogDefault.value;
+  const f = s?.fog && s.fog[3] > 0 ? s.fog : [d.x, d.y, d.z, d.w];
+  return { light: s ? (s.light ?? 1) : 0.7, tint: [t[0], t[1], t[2]], fog: [f[0], f[1], f[2], f[3]] };
+}
+
+/**
+ * Ease `obj`'s look toward its sector's, over `dt` seconds, and return
+ * it ({ light, tint, fog }, kept on obj._look). A fog coming in from
+ * none takes the new colour at once and only its density eases, so a
+ * thing walking into a blue fog is not first greyed by nothing.
+ */
+export function tweenLook(obj, sector, dt) {
+  const to = sectorLook(sector);
+  const L = obj._look;
+  if (!L || !(dt > 0)) { obj._look = to; return to; }
+  const k = 1 - Math.exp(-Math.min(dt, 1) / LOOK_TAU);
+  L.light += (to.light - L.light) * k;
+  for (let i = 0; i < 3; i++) L.tint[i] += (to.tint[i] - L.tint[i]) * k;
+  if (L.fog[3] <= 0) { L.fog[0] = to.fog[0]; L.fog[1] = to.fog[1]; L.fog[2] = to.fog[2]; }
+  else if (to.fog[3] > 0) for (let i = 0; i < 3; i++) L.fog[i] += (to.fog[i] - L.fog[i]) * k;
+  L.fog[3] += (to.fog[3] - L.fog[3]) * k;
+  return L;
+}

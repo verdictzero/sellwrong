@@ -93,6 +93,9 @@ export class Standees {
       flags: new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4),
       /* the colour of the light it stands in — Doom 64's thing colour */
       tint:  new THREE.InstancedBufferAttribute(new Float32Array(cap * 3).fill(1), 3),
+      /* and the fog it stands in: rgb and density, or a density of -1
+         for whatever the sector grid says (js/sectorgrid.js) */
+      fog:   new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4),
     };
     for (const k in a) {
       a[k].setUsage(THREE.DynamicDrawUsage);
@@ -106,6 +109,7 @@ export class Standees {
     g.setAttribute('iSky', a.sky);
     g.setAttribute('iFlags', a.flags);
     g.setAttribute('iTint', a.tint);
+    g.setAttribute('iFog', a.fog);
   }
 
   _batch(tex) {
@@ -140,7 +144,7 @@ export class Standees {
    * flags the fragment shader reads per sprite, and `warm` says the
    * thing is a living body, which only the thermal sight asks.
    */
-  add(tex, x, y, z, w, h, light, sky, fullbright, frost, ash, alight, warm = 0, tint = null) {
+  add(tex, x, y, z, w, h, light, sky, fullbright, frost, ash, alight, warm = 0, tint = null, fog = null) {
     if (!tex || !this.scene) return false;
     const b = this._batch(tex);
     /* A BODY'S PICTURE IS A BODY'S, for the thermal sight: once a person
@@ -162,6 +166,9 @@ export class Standees {
     const T = b.a.tint.array;
     if (tint) { T[i * 3] = tint[0]; T[i * 3 + 1] = tint[1]; T[i * 3 + 2] = tint[2]; }
     else { T[i * 3] = 1; T[i * 3 + 1] = 1; T[i * 3 + 2] = 1; }
+    const G = b.a.fog.array;
+    if (fog) { G[i * 4] = fog[0]; G[i * 4 + 1] = fog[1]; G[i * 4 + 2] = fog[2]; G[i * 4 + 3] = fog[3]; }
+    else { G[i * 4] = 0; G[i * 4 + 1] = 0; G[i * 4 + 2] = 0; G[i * 4 + 3] = -1; }
     this.drawn++;
     return true;
   }
@@ -177,7 +184,7 @@ export class Standees {
       /* only the part that was filled: the buffers are sized for the
          worst crowd this batch has ever had and the frame in a corridor
          is three of them */
-      for (const key of ['pos', 'size', 'light', 'sky', 'flags', 'tint']) {
+      for (const key of ['pos', 'size', 'light', 'sky', 'flags', 'tint', 'fog']) {
         const at = b.a[key];
         at.clearUpdateRanges();
         at.addUpdateRange(0, b.n * at.itemSize);

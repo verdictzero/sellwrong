@@ -849,6 +849,7 @@ varying float vLamp;
   attribute float iSky;        // how much of that light is the sky's
   attribute vec4  iFlags;      // fullbright, frost, ash, alight
   attribute vec3  iTint;       // the colour of the light it stands in
+  attribute vec4  iFog;        // the fog it stands in, eased; density -1: the grid's
   /* the yaw every sprite in the scene is turned to, which is the one
      thing here that IS the same for the whole batch. Declared again
      because a standee material does not define BILLBOARD. */
@@ -925,6 +926,11 @@ void main() {
         vec3 foot = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
       #endif
       vFog = sectorFogAt(foot);
+      #ifdef INSTANCED_SPRITE
+        /* a thing that moves hands in its own fog, eased across the
+           boundary it has just crossed (tweenLook, js/sectorgrid.js) */
+        if (iFog.w >= 0.0) vFog = iFog;
+      #endif
       #ifndef INSTANCED_SPRITE
         vec4 sl = sectorLightAt(foot);
         vLight *= sl.a;
