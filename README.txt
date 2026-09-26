@@ -5695,9 +5695,11 @@ which have no fog, are untouched.
 
 THE SPRAWL, THE DEMO LEVEL (js/maps/sprawl.js). At the user's request:
 a sprawling level made of every asset the user has given and none that
-were generated. Play it at index.html?demo, or type DEMO at the terminal
-(GSS with the demo flag; GSS alone, at the user's request, is a short
-name for the game), or open it in the editor
+were generated. IT IS THE GAME'S OWN WORLD, at the user's request:
+GSS at the terminal (a short name for the game) opens it, and so does a
+reload. DEMO and index.html?demo say so outright; index.html?grid is
+THE GRID, the test area the game used to open in. Or open it in the
+editor
 (File > Open demo: THE SPRAWL) to take it apart. It is an editor
 document built in code, the same every time.
 

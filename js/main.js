@@ -28,7 +28,8 @@ import { loadVehicleModel, POLICE_LENGTH, APC_LENGTH, FIRE_LENGTH } from './car.
 import { loadVtolModel } from './vtol.js';
 import { addStrip, imageData } from './spriteload.js';
 import { CELLS, GIBLETS, BLAST_SPRITE, addStandees, addSplats, addTroops } from './people.js';
-/* THE GRID, which is the world the game boots into — see js/maps/grid.js.
+/* THE GRID, which the game boots into with ?grid — see js/maps/grid.js.
+   Without it the game is THE SPRAWL (js/maps/sprawl.js, playedMap below).
    js/maps/sellwrong.js and js/maps/town.js are still in the repository,
    still exported and still tested; nothing builds them any more. */
 import { buildGrid } from './maps/grid.js';
@@ -519,7 +520,8 @@ async function boot() {
   /* A MAP FROM THE EDITOR, if this is a test run of one: GSS-EDIT
      (js/editor/editor.js) stores the document and reloads with `?play`,
      and it is compiled here by the same compiler the editor's 3D view
-     uses. Anything wrong with it and this is THE GRID as usual. */
+     uses. Anything wrong with it and this is THE SPRAWL, which is also
+     what the game plays with no map handed over (see playedMap). */
   const played = playedMap();
   const weather = new Weather({
     hour: 2.0, kind: WEATHER_ORDER[prefs.weather] || 'clear',
@@ -554,7 +556,7 @@ async function boot() {
   const skybox = played?.level.skybox ? await loadSky(played.level.skybox) : null;
   if (skybox) world.skyTex.value = skybox;
 
-  status('BUILDING THE GRID', 0.68); await breathe();
+  status(played ? 'BUILDING THE WORLD' : 'BUILDING THE GRID', 0.68); await breathe();
   const level = played ? played.level : buildGrid();
   /* an edited map's own light colour, ambient light and fog, or none */
   applyMapLight(played ? played.level.mapLight : null);
@@ -1296,24 +1298,26 @@ boot().catch(e => {
   if (s) s.style.color = '#f44';
 });
 
-/** The map GSS-EDIT handed over for a test run, compiled — or null, and
- *  the game plays THE GRID. See PLAY_KEY in js/editor/editor.js. */
+/** The world to play, compiled: THE SPRAWL, or the map GSS-EDIT handed
+ *  over for a test run — or null for ?grid, and the game plays THE
+ *  GRID. See PLAY_KEY in js/editor/editor.js. */
 function playedMap() {
   const q = new URLSearchParams(location.search);
-  /* THE DEMO LEVEL, at the user's request: THE SPRAWL, built in code out
-     of the user's own assets (js/maps/sprawl.js) — ?demo */
-  if (q.has('demo')) {
-    const doc = sprawlDoc();
-    return { ...compileDoc(doc), doc };
-  }
-  if (!q.has('play')) return null;
+  /* THE DEMO LEVEL IS THE GAME'S OWN WORLD NOW, at the user's request:
+     THE SPRAWL, built in code out of the user's own assets
+     (js/maps/sprawl.js), is what GSS opens and what a reload comes back
+     to. ?demo still says so outright; ?grid is THE GRID, the test area
+     it used to be; ?play is a test run of an edited map. */
+  const sprawl = () => { const doc = sprawlDoc(); return { ...compileDoc(doc), doc }; };
+  if (q.has('grid')) return null;
+  if (!q.has('play')) return sprawl();
   try {
     const text = localStorage.getItem('gss-edit:play');
-    if (!text) return null;
+    if (!text) return sprawl();
     const doc = parseDoc(text);
     return { ...compileDoc(doc), doc };
   } catch (e) {
-    console.error('the edited map did not compile; playing THE GRID', e);
-    return null;
+    console.error('the edited map did not compile; playing THE SPRAWL', e);
+    return sprawl();
   }
 }

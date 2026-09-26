@@ -387,9 +387,12 @@ class Terminal {
    the editor with no terminal; `?play` is a test run of an edited map,
    which js/main.js picks up on its own; and `?demo`, at the user's
    request, is the demo level, THE SPRAWL (js/maps/sprawl.js), which
-   js/main.js picks up the same way. Anything else is the terminal. */
+   js/main.js picks up the same way — though THE SPRAWL is the game's own
+   world now, at the user's request, so GSS opens it with no flag at all;
+   `?grid` is THE GRID, the test area it used to be. Anything else is the
+   terminal. */
 const params = new URLSearchParams(location.search);
-if (params.has('edit') || params.has('play') || params.has('demo')) {
+if (params.has('edit') || params.has('play') || params.has('demo') || params.has('grid')) {
   $('term').remove();
   const go = params.has('edit')
     ? import('./editor/editor.js').then(m => m.startEditor())

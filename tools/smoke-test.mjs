@@ -14841,8 +14841,11 @@ section('the sprawl');
       ['DEMO', 'GSS DEMO', 'GSS -DEMO', 'GSS --DEMO'].every(w => demo.includes(fnv(w))) &&
       /if \(DEMO_KEYS\.includes\(hash\(entry\)\)\) \{[\s\S]{0,300}q\.set\('demo', ''\);[\s\S]{0,200}history\.replaceState[\s\S]{0,120}await this\.open\(\);/.test(termSrc));
   }
-  check('the game plays it at ?demo, and the editor opens it from the File menu',
-    /if \(q\.has\('demo'\)\) \{\s*const doc = sprawlDoc\(\);/.test(mainSrc) && /this\.replace\(sprawlDoc\(\), 'open demo'\)/.test(edSrc) &&
+  check('IT IS THE GAME\'S OWN WORLD: GSS and a reload play it, ?grid is THE GRID, ?play an edited map; the editor opens it from the File menu',
+    /if \(q\.has\('grid'\)\) return null;\s*if \(!q\.has\('play'\)\) return sprawl\(\);/.test(mainSrc) &&
+    /const sprawl = \(\) => \{ const doc = sprawlDoc\(\);/.test(mainSrc) &&
+    /params\.has\('grid'\)/.test(fsS.readFileSync('js/terminal.js', 'utf8')) &&
+    /this\.replace\(sprawlDoc\(\), 'open demo'\)/.test(edSrc) &&
     /\['Open demo: THE SPRAWL', '', \(\) => ed\.fileDemo\(\)\]/.test(uiSrc));
   check('EARTH TONES AND THE PIXEL DITHER ARE BACK: the frame is dithered and snapped to the earth box, on a 320-row grid',
     /dither: 1\.0, snap: 1\.0,/.test(mainSrc) && /const DEFAULT_PIXELS = PIXELS\.indexOf\(320\);/.test(mainSrc) &&
