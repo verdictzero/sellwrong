@@ -14630,6 +14630,33 @@ section('light and fog');
     check('the decor list is the static things with a picture', GD.DECOR_TYPES.join() === 'TROLLEY,BOLLARD,CRATE,FUELCAN,GRAVESTONE');
     const lit = GD.buildTSCN({ name: 'L', world: {} }, [{ type: 'CRATE', x: 0, y: 0, z: 0, mod: [0.5, 0.5, 0.5] }], spr, { scale: 1 / 32, bake: false });
     check('with lit materials the billboards are left for Godot\'s lights', !/modulate/.test(lit));
+
+    /* AUTOMATIC COLLISION: a box, the bounds of what the game collides
+       with, on each billboard that stops you */
+    const spC = new Map([['fir_tall_1', { file: 'sprites/fir_tall_1.png', w: 128, h: 256 }],
+      ['fern', { file: 'sprites/fern.png', w: 64, h: 64 }],
+      ['thing:CRATE', { file: 'sprites/crate.png', w: 32, h: 42, worldH: 58, solid: true, radius: 20, height: 58 }],
+      ['thing:FUELCAN', { file: 'sprites/fuelcan.png', w: 32, h: 42, worldH: 38, solid: false, radius: 12, height: 38 }]]);
+    const col = [
+      { type: 'PLANT', kind: 'fir_tall_1', x: 64, y: 64, z: 0 }, { type: 'PLANT', kind: 'fir_tall_1', x: 164, y: 64, z: 0 },
+      { type: 'PLANT', kind: 'fir_tall_1', x: 264, y: 64, z: 0, scale: 2 }, { type: 'PLANT', kind: 'fern', x: 0, y: 64, z: 0 },
+      { type: 'CRATE', x: 128, y: 0, z: 0 }, { type: 'FUELCAN', x: 0, y: 0, z: 0 }];
+    const tc = GD.buildTSCN({ name: 'C', world: {} }, col, spC, { scale: 1 / 32 });
+    check('each tree gets a static body with a box around its trunk, standing on the floor',
+      /\[node name="Collision" type="StaticBody3D" parent="Sprites\/fir_tall_1_1"\]/.test(tc) &&
+      /\[node name="Shape" type="CollisionShape3D" parent="Sprites\/fir_tall_1_1\/Collision"\]\ntransform = Transform3D\(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4\.6875, 0\)\nshape = SubResource\("Box_1"\)/.test(tc) &&
+      tc.includes('[sub_resource type="BoxShape3D" id="Box_1"]\nsize = Vector3(0.875, 9.375, 0.875)'));
+    check('boxes of one size are shared, and a scaled tree has its own',
+      (tc.match(/type="BoxShape3D"/g) || []).length === 3 && (tc.match(/SubResource\("Box_1"\)/g) || []).length === 2 &&
+      tc.includes('size = Vector3(1.75, 18.75, 1.75)'));
+    check('solid decor gets a box of its radius and height; a fern and a fuel can, walked through in the game, get none',
+      tc.includes('size = Vector3(1.25, 1.8125, 1.25)') && /parent="Decor\/CRATE_1"/.test(tc) &&
+      !/parent="Decor\/FUELCAN_1"/.test(tc) && !/parent="Sprites\/fern_1"/.test(tc));
+    check('the sub-resources are counted in the load steps, and come before the nodes',
+      tc.startsWith(`[gd_scene load_steps=${(tc.match(/^\[(ext|sub)_resource/gm) || []).length + 1} format=3]`) &&
+      tc.lastIndexOf('[sub_resource') < tc.indexOf('[node '));
+    const noC = GD.buildTSCN({ name: 'C', world: {} }, col, spC, { scale: 1 / 32, collision: false });
+    check('and with collision off, no bodies', !/StaticBody3D|BoxShape3D/.test(noC));
   }
 
 

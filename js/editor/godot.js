@@ -31,7 +31,9 @@
 
    COLLISION: the mesh is named with Godot's "-col" suffix, so the
    importer makes a static body with a trimesh shape from it — the
-   level is walkable in Godot with no setup.
+   level is walkable in Godot with no setup. The billboards that stop
+   you in the game (trees, bushes, solid decor) each get a StaticBody3D
+   with an automatic box: the bounds of what the game collides with.
 
    THE STATIC SPRITES — the trees, the bushes, the grass, the street
    trees, placed or scattered — become Sprite3D nodes, billboarded about
@@ -235,7 +237,7 @@ export const nodeName = s => String(s).replace(/[^A-Za-z0-9_]/g, '_').replace(/^
  * @param things    every thing, placed and scattered: { type, kind?, x, y, z, angle, scale?, variant?, id? }
  *                  with z the floor height under it
  * @param sprites   Map(plant kind -> { file, w, h }) — the PNG and its size in pixels
- * @param opts      { scale, glb: 'world.glb', bake }
+ * @param opts      { scale, glb: 'world.glb', bake, collision }
  */
 export function buildTSCN(doc, things, sprites, opts = {}) {
   const k = opts.scale ?? 1 / UNITS_PER_METRE;
@@ -303,6 +305,26 @@ tonemap_mode = 0`,
   const actors = things.filter(t => t.type !== 'PLANT' && t.type !== 'START' && THING_TYPES[t.type] && !sprites.has(`thing:${t.type}`));
   /* the sector's light and colour on a billboard, when the lighting is
      baked, as the geometry has them in its vertex colours */
+  /* AUTOMATIC COLLISION: each billboard that stops you in the game gets a
+     StaticBody3D child with a box — the axis-aligned bounds of the
+     cylinder the game collides with (a tree's trunk radius, a thing's
+     radius and height), standing on the floor. Boxes of one size share
+     one BoxShape3D. A fern, a fuel can and anything else you walk
+     through in the game gets none. */
+  const boxIds = new Map();
+  const collider = (path, r, h) => {
+    if (opts.collision === false || !(r > 0) || !(h > 0)) return [];
+    const w = 2 * r * k, hm = h * k, key = `${f(w)}x${f(hm)}`;
+    let id = boxIds.get(key);
+    if (!id) {
+      id = `Box_${boxIds.size + 1}`; boxIds.set(key, id);
+      subs.push(`[sub_resource type="BoxShape3D" id="${id}"]\nsize = Vector3(${f(w)}, ${f(hm)}, ${f(w)})`);
+    }
+    return [`[node name="Collision" type="StaticBody3D" parent="${path}"]`, '',
+      `[node name="Shape" type="CollisionShape3D" parent="${path}/Collision"]`,
+      `transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, ${f(hm / 2)}, 0)`,
+      `shape = SubResource("${id}")`, ''];
+  };
   const modulate = t => (opts.bake !== false && t.mod ? [`modulate = Color(${t.mod.map(v => f(Math.min(1, Math.max(0, v)))).join(', ')}, 1)`] : []);
   if (plants.length) {
     lines.push(`[node name="Sprites" type="Node3D" parent="."]`, '');
@@ -314,7 +336,8 @@ tonemap_mode = 0`,
          picture's height in pixels — and the picture was drawn at the
          plant's own aspect when it was packed, so it is uniform */
       const px = (kd.h * (t.scale ?? 1) * k) / sp.h;
-      lines.push(`[node name="${nodeName(t.kind)}_${i}" type="Sprite3D" parent="Sprites"]`,
+      const name = `${nodeName(t.kind)}_${i}`, s = t.scale ?? 1;
+      lines.push(`[node name="${name}" type="Sprite3D" parent="Sprites"]`,
         `transform = ${xform(t.x, t.y, t.z, 0)}`,
         `offset = Vector2(0, ${f(sp.h / 2)})`,
         `pixel_size = ${f(px)}`,
@@ -324,7 +347,7 @@ tonemap_mode = 0`,
         `texture_filter = 0`,
         ...modulate(t),
         `texture = ExtResource("${extId.get(sp.file)}")`,
-        '');
+        '', ...collider(`Sprites/${name}`, (kd.r || 0) * s, kd.h * s));
     }
   }
   if (decor.length) {
@@ -333,7 +356,8 @@ tonemap_mode = 0`,
     for (const t of decor) {
       const sp = sprites.get(`thing:${t.type}`);
       const i = (n.get(t.type) || 0) + 1; n.set(t.type, i);
-      lines.push(`[node name="${nodeName(t.type)}_${i}" type="Sprite3D" parent="Decor"]`,
+      const name = `${nodeName(t.type)}_${i}`, s = t.scale ?? 1;
+      lines.push(`[node name="${name}" type="Sprite3D" parent="Decor"]`,
         `transform = ${xform(t.x, t.y, t.z, 0)}`,
         `offset = Vector2(0, ${f(sp.h / 2)})`,
         `pixel_size = ${f((sp.worldH * (t.scale ?? 1) * k) / sp.h)}`,
@@ -344,7 +368,7 @@ tonemap_mode = 0`,
         ...modulate(t),
         `texture = ExtResource("${extId.get(sp.file)}")`,
         `metadata/type = "${t.type}"`,
-        '');
+        '', ...(sp.solid ? collider(`Decor/${name}`, (sp.radius || 0) * s, (sp.height ?? sp.worldH) * s) : []));
     }
   }
   if (actors.length) {
@@ -484,13 +508,15 @@ export async function exportGodot(ed, opts = {}) {
       if (!e?.views?.[0]) continue;
       const cv = e.views[0].toCanvas();
       const file = `sprites/${ty.toLowerCase()}.png`;
-      sprites.set(`thing:${ty}`, { file, w: cv.width, h: cv.height, worldH: e.h * (e.scale || 1) });
+      const a = ACTORS[ty];
+      sprites.set(`thing:${ty}`, { file, w: cv.width, h: cv.height, worldH: e.h * (e.scale || 1),
+        solid: !!a.solid, radius: a.radius, height: a.height });
       spriteFiles.push([file, await canvasPng(cv)]);
     }
   }
 
   say('writing the scene');
-  const tscn = buildTSCN(ed.doc, placed, sprites, { scale, glb: 'world.glb', bake: opts.bake !== false,
+  const tscn = buildTSCN(ed.doc, placed, sprites, { scale, glb: 'world.glb', bake: opts.bake !== false, collision: opts.collision !== false,
     sky: skyFile, anim: runs.size ? 'doom_anim.gd' : null });
   const counts = {
     surfaces: surfaces.size, triangles: [...surfaces.values()].reduce((a, s) => a + s.pos.length / 9, 0),
@@ -595,7 +621,9 @@ What is in it
 Made with
   scale            ${opts.unitsPerMetre || UNITS_PER_METRE} map units to the metre
   lighting         ${opts.bake === false ? 'lit materials — add your own lights (a sun is in the scene)' : 'baked: sector brightness and Doom 64 colours are the vertex colours, materials unshaded'}
-  collision        ${opts.collision === false ? 'none' : 'the mesh is named World-col, so Godot makes a static trimesh body for it'}
+  collision        ${opts.collision === false ? 'none' : `the mesh is named World-col, so Godot makes a static trimesh body for it;
+                   each tree, bush and solid piece of decor has a StaticBody3D
+                   with a box the size the game collides with`}
   ${n.sprites} sprites, ${n.markers} markers
 
 Textures are point sampled (nearest), as in the game. In the import
@@ -642,7 +670,7 @@ export function openGodotDialog(ed) {
       row('Units per metre', h('input', { type: 'number', value: o.unitsPerMetre, min: 1, step: 1, onchange: e => { o.unitsPerMetre = Math.max(1, +e.target.value || 32); } }),
         'Map units in one Godot metre. 32 makes a person about 1.75 m.'),
       row('Bake lighting', chk('bake'), 'Sector brightness and Doom 64 colours as vertex colours, unshaded — looks like the map. Off: lit materials and a sun.'),
-      row('Collision', chk('collision'), 'A static trimesh body for the level, so it can be walked on.'),
+      row('Collision', chk('collision'), 'A static trimesh body for the level, so it can be walked on, and a box around each tree, bush and solid piece of decor.'),
       row('Things', chk('things'), 'Trees and plants as billboard sprites; people and furniture as markers. Off: only the player start.'),
       status),
     h('div', { class: 'ed-tx-foot' }, h('span', { class: 'ed-tx-err' }), h('button', { class: 'ed-btn', onclick: () => overlay.remove() }, 'Close'), go));

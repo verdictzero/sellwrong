@@ -5511,6 +5511,19 @@ Godot 4.3 headless to check it: the scene loads, every surface has its
 texture, UVs and vertex colours with unshaded materials, the collision
 body is there, and the sprites and markers are where they should be.
 
+AUTOMATIC COLLISION BOXES. At the user's request, each billboard that
+stops you in the game gets its own collision in the export: a
+StaticBody3D child holding a BoxShape3D, the axis-aligned bounds of
+the cylinder the game collides with, standing on the floor. For a tree
+or bush that is its trunk radius and its height (a fir_tall_1 is
+0.875 m across and 9.4 m tall at 32 units to the metre). For the
+trolley, bollard, crate and headstone it is the thing's radius and
+height in js/states.js. Ferns, grass and the fuel can, which you walk
+through in the game, get none. Boxes of one size share one shape, and
+the COLLISION tick box turns them off with the level's. Checked in
+Godot 4.3: every box loads at its size and place, and a ray through
+each billboard hits its own box, except the fuel can's.
+
 AN OPEN WORLD BY DEFAULT. A new map is open ground under the sky with
 no ceiling, 4096 units square, and a new sector is too. Its "ceiling"
 is SKY, which the renderer treats as a hole the sky shows through, and
