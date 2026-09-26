@@ -4239,8 +4239,8 @@ await (async () => {
   const WORD = 'gss-tangram.exe', SHORT = 'qweasdzxc';
   const keys = ((term.match(/const KEYS = \[([^\]]*)\]/) || [])[1] || '').match(/[0-9a-f]{8}/g) || [];
   check('the terminal holds the hash of the word', keys.includes(fnv(WORD.toUpperCase())), `${keys} vs ${fnv(WORD.toUpperCase())}`);
-  check('and of the shortcut, which opens it too, and of nothing else',
-    keys.includes(fnv(SHORT.toUpperCase())) && keys.length === 2 && /KEYS\.includes\(hash\(entry\)\)/.test(term));
+  check('and of the shortcut, and of GSS (at the user\'s request), which open it too, and of nothing else',
+    keys.includes(fnv(SHORT.toUpperCase())) && keys.includes(fnv('GSS')) && keys.length === 3 && /KEYS\.includes\(hash\(entry\)\)/.test(term));
   check('and it refuses everything else as an undefined command',
     /'UNDEFINED COMMAND \/ SYNTAX ERROR'/.test(term) && !/UNABLE TO COMPUTE/.test(term));
   check('the page loads the terminal, not the game',
@@ -14804,6 +14804,18 @@ section('the sprawl');
   check('the start stands at the crossroads in the middle',
     (() => { const st = L.things.find(t => t.type === 'START'); return st && st.x === SP.SPRAWL_START[0] && st.y === SP.SPRAWL_START[1]; })());
   const mainSrc = fsS.readFileSync('js/main.js', 'utf8'), edSrc = fsS.readFileSync('js/editor/editor.js', 'utf8'), uiSrc = fsS.readFileSync('js/editor/ui.js', 'utf8');
+  {
+    /* THE TERMINAL'S WORDS for it, at the user's request: GSS is the
+       game, and DEMO is GSS with the demo flag */
+    const termSrc = fsS.readFileSync('js/terminal.js', 'utf8');
+    const fnv = w => { let h = 0x811c9dc5; for (const ch of w) { h ^= ch.codePointAt(0); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(16).padStart(8, '0'); };
+    const keys = (termSrc.match(/const KEYS = \[([\s\S]*?)\];/) || ['', ''])[1];
+    const demo = (termSrc.match(/const DEMO_KEYS = \[([^\]]*)\]/) || ['', ''])[1];
+    check('typing GSS at the terminal opens the game', keys.includes(fnv('GSS')));
+    check('and DEMO (or GSS DEMO, GSS -DEMO, GSS --DEMO) opens it with the demo flag',
+      ['DEMO', 'GSS DEMO', 'GSS -DEMO', 'GSS --DEMO'].every(w => demo.includes(fnv(w))) &&
+      /if \(DEMO_KEYS\.includes\(hash\(entry\)\)\) \{[\s\S]{0,300}q\.set\('demo', ''\);[\s\S]{0,200}history\.replaceState[\s\S]{0,120}await this\.open\(\);/.test(termSrc));
+  }
   check('the game plays it at ?demo, and the editor opens it from the File menu',
     /if \(q\.has\('demo'\)\) \{\s*const doc = sprawlDoc\(\);/.test(mainSrc) && /this\.replace\(sprawlDoc\(\), 'open demo'\)/.test(edSrc) &&
     /\['Open demo: THE SPRAWL', '', \(\) => ed\.fileDemo\(\)\]/.test(uiSrc));

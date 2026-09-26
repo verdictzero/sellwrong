@@ -45,7 +45,13 @@ const $ = id => document.getElementById(id);
    of the program; the second, at the user's request, is a shortcut — a
    run along three rows of the keyboard — and it is kept out of view the
    same way. */
-const KEYS = ['30af7bc7', '8ce4dd6b'];
+const KEYS = ['30af7bc7', '8ce4dd6b',
+  /* and GSS, at the user's request: a short name for the game */
+  'dc144ab4'];
+/* AND THE DEMO, at the user's request: DEMO is GSS with the demo flag —
+   the game, playing THE SPRAWL (js/maps/sprawl.js). GSS DEMO, GSS -DEMO
+   and GSS --DEMO say the same. */
+const DEMO_KEYS = ['98b74836', '30c3c733', '400ded68', 'f836468d'];
 /* AND THE EDITOR, at the user's request: GSS-EDIT, the map editor
    (js/editor/editor.js), opened by typing its program name — EDIT,
    GSS-EDIT or GSS-EDIT.EXE. Hashed like the answers above, for the same
@@ -321,6 +327,15 @@ class Terminal {
     this.history.push(raw.trim());
     this.hist = this.history.length;
     if (KEYS.includes(hash(entry))) { await this.open(); return; }
+    if (DEMO_KEYS.includes(hash(entry))) {
+      /* the flag the game reads at boot (playedMap in js/main.js), put on
+         the address without a reload, so F5 comes back to the demo */
+      const q = new URLSearchParams(location.search);
+      q.set('demo', '');
+      history.replaceState(null, '', `${location.pathname}?${q.toString().replace(/=(&|$)/g, '$1')}`);
+      await this.open();
+      return;
+    }
     if (EDIT_KEYS.includes(hash(entry))) { await this.open('./editor/editor.js'); return; }
     this.sfx.error();
     await this.tell(REFUSED(entry));
