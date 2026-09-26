@@ -5736,6 +5736,23 @@ document built in code, the same every time.
               the compiled level and holds each name it wears to the
               pack, the iron and the sky.
 
+PEOPLE ON FIRE, at the user's request:
+  - THEY CATCH EVERYWHERE. A person (anything with a burn state: the
+    shoppers and townsfolk) catches from the flame even in a world
+    marked "nothing burns" — THE GRID, THE SPRAWL, every editor map.
+    The flag still keeps the floor, the wood, the vehicles and the
+    furniture out of it (Actor.ignite).
+  - THEY RUN. Catching puts them in their burn state, a panicked run
+    until they go off, and frightens everybody near them away.
+  - THEY SPREAD IT. Every 8 tics a burning person reaches anyone within
+    4 units of touching, who catches with a chance of 64 in 255
+    (Actor.setAlight, CATCH_EVERY / CATCH_REACH / CATCH_CHANCE). This is
+    person to person and needs no burning floor; where the floor can
+    burn, the trail they drag spreads it too. The numbers are low on
+    purpose: at four times the reach and odds, a packed store went up
+    in one chain and nobody reached the doors; at these, about half of
+    it gets out.
+
 EARTH TONES AND THE PIXEL DITHER ARE BACK, at the user's request. The
 finished frame is Bayer-dithered and snapped to the earth box again,
 pack textures and skies included, on a grid of 320 rows of 2:3 pixels

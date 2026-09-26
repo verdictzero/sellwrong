@@ -142,6 +142,7 @@ export class ActorGrid {
    shopper per step and a fresh array each time is the garbage a
    fixed-tic loop can least afford. Never held across a call. */
 const _near = [];
+const _catch = [];
 /* and one for A_Flee's eight direction scores, for the same reason */
 const _score = new Float64Array(8);
 
@@ -206,6 +207,7 @@ export class Actor {
     /* fire */
     this.burning = 0;            // tics left alight
     this.burnTick = 0;
+    this.catchTick = 0;          // see setAlight
     /* How long something that catches fire has left before it goes off.
        Only things with a `burn` state have one — see ignite() — and
        while it is running they are immune to more fire, because what is
@@ -648,7 +650,13 @@ export class Actor {
        but nothing in the world goes up as a result of it. One flag on
        the map, read here and in Vehicle.ignite, and every source of
        fire in the game is answered at once. */
-    if (this.game.level.noBurn) return;
+    /* BUT PEOPLE DO, at the user's request: somebody the flame lands on
+       catches, runs, and sets alight whoever they run into, even in a
+       world where nothing else goes up. The flag still keeps the floor,
+       the wood, the vehicles and the furniture out of it. A person is
+       anything with a `burn` state — something that does something with
+       being on fire. */
+    if (this.game.level.noBurn && !this.info.burn) return;
     /* `flammable` is already false for anything fireproof — see the
        constructor — so a trooper is refused here without a second flag */
     if (!this.flammable || this.removed) return;
@@ -707,6 +715,30 @@ export class Actor {
     }
   }
 
+  /** HOW A FIRE PASSES BETWEEN PEOPLE: checked every CATCH_EVERY tics
+   *  while alight, reaching anyone within CATCH_REACH of touching, who
+   *  catches with a chance of CATCH_CHANCE in 255 each time. */
+  static CATCH_EVERY = 8;
+  static CATCH_REACH = 4;
+  static CATCH_CHANCE = 64;
+
+  /** Touch everyone near enough with this fire. Returns how many caught. */
+  setAlight() {
+    const g = this.game;
+    const list = g.blockmap ? g.blockmap.near(this.x, this.y, _catch) : g.actors;
+    let n = 0;
+    for (const o of list) {
+      if (o === this || o.removed || o.dead || !o.flammable || !o.info.burn || o.burning > 0 || o.ash > 0 || o.frozen) continue;
+      const r = this.radius + o.radius + Actor.CATCH_REACH;
+      if (dist2(this.x, this.y, o.x, o.y) > r * r) continue;
+      if (Math.abs((o.z ?? 0) - (this.z ?? 0)) > Math.max(this.height, o.height)) continue;
+      if (pRandom() >= Actor.CATCH_CHANCE) continue;
+      o.ignite();
+      if (o.burning > 0) n++;
+    }
+    return n;
+  }
+
   burnTic() {
     this.burning--;
     if (this.burning <= 0) {
@@ -729,6 +761,15 @@ export class Actor {
        as the fire taking hold of their clothes. */
     this.lit = Math.min(1, this.lit + 1 / 12);
     this.game.fx?.bodyFire(this);
+    /* AND IT IS CATCHING, at the user's request: a person on fire sets
+       alight whoever they touch — run into, run past, stand against —
+       person to person, whether or not the floor under them can burn.
+       The fire the floor carries (below) spreads it too, where there is
+       one; this is the spread that needs no floor at all. */
+    if (!this.dead && ++this.catchTick >= Actor.CATCH_EVERY) {
+      this.catchTick = 0;
+      this.setAlight();
+    }
     /* A TORCH DROPS FIRE MORE OFTEN than a thing standing still burning,
        and for a reason that is arithmetic rather than drama: it is
        moving eight units a tic, so twelve tics between drops is a trail

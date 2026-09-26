@@ -13730,6 +13730,8 @@ section('the grid');
   const GRID = await import('../js/maps/grid.js');
   const THREEG = await import('three');
   const { Game } = await import('../js/game.js');
+  const { Actor: Actor_G } = await import('../js/actor.js');
+  const { STATES: STATES_G, ACTORS: ACTORS_G } = await import('../js/states.js');
   const fsG = await import('node:fs');
   const mainG = fsG.readFileSync('js/main.js', 'utf8');
 
@@ -13792,23 +13794,46 @@ section('the grid');
       gg.vehicles.count === 0 && gg.boxes.count === 0 && gg.fire.off === true &&
       gg.brigade.trucks.length === 0);
 
-    /* NOTHING CATCHES, at the user's request. The flamethrower is still
-       a flamethrower — it still throws flame and the flame still hurts
-       — but no person and no thing in this world goes up. */
+    /* NOTHING CATCHES, at the user's request — EXCEPT PEOPLE, at the
+       user's later request: somebody the flame lands on catches, runs,
+       and sets alight whoever they touch. The floor, the wood and the
+       vehicles still do not burn. */
     const who = gg.actors.find(a => a.type === 'SHOPPER' && !a.dead);
+    const x0 = who.x, y0 = who.y;
+    /* a neighbour, touching, and somebody well out of reach */
+    const pals = gg.actors.filter(a => a.type === 'SHOPPER' && !a.dead && a !== who);
+    const touching = pals[0], faraway = pals[1];
+    touching.x = who.x + who.radius + touching.radius + 2; touching.y = who.y;
+    faraway.x = who.x + 3000; faraway.y = who.y;
+    for (const a of [touching, faraway]) gg.blockmap.moved(a);
     who.ignite(400);
-    check('a person the flame lands on does not catch, because this world does not burn',
-      who.burning === 0 && !who.lit);
-    const before = who.health;
+    check('a person the flame lands on catches, even in a world where nothing else burns',
+      who.burning > 0 && who.torch > 0 && who.state === STATES_G[ACTORS_G.SHOPPER.burn]);
+    check('and runs: the burn state is a panicked run, and everybody near them is frightened off',
+      who.panic > 0 && !!ACTORS_G.SHOPPER.burnScare);
+    let caught = false;
+    for (let k = 0; k < 40 && !caught; k++) {
+      touching.x = who.x + who.radius + touching.radius + 2; touching.y = who.y; gg.blockmap.moved(touching);
+      who.burnTic(); caught = touching.burning > 0;
+    }
+    check('AND IT IS CATCHING: whoever they touch goes up too', caught && touching.torch > 0);
+    check('but not somebody a street away', faraway.burning === 0);
+    check('a burning person is still a torch: they set alight the next one along',
+      Actor_G.CATCH_EVERY > 0 && Actor_G.CATCH_CHANCE > 0 && /this\.setAlight\(\);/.test(fsG.readFileSync('js/actor.js', 'utf8')));
     gg.fire.ignite(who.x, who.y, 200, 90);
     check('and a call to the fire system lights nothing anywhere',
       gg.fire.burningCells === 0 && gg.fire.liveCells === 0);
     /* but the gun still works: the stream is still a stream and it
        still takes somebody down */
-    const o = { x: who.x - 60, y: who.y, z: who.z + 40 };
+    /* on somebody not already alight — a person on fire has had their
+       ending decided, and more fire does nothing to them (see ignite) */
+    const mark = pals[2];
+    mark.x = x0 - 2000; mark.y = y0; gg.blockmap.moved(mark);
+    const before = mark.health;
+    const o = { x: mark.x - 60, y: mark.y, z: mark.z + 40 };
     for (let k = 0; k < 30; k++) { gg.flame.fire(o, 0, 0); gg.flame.tic(); }
     check('the flamethrower still throws flame, and it still hurts',
-      gg.flame.particles.count > 0 && who.health < before, `${before} -> ${who.health}`);
+      gg.flame.particles.count > 0 && (mark.health < before || mark.burning > 0), `${before} -> ${mark.health}`);
 
     let t = 0;
     gg.player.shotsFired = 99;
