@@ -1,0 +1,97 @@
+/* =====================================================================
+   GROCERY STORE SIMULATOR — the sector grid
+   =====================================================================
+
+   At the user's request: sprites, trees and 3D objects are lit, coloured
+   and fogged by the SECTOR THEY STAND IN, as a thing in Doom is. The
+   walls and floors carry their sector's light, colour and fog in their
+   vertices (js/mapgeo.js); nothing else does, and there is a lot of
+   nothing else — a standee, a tree, a model, the editor's billboards —
+   each drawn by its own code.
+
+   So the sectors are handed to all of them at once, as two small
+   pictures over the map's floor plan: a cell per `cell` units, each
+   holding what the sector at its middle says. A vertex shader reads the
+   cell under its object's foot (SECTOR_GRID_GLSL in js/material.js) and
+   that is the whole of the plumbing: anything shaded through the world
+   shader picks it up without being told.
+
+     A  rgb  the thing colour — Doom 64's, times the sector's light colour
+        a    the sector's light
+     B  rgb  the sector's fog colour
+        a    its density / 100, or 0 for the map's default fog
+
+   Only for a map from the editor (a level with mapLight): the game's own
+   levels light their things themselves, and it is switched off for them.
+   ===================================================================== */
+
+import * as THREE from 'three';
+import { world } from './material.js';
+
+/** The most cells a side, and the finest a cell may be. A 10240-unit map
+ *  is 40 units a cell: finer than a person is wide. */
+export const GRID_MAX_CELLS = 256;
+export const GRID_MIN_CELL = 16;
+
+/**
+ * Sample a level's sectors into the grid. Returns { cell, cols, rows,
+ * x0, y0, a, b } with a and b as Uint8Arrays, or null for a level with
+ * no sectors. Pure: no textures, so it can be tested.
+ */
+export function sampleSectorGrid(level) {
+  const S = level?.sectors || [];
+  if (!S.length || !level.sectorAt) return null;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const s of S) {
+    const b = s.bbox;
+    if (!b) continue;
+    x0 = Math.min(x0, b[0]); y0 = Math.min(y0, b[1]); x1 = Math.max(x1, b[2]); y1 = Math.max(y1, b[3]);
+  }
+  if (!(x1 > x0 && y1 > y0)) return null;
+  const cell = Math.max(GRID_MIN_CELL, Math.ceil(Math.max(x1 - x0, y1 - y0) / GRID_MAX_CELLS));
+  const cols = Math.max(1, Math.ceil((x1 - x0) / cell)), rows = Math.max(1, Math.ceil((y1 - y0) / cell));
+  const a = new Uint8Array(cols * rows * 4), b = new Uint8Array(cols * rows * 4);
+  const u8 = v => Math.max(0, Math.min(255, Math.round(v * 255)));
+  for (let j = 0; j < rows; j++) {
+    for (let i = 0; i < cols; i++) {
+      const k = (j * cols + i) * 4;
+      const s = level.sectorAt(x0 + (i + 0.5) * cell, y0 + (j + 0.5) * cell);
+      /* off the map: white, full light, no fog of its own */
+      const t = s?.tint?.thing || [1, 1, 1];
+      a[k] = u8(t[0]); a[k + 1] = u8(t[1]); a[k + 2] = u8(t[2]);
+      a[k + 3] = u8(s ? Math.min(1, s.light ?? 1) : 1);
+      const f = s?.fog;
+      if (f && f[3] > 0) { b[k] = u8(f[0]); b[k + 1] = u8(f[1]); b[k + 2] = u8(f[2]); b[k + 3] = Math.max(1, u8(f[3] / 100)); }
+    }
+  }
+  return { cell, cols, rows, x0, y0, a, b };
+}
+
+let texA = null, texB = null;
+const dataTex = (arr, w, h) => {
+  const t = new THREE.DataTexture(arr, w, h, THREE.RGBAFormat, THREE.UnsignedByteType);
+  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter;
+  t.generateMipmaps = false;
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  t.needsUpdate = true;
+  return t;
+};
+
+/**
+ * Put a level's sectors on the world (world.sectorA and friends), or
+ * switch the grid off for a level that does not want it (a game level,
+ * or null).
+ */
+export function applySectorGrid(level) {
+  const g = level?.mapLight ? sampleSectorGrid(level) : null;
+  if (!g) { world.sectorOn.value = 0; return null; }
+  texA?.dispose(); texB?.dispose();
+  texA = dataTex(g.a, g.cols, g.rows);
+  texB = dataTex(g.b, g.cols, g.rows);
+  world.sectorA.value = texA;
+  world.sectorB.value = texB;
+  const r = world.sectorRect.value;
+  r.x = g.x0; r.y = g.y0; r.z = 1 / (g.cols * g.cell); r.w = 1 / (g.rows * g.cell);
+  world.sectorOn.value = 1;
+  return g;
+}

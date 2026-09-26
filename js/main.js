@@ -41,6 +41,7 @@ import { Audio } from './audio.js';
 import { Input } from './input.js';
 import { TouchControls } from './touch.js';
 import { world, applyMapLight } from './material.js';
+import { applySectorGrid } from './sectorgrid.js';
 import { atlasTexture, imageTexture } from './particles.js';
 import { bakeEffectAtlases } from './effects.js';
 import { bakeRainAtlas } from './rain.js';
@@ -550,6 +551,8 @@ async function boot() {
   const level = played ? played.level : buildGrid();
   /* an edited map's own light colour, ambient light and fog, or none */
   applyMapLight(played ? played.level.mapLight : null);
+  /* and its sectors, for the things standing in them (js/sectorgrid.js) */
+  applySectorGrid(played ? played.level : null);
   const fleet = await fleetP;
   const police = await policeP;
   const apc = await apcP;

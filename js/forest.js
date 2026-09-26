@@ -45,7 +45,7 @@
    ===================================================================== */
 
 import * as THREE from 'three';
-import { worldUniforms, WORLD_UNIFORMS_GLSL, WORLD_SHADE_GLSL } from './material.js';
+import { worldUniforms, WORLD_UNIFORMS_GLSL, WORLD_SHADE_GLSL, SECTOR_GRID_GLSL } from './material.js';
 import { climate } from './weather.js';
 import { windMultipliers } from './fire.js';
 import { Particles } from './particles.js';
@@ -1201,8 +1201,16 @@ varying float vBurn;
 varying float vSeed;
 varying float vDepth;
 varying vec3  vWorld;
+/* the sector the plant stands in, in a map from the editor: its light
+   and thing colour, and its fog — see js/sectorgrid.js */
+varying vec4  vSecLight;
+varying vec4  vFog;
+${SECTOR_GRID_GLSL}
 
 void main() {
+  vSecLight = vec4(1.0, 1.0, 1.0, -1.0);
+  vFog = vec4(0.0, 0.0, 0.0, -1.0);
+  if (sectorOn > 0.5) { vSecLight = sectorLightAt(iPos); vFog = sectorFogAt(iPos); }
   /* Half the plants are mirrored, chosen when they were planted: ten
      sprites over fifty thousand plants is a lot of repeat, and a flip
      doubles the apparent variety for nothing. */
@@ -1246,12 +1254,16 @@ varying float vBurn;
 varying float vSeed;
 varying float vDepth;
 varying vec3  vWorld;
+varying vec4  vSecLight;
+#define SECTOR_FOG
+varying vec4  vFog;
 ${WORLD_SHADE_GLSL}
 
 void main() {
   vec4 t = texture2D(map, vUv);
   if (t.a < 0.5) discard;
-  vec3 col = t.rgb;
+  /* coloured by the sector it stands in (white where there is none) */
+  vec3 col = t.rgb * vSecLight.rgb;
   float ember = 0.0;
   float gone = 0.0;
   vec3 hue = vec3(1.0);
@@ -1322,7 +1334,8 @@ void main() {
     hue = ramp[int(floor(idx * 7.0 + 0.5))];
   }
 
-  float l = worldBand(light, vDepth, 1.0, 0.0);
+  /* and lit by it: the sector's light, or the wood's own */
+  float l = worldBand(vSecLight.a >= 0.0 ? vSecLight.a : light, vDepth, 1.0, 0.0);
   vec3 c = worldShade(col, l, vDepth, vWorld, 0.0);
   /* embers go on after the smoke, so a burning ridge glows through it */
   c += hue * ember;

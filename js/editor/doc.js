@@ -952,11 +952,21 @@ export function compileDoc(doc) {
   level.skybox = w.skybox || null;
   level.carSlots = [];
   level.slideDoors = [];
-  level.props = (doc.props || []).map(p => ({
-    x0: Math.min(p.x0, p.x1), y0: Math.min(p.y0, p.y1), x1: Math.max(p.x0, p.x1), y1: Math.max(p.y0, p.y1),
-    z0: Math.min(p.z0, p.z1), z1: Math.max(p.z0, p.z1),
-    tex: p.tex || 'GRIDWALL', topTex: p.topTex || p.tex || 'GRIDWALL', light: p.light ?? 0.66, sky: 0,
-  }));
+  level.props = (doc.props || []).map(p => {
+    const box = {
+      x0: Math.min(p.x0, p.x1), y0: Math.min(p.y0, p.y1), x1: Math.max(p.x0, p.x1), y1: Math.max(p.y0, p.y1),
+      z0: Math.min(p.z0, p.z1), z1: Math.max(p.z0, p.z1),
+      tex: p.tex || 'GRIDWALL', topTex: p.topTex || p.tex || 'GRIDWALL', sky: 0,
+    };
+    /* A 3D OBJECT IN A SECTOR is lit, coloured and fogged by it, as a
+       thing is: the sector under its middle, its light (unless the box
+       has its own), its thing colour, its fog */
+    const s = level.sectorAt?.((box.x0 + box.x1) / 2, (box.y0 + box.y1) / 2);
+    box.light = p.light ?? s?.light ?? 0.66;
+    if (s?.tint?.thing) box.tint = s.tint.thing;
+    if (s?.fog) box.fog = s.fog;
+    return box;
+  });
   level.roofs = [];
   /* THE PLANTS, placed and spread: the list js/forest.js grows a town's
      gardens from, and — with no wood on this map — the only thing it

@@ -5621,6 +5621,22 @@ reaches walls, floors and ceilings through a per-vertex attribute
 beside the Doom 64 tint. Everything is off at its defaults, so the
 game's own levels are untouched.
 
+WHAT STANDS IN A SECTOR takes its light, its colour and its fog too, as
+a thing does in Doom: sprites, trees, the editor's plants and people,
+and 3D boxes. The sectors are handed to all of them at once as the
+SECTOR GRID (js/sectorgrid.js): two small pictures over the map's floor
+plan, a cell every 16 to 40 units, each holding the light, thing colour
+and fog of the sector at its middle. A vertex shader reads the cell
+under its object's foot (SECTOR_GRID_GLSL in js/material.js), so
+anything drawn through the world shading picks it up without its own
+code being told. A standee, which the game already lights and colours
+by its sector, takes the fog from it; a model takes all three, its own
+shading times the sector's light; trees and the editor's billboards
+take all three. A 3D box takes the sector under its middle when the map
+is compiled, unless it has a light of its own. The grid is only laid
+down for a map from the editor; the game's own levels light their
+things themselves.
+
 THE SKYBOXES. Seven, picked on the Map tab (Skybox): BSKY1, BSKY2,
 LSKYA, NSKY1, OSKY1, UNSKY, XSKY. The sky here is a sphere wearing a
 panorama, so each six-face box was joined into one by

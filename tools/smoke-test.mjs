@@ -14540,6 +14540,51 @@ section('light and fog');
   check('a sector has a light colour and a fog in the inspector', /'Light colour'/.test(ui) && /'Fog density'/.test(ui) && /x\.fog = \{ color:/.test(ui));
   check('and the Map tab has the light colour, the ambient, the fog, the override and the mix',
     /row\('Ambient light'/.test(ui) && /row\('Ambient strength'/.test(ui) && /row\('Ambient in fog'/.test(ui) && /row\('Override fog colour'/.test(ui) && /row\('Fog colour'/.test(ui));
+  /* WHAT STANDS IN A SECTOR: sprites, trees and 3D objects take its
+     light, colour and fog (js/sectorgrid.js) */
+  {
+    const SG = await import('../js/sectorgrid.js');
+    const g = SG.sampleSectorGrid(c1.level);
+    const cellAt = (x, y) => { const i = Math.floor((x - g.x0) / g.cell), j = Math.floor((y - g.y0) / g.cell); return (j * g.cols + i) * 4; };
+    const kr = cellAt(1536, 1536), kf = cellAt(3500, 3500);
+    check('the sector grid covers the map in cells no coarser than it must be',
+      g && g.cols <= SG.GRID_MAX_CELLS && g.rows <= SG.GRID_MAX_CELLS && g.cell >= SG.GRID_MIN_CELL, g && `${g.cols}x${g.rows} @${g.cell}`);
+    check('a cell in the room holds its light and thing colour',
+      g.a[kr + 3] === Math.round(room.light * 255) && g.a[kr] === 128 && g.a[kr + 1] === 128, `${[...g.a.subarray(kr, kr + 4)]}`);
+    check('and its fog: colour, and density over a hundred',
+      g.b[kr + 2] === 255 && g.b[kr] === 0 && g.b[kr + 3] === Math.round(0.40 * 255), `${[...g.b.subarray(kr, kr + 4)]}`);
+    check('a cell in the field is white, at its light, with no fog of its own (the map\'s default)',
+      g.a[kf] === 255 && g.a[kf + 3] === Math.round(field.light * 255) && g.b[kf + 3] === 0);
+    check('the grid is only for maps from the editor: a level without mapLight switches it off',
+      SG.applySectorGrid({ sectors: [] }) === null && M.world.sectorOn.value === 0);
+    const mat = fsL.readFileSync(new URL('../js/material.js', import.meta.url), 'utf8');
+    const forest = fsL.readFileSync(new URL('../js/forest.js', import.meta.url), 'utf8');
+    const v3 = fsL.readFileSync(new URL('../js/editor/view3d.js', import.meta.url), 'utf8');
+    check('every world material binds the grid', ['sectorA', 'sectorB', 'sectorRect', 'sectorOn'].every(n => M.worldUniforms()[n] === M.world[n]));
+    check('a sprite or model reads it at its foot: a standee takes the fog, a model the light, colour and fog',
+      /#ifndef TINT\s+if \(sectorOn > 0\.5\)/.test(mat) && /vec3 foot = iPos;/.test(mat) && /vFog = sectorFogAt\(foot\);/.test(mat) && /vLight \*= sl\.a;/.test(mat) && /vTint \*= sl\.rgb;/.test(mat));
+    check('trees take their sector\'s light, colour and fog',
+      /vSecLight = sectorLightAt\(iPos\); vFog = sectorFogAt\(iPos\);/.test(forest) && /t\.rgb \* vSecLight\.rgb/.test(forest) && /vSecLight\.a >= 0\.0 \? vSecLight\.a : light/.test(forest));
+    check('the editor\'s plants and people are lit and fogged the same way',
+      /sectorLightAt\(base\); vFog = sectorFogAt\(base\);/.test(v3) && /worldShade\(c\.rgb \* markTint \* vSecLight\.rgb/.test(v3));
+    check('the editor and a test run both lay the grid down',
+      /applySectorGrid\(c\.level\)/.test(v3) && /applySectorGrid\(played \? played\.level : null\)/.test(fsL.readFileSync(new URL('../js/main.js', import.meta.url), 'utf8')));
+    /* a box: the sector under its middle */
+    const pd = JSON.parse(JSON.stringify(doc));
+    pd.props = [{ id: 20, x0: 1400, y0: 1400, x1: 1600, y1: 1600, z0: 0, z1: 64, tex: 'GRIDWALL' },
+                { id: 21, x0: 3000, y0: 3000, x1: 3100, y1: 3100, z0: 0, z1: 64, tex: 'GRIDWALL' },
+                { id: 22, x0: 1400, y0: 1700, x1: 1500, y1: 1800, z0: 0, z1: 64, tex: 'GRIDWALL', light: 0.9 }];
+    const cp = D.compileDoc(pd).level.props;
+    check('a 3D box takes the light, thing colour and fog of the sector it stands in',
+      cp[0].light === room.light && near(cp[0].tint, room.tint.thing) && near(cp[0].fog, room.fog) && cp[1].light === field.light && !cp[1].fog);
+    check('unless it has a light of its own', cp[2].light === 0.9 && near(cp[2].fog, room.fog));
+    const geoP = MG.buildLevelGeometry(D.compileDoc(pd).level, bank);
+    let boxFog = 0;
+    const walkP = o => { const f = o.geometry?.attributes?.fogRGBA; if (f) for (let i = 0; i < f.count; i++) if (f.array[i * 4 + 3] === 40) boxFog++; for (const ch of o.children || []) walkP(ch); };
+    walkP(geoP.group);
+    check('and its faces carry that fog', boxFog > blue, `${boxFog} against ${blue} without the boxes`);
+  }
+
 }
 
 /* ---------- the download ---------- */

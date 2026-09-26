@@ -376,6 +376,7 @@
   "js/responders.js",
   "js/ruin.js",
   "js/scope.js",
+  "js/sectorgrid.js",
   "js/sky.js",
   "js/skyart.js",
   "js/slidedoor.js",

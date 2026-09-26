@@ -808,6 +808,14 @@ function bank_h(set, name) { return ROOF_SIZES.get(name) || { w: 64, h: 64 }; }
 export function boxGeometry(set, p) {
   const { x0, y0, x1, y1, z0, z1 } = p;
   if (x1 - x0 <= 0 || y1 - y0 <= 0 || z1 - z0 <= 0) return 0;
+  /* the colour and fog of the sector it stands in, if the map gave it
+     them (a box from GSS-EDIT — see level.props in js/editor/doc.js) */
+  const was = [PAINT, FOGV];
+  PAINT = paintFlat(p.tint); FOGV = p.fog || null;
+  try { return boxQuads(set, p); } finally { [PAINT, FOGV] = was; }
+}
+function boxQuads(set, p) {
+  const { x0, y0, x1, y1, z0, z1 } = p;
   const lit = Math.max(0.02, Math.min(1.4, p.light ?? 0.5));
   const sk = p.sky ?? 1, ch = p.char ?? 0;
   let quads = 0;

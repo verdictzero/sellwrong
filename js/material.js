@@ -233,7 +233,40 @@ export const world = {
   fogDefault:   { value: new THREE.Vector4(0, 0, 0, 0) },
   airColor:     { value: new THREE.Color(0, 0, 0) },
   airOverride:  { value: 0.0 },
+
+  /* THE SECTOR GRID: what light, colour and fog each spot of the map
+     has, as two small pictures over its floor plan (buildSectorGrid in
+     js/sectorgrid.js). What is not level geometry — a sprite, a tree, a
+     3D model — reads it at its own foot and is lit and fogged by the
+     sector it stands in, Doom's rule for a thing. Off (sectorOn 0) for
+     the game's own levels, which light their things themselves.
+       sectorA  rgb: the thing colour (Doom 64's, times the sector's light
+                colour); a: the sector's light
+       sectorB  rgb: the sector's fog colour; a: its density / 100, or 0
+                for the map's default fog
+       sectorRect  the grid's map-space origin, and one over its size */
+  sectorA:      { value: null },
+  sectorB:      { value: null },
+  sectorRect:   { value: new THREE.Vector4(0, 0, 1, 1) },
+  sectorOn:     { value: 0.0 },
 };
+
+/* The sector grid, for a vertex shader: its uniforms and the lookup —
+   see world.sectorA. `foot` is in renderer axes. */
+export const SECTOR_GRID_GLSL = /* glsl */`
+uniform sampler2D sectorA;
+uniform sampler2D sectorB;
+uniform vec4  sectorRect;
+uniform float sectorOn;
+vec2 sectorUv(vec3 foot) { return (vec2(foot.x, -foot.z) - sectorRect.xy) * sectorRect.zw; }
+/* the light (a) and thing colour (rgb) of the sector at a foot */
+vec4 sectorLightAt(vec3 foot) { return texture2D(sectorA, sectorUv(foot)); }
+/* its fog as worldShade wants it: rgb and density, or -1 for the map's */
+vec4 sectorFogAt(vec3 foot) {
+  vec4 b = texture2D(sectorB, sectorUv(foot));
+  return b.a > 0.0 ? vec4(b.rgb, b.a * 100.0) : vec4(0.0, 0.0, 0.0, -1.0);
+}
+`;
 
 /**
  * PUT A MAP'S OWN LIGHT AND FOG ON THE WORLD (see world.lightColor),
@@ -826,6 +859,8 @@ varying float vLamp;
   varying float alight;
 #endif
 
+${SECTOR_GRID_GLSL}
+
 void main() {
   vUv = uv;
   vTint = vec3(1.0);
@@ -876,6 +911,27 @@ void main() {
   vec4 mv = viewMatrix * wp;
   vDepth = -mv.z;
   gl_Position = projectionMatrix * mv;
+
+  /* A THING IN A SECTOR, in a map from the editor: lit, coloured and
+     fogged by the sector its foot is in (world.sectorA). Level geometry
+     (TINT) carries its own per vertex. A standee is already handed its
+     sector's light and colour by the game, so it takes the fog; a model
+     takes all three, its own shading times the sector's light. */
+  #ifndef TINT
+    if (sectorOn > 0.5) {
+      #ifdef INSTANCED_SPRITE
+        vec3 foot = iPos;
+      #else
+        vec3 foot = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+      #endif
+      vFog = sectorFogAt(foot);
+      #ifndef INSTANCED_SPRITE
+        vec4 sl = sectorLightAt(foot);
+        vLight *= sl.a;
+        vTint *= sl.rgb;
+      #endif
+    }
+  #endif
 }
 `;
 
@@ -1319,6 +1375,11 @@ export function worldUniforms() {
     fogDefault:   world.fogDefault,
     airColor:     world.airColor,
     airOverride:  world.airOverride,
+    /* and the sector grid, which vertex shaders read (SECTOR_GRID_GLSL) */
+    sectorA:      world.sectorA,
+    sectorB:      world.sectorB,
+    sectorRect:   world.sectorRect,
+    sectorOn:     world.sectorOn,
   };
 }
 

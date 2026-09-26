@@ -48,7 +48,8 @@ import * as THREE from 'three';
 import { buildLevelGeometry } from '../mapgeo.js';
 import { buildSky, followSky } from '../sky.js';
 import { loadSky } from '../texpack.js';
-import { world, applyMapLight } from '../material.js';
+import { world, applyMapLight, worldUniforms, WORLD_UNIFORMS_GLSL, WORLD_SHADE_GLSL, SECTOR_GRID_GLSL } from '../material.js';
+import { applySectorGrid } from '../sectorgrid.js';
 import { Weather } from '../weather.js';
 import { THING_TYPES, ringOf, centroid, pointInPoly, FEATURES, DEFAULT_FLOOR } from './doc.js';
 import { makeSky } from './editor.js';
@@ -222,6 +223,8 @@ export class View3D {
     if (!c?.level) return;
     /* the map's own light colour, ambient light and fog (World panel) */
     applyMapLight(c.level.mapLight);
+    /* and the sectors for what stands in them: sprites, trees, models */
+    applySectorGrid(c.level);
     if (this.levelGroup) {
       this.scene.remove(this.levelGroup);
       disposeTree(this.levelGroup);
@@ -1060,26 +1063,49 @@ export function thingHeight(t) {
    look down. The picture's alpha is cut, not blended, so ten thousand
    of them need no sorting. */
 function billboardMaterial(map, tint) {
+  /* LIT AND FOGGED BY THE SECTOR IT STANDS IN, at the user's request, as
+     the game's own sprites are: the sector grid (js/sectorgrid.js) read
+     at the foot, and the game's world shading — so a plant in a dark
+     red room is dark and red, and one in a fogged sector fades into it */
   return new THREE.ShaderMaterial({
-    uniforms: { map: { value: map }, tint: { value: tint } },
+    uniforms: { map: { value: map }, markTint: { value: tint }, ...worldUniforms() },
     vertexShader: /* glsl */`
       varying vec2 vUv;
+      varying vec3 vWorld;
+      varying float vDepth;
+      varying vec4 vSecLight;
+      varying vec4 vFog;
+      ${SECTOR_GRID_GLSL}
       void main() {
         vUv = uv;
         vec3 base = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+        vSecLight = vec4(1.0);
+        vFog = vec4(0.0, 0.0, 0.0, -1.0);
+        if (sectorOn > 0.5) { vSecLight = sectorLightAt(base); vFog = sectorFogAt(base); }
         float sx = length(instanceMatrix[0].xyz), sy = length(instanceMatrix[1].xyz);
         vec3 right = normalize(vec3(viewMatrix[0][0], 0.0, viewMatrix[2][0]) + vec3(1e-5, 0.0, 0.0));
         vec3 p = base + right * position.x * sx + vec3(0.0, position.y * sy, 0.0);
-        gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+        vWorld = p;
+        vec4 mv = viewMatrix * vec4(p, 1.0);
+        vDepth = -mv.z;
+        gl_Position = projectionMatrix * mv;
       }`,
     fragmentShader: /* glsl */`
       uniform sampler2D map;
-      uniform vec3 tint;
+      uniform vec3 markTint;        // a person's type colour; white for a plant
+      ${WORLD_UNIFORMS_GLSL}
       varying vec2 vUv;
+      varying vec3 vWorld;
+      varying float vDepth;
+      varying vec4 vSecLight;
+      #define SECTOR_FOG
+      varying vec4 vFog;
+      ${WORLD_SHADE_GLSL}
       void main() {
         vec4 c = texture2D(map, vUv);
         if (c.a < 0.5) discard;
-        gl_FragColor = vec4(c.rgb * tint, 1.0);
+        float l = worldBand(vSecLight.a, vDepth, 0.0, 0.0);
+        gl_FragColor = vec4(worldShade(c.rgb * markTint * vSecLight.rgb, l, vDepth, vWorld, 0.0), 1.0);
       }`,
     side: THREE.DoubleSide,
   });
