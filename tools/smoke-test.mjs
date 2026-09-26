@@ -14454,6 +14454,94 @@ section('the grid and the snap');
   }
 }
 
+/* ---------- light and fog ---------- */
+section('light and fog');
+{
+  /* At the user's request: fog per sector, a light colour per sector, a
+     map-wide light colour, ambient light and fog, a fog colour that
+     overrides every other, and the ambient light mixed into the fog. */
+  const D = await import('../js/editor/doc.js');
+  const M = await import('../js/material.js');
+  const MG = await import('../js/mapgeo.js');
+  const TX = await import('../js/textures.js');
+  const fsL = await import('node:fs');
+  const near = (a, b, e = 1e-6) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) < e);
+  const Rv = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+
+  const none = D.mapLightOf({});
+  check('a map that says nothing has white light, no ambient and no fog',
+    near(none.lightColor, [1, 1, 1]) && near(none.ambient, [0, 0, 0]) && none.fog[3] === 0 && !none.override && none.fogAmbient === 1);
+  const ml = D.mapLightOf({ lightColor: '#ff8000', ambient: { color: '#ffffff', amount: 0.25 }, fog: { color: '#00ff00', density: 250, override: true }, fogAmbient: 0.5 });
+  check('the map\'s light colour, its ambient light (colour times strength), its fog and the override',
+    near(ml.lightColor, [1, 128 / 255, 0]) && near(ml.ambient, [0.25, 0.25, 0.25]) && near(ml.fog, [0, 1, 0, 100]) && ml.override && ml.fogAmbient === 0.5);
+
+  /* a room with its own fog and light colour in a field that has neither */
+  const doc = D.newDoc('F', 4096);
+  doc.vertices.push(...Rv(1024, 1024, 2048, 2048));
+  doc.sectors.push({ id: 9, verts: [4, 5, 6, 7], ...D.SECTOR_DEFAULTS,
+    fog: { color: '#0000ff', density: 40 }, lightColor: '#808080', colors: { top: '#ff0000' } });
+  doc.nextId = 10;
+  const c1 = D.compileDoc(doc);
+  const room = c1.level.sectors[c1.index[1]], field = c1.level.sectors[c1.index[0]];
+  check('a sector\'s fog reaches the level: its colour and density', room.fog && near(room.fog, [0, 0, 1, 40]));
+  check('and a sector without one has none of its own (the map\'s default fills in)', !field.fog);
+  check('a sector\'s light colour multiplies into its Doom 64 colours, white where one is unset',
+    near(room.tint.top, [128 / 255, 0, 0]) && near(room.tint.floor, [128 / 255, 128 / 255, 128 / 255]) && near(room.tint.thing, [128 / 255, 128 / 255, 128 / 255]));
+  check('and a sector with neither is untinted, as before', !field.tint);
+  const c2 = D.compileDoc({ ...doc, world: { ...doc.world, fog: { color: '#ff00ff', density: 10, override: true } } });
+  const room2 = c2.level.sectors[c2.index[1]];
+  check('the map\'s fog colour overrides the sector\'s when it says so, keeping the sector\'s density',
+    near(room2.fog, [1, 0, 1, 40]) && c2.level.mapLight.override && c2.level.mapLight.fog[3] === 10);
+
+  /* the renderer's side */
+  M.applyMapLight(c2.level.mapLight);
+  const W = M.world;
+  check('applied, the fog is the world\'s default and the far haze takes its colour',
+    W.fogDefault.value.w === 10 && W.airOverride.value === 1 && W.airColor.value.r === 1 && W.airColor.value.g === 0);
+  M.applyMapLight(null);
+  check('and a level without one puts everything back to doing nothing',
+    W.lightColor.value.r === 1 && W.ambientColor.value.r === 0 && W.fogDefault.value.w === 0 && W.airOverride.value === 0);
+
+  /* the geometry: every vertex carries its sector's fog */
+  const bank = TX.bakeTextures();
+  bank.add(D.DEFAULT_FLOOR, bank.map.get('GRID').pix, { w: 256, h: 256 });
+  const geo = MG.buildLevelGeometry(c1.level, bank);
+  let blue = 0, plain = 0, bad = 0;
+  const walk = o => {
+    const f = o.geometry?.attributes?.fogRGBA, pos = o.geometry?.attributes?.position;
+    if (f) {
+      if (f.count !== pos.count) bad++;
+      for (let i = 0; i < f.count; i++) {
+        if (f.array[i * 4 + 3] === 40 && f.array[i * 4 + 2] === 1) blue++;
+        else if (f.array[i * 4 + 3] === -1) plain++;
+      }
+    }
+    for (const ch of o.children || []) walk(ch);
+  };
+  walk(geo.group);
+  check('every surface carries a fog for every corner: the room\'s blue, the field\'s default', blue > 0 && plain > 0 && bad === 0, `${blue} ${plain} ${bad}`);
+
+  /* the shader */
+  const src = fsL.readFileSync(new URL('../js/material.js', import.meta.url), 'utf8');
+  check('every world shader gets the new uniforms, declared and bound (the whitelist)',
+    ['lightColor', 'ambientColor', 'fogAmbient', 'fogDefault', 'airColor', 'airOverride'].every(n =>
+      new RegExp(`uniform (vec3|vec4|float)\\s+${n};`).test(M.WORLD_UNIFORMS_GLSL) && M.worldUniforms()[n] === W[n]));
+  check('the light colour multiplies the sector\'s light, and the ambient light adds under it',
+    /vec3 c = albedo \* l \* tint \* lightColor;/.test(src) && /c \+= albedo \* ambientColor \* \(1\.0 - fullbright\);/.test(src));
+  check('the fog is the sector\'s, or the map\'s default, lit by the light colour, with the ambient in it',
+    /vec4 fg = vFog\.a < 0\.0 \? fogDefault : vFog;/.test(src) && /vec3 fc = fg\.rgb \* lightColor \+ ambientColor \* fogAmbient;/.test(src) && /exp2\(-depth \* fg\.a \/ 25600\.0\)/.test(src));
+  check('and the override takes the far haze too', /air = mix\(air, airColor, airOverride\);/.test(src));
+
+  /* the wiring */
+  const ui = fsL.readFileSync(new URL('../js/editor/ui.js', import.meta.url), 'utf8');
+  check('the editor and a test run both put the map\'s light on',
+    /applyMapLight\(c\.level\.mapLight\)/.test(fsL.readFileSync(new URL('../js/editor/view3d.js', import.meta.url), 'utf8')) &&
+    /applyMapLight\(played \? played\.level\.mapLight : null\)/.test(fsL.readFileSync(new URL('../js/main.js', import.meta.url), 'utf8')));
+  check('a sector has a light colour and a fog in the inspector', /'Light colour'/.test(ui) && /'Fog density'/.test(ui) && /x\.fog = \{ color:/.test(ui));
+  check('and the Map tab has the light colour, the ambient, the fog, the override and the mix',
+    /row\('Ambient light'/.test(ui) && /row\('Ambient strength'/.test(ui) && /row\('Ambient in fog'/.test(ui) && /row\('Override fog colour'/.test(ui) && /row\('Fog colour'/.test(ui));
+}
+
 /* ---------- the download ---------- */
 section('the download');
 {

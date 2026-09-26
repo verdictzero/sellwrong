@@ -5595,6 +5595,32 @@ grass floor. A map saved before this keeps what it had, including a
 painted sky: the skybox belongs to each new map, not to the world's
 defaults, so "painted" on the Map tab still means painted.
 
+LIGHT AND FOG. Per sector, on the Inspect tab:
+  Light colour   one colour for all the light in the sector, multiplied
+                 into its Doom 64 colours (white where they are unset)
+  Fog            a colour and a density, 1 to 100, GZDoom's way: the
+                 fog is half-way in at 25600/density units (100 is thick
+                 at 256, 10 at 2560)
+For the whole map, on the Map tab:
+  Light colour        the colour of every light in the map
+  Ambient light       light that is everywhere, a colour and a strength,
+                      added to every surface however dark its sector
+  Ambient in fog      how much of the ambient is in every fog: a warm
+                      ambient turns a blue fog lilac
+  Fog colour, density the fog of every sector without its own, and of
+                      everything that has no sector (sprites, trees)
+  Override fog colour the map's fog colour on every sector's fog (each
+                      keeps its own density) and on the far haze, in
+                      place of the sky's horizon
+The fog goes on after the far haze. It is lit by the map's light colour
+and carries the ambient, and fullbright (B) turns it off to look at
+textures. It all lives in the shared world shading (js/material.js:
+applyMapLight, the SECTOR FOG block of worldShade), so walls, floors,
+sprites, trees and particles all take the map's light. Sector fog
+reaches walls, floors and ceilings through a per-vertex attribute
+beside the Doom 64 tint. Everything is off at its defaults, so the
+game's own levels are untouched.
+
 THE SKYBOXES. Seven, picked on the Map tab (Skybox): BSKY1, BSKY2,
 LSKYA, NSKY1, OSKY1, UNSKY, XSKY. The sky here is a sphere wearing a
 panorama, so each six-face box was joined into one by

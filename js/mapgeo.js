@@ -44,6 +44,12 @@ import { STREET_LAMP } from './textures.js';
    Batch.tri for every corner; see paintWall and `tint` on a sector. */
 let PAINT = null;
 const WHITE = [1, 1, 1];
+/* AND THE FOG of the sector it is in, alongside: [r, g, b, density],
+   or null for the map's default (world.fogDefault in js/material.js).
+   Set where PAINT is, from the same sector. */
+let FOGV = null;
+const NO_FOG = [0, 0, 0, -1];
+const fogOf = s => s?.fog || null;
 
 /** How a sector's walls are coloured: top at its ceiling, bottom at its
  *  floor, straight between — or null if the sector says nothing. UNDER
@@ -80,7 +86,7 @@ function sideOf(l, s) {
 class Batch {
   constructor(name) {
     this.name = name; this.pos = []; this.uv = []; this.light = []; this.sky = []; this.char = [];
-    this.lamp = []; this.tint = [];
+    this.lamp = []; this.tint = []; this.fog = [];
     this.area = 0;
   }
   get empty() { return this.pos.length === 0; }
@@ -126,6 +132,8 @@ class Batch {
       const a = PAINT(ay), b = PAINT(by), c = PAINT(cy);
       this.tint.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
     } else this.tint.push(1, 1, 1, 1, 1, 1, 1, 1, 1);
+    const f = FOGV || NO_FOG;
+    this.fog.push(f[0], f[1], f[2], f[3], f[0], f[1], f[2], f[3], f[0], f[1], f[2], f[3]);
   }
 
   /* A quad as two triangles, given four corners in winding order. */
@@ -147,6 +155,7 @@ class Batch {
     g.setAttribute('charred', new THREE.Float32BufferAttribute(this.char, 1));
     g.setAttribute('lamp', new THREE.Float32BufferAttribute(this.lamp, 1));
     g.setAttribute('tintRGB', new THREE.Float32BufferAttribute(this.tint, 3));
+    g.setAttribute('fogRGBA', new THREE.Float32BufferAttribute(this.fog, 4));
     g.computeBoundingSphere();
     return g;
   }
@@ -989,7 +998,7 @@ function addFlats(set, level, s, bank) {
   /* the pool of pavement under a street lamp — see lampGeometry */
   const lp = s.lampLit ? 1 : 0;
 
-  PAINT = paintFlat(s.tint?.floor);
+  PAINT = paintFlat(s.tint?.floor); FOGV = fogOf(s);
   if (s.floorTex && s.floorTex !== 'NONE') {
     const t = bank.get(s.floorTex);
     const b = set.get(s.floorTex);   // one set per block, so the name is enough
@@ -1018,7 +1027,7 @@ function addFlats(set, level, s, bank) {
      background shows through. */
   const zc = (x, y) => level.ceilAt(s, x, y);
   const ceilTris = surfaceTris(pts, tris, s.slopeCeil);
-  PAINT = paintFlat(s.tint?.ceil);
+  PAINT = paintFlat(s.tint?.ceil); FOGV = fogOf(s);
   if (!sky && s.ceilTex && s.ceilTex !== 'NONE') {
     const t = bank.get(s.ceilTex);
     const b = set.get(s.ceilTex);
@@ -1037,7 +1046,7 @@ function addFlats(set, level, s, bank) {
      the same triangles wound the other way, wearing the roof's own
      skin, and the shingle you see from the street is the underside of
      the attic you would see from inside it. */
-  PAINT = null;
+  PAINT = null; FOGV = null;
   if (s.roofTex && s.roofTex !== 'NONE') {
     const t = bank.get(s.roofTex);
     const b = set.get(s.roofTex);
@@ -1081,7 +1090,7 @@ function addLine(set, level, l, bank, pick = null) {
       const dst = into(s);
       const L1 = sd.l;
       const peg = pegOf(L1, 'middle', s.floor, s.ceil, s, bank.get(tex).h);
-      PAINT = paintWall(s);
+      PAINT = paintWall(s); FOGV = fogOf(s);
       if (s.slopeCeil || s.slopeFloor) {
         emitWall(dst, L1, bank, tex, (x, y) => [level.floorAt(s, x, y), level.ceilAt(s, x, y)],
                  facingFront, peg, s.light + l.contrast, skyOf(s), charOf(s),
@@ -1091,7 +1100,7 @@ function addLine(set, level, l, bank, pick = null) {
                 s.light + l.contrast, skyOf(s), charOf(s));
       }
     }
-    PAINT = null;
+    PAINT = null; FOGV = null;
     return;
   }
 
@@ -1135,7 +1144,7 @@ function addLine(set, level, l, bank, pick = null) {
        interval AT A POINT. Asked of the same two sectors the band was
        worked out from, so the flat case gives back the same numbers. */
     const emit = (face, light) => {
-      PAINT = paintWall(face === bd.openFront ? s : lit, bd.z0, bd.z1);
+      PAINT = paintWall(face === bd.openFront ? s : lit, bd.z0, bd.z1); FOGV = fogOf(face === bd.openFront ? s : lit);
       if (edgeSlope(bd.e0) || edgeSlope(bd.e1))
         emitWall(dst, sdB.l, bank, bandTex, (x, y) => bandEdges(level, bd, x, y), face, peg,
                  light + l.contrast, skyOf(lit), ch, [edgeSlope(bd.e0), edgeSlope(bd.e1)]);
@@ -1157,7 +1166,7 @@ function addLine(set, level, l, bank, pick = null) {
        houses nothing: their attics say ceilTex NONE and never ask. */
     if (gable && bd.open.ceilTex && bd.open.ceilTex !== 'NONE') emit(!facing, bd.open.light);
   }
-  PAINT = null;
+  PAINT = null; FOGV = null;
 
   /* A middle texture on a two-sided line is the thing IN the hole: a
      grating, a shop window, a wire shelf you can see through. Drawn both
@@ -1204,15 +1213,15 @@ function addLine(set, level, l, bank, pick = null) {
           const peg = bot + th + sd.l.yoff;
           const b0 = Math.max(bot, peg - th), b1 = Math.min(top, peg);
           if (b1 <= b0) continue;
-          PAINT = paintWall(sec, b0, b1);
+          PAINT = paintWall(sec, b0, b1); FOGV = fogOf(sec);
           addQuad(set, sd.l, bank, tex, b0, b1, face, peg, sec.light + l.contrast, skyOf(sec), charOf(sec));
           continue;
         }
         const peg = l.pegMiddle === 'bottom' ? bot + th : top;
-        PAINT = paintWall(sec, bot, top);
+        PAINT = paintWall(sec, bot, top); FOGV = fogOf(sec);
         addQuad(set, sd.l, bank, tex, bot, top, face, peg + sd.l.yoff, sec.light + l.contrast, skyOf(sec), charOf(sec));
       }
-      PAINT = null;
+      PAINT = null; FOGV = null;
     }
   }
 }

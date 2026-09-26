@@ -208,7 +208,52 @@ export const world = {
      culling and the same draw calls as the frame, so the scope can
      only ever show what is there, and nothing has to be kept in step. */
   thermal: { value: 0.0 },
+
+  /* ------------------------------------------------------------------
+     A MAP'S OWN LIGHT AND FOG, set by GSS-EDIT's World panel (see
+     applyMapLight in js/editor/doc.js). All of them do nothing at
+     their defaults, so the game's own levels are untouched.
+
+       lightColor   the colour of all the light in the map, multiplied
+                    into every lit surface (a global light colour)
+       ambientColor light that is everywhere, colour times strength,
+                    ADDED to every surface however dark its sector — the
+                    floor a pitch-black room never goes below
+       fogAmbient   how much of that ambient light is in the fog too, so
+                    a green ambient makes every fog a little green
+       fogDefault   the fog of anything without a sector's own: rgb and
+                    a density (0 is none; see sectorFog below)
+       airColor, airOverride
+                    the far haze's colour, in place of the sky's horizon
+                    when airOverride is 1
+     ------------------------------------------------------------------ */
+  lightColor:   { value: new THREE.Color(1, 1, 1) },
+  ambientColor: { value: new THREE.Color(0, 0, 0) },
+  fogAmbient:   { value: 1.0 },
+  fogDefault:   { value: new THREE.Vector4(0, 0, 0, 0) },
+  airColor:     { value: new THREE.Color(0, 0, 0) },
+  airOverride:  { value: 0.0 },
 };
+
+/**
+ * PUT A MAP'S OWN LIGHT AND FOG ON THE WORLD (see world.lightColor),
+ * from level.mapLight (mapLightOf in js/editor/doc.js) — or back to
+ * doing nothing, for a level without one.
+ */
+export function applyMapLight(m) {
+  const w = world;
+  /* written field by field: the same objects every material holds */
+  const rgb = (c, [r, g, b]) => { c.r = r; c.g = g; c.b = b; };
+  const v4 = (v, [x, y, z, ww]) => { v.x = x; v.y = y; v.z = z; v.w = ww; };
+  m = m || { lightColor: [1, 1, 1], ambient: [0, 0, 0], fogAmbient: 1, fog: [0, 0, 0, 0], override: false };
+  rgb(w.lightColor.value, m.lightColor);
+  rgb(w.ambientColor.value, m.ambient);
+  w.fogAmbient.value = m.fogAmbient;
+  v4(w.fogDefault.value, m.fog);
+  /* an override puts the fog's colour on the far haze too */
+  rgb(w.airColor.value, m.fog);
+  w.airOverride.value = m.override ? 1 : 0;
+}
 
 /* THE COLOUR OF A STREET LAMP'S LIGHT, in one place. Mercury vapour: a
    cold white with green in it, which is what every American street was
@@ -254,6 +299,12 @@ uniform float burnCell;
 uniform float burnCols;
 uniform float burnRows;
 uniform float thermal;
+uniform vec3  lightColor;
+uniform vec3  ambientColor;
+uniform float fogAmbient;
+uniform vec4  fogDefault;
+uniform vec3  airColor;
+uniform float airOverride;
 `;
 
 /* The two halves of the lighting, as functions.
@@ -581,7 +632,10 @@ float thermalOf(vec3 albedo, float l, float depth, vec3 world, float fullbright)
 
 vec3 worldShade(vec3 albedo, float l, float depth, vec3 world, float fullbright) {
   if (thermal > 0.5) return vec3(thermalOf(albedo, l, depth, world, fullbright));
-  vec3 c = albedo * l * tint;
+  /* the map's light colour on the sector's light, and the ambient light
+     on top of both — see world.lightColor */
+  vec3 c = albedo * l * tint * lightColor;
+  c += albedo * ambientColor * (1.0 - fullbright);
 
   /* Firelight, added on top of the banded light rather than folded into
      it — a smooth glow crossing the steps is what a real light in a
@@ -629,9 +683,29 @@ vec3 worldShade(vec3 albedo, float l, float depth, vec3 world, float fullbright)
   vec3 toFrag = world - eyePos;
   float az = atan(toFrag.z, toFrag.x) * 0.15915494;          // over 2 pi
   vec3 air = texture2D(skyTex, vec2(az, 0.5 + 0.5 / ${SKY_H}.0)).rgb;
+  /* or the map's own colour for it (the fog colour override) */
+  air = mix(air, airColor, airOverride);
   float at = clamp((depth - airNear) / max(1.0, airFar - airNear), 0.0, 1.0);
   at = at * at * (3.0 - 2.0 * at);
   c = mix(c, air, at);
+
+  /* SECTOR FOG, GZDoom's way: the fog of the sector a surface is in —
+     its colour, and a density, 0 to 100, at which the fog is half-way
+     in at 25600/density units (100: at 256; 10: at 2560) — or the map's
+     default fog for what has no sector (a sprite, a tree). Its colour is
+     lit by the map's light colour, and the ambient light is in it too,
+     by fogAmbient: a fog is air with light in it. Not in fullbright,
+     which is for looking at the textures. */
+  #ifdef SECTOR_FOG
+    vec4 fg = vFog.a < 0.0 ? fogDefault : vFog;
+  #else
+    vec4 fg = fogDefault;
+  #endif
+  if (fg.a > 0.0) {
+    float ff = (1.0 - exp2(-depth * fg.a / 25600.0)) * (1.0 - fullbright);
+    vec3 fc = fg.rgb * lightColor + ambientColor * fogAmbient;
+    c = mix(c, fc, ff);
+  }
 
   /* THE SMOKE, after the air, because it is between you and everything.
      Multiplied by smokeDensity so a store that is not yet on fire has
@@ -649,8 +723,12 @@ const COMMON_VERT = /* glsl */`
    map says otherwise — see TINT below, and the sector colours GSS-EDIT
    sets (js/editor/). */
 varying vec3  vTint;
+varying vec4  vFog;
 #ifdef TINT
   attribute vec3 tintRGB;
+  /* and the fog of the sector the surface is in: rgb, density, or a
+     density of -1 for the map's default */
+  attribute vec4 fogRGBA;
 #endif
 varying vec2  vUv;
 varying float vLight;
@@ -751,8 +829,10 @@ varying float vLamp;
 void main() {
   vUv = uv;
   vTint = vec3(1.0);
+  vFog = vec4(0.0, 0.0, 0.0, -1.0);
   #ifdef TINT
     vTint = tintRGB;
+    vFog = fogRGBA;
   #endif
   vLight = light;
   vSky = sky;
@@ -801,6 +881,10 @@ void main() {
 
 const COMMON_FRAG = /* glsl */`
 varying vec3 vTint;
+/* the sector's fog, per vertex, or alpha -1 for the map's default —
+   see SECTOR FOG in worldShade */
+#define SECTOR_FOG
+varying vec4 vFog;
 uniform sampler2D map;
 uniform float alphaTest;
 #ifdef INSTANCED_SPRITE
@@ -1228,6 +1312,13 @@ export function worldUniforms() {
     burnRows:     world.burnRows,
     /* and the thermal sight's switch — see world.thermal */
     thermal:      world.thermal,
+    /* and a map's own light and fog — see world.lightColor */
+    lightColor:   world.lightColor,
+    ambientColor: world.ambientColor,
+    fogAmbient:   world.fogAmbient,
+    fogDefault:   world.fogDefault,
+    airColor:     world.airColor,
+    airOverride:  world.airOverride,
   };
 }
 

@@ -40,7 +40,7 @@ import { Hud } from './hud.js';
 import { Audio } from './audio.js';
 import { Input } from './input.js';
 import { TouchControls } from './touch.js';
-import { world } from './material.js';
+import { world, applyMapLight } from './material.js';
 import { atlasTexture, imageTexture } from './particles.js';
 import { bakeEffectAtlases } from './effects.js';
 import { bakeRainAtlas } from './rain.js';
@@ -548,6 +548,8 @@ async function boot() {
 
   status('BUILDING THE GRID', 0.68); await breathe();
   const level = played ? played.level : buildGrid();
+  /* an edited map's own light colour, ambient light and fog, or none */
+  applyMapLight(played ? played.level.mapLight : null);
   const fleet = await fleetP;
   const police = await policeP;
   const apc = await apcP;

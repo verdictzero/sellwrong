@@ -48,7 +48,7 @@ import * as THREE from 'three';
 import { buildLevelGeometry } from '../mapgeo.js';
 import { buildSky, followSky } from '../sky.js';
 import { loadSky } from '../texpack.js';
-import { world } from '../material.js';
+import { world, applyMapLight } from '../material.js';
 import { Weather } from '../weather.js';
 import { THING_TYPES, ringOf, centroid, pointInPoly, FEATURES, DEFAULT_FLOOR } from './doc.js';
 import { makeSky } from './editor.js';
@@ -220,6 +220,8 @@ export class View3D {
   rebuild() {
     const c = this.ed.compiled;
     if (!c?.level) return;
+    /* the map's own light colour, ambient light and fog (World panel) */
+    applyMapLight(c.level.mapLight);
     if (this.levelGroup) {
       this.scene.remove(this.levelGroup);
       disposeTree(this.levelGroup);

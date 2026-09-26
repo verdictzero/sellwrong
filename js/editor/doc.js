@@ -339,6 +339,33 @@ export function newDoc(name = 'UNTITLED', size = 4096) {
   return d;
 }
 
+/**
+ * A map's light and fog, as the renderer wants them (applyMapLight in
+ * js/material.js), from its world settings — all of it doing nothing
+ * at the defaults:
+ *   lightColor  '#rrggbb'                     every light's colour
+ *   ambient     { color, amount 0..1 }        light that is everywhere
+ *   fog         { color, density 0..100, override }
+ *                                             the default fog; override
+ *                                             puts its colour on every
+ *                                             sector's fog and the haze
+ *   fogAmbient  0..1                          how much ambient is in fog
+ */
+export function mapLightOf(w = {}) {
+  const amb = w.ambient || {};
+  const fog = w.fog || {};
+  const k = Math.max(0, Math.min(1, +amb.amount || 0));
+  const a = hexRGB(amb.color || '#ffffff');
+  const fc = hexRGB(fog.color || '#808080');
+  return {
+    lightColor: hexRGB(w.lightColor || '#ffffff'),
+    ambient: [a[0] * k, a[1] * k, a[2] * k],
+    fogAmbient: Math.max(0, Math.min(1, w.fogAmbient ?? 1)),
+    fog: [fc[0], fc[1], fc[2], Math.max(0, Math.min(100, +fog.density || 0))],
+    override: !!fog.override,
+  };
+}
+
 /** What the world around a map is, when it does not say. The grid's
  *  own: nothing burns, nobody comes, the green sky. */
 export function defaultWorld() {
@@ -884,13 +911,36 @@ export function compileDoc(doc) {
 
   /* 5b. DOOM 64'S COLOURS: each sector's floor, ceiling and things, and
      its walls from the top colour down to the bottom one */
+  const wL = { ...defaultWorld(), ...(doc.world || {}) };
+  const fogW = wL.fog || {};
   doc.sectors.forEach((s, i) => {
-    const c = s.colors;
-    if (!c || index[i] < 0 || !level.sectors[index[i]]) return;
+    const L = index[i] >= 0 ? level.sectors[index[i]] : null;
+    if (!L) return;
+    const c = s.colors || {};
+    /* A SECTOR'S LIGHT COLOUR: one colour for all the light in it,
+       multiplied into each of the five above (white where one is not
+       set), so a room can be lit red without five pickers */
+    const lc = s.lightColor && s.lightColor.toLowerCase() !== '#ffffff' ? hexRGB(s.lightColor) : null;
     const t = {};
-    for (const k of COLOR_PARTS) if (c[k]) t[k] = hexRGB(c[k]);
-    if (Object.keys(t).length) level.sectors[index[i]].tint = t;
+    for (const k of COLOR_PARTS) {
+      if (!c[k] && !lc) continue;
+      const v = c[k] ? hexRGB(c[k]) : [1, 1, 1];
+      t[k] = lc ? [v[0] * lc[0], v[1] * lc[1], v[2] * lc[2]] : v;
+    }
+    if (Object.keys(t).length) L.tint = t;
+    /* ITS FOG: a colour and a density (0 to 100; see SECTOR FOG in
+       js/material.js), or the map's default fog if it has none. The
+       map's fog colour OVERRIDES the sector's when the map says so. */
+    const own = s.fog && s.fog.density > 0 ? s.fog : null;
+    if (own) {
+      const rgb = hexRGB(fogW.override && fogW.color ? fogW.color : (own.color || '#808080'));
+      L.fog = [rgb[0], rgb[1], rgb[2], Math.min(100, own.density)];
+    }
   });
+  /* AND THE MAP'S OWN LIGHT, for the renderer (applyMapLight in
+     js/material.js): its light colour, its ambient light, its default
+     fog, and whether that fog's colour overrides every other */
+  level.mapLight = mapLightOf(wL);
 
   /* 6. and the world around it */
   const w = { ...defaultWorld(), ...(doc.world || {}) };
