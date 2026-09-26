@@ -35,6 +35,9 @@
    itself. What it DOES get is the smoke, at full distance, because a
    store throwing a column of smoke greys its own sky, and against a
    black night nobody could tell that it did not.
+   And a map's FOG, which is not the air: the fog you are standing in,
+   and any you look through, is over the sky too (see FOG_GLSL in
+   js/material.js).
 
    IT IS SMALLER THAN THE FAR PLANE. Depth off does not switch off
    clipping, and the far plane now follows the weather in — 2600 units
@@ -42,26 +45,38 @@
    ===================================================================== */
 
 import * as THREE from 'three';
-import { world } from './material.js';
+import { worldUniforms, WORLD_UNIFORMS_GLSL, FOG_GLSL } from './material.js';
 
 const RADIUS = 4200;          // the sphere as built; scaled to fit the far plane
 
 const VERT = /* glsl */`
 varying vec2 vUv;
+varying vec3 vDir;
 void main() {
   vUv = uv;
+  vDir = (modelMatrix * vec4(position, 1.0)).xyz - cameraPosition;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }
 `;
 
 const FRAG = /* glsl */`
 uniform sampler2D map;
-uniform vec3  smokeColor;
-uniform float smokeDensity;
-uniform float thermal;
+${WORLD_UNIFORMS_GLSL}
+${FOG_GLSL}
 varying vec2 vUv;
+varying vec3 vDir;
 void main() {
   vec3 c = texture2D(map, vUv).rgb;
+  /* THE FOG YOU ARE IN, over the sky: at the user's request a fog fades
+     into the sky, followed from the eye out to the far edge of the air
+     through every sector on the way (FOG_GLSL) — so standing in a thick
+     fog the sky is gone, and it comes back as you walk out. Only for a
+     map with a fog; the game's own levels have none. */
+  if (fogMarch > 0.5 || fogDefault.a > 0.0) {
+    vec3 far = cameraPosition + normalize(vDir) * airFar;
+    vec4 fa = fogAlong(cameraPosition, far, fogAirAt(far));
+    c = c * fa.a + fa.rgb;
+  }
   /* THROUGH THE THERMAL SIGHT the sky is the coldest thing there is —
      a clear night sky is, to a sensor, a hole into space — with the
      cloud a shade warmer than the gaps in it, and no smoke, which the
@@ -107,8 +122,7 @@ export function buildSky(src) {
      not a fix. */
   const g = new THREE.SphereGeometry(RADIUS, 48, 24);
   const mat = new THREE.ShaderMaterial({
-    uniforms: { map: { value: tex }, smokeColor: world.smokeColor, smokeDensity: world.smokeDensity,
-                thermal: world.thermal },
+    uniforms: { map: { value: tex }, ...worldUniforms() },
     vertexShader: VERT, fragmentShader: FRAG,
     side: THREE.BackSide, depthWrite: false, depthTest: false, fog: false, toneMapped: false,
   });

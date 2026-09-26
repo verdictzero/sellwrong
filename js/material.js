@@ -244,11 +244,16 @@ export const world = {
                 colour); a: the sector's light
        sectorB  rgb: the sector's fog colour; a: its density / 100, or 0
                 for the map's default fog
+       sectorC  rg: how high its fog reaches (see FOG_GLSL)
        sectorRect  the grid's map-space origin, and one over its size */
   sectorA:      { value: null },
   sectorB:      { value: null },
+  sectorC:      { value: null },
   sectorRect:   { value: new THREE.Vector4(0, 0, 1, 1) },
   sectorOn:     { value: 0.0 },
+  /* 1 when a map from the editor has any fog: the fog is then followed
+     along each line of sight (FOG_GLSL) rather than read off the surface */
+  fogMarch:     { value: 0.0 },
 };
 
 /* The sector grid, for a vertex shader: its uniforms and the lookup —
@@ -338,6 +343,11 @@ uniform float fogAmbient;
 uniform vec4  fogDefault;
 uniform vec3  airColor;
 uniform float airOverride;
+uniform sampler2D sectorB;
+uniform sampler2D sectorC;
+uniform vec4  sectorRect;
+uniform float sectorOn;
+uniform float fogMarch;
 `;
 
 /* The two halves of the lighting, as functions.
@@ -350,7 +360,122 @@ uniform float airOverride;
 
    worldShade: the banded light applied to a colour, then the fire glow
    on top of the banding, then the smoke. */
+/* ---------------------------------------------------------------------
+   THE FOG ALONG A LINE OF SIGHT
+
+   At the user's request, fog FADES from sector to sector, and from a
+   sector into the sky, instead of stopping at a line. A surface used to
+   be fogged by its own sector's fog over the whole distance to it: a
+   floor half in a fogged room had a hard edge down the middle where the
+   sector changed, standing in thick fog you saw a clear sky, and the
+   fog never came in around you as you walked into it.
+
+   So the fog is FOLLOWED from the eye to what is seen, over the sector
+   grid (js/sectorgrid.js): the line is cut into FOG_STEPS pieces,
+   finer near the eye, and where a piece crosses from one sector's air
+   into another's the crossing is found by halving it, FOG_HALVINGS
+   times. Each stretch fogs by its own air — its colour, and its density
+   the GZDoom way, half-way in at 25600/density units — so fog thickens
+   continuously with how much of it you look through. Walk into a fogged
+   room and it closes round you step by step; look out of it and what is
+   beyond is hazed by the few metres you are still standing in. The sky
+   is followed the same way, out to airFar, so it fades into the fog
+   you are in and comes back as you leave it.
+
+   The end of the line is the surface's own fog (vFog) where it has one,
+   so the air right at a wall is exactly its sector's.
+
+   AND IT HAS A TOP. A fog fills its sector up to the ceiling, or under
+   the sky up to FOG_TOP over the floor (js/sectorgrid.js), and above
+   that thins away, e-folding every FOG_FADE units — so a fogged field
+   seen from outside is a bank of fog fading up into the sky, not a
+   column to the stars, and standing in it the sky overhead is dimmed
+   by the fog above you and no more. A stretch of the line is fogged by
+   the mean of that profile over the heights it climbs through, which
+   has a closed form (fogG).
+   ------------------------------------------------------------------- */
+export const FOG_GLSL = /* glsl */`
+#define FOG_STEPS 16
+#define FOG_HALVINGS 5
+#define FOG_FADE 128.0
+/* the air at a point (renderer axes): its sector's fog, or the map's */
+vec4 fogAirAt(vec3 p) {
+  if (sectorOn < 0.5) return fogDefault;
+  vec2 uv = (vec2(p.x, -p.z) - sectorRect.xy) * sectorRect.zw;
+  if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return fogDefault;
+  vec4 b = texture2D(sectorB, uv);
+  return b.a > 0.0 ? vec4(b.rgb, b.a * 100.0) : fogDefault;
+}
+/* how high the fog at a point reaches */
+float fogTopAt(vec3 p) {
+  if (sectorOn < 0.5) return 1e9;
+  vec2 uv = (vec2(p.x, -p.z) - sectorRect.xy) * sectorRect.zw;
+  if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return 1e9;
+  vec2 t = floor(texture2D(sectorC, uv).rg * 255.0 + 0.5);
+  return t.x * 256.0 + t.y - 32768.0;
+}
+/* the fog's thickness summed up to height z, under a top: all of it
+   below, thinning away above */
+float fogG(float z, float top) {
+  return z <= top ? z : top + FOG_FADE * (1.0 - exp((top - z) / FOG_FADE));
+}
+/* its mean between two heights */
+float fogThick(float z0, float z1, float top) {
+  float dz = z1 - z0;
+  if (abs(dz) < 1.0) { float z = 0.5 * (z0 + z1); return z <= top ? 1.0 : exp((top - z) / FOG_FADE); }
+  return (fogG(z1, top) - fogG(z0, top)) / dz;
+}
+bool fogSame(vec4 a, vec4 b) {
+  vec4 d = abs(a - b);
+  return max(max(d.r, d.g), d.b) < 0.01 && d.a < 0.2;
+}
+/* one stretch of air, len long, from height z0 to z1 under a fog top:
+   what it lets through (T) and adds */
+void fogSpan(inout vec3 add, inout float T, vec4 fg, float len, float z0, float z1, float top) {
+  if (fg.a <= 0.0 || len <= 0.0) return;
+  float t = exp2(-len * fg.a * fogThick(z0, z1, top) / 25600.0);
+  add += T * (1.0 - t) * (fg.rgb * lightColor + ambientColor * fogAmbient);
+  T *= t;
+}
+/* the fog from a to b, endFog being the air at b: rgb what it adds, a
+   how much of what is at b gets through */
+vec4 fogAlong(vec3 a, vec3 b, vec4 endFog) {
+  float len = distance(a, b);
+  vec3 add = vec3(0.0);
+  float T = 1.0;
+  vec4 gPrev = fogAirAt(a);
+  float tPrev = fogTopAt(a);
+  float sPrev = 0.0;
+  for (int i = 1; i <= FOG_STEPS; i++) {
+    float u = float(i) / float(FOG_STEPS);
+    float s = u * u;                        /* finer near the eye */
+    vec3 p = mix(a, b, s);
+    vec4 g = i == FOG_STEPS ? endFog : fogAirAt(p);
+    float top = fogTopAt(p);
+    float z0 = mix(a.y, b.y, sPrev), z1 = p.y;
+    if (fogSame(g, gPrev)) {
+      fogSpan(add, T, gPrev, (s - sPrev) * len, z0, z1, tPrev);
+    } else {
+      float lo = sPrev, hi = s;
+      for (int k = 0; k < FOG_HALVINGS; k++) {
+        float m = 0.5 * (lo + hi);
+        if (fogSame(fogAirAt(mix(a, b, m)), gPrev)) lo = m; else hi = m;
+      }
+      float cut = 0.5 * (lo + hi), zc = mix(a.y, b.y, cut);
+      fogSpan(add, T, gPrev, (cut - sPrev) * len, z0, zc, tPrev);
+      fogSpan(add, T, g, (s - cut) * len, zc, z1, top);
+    }
+    gPrev = g;
+    tPrev = top;
+    sPrev = s;
+    if (T < 0.002) break;
+  }
+  return vec4(add, T);
+}
+`;
+
 export const WORLD_SHADE_GLSL = /* glsl */`
+${FOG_GLSL}
 /* ---------------------------------------------------------------------
    THE COALS ON A BURNT SURFACE
 
@@ -734,7 +859,15 @@ vec3 worldShade(vec3 albedo, float l, float depth, vec3 world, float fullbright)
   #else
     vec4 fg = fogDefault;
   #endif
-  if (fg.a > 0.0) {
+  if (fogMarch > 0.5) {
+    /* some sector has fog of its own: follow it along the line of sight
+       (FOG_GLSL), so it fades from sector to sector */
+    #ifndef SECTOR_FOG
+      fg = fogAirAt(world);
+    #endif
+    vec4 fa = fogAlong(eyePos, world, fg);
+    c = mix(c * fa.a + fa.rgb, c, fullbright);
+  } else if (fg.a > 0.0) {
     float ff = (1.0 - exp2(-depth * fg.a / 25600.0)) * (1.0 - fullbright);
     vec3 fc = fg.rgb * lightColor + ambientColor * fogAmbient;
     c = mix(c, fc, ff);
@@ -1384,8 +1517,10 @@ export function worldUniforms() {
     /* and the sector grid, which vertex shaders read (SECTOR_GRID_GLSL) */
     sectorA:      world.sectorA,
     sectorB:      world.sectorB,
+    sectorC:      world.sectorC,
     sectorRect:   world.sectorRect,
     sectorOn:     world.sectorOn,
+    fogMarch:     world.fogMarch,
   };
 }
 

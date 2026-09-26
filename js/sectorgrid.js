@@ -20,6 +20,11 @@
         a    the sector's light
      B  rgb  the sector's fog colour
         a    its density / 100, or 0 for the map's default fog
+     C  rg   how high its fog reaches, as 16 bits (+32768): the ceiling
+             indoors, FOG_TOP over the floor under the sky. Above it the
+             fog thins away (FOG_FADE in js/material.js), so a fogged
+             sector under the sky is a fog bank that fades into the sky
+             rather than a column of fog up to the stars.
 
    Only for a map from the editor (a level with mapLight): the game's own
    levels light their things themselves, and it is switched off for them.
@@ -32,6 +37,11 @@ import { world } from './material.js';
  *  is 40 units a cell: finer than a person is wide. */
 export const GRID_MAX_CELLS = 256;
 export const GRID_MIN_CELL = 16;
+/** How high a fog under the open sky stands over its floor before it
+ *  starts to thin away. Taller than a fir, so a forest is in it. */
+export const FOG_TOP = 320;
+/** A height, as the two bytes the shader reads it from (fogTopAt). */
+export const packHeight = h => { const v = Math.max(0, Math.min(65535, Math.round(h) + 32768)); return [v >> 8, v & 255]; };
 
 /**
  * Sample a level's sectors into the grid. Returns { cell, cols, rows,
@@ -50,7 +60,7 @@ export function sampleSectorGrid(level) {
   if (!(x1 > x0 && y1 > y0)) return null;
   const cell = Math.max(GRID_MIN_CELL, Math.ceil(Math.max(x1 - x0, y1 - y0) / GRID_MAX_CELLS));
   const cols = Math.max(1, Math.ceil((x1 - x0) / cell)), rows = Math.max(1, Math.ceil((y1 - y0) / cell));
-  const a = new Uint8Array(cols * rows * 4), b = new Uint8Array(cols * rows * 4);
+  const a = new Uint8Array(cols * rows * 4), b = new Uint8Array(cols * rows * 4), c = new Uint8Array(cols * rows * 4);
   const u8 = v => Math.max(0, Math.min(255, Math.round(v * 255)));
   for (let j = 0; j < rows; j++) {
     for (let i = 0; i < cols; i++) {
@@ -62,12 +72,21 @@ export function sampleSectorGrid(level) {
       a[k + 3] = u8(s ? Math.min(1, s.light ?? 1) : 1);
       const f = s?.fog;
       if (f && f[3] > 0) { b[k] = u8(f[0]); b[k + 1] = u8(f[1]); b[k + 2] = u8(f[2]); b[k + 3] = Math.max(1, u8(f[3] / 100)); }
+      /* how high its fog reaches; off the map, as high as there is */
+      const top = !s ? 32767 : s.outdoor === false ? (s.ceil ?? 32767) : (s.floor ?? 0) + FOG_TOP;
+      [c[k], c[k + 1]] = packHeight(top);
     }
   }
-  return { cell, cols, rows, x0, y0, a, b };
+  return { cell, cols, rows, x0, y0, a, b, c };
 }
 
-let texA = null, texB = null;
+/** Does any cell have a fog of its own (not the map's default)? */
+export function hasOwnFog(g) {
+  for (let k = 3; k < g.b.length; k += 4) if (g.b[k] > 0) return true;
+  return false;
+}
+
+let texA = null, texB = null, texC = null;
 const dataTex = (arr, w, h) => {
   const t = new THREE.DataTexture(arr, w, h, THREE.RGBAFormat, THREE.UnsignedByteType);
   t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter;
@@ -84,15 +103,21 @@ const dataTex = (arr, w, h) => {
  */
 export function applySectorGrid(level) {
   const g = level?.mapLight ? sampleSectorGrid(level) : null;
-  if (!g) { world.sectorOn.value = 0; return null; }
-  texA?.dispose(); texB?.dispose();
+  if (!g) { world.sectorOn.value = 0; world.fogMarch.value = 0; return null; }
+  texA?.dispose(); texB?.dispose(); texC?.dispose();
   texA = dataTex(g.a, g.cols, g.rows);
   texB = dataTex(g.b, g.cols, g.rows);
+  texC = dataTex(g.c, g.cols, g.rows);
   world.sectorA.value = texA;
   world.sectorB.value = texB;
+  world.sectorC.value = texC;
   const r = world.sectorRect.value;
   r.x = g.x0; r.y = g.y0; r.z = 1 / (g.cols * g.cell); r.w = 1 / (g.rows * g.cell);
   world.sectorOn.value = 1;
+  /* a map with any fog, a sector's own or its default: the fog is
+     followed along each line of sight, so it fades from sector to sector
+     and into the sky (FOG_GLSL) */
+  world.fogMarch.value = hasOwnFog(g) || level.mapLight?.fog?.[3] > 0 ? 1 : 0;
   return g;
 }
 

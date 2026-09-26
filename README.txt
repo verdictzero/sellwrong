@@ -5663,6 +5663,32 @@ js/sectorgrid.js). The eased fog goes to the sprite batch per instance
 (iFog in js/standees.js). A fog coming in from none takes its colour at
 once and only thickens, so nobody is greyed on the way into a blue fog.
 
+FOG FADES FROM SECTOR TO SECTOR, AND INTO THE SKY. At the user's request
+the fog is no longer read off the surface. It used to fog each surface
+by its own sector's fog over the whole distance to it, which gave a
+fogged room's floor a hard edge at the sector line and left the sky
+clear however thick the fog you stood in. Now, on a map from the editor
+with any fog, the fog is followed along each line of sight over the
+sector grid (FOG_GLSL in js/material.js). The line is cut into 16
+pieces, finer near the eye, and each crossing into another sector's
+air is found by halving the piece it falls in, 5 times. Each stretch
+fogs by its own air, so fog builds up with how much of it you look
+through:
+  - walking into a fogged room, it closes round you step by step, with
+    no jump at the doorway
+  - a floor just over the sector line is barely fogged, with no edge
+  - looking out of a fog, what is beyond is hazed by the fog still
+    around you
+  - the sky is followed the same way out to the far edge of the air,
+    so it fades into the fog you are in and clears as you walk out
+A fog also has a TOP: the ceiling indoors, or 320 units over the floor
+under the sky (FOG_TOP in js/sectorgrid.js; a third grid picture holds
+it). Above its top it thins away every 128 units (FOG_FADE). So a
+fogged field seen from outside is a fog bank fading up into the sky,
+not a column to the stars, and standing in it the sky overhead is
+dimmed only by the fog above you. The game's own levels, which have no
+fog, are untouched.
+
 THE SKYBOXES. Seven, picked on the Map tab (Skybox): BSKY1, BSKY2,
 LSKYA, NSKY1, OSKY1, UNSKY, XSKY. The sky here is a sphere wearing a
 panorama, so each six-face box was joined into one by

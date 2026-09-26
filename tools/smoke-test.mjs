@@ -1938,7 +1938,9 @@ section('the air');
     const skySrc = (await import('node:fs')).readFileSync(new URL('../js/sky.js', import.meta.url), 'utf8');
     const frag = skySrc.slice(skySrc.indexOf('const FRAG'), skySrc.indexOf('export function buildSky'));
     check('the sky takes the smoke', /smokeDensity/.test(frag));
-    check('and not the air', !/airFar|airNear|skyTex/.test(frag));
+    /* the air's haze never (it IS the sky's horizon); a map's fog does,
+       out to airFar — see FOG_GLSL */
+    check('and not the air', !/airNear|skyTex\b|mix\(c, air/.test(frag));
     /* the same azimuth the bake writes with: skyart's dirOf turns u
        into atan2(z, x) over a turn, and the fog reads back with the
        same formula — measured against three's SphereGeometry, see the
@@ -10761,7 +10763,7 @@ section('the quad launcher');
   const matSrc = fs.readFileSync('js/material.js', 'utf8');
   check('the world has a thermal switch, declared, bound, and off',
     MAT.world.thermal.value === 0 && /uniform float thermal;/.test(MAT.WORLD_UNIFORMS_GLSL) &&
-    MAT.worldUniforms().thermal === MAT.world.thermal && /thermal: world\.thermal/.test(fs.readFileSync('js/sky.js', 'utf8')));
+    MAT.worldUniforms().thermal === MAT.world.thermal && /uniforms: \{ map: \{ value: tex \}, \.\.\.worldUniforms\(\) \}/.test(fs.readFileSync('js/sky.js', 'utf8')));
   check('and every surface that shades through the world answers heat when it is on',
     /if \(thermal > 0\.5\) return vec3\(thermalOf\(/.test(matSrc) && /if \(thermal > 0\.5\) \{\s*float h = c\.r;/.test(matSrc));
   {
@@ -14557,6 +14559,91 @@ section('light and fog');
       g.a[kf] === 255 && g.a[kf + 3] === Math.round(field.light * 255) && g.b[kf + 3] === 0);
     check('the grid is only for maps from the editor: a level without mapLight switches it off',
       SG.applySectorGrid({ sectors: [] }) === null && M.world.sectorOn.value === 0);
+
+    /* FOG FADES FROM SECTOR TO SECTOR, AND INTO THE SKY: the fog is
+       followed along each line of sight (FOG_GLSL). Here the shader's
+       walk is done again in JS over the same grid, to show what it
+       does: fog comes in continuously as you walk into the room, a
+       floor's fog has no edge at the sector line, and the sky fades. */
+    check('a map with a sector fog of its own follows the fog; one without does not',
+      SG.hasOwnFog(g) && !SG.hasOwnFog(SG.sampleSectorGrid(D.compileDoc(D.newDoc('N', 4096)).level)));
+    const fogSrc = M.FOG_GLSL;
+    check('the shader walks the line of sight over the grid, finer near the eye, halving each crossing',
+      /#define FOG_STEPS 16/.test(fogSrc) && /#define FOG_HALVINGS 5/.test(fogSrc) && /float s = u \* u;/.test(fogSrc) &&
+      /if \(fogSame\(fogAirAt\(mix\(a, b, m\)\), gPrev\)\) lo = m; else hi = m;/.test(fogSrc) &&
+      /exp2\(-len \* fg\.a \* fogThick\(z0, z1, top\) \/ 25600\.0\)/.test(fogSrc) && /#define FOG_FADE 128\.0/.test(fogSrc));
+    check('every world surface uses it when the map has sector fog, and the sky does too',
+      /if \(fogMarch > 0\.5\) \{[\s\S]{0,300}fogAlong\(eyePos, world, fg\)/.test(fsL.readFileSync(new URL('../js/material.js', import.meta.url), 'utf8')) &&
+      /fogAlong\(cameraPosition, far, fogAirAt\(far\)\)/.test(fsL.readFileSync(new URL('../js/sky.js', import.meta.url), 'utf8')) &&
+      /uniform float fogMarch;/.test(M.WORLD_UNIFORMS_GLSL) && M.worldUniforms().fogMarch === M.world.fogMarch);
+    const airAt = (x, y) => {                        /* fogAirAt, in map axes */
+      const i = Math.floor((x - g.x0) / g.cell), j = Math.floor((y - g.y0) / g.cell);
+      if (i < 0 || j < 0 || i >= g.cols || j >= g.rows) return [0, 0, 0, 0];
+      const k = (j * g.cols + i) * 4;
+      return g.b[k + 3] > 0 ? [g.b[k] / 255, g.b[k + 1] / 255, g.b[k + 2] / 255, g.b[k + 3] / 255 * 100] : [0, 0, 0, 0];
+    };
+    const topAt = (x, y) => {                        /* fogTopAt */
+      const i = Math.floor((x - g.x0) / g.cell), j = Math.floor((y - g.y0) / g.cell);
+      if (i < 0 || j < 0 || i >= g.cols || j >= g.rows) return 1e9;
+      const k = (j * g.cols + i) * 4;
+      return g.c[k] * 256 + g.c[k + 1] - 32768;
+    };
+    const FADE = 128, G = (z, t) => z <= t ? z : t + FADE * (1 - Math.exp((t - z) / FADE));
+    const thick = (z0, z1, t) => Math.abs(z1 - z0) < 1 ? ((z0 + z1) / 2 <= t ? 1 : Math.exp((t - (z0 + z1) / 2) / FADE)) : (G(z1, t) - G(z0, t)) / (z1 - z0);
+    const same = (p, q) => Math.max(...[0, 1, 2].map(i => Math.abs(p[i] - q[i]))) < 0.01 && Math.abs(p[3] - q[3]) < 0.2;
+    const along = (a, b, endFog) => {                /* fogAlong: how much gets through */
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1], (b[2] || 0) - (a[2] || 0));
+      const az = a[2] ?? 41, bz = b[2] ?? 41;
+      const at = s => airAt(a[0] + (b[0] - a[0]) * s, a[1] + (b[1] - a[1]) * s);
+      const tAt = s => topAt(a[0] + (b[0] - a[0]) * s, a[1] + (b[1] - a[1]) * s);
+      const z = s => az + (bz - az) * s;
+      let T = 1, gp = at(0), tp = tAt(0), sp = 0;
+      const span = (f, l, z0, z1, t) => { if (f[3] > 0 && l > 0) T *= 2 ** (-l * f[3] * thick(z0, z1, t) / 25600); };
+      for (let i = 1; i <= 16; i++) {
+        const s = (i / 16) ** 2, gg = i === 16 ? (endFog || at(1)) : at(s), tt = tAt(s);
+        if (same(gg, gp)) span(gp, (s - sp) * len, z(sp), z(s), tp);
+        else {
+          let lo = sp, hi = s;
+          for (let k = 0; k < 5; k++) { const m = (lo + hi) / 2; if (same(at(m), gp)) lo = m; else hi = m; }
+          const cut = (lo + hi) / 2;
+          span(gp, (cut - sp) * len, z(sp), z(cut), tp); span(gg, (s - cut) * len, z(cut), z(s), tt);
+        }
+        gp = gg; tp = tt; sp = s;
+      }
+      return T;
+    };
+    /* the room (1024..2048) has fog 40: half-way in at 640 units */
+    const ref = 2 ** (-512 * 40 / 25600);
+    check('looking 512 units across the fogged room fogs by 512 units of it',
+      Math.abs(along([1200, 1500], [1712, 1500]) - ref) < 0.01, along([1200, 1500], [1712, 1500]).toFixed(3));
+    check('a floor just over the sector line is barely fogged, from outside: no edge where the sector changes',
+      along([500, 1500], [1030, 1500]) > 0.97 && along([500, 1500], [1018, 1500]) === 1);
+    check('and deeper in, it thickens with how much of the fog you look through',
+      along([500, 1500], [1200, 1500]) > along([500, 1500], [1500, 1500]) && along([500, 1500], [1500, 1500]) > along([500, 1500], [2000, 1500]));
+    const walkIn = [900, 1000, 1020, 1030, 1100, 1300].map(x => along([x, 1500], [2040, 1500]));
+    check('walking in toward the far wall, its fog changes smoothly — no jump at the doorway',
+      walkIn.every((v, i) => i === 0 || Math.abs(v - walkIn[i - 1]) < 0.12), walkIn.map(v => v.toFixed(2)).join(' '));
+    const skyUp = along([1500, 1500, 41], [1500, 1500, 14000]), skyOut = along([3900, 1500], [3900 + 14000, 1500]);
+    const skyAcross = along([1500, 1500], [1500 + 14000, 1500]);
+    /* the room is under the sky, so its fog stands FOG_TOP over the floor
+       and thins away above: overhead you look through that and no more */
+    const upRef = 2 ** (-(SG.FOG_TOP - 41 + FADE) * 40 / 25600);
+    check('the sky overhead, standing in the fog, is dimmed by the fog above you and no more; looking away outside, clear',
+      Math.abs(skyUp - upRef) < 0.02 && skyUp < 0.7 && skyOut === 1, `${skyUp.toFixed(3)} ~${upRef.toFixed(3)} ${skyOut}`);
+    const kTop = cellAt(1536, 1536);
+    check('a fog under the sky reaches FOG_TOP over its floor; off the map, as high as there is',
+      g.c[kTop] * 256 + g.c[kTop + 1] - 32768 === room.floor + SG.FOG_TOP && SG.packHeight(32767).join() === '255,255');
+    const indoor = JSON.parse(JSON.stringify(doc)); indoor.sectors[1].outdoor = false; indoor.sectors[1].ceil = 128;
+    const gi = SG.sampleSectorGrid(D.compileDoc(indoor).level);
+    check('and indoors, the ceiling', gi.c[kTop] * 256 + gi.c[kTop + 1] - 32768 === 128);
+    const fogBank = [along([500, 1500, 41], [1500, 1500, 41]), along([500, 1500, 400], [1500, 1500, 400]), along([500, 1500, 1200], [1500, 1500, 1200])];
+    check('seen from outside the fog is a bank that thins upward into the sky, not a column',
+      fogBank[0] < fogBank[1] && fogBank[1] < fogBank[2] && fogBank[2] > 0.95, fogBank.map(v => v.toFixed(3)).join(' '));
+    check('and across the room it is hazed by the fog between you and the room\'s edge',
+      Math.abs(skyAcross - 2 ** (-548 * 40 / 25600)) < 0.03, skyAcross.toFixed(3));
+    const backIn = along([2100, 1500], [2100 - 14000, 1500]);
+    check('and looking back through the room from outside, the sky behind it is hazed by the room\'s width only',
+      Math.abs(backIn - 2 ** (-1024 * 40 / 25600)) < 0.03, backIn.toFixed(3));
     const mat = fsL.readFileSync(new URL('../js/material.js', import.meta.url), 'utf8');
     const forest = fsL.readFileSync(new URL('../js/forest.js', import.meta.url), 'utf8');
     const v3 = fsL.readFileSync(new URL('../js/editor/view3d.js', import.meta.url), 'utf8');
