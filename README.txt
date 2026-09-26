@@ -5437,6 +5437,22 @@ Doom Builder:
   both sides by name, with Swap sides (Doom Builder's Flip Sidedefs).
   A building's wall can be brick outside and panelling in.
 
+  DRAWING FROM A BLANK MAP, at the user's request, who could only move
+  the one sector a new map has. That sector is THE GROUND (the only
+  sector, or the outermost with rooms in it; Editor.isGround), and in
+  Sectors mode:
+    drag on the ground    draws a new rectangular sector, on the plan
+                          or on the 3D floor (Editor.addRect)
+    click on the ground   selects it, as before
+    Alt-drag the ground   moves it, which is the old behaviour
+    drag a room           moves the room, as before
+    Insert (or Space, D)  starts a drawing of any shape at the cursor:
+                          click the corners, click the first one or
+                          press Enter to finish, Esc to cancel
+  A rectangle that snaps to nothing on the grid says so, and File > New
+  map, Open and Open demo frame the plan and put the 3D camera at the
+  start. In 3D, near the camera a lot of screen is only a few units: a
+  rectangle drawn there is small, and one drawn further off is not.
   DRAWING ACROSS WALLS. A sector drawn across existing lines is cut
   where it crosses them (and so are they), and every room it passes
   through is split along the part of it inside that room: each piece is

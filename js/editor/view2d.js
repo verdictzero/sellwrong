@@ -226,6 +226,15 @@ export class View2D {
       return;
     }
     if (e.shiftKey || e.ctrlKey) { ed.select(kind, [hit.id], true); return; }
+    /* A DRAG ON THE GROUND DRAWS: the sector every other one is drawn in
+       is not something anybody means to drag the whole of, so a drag
+       that starts on it in Sectors mode draws a new rectangle, and a
+       click selects it as before. Alt-drag moves it. */
+    if (mode === 'sectors' && !e.altKey && ed.isGround(hit.id)) {
+      const a = this.snapPoint(p.x, p.y);
+      this.drag = { type: 'rect', a, b: a, ground: hit.id, px: p.px, py: p.py };
+      return;
+    }
     if (!ed.isSel(kind, hit.id)) ed.select(kind, [hit.id]);
     this.drag = { type: 'move', mv: ed.beginMove(ed.grabPoint([p.x, p.y]), [p.x, p.y]), px: p.px, py: p.py, moved: false };
   }
@@ -300,11 +309,10 @@ export class View2D {
       if ((x1 - x0) * this.scale < 3 && (y1 - y0) * this.scale < 3) { if (!dr.add) ed.clearSel(); }
       else ed.select(kind, this.inBox(kind, x0, y0, x1, y1), dr.add);
     } else if (dr.type === 'rect') {
-      const [a, b] = [dr.a, dr.b];
-      if (a[0] !== b[0] && a[1] !== b[1]) {
-        const x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]), y0 = Math.min(a[1], b[1]), y1 = Math.max(a[1], b[1]);
-        ed.addSector([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], 'draw rectangle');
-      }
+      /* a click on the ground, not a drag: select it, as any click does */
+      const p = this.at(e);
+      if (dr.ground && Math.hypot(p.px - dr.px, p.py - dr.py) < 4) { ed.select('sector', [dr.ground]); ed.say('the ground — drag on it to draw a new sector; Alt-drag moves it'); }
+      else ed.addRect(dr.a, dr.b);
     } else if (dr.type === 'prop') {
       ed.addProp(dr.a[0], dr.a[1], dr.b[0], dr.b[1]);
     } else if (dr.type === 'brush') {

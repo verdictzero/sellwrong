@@ -902,7 +902,7 @@ export function buildUI(ed) {
 const HELP2D = {
   vertices: 'click select · drag move · shift add · Del delete\nwheel zoom · right-drag/MMB pan · Ctrl+wheel light · [ ] grid',
   lines: 'click select · drag move · Del joins sectors\nwheel zoom · right-drag/MMB pan · Ctrl+wheel light · [ ] grid',
-  sectors: 'click select · drag move · dbl-click inspect\nwheel zoom · right-drag/MMB pan · Ctrl+wheel light · [ ] grid',
+  sectors: 'drag on the ground: new sector · drag a room: move it · Insert/D: draw any shape\nclick select · dbl-click inspect · wheel zoom · right-drag/MMB pan · [ ] grid',
   things: 'dbl-click / Insert place · drag move · , . turn\nwheel zoom · right-drag/MMB pan · Ctrl+wheel light',
   props: 'drag empty to draw a box · drag to move\nwheel zoom · right-drag/MMB pan · Ctrl+wheel light',
   draw: 'click corners · click the first to close a sector\nEnter / right-click / dbl-click: finish — wall to wall splits a room · Esc cancel',

@@ -40,7 +40,7 @@ import { Weather } from '../weather.js';
 import {
   History, compileDoc, gridDoc, newDoc, parseDoc, serialise, compact,
   THING_TYPES, SECTOR_DEFAULTS, takeId, ringOf, pointInPoly, signedArea, linesOf, lineKey,
-  segDist, strictlyInside, selfCrosses, segCross, WELD, DEFAULT_FLOOR,
+  segDist, strictlyInside, selfCrosses, segCross, WELD, DEFAULT_FLOOR, holeParents,
 } from './doc.js';
 import { View2D } from './view2d.js';
 import { View3D } from './view3d.js';
@@ -633,14 +633,45 @@ export class Editor {
   insertAtCursor() {
     const c = this.cursor;
     if (!c) return;
-    if (this.mode === 'vertices') {
+    if (this.mode === 'vertices' && !this.path.length) {
       this.edit('insert vertex', d => { vertexFor(d, c[0], c[1]); });
       this.say(`vertex at ${c[0]}, ${c[1]}`);
     } else if (this.mode === 'draw') {
       this.addPathPoint(c);
+    } else if (this.mode === 'sectors' || this.mode === 'lines') {
+      /* INSERT STARTS A DRAWING, Doom Builder's way: the first corner is
+         where the cursor is, and it goes on from there in Draw */
+      this.setMode('draw');
+      this.addPathPoint(c);
+      this.say('drawing: click the corners, click the first one (or Enter) to finish, Esc to cancel');
     } else {
       this.addThing(c[0], c[1]);
     }
+  }
+
+  /** THE GROUND: the sector everything else is drawn in — the only one
+   *  on a new map, or the outermost with rooms in it. Dragging it in
+   *  Sectors mode draws a new sector instead of moving the world (see
+   *  the views); Alt-drag still moves it. */
+  isGround(id) {
+    const d = this.doc, i = d.sectors.findIndex(s => s.id === id);
+    if (i < 0) return false;
+    if (d.sectors.length === 1) return true;
+    const par = holeParents(d);
+    return par[i] === -1 && par.some(q => q === i);
+  }
+
+  /** A rectangle dragged out in either view, from corner a to corner b,
+   *  as a new sector — or, too small for the grid, a word saying so. */
+  addRect(a, b) {
+    if (a[0] === b[0] || a[1] === b[1]) {
+      this.say(`too small for the ${this.grid} grid: drag further, or make the grid finer with [`);
+      return null;
+    }
+    const x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]), y0 = Math.min(a[1], b[1]), y1 = Math.max(a[1], b[1]);
+    const s = this.addSector([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], 'draw rectangle');
+    if (s) this.say(`new sector ${s.id}, ${x1 - x0} by ${y1 - y0}`);
+    return s;
   }
 
   /* ------------------------------------------------------------------
@@ -913,7 +944,8 @@ export class Editor {
   fileNew(grid = false) {
     if (this.history.dirty && !confirm('Start a new map? The current one is autosaved and can be undone back to.')) return;
     this.replace(grid ? gridDoc() : newDoc(), grid ? 'new from grid' : 'new map');
-    this.say(grid ? 'new map from THE GRID' : 'new map');
+    this.reframe();
+    this.say(grid ? 'new map from THE GRID' : 'new map — drag on the ground to draw a sector (or R), D to draw any shape');
   }
 
   /** THE DEMO LEVEL, THE SPRAWL (js/maps/sprawl.js), to play or take
@@ -921,10 +953,14 @@ export class Editor {
   fileDemo() {
     if (this.history.dirty && !confirm('Open the demo level? The current map is autosaved and can be undone back to.')) return;
     this.replace(sprawlDoc(), 'open demo');
-    /* it is big: show all of it on the plan, and the 3D view at the start */
+    this.reframe();
+    this.say('opened the demo level, THE SPRAWL');
+  }
+
+  /** A different map: all of it on the plan, and the 3D view at its start. */
+  reframe() {
     this.view2d?.frame();
     this.view3d?.toStart?.();
-    this.say('opened the demo level, THE SPRAWL');
   }
 
   fileSave() {
@@ -948,6 +984,7 @@ export class Editor {
       try {
         const d = parseDoc(await f.text());
         this.replace(d, 'open');
+        this.reframe();
         this.history.markSaved();
         this.say(`opened ${f.name}`);
       } catch (e) { this.say(`could not open ${f.name}: ${e.message}`); }

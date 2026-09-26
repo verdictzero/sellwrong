@@ -633,6 +633,12 @@ export class View3D {
       return;
     }
     const s = ed.doc.sectors[hit.sector];
+    /* A DRAG ON THE GROUND'S FLOOR DRAWS a new rectangle, as on the
+       plan; a click selects it; Alt-drag moves it */
+    if (mode === 'sectors' && hit.part === 'floor' && !e.altKey && !e.shiftKey && ed.isGround(s.id) && sg) {
+      this.drag = { type: 'rect', z: g[2], a: sg, b: sg, ground: s.id, hit, px, py };
+      return;
+    }
     if (e.shiftKey && ed.sel.kind === 'sector') {
       ed.select('sector', [s.id], true);
       ed.surf = { sector: hit.sector, part: hit.part };
@@ -702,11 +708,11 @@ export class View3D {
     if (!dr) return;
     if (dr.type === 'move') ed.endMove(dr.mv);
     else if (dr.type === 'rect') {
-      const [a, b] = [dr.a, dr.b];
-      if (a[0] !== b[0] && a[1] !== b[1]) {
-        const x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]), y0 = Math.min(a[1], b[1]), y1 = Math.max(a[1], b[1]);
-        ed.addSector([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], 'draw rectangle');
-      }
+      const [qx, qy] = this.at(e);
+      if (dr.ground && Math.hypot(qx - dr.px, qy - dr.py) < 4) {
+        ed.selectSurface({ sector: dr.hit.sector, part: dr.hit.part });
+        ed.say('the ground — drag on it to draw a new sector; Alt-drag moves it');
+      } else ed.addRect(dr.a, dr.b);
     } else if (dr.type === 'prop') ed.addProp(dr.a[0], dr.a[1], dr.b[0], dr.b[1]);
     else if (dr.type === 'brush') paintBrush(ed, dr.a, dr.b);
     this.overlayDirty = true;

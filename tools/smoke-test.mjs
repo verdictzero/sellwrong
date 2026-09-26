@@ -13406,6 +13406,32 @@ await (async () => {
   const doorLines = Object.entries(edD.doc.lines).filter(([, o]) => o.opening);
   check('a doorway stays a doorway when its line is split', doorLines.length === 2 &&
     D.compileDoc(edD.doc).level.lines.filter(l => l.exterior).length === 3);
+  /* DRAWING FROM A BLANK MAP, which the user could not find: a new map
+     is one ground sector, and in Sectors mode every click landed on it
+     and every drag moved the world. Now a drag on the ground draws a
+     new rectangle (the views call addRect), Insert starts a drawing,
+     and a rectangle too small for the grid says so. */
+  {
+    const edG = new E.Editor(null);
+    edG.history = new D.History(D.newDoc('G', 2048));
+    const said = []; edG.say = m => said.push(m);
+    check('on a new map the one sector is the ground', edG.isGround(edG.doc.sectors[0].id));
+    const room = edG.addRect([256, 256], [768, 640]);
+    check('a rectangle dragged out becomes a new sector, a hole in the ground',
+      !!room && edG.doc.sectors.length === 2 && D.compileDoc(edG.doc).problems.length === 0 && /new sector/.test(said.at(-1)));
+    check('the ground is still the ground, and the room is not', edG.isGround(edG.doc.sectors[0].id) && !edG.isGround(room.id));
+    check('a rectangle with no width on the grid is refused, out loud', edG.addRect([256, 256], [256, 900]) === null &&
+      edG.doc.sectors.length === 2 && /too small for the 64 grid/.test(said.at(-1)));
+    edG.mode = 'sectors'; edG.cursor = [1024, 1024];
+    edG.insertAtCursor();
+    check('Insert in Sectors mode starts a drawing at the cursor', edG.mode === 'draw' && edG.path.length === 1 && edG.path[0][0] === 1024);
+    const v2 = fsE.readFileSync('js/editor/view2d.js', 'utf8'), v3 = fsE.readFileSync('js/editor/view3d.js', 'utf8'), edS = fsE.readFileSync('js/editor/editor.js', 'utf8');
+    check('both views draw on a drag that starts on the ground, and let Alt-drag move it',
+      /mode === 'sectors' && !e\.altKey && ed\.isGround\(hit\.id\)/.test(v2) && /mode === 'sectors' && hit\.part === 'floor' && !e\.altKey && !e\.shiftKey && ed\.isGround\(s\.id\)/.test(v3) &&
+      /ed\.addRect\(dr\.a, dr\.b\)/.test(v2) && /ed\.addRect\(dr\.a, dr\.b\)/.test(v3));
+    check('and a new or opened map is framed on the plan and seen from its start in 3D',
+      (edS.match(/this\.reframe\(\);/g) || []).length >= 3 && /reframe\(\) \{\s*this\.view2d\?\.frame\(\);\s*this\.view3d\?\.toStart\?\.\(\);/.test(edS));
+  }
   /* a drawn room's colours are its own */
   const edK = new E.Editor(null);
   edK.history = new D.History(D.newDoc('K', 2048));
