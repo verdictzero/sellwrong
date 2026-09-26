@@ -174,6 +174,16 @@ export function sprawlDoc() {
       /* a room open to the sky (a courtyard, a light well) meets its
          jambs as outside meets inside: those edges are openings too */
       if (room.outdoor) for (let e = 0; e < 3; e++) line(j.ring[e], j.ring[e + 1], { opening: true });
+      /* THE LINTEL over the door: the wall above it, as a block of the
+         facade from the door's head to the roof. Without it the notch
+         over every door is a hole — the engine draws no wall band that
+         rises towards the open sky, which is what keeps a room's upper
+         wall from towering to the clouds, and is wrong only here */
+      const head = f + (j.g.h ?? doorH), roofZ = room.outdoor ? head : (props.ceil ?? f + 256);
+      if (roofZ > head) {
+        const xs = j.ring.map(q => q[0]), ys = j.ring.map(q => q[1]);
+        prop(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys), head, roofZ, facade, roofTex);
+      }
       jambSectors.push(js);
     }
     /* the facade: every outer edge that is not a doorway, its outside
