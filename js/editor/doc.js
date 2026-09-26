@@ -106,9 +106,14 @@ export const THING_TYPES = {
    sky shows through, see addFlats in js/mapgeo.js — and its height is
    only how tall the walls round it stand. A room with a roof is one you
    turn the sky off for. */
+/** THE DEFAULTS a new map starts from, at the user's request: checkered
+ *  grass underfoot (LAWN2, from the texture pack) and a day sky with
+ *  scattered cloud (BSKY2, the pack's too) — see js/texpack.js. */
+export const DEFAULT_FLOOR = 'LAWN2';
+export const DEFAULT_SKYBOX = 'BSKY2';
 export const SECTOR_DEFAULTS = {
   floor: 0, ceil: 1024,
-  floorTex: 'GRID', ceilTex: 'SKY', wallTex: 'GRIDWALL', upperTex: null, lowerTex: null,
+  floorTex: DEFAULT_FLOOR, ceilTex: 'SKY', wallTex: 'GRIDWALL', upperTex: null, lowerTex: null,
   light: 0.72, outdoor: true, sky: 0, name: '',
 };
 
@@ -326,7 +331,9 @@ export function newDoc(name = 'UNTITLED', size = 4096) {
     props: [],
     /* THE PROCEDURAL SPREADS: rules, not things — see js/editor/scatter.js */
     scatters: [],
-    world: defaultWorld(),
+    /* a NEW map has the pack's day sky; one saved without a skybox
+       keeps the painted sky it was made under (defaultWorld has none) */
+    world: { ...defaultWorld(), skybox: DEFAULT_SKYBOX },
     nextId: 2,
   };
   return d;
@@ -610,7 +617,7 @@ function sectorProps(s, poly) {
   const p = {
     floor: s.floor ?? 0, ceil: s.ceil ?? 256,
     light: s.light ?? 0.72, ambient: s.light ?? 0.72,
-    floorTex: texOr(s.floorTex, 'GRID'), ceilTex: texOr(s.ceilTex, 'SKY'),
+    floorTex: texOr(s.floorTex, DEFAULT_FLOOR), ceilTex: texOr(s.ceilTex, 'SKY'),
     wallTex: texOr(s.wallTex, 'GRIDWALL'),
     upperTex: texOr(s.upperTex, texOr(s.wallTex, 'GRIDWALL')),
     lowerTex: texOr(s.lowerTex, texOr(s.wallTex, 'GRIDWALL')),

@@ -5588,6 +5588,13 @@ gaps reach the cloud base, and the y offset lifts it. A line given a
 Middle height keeps that height, and the outside wall of a building
 still fills its opening.
 
+THE DEFAULTS. A new map (File > New, or THE GRID when there is no
+autosave) starts on checkered grass (LAWN2) under the pack's day sky
+with scattered cloud (BSKY2), and a sector drawn in it has the same
+grass floor. A map saved before this keeps what it had, including a
+painted sky: the skybox belongs to each new map, not to the world's
+defaults, so "painted" on the Map tab still means painted.
+
 THE SKYBOXES. Seven, picked on the Map tab (Skybox): BSKY1, BSKY2,
 LSKYA, NSKY1, OSKY1, UNSKY, XSKY. The sky here is a sphere wearing a
 panorama, so each six-face box was joined into one by

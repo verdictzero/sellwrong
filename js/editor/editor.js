@@ -40,7 +40,7 @@ import { Weather } from '../weather.js';
 import {
   History, compileDoc, gridDoc, newDoc, parseDoc, serialise, compact,
   THING_TYPES, SECTOR_DEFAULTS, takeId, ringOf, pointInPoly, signedArea, linesOf, lineKey,
-  segDist, strictlyInside, selfCrosses, segCross, WELD,
+  segDist, strictlyInside, selfCrosses, segCross, WELD, DEFAULT_FLOOR,
 } from './doc.js';
 import { View2D } from './view2d.js';
 import { View3D } from './view3d.js';
@@ -1228,7 +1228,7 @@ export async function startEditor() {
   /* what the map wears from the pack is loaded before it is first
      built; the rest comes in behind it, for the browser (see below) */
   ed.packLoading = true;
-  await loadPack(bank, packNamesIn(ed.doc));
+  await loadPack(bank, [...packNamesIn(ed.doc), ...packNamesIn([DEFAULT_FLOOR])]);
 
   const ui = buildUI(ed);
   ed.ui = ui;

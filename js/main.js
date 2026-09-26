@@ -567,7 +567,10 @@ async function boot() {
      be made of one — with every frame of any animated run among them */
   const packAnim = new PackAnimator(textures);
   if (played) {
-    const want = packNamesIn(played.doc);
+    /* what the document names, and what the compiler filled in for a
+       sector that named nothing (DEFAULT_FLOOR in js/editor/doc.js) */
+    const want = [...new Set([...packNamesIn(played.doc),
+      ...packNamesIn(played.level.sectors.map(s => [s.floorTex, s.ceilTex, s.wallTex]))])];
     if (want.length) { status('LOADING TEXTURES', 0.8); await loadPack(textures, want); }
   }
   if (played?.doc.textures?.length) {

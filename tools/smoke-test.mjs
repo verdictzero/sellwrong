@@ -13249,6 +13249,9 @@ await (async () => {
   const MG = await import('../js/mapgeo.js');
   const TX = await import('../js/textures.js');
   const bankC = TX.bakeTextures();
+  /* the default floor is a pack texture (js/texpack.js), which is a
+     file the browser loads: here a stand-in of its size */
+  bankC.add(D.DEFAULT_FLOOR, bankC.map.get('GRID').pix, { w: 256, h: 256 });
   const geoC = MG.buildLevelGeometry(c64.level, bankC);
   const byTex = new Map();
   const walkC = o => {
@@ -13256,7 +13259,7 @@ await (async () => {
     for (const ch of o.children || []) walkC(ch);
   };
   walkC(geoC.group);
-  const floorTint = (byTex.get('GRID') || []).flatMap(g => [...g.attributes.tintRGB.array]);
+  const floorTint = (byTex.get(D.DEFAULT_FLOOR) || []).flatMap(g => [...g.attributes.tintRGB.array]);
   const hasOrange = (() => { for (let i = 0; i < floorTint.length; i += 3) if (floorTint[i] === 1 && Math.abs(floorTint[i + 1] - 128 / 255) < 1e-6) return true; return false; })();
   const wallTint = (byTex.get('GRIDWALL') || []).flatMap(g => [...g.attributes.tintRGB.array]);
   function wallTintAll() { return wallTint; }
@@ -14233,7 +14236,7 @@ section('the texture pack');
   check('and runs the animation', /packAnim\.tick\(dt\)/.test(main));
   check('and wears the map\'s skybox, on the sphere and in the air', /sky: skybox \|\| skyBaker\.texture/.test(main) && /world\.skyTex\.value = skybox/.test(main));
   check('the editor loads the map\'s pack textures before the first build, and the rest behind it',
-    /await loadPack\(bank, packNamesIn\(ed\.doc\)\)/.test(edit) && /loadPack\(bank\)\.then/.test(edit));
+    /await loadPack\(bank, \[\.\.\.packNamesIn\(ed\.doc\)/.test(edit) && /loadPack\(bank\)\.then/.test(edit));
   check('and a map texture cannot take a pack texture\'s name', /builtInTextures = new Set\(\[\.\.\.bank\.map\.keys\(\), \.\.\.PACK_NAMES\]\)/.test(edit));
   check('the editor animates them in whichever view is up', /ed\.anim\?\.tick\(dt\)/.test(v3));
   check('the browser shelves every texture by shape — animated, square, non-square — a run as one cell',
@@ -14436,6 +14439,19 @@ section('the grid and the snap');
   check('the grid box has a custom size, and shows it while it is the grid', /Custom…/.test(uiG) && /customOpt\.hidden = !custom/.test(uiG));
   check('Shift+G snaps the selection, and the Edit menu has it', /up === 'G' && e\.shiftKey\) \{ ed\.snapSelToGrid\(\)/.test(edG) && /'Snap selection to grid', 'Shift\+G'/.test(uiG));
   check('the position readout is exact, not rounded', /Number\.isInteger\(v\) \? v : \+v\.toFixed\(2\)/.test(uiG));
+
+  /* THE DEFAULTS: checkered grass and a day sky from the pack */
+  {
+    const TPd = await import('../js/texpack.js');
+    const nd = D.newDoc('N'), gd = D.gridDoc();
+    check('a new map\'s ground is the pack\'s checkered grass, LAWN2', D.DEFAULT_FLOOR === 'LAWN2' && nd.sectors[0].floorTex === 'LAWN2' && gd.sectors[0].floorTex === 'LAWN2' && TPd.PACK_NAMES.includes('LAWN2'));
+    check('and a sector drawn in it too', D.SECTOR_DEFAULTS.floorTex === 'LAWN2');
+    check('a new map\'s sky is the pack\'s day sky, BSKY2', D.DEFAULT_SKYBOX === 'BSKY2' && nd.world.skybox === 'BSKY2' && gd.world.skybox === 'BSKY2' && TPd.SKIES.BSKY2);
+    const old = D.compileDoc({ ...nd, world: { sky: nd.world.sky } }).level;
+    check('but a map saved without a skybox keeps its painted sky', old.skybox === null && D.compileDoc(nd).level.skybox === 'BSKY2');
+    check('and the editor and a test run load the default floor before building',
+      /packNamesIn\(\[DEFAULT_FLOOR\]\)/.test(edG) && /packNamesIn\(played\.level\.sectors\.map/.test(fsG.readFileSync(new URL('../js/main.js', import.meta.url), 'utf8')));
+  }
 }
 
 /* ---------- the download ---------- */

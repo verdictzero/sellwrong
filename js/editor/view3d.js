@@ -50,7 +50,7 @@ import { buildSky, followSky } from '../sky.js';
 import { loadSky } from '../texpack.js';
 import { world } from '../material.js';
 import { Weather } from '../weather.js';
-import { THING_TYPES, ringOf, centroid, pointInPoly, FEATURES } from './doc.js';
+import { THING_TYPES, ringOf, centroid, pointInPoly, FEATURES, DEFAULT_FLOOR } from './doc.js';
 import { makeSky } from './editor.js';
 import { plantKind } from './scatter.js';
 import { scatterAt, paintBrush } from './view2d.js';
@@ -819,7 +819,7 @@ export class View3D {
 
   textureOf(h) {
     const d = this.ed.doc, s = d.sectors[h.sector];
-    if (h.part === 'floor') return s.floorTex || 'GRID';
+    if (h.part === 'floor') return s.floorTex || DEFAULT_FLOOR;
     if (h.part === 'ceil') return s.ceilTex || 'SKY';
     const o = d.lines[h.line] || {};
     /* the side that is being looked at first — see SIDES in doc.js */
