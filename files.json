@@ -362,6 +362,7 @@
   "js/maps/grid.js",
   "js/maps/rectmap.js",
   "js/maps/sellwrong.js",
+  "js/maps/sprawl.js",
   "js/maps/town.js",
   "js/material.js",
   "js/missiles.js",

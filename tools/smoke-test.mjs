@@ -411,7 +411,7 @@ check('ramps are monotonic in luma', ['grey', 'red', 'blue', 'fire'].every(k => 
       /id="opt-tone"/.test(html) && /TONE_SET = \[\{ v: 'earth'/.test(main) &&
       /tone: 0,/.test(main) && /ladder\('opt-tone', 'tone', TONE_SET/.test(main));
     check('and a saved tone from before the default moved is not kept alive',
-      /if \(was < 10\) \{ delete saved\.tone;/.test(main) && /PREF_VERSION = 10/.test(main));
+      /if \(was < 11\) \{ delete saved\.tone;/.test(main) && /PREF_VERSION = 11/.test(main));
     check('and a game that starts in the other one paints itself once, not twice',
       /setArtPalette\(TONE_SET\[prefs\.tone\]\.v\)/.test(main) &&
       main.indexOf('setArtPalette(TONE_SET') < main.indexOf('const textures = bakeTextures()'));
@@ -4400,13 +4400,14 @@ await (async () => {
   {
     const det = [...(main.match(/const DETAIL = \[([^\]]*)\]/) || ['', ''])[1].split(',').map(v => +v)];
     const pix = [...(main.match(/const PIXELS = \[([^\]]*)\]/) || ['', ''])[1].split(',').map(v => +v)];
-    const dDef = eval((main.match(/const DEFAULT_DETAIL = ([^;]+);/) || [])[1].replace('DETAIL.length', String(det.length)));
-    const pDef = pix.length - 1;
+    /* and BACK ON THE LADDER, at the user's request, with the earth
+       tones and the pixel dither: 320 rows of chunky pixels off 960 */
+    const dDef = det.indexOf(960), pDef = pix.indexOf(320);
     note('what it opens at', `${pix[pDef] || 'no'} chunky pixels, off the ${det[dDef] || 'window\'s own'} render`);
-    check('the game opens at the window\'s own resolution, at the user\'s request',
-      det[dDef] === 0 && dDef === det.length - 1);
-    check('and with no chunky grid over it at all',
-      /const DEFAULT_PIXELS = PIXELS_OFF;/.test(main) && pix[pDef] === 0);
+    check('the game opens at a 960-row render, at the user\'s request',
+      /const DEFAULT_DETAIL = DETAIL\.indexOf\(960\);/.test(main) && det[dDef] === 960);
+    check('with the 320-row chunky grid over it again',
+      /const DEFAULT_PIXELS = PIXELS\.indexOf\(320\);/.test(main) && pix[pDef] === 320);
     check('and every rung of both ladders is still there, so the look is three presses away',
       det.filter(v => v > 0).every((v, i, a) => i === 0 || v > a[i - 1]) &&
       det.includes(960) && det.includes(120) && pix.includes(320) && pix.includes(240));
@@ -13642,7 +13643,7 @@ section('the box the screen can hold');
     /const wanted = PALETTE_SET\[prefs\.palette\]\?\.v;/.test(mainSrc) &&
     /if \(wanted && wanted !== displayName\) applyPalette\(wanted\);/.test(mainSrc));
   check('and the saved settings were versioned up, so an old one does not come back without it',
-    /const PREF_VERSION = 10;/.test(mainSrc) &&
+    /const PREF_VERSION = 11;/.test(mainSrc) &&
     /if \(was < 7\) \{ delete saved\.detail;/.test(mainSrc));
   const htmlQ = fsQ.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   check('and there is a button for it', /id="opt-palette"/.test(htmlQ));
@@ -13817,15 +13818,15 @@ section('the grid');
       gg.brigade.called === false && (gg.gunships?.ships?.length || 0) === 0);
   }
 
-  /* ---- THE PICTURE: FULL COLOUR, THE WINDOW'S OWN RESOLUTION ---- */
+  /* ---- THE PICTURE: EARTH TONES AND THE PIXEL DITHER, BACK ---- */
   {
-    check('the frame is not snapped to a palette and not dithered any more',
-      /dither: 0\.0, snap: 0\.0,/.test(mainG));
-    check('and there is no chunky grid over it: the filter is a straight copy',
-      /const DEFAULT_PIXELS = PIXELS_OFF;/.test(mainG) && /pixelHeight: PIXELS\[pixelIndex\]/.test(mainG));
-    check('and the buffer is the window\'s own, which is what the top of the ladder now means',
+    check('the frame is dithered and snapped to the palette again, at the user\'s request',
+      /dither: 1\.0, snap: 1\.0,/.test(mainG));
+    check('on a chunky grid again',
+      /const DEFAULT_PIXELS = PIXELS\.indexOf\(320\);/.test(mainG) && /pixelHeight: PIXELS\[pixelIndex\]/.test(mainG));
+    check('and the window\'s own resolution is still the top of the ladder',
       /const detailRows = i => DETAIL\[i\] \|\| nativeRows\(\);/.test(mainG) &&
-      /const DEFAULT_DETAIL = DETAIL\.length - 1;/.test(mainG) &&
+      /const DEFAULT_DETAIL = DETAIL\.indexOf\(960\);/.test(mainG) &&
       /height: detailRows\(detailIndex\)/.test(mainG));
     check('and it follows the window when the window moves',
       /if \(!DETAIL\[detailIndex\]\) pipeline\.setHeight\(nativeRows\(\)\);/.test(mainG));
@@ -13842,7 +13843,7 @@ section('the grid');
       /TONE_SET = \[\{ v: 'earth'/.test(mainG) && /tone: 0,/.test(mainG) &&
       pal.DEFAULT_ART === 'earth');
     check('and a saved setting from before the picture moved is not kept alive',
-      /const PREF_VERSION = 10;/.test(mainG) && /if \(was < 10\)/.test(mainG));
+      /const PREF_VERSION = 11;/.test(mainG) && /if \(was < 11\)/.test(mainG));
   }
 
   /* ---- THE TWO PICTURES DRAWN IN FULL COLOUR ---- */
@@ -13876,9 +13877,9 @@ section('the grid');
   /* ---- AND THE SKY ---- */
   {
     const skySrc = fsG.readFileSync('js/skyart.js', 'utf8');
-    check('the sky bake has a dial for the snap, and this world asks for none of it',
+    check('the sky bake has a dial for the snap, held to the box again with everything else',
       /uniform float uSnapAmt;/.test(skySrc) && /u\.uSnapAmt\.value = f\.snap \?\? 1;/.test(skySrc) &&
-      /snap: 0 \}/.test(mainG));
+      /snap: 1 \}/.test(mainG));
     check('and it is still green at the horizon, dark green through, black overhead',
       /horizon: '#1d9a48'/.test(mainG) && /zenith: '#000000'/.test(mainG) && /midPow: 0\.95/.test(mainG));
     /* a fixed sky bakes once: the clock does not run and no cloud drifts */
@@ -14582,14 +14583,15 @@ section('light and fog');
       const k = (j * g.cols + i) * 4;
       return g.b[k + 3] > 0 ? [g.b[k] / 255, g.b[k + 1] / 255, g.b[k + 2] / 255, g.b[k + 3] / 255 * 100] : [0, 0, 0, 0];
     };
-    const topAt = (x, y) => {                        /* fogTopAt */
+    const FADE = 128;
+    const topAt = (x, y) => {                        /* fogTopAt: [top, how it ends] */
       const i = Math.floor((x - g.x0) / g.cell), j = Math.floor((y - g.y0) / g.cell);
-      if (i < 0 || j < 0 || i >= g.cols || j >= g.rows) return 1e9;
+      if (i < 0 || j < 0 || i >= g.cols || j >= g.rows) return [1e9, FADE];
       const k = (j * g.cols + i) * 4;
-      return g.c[k] * 256 + g.c[k + 1] - 32768;
+      return [g.c[k] * 256 + g.c[k + 1] - 32768, g.c[k + 2] > 127 ? 1 : FADE];
     };
-    const FADE = 128, G = (z, t) => z <= t ? z : t + FADE * (1 - Math.exp((t - z) / FADE));
-    const thick = (z0, z1, t) => Math.abs(z1 - z0) < 1 ? ((z0 + z1) / 2 <= t ? 1 : Math.exp((t - (z0 + z1) / 2) / FADE)) : (G(z1, t) - G(z0, t)) / (z1 - z0);
+    const G = (z, [t, f]) => z <= t ? z : t + f * (1 - Math.exp((t - z) / f));
+    const thick = (z0, z1, t) => Math.abs(z1 - z0) < 1 ? ((z0 + z1) / 2 <= t[0] ? 1 : Math.exp((t[0] - (z0 + z1) / 2) / t[1])) : (G(z1, t) - G(z0, t)) / (z1 - z0);
     const same = (p, q) => Math.max(...[0, 1, 2].map(i => Math.abs(p[i] - q[i]))) < 0.01 && Math.abs(p[3] - q[3]) < 0.2;
     const along = (a, b, endFog) => {                /* fogAlong: how much gets through */
       const len = Math.hypot(b[0] - a[0], b[1] - a[1], (b[2] || 0) - (a[2] || 0));
@@ -14600,8 +14602,9 @@ section('light and fog');
       let T = 1, gp = at(0), tp = tAt(0), sp = 0;
       const span = (f, l, z0, z1, t) => { if (f[3] > 0 && l > 0) T *= 2 ** (-l * f[3] * thick(z0, z1, t) / 25600); };
       for (let i = 1; i <= 16; i++) {
-        const s = (i / 16) ** 2, gg = i === 16 ? (endFog || at(1)) : at(s), tt = tAt(s);
-        if (same(gg, gp)) span(gp, (s - sp) * len, z(sp), z(s), tp);
+        const s = (i / 16) ** 2, gg = i === 16 ? (endFog || at(1)) : at(s);
+        let tt = tAt(s);
+        if (same(gg, gp)) { span(gp, (s - sp) * len, z(sp), z(s), tp); tt = tp; }
         else {
           let lo = sp, hi = s;
           for (let k = 0; k < 5; k++) { const m = (lo + hi) / 2; if (same(at(m), gp)) lo = m; else hi = m; }
@@ -14635,7 +14638,9 @@ section('light and fog');
       g.c[kTop] * 256 + g.c[kTop + 1] - 32768 === room.floor + SG.FOG_TOP && SG.packHeight(32767).join() === '255,255');
     const indoor = JSON.parse(JSON.stringify(doc)); indoor.sectors[1].outdoor = false; indoor.sectors[1].ceil = 128;
     const gi = SG.sampleSectorGrid(D.compileDoc(indoor).level);
-    check('and indoors, the ceiling', gi.c[kTop] * 256 + gi.c[kTop + 1] - 32768 === 128);
+    check('and indoors, the ceiling, where it stops dead: no fog in the air over a roof',
+      gi.c[kTop] * 256 + gi.c[kTop + 1] - 32768 === 128 && gi.c[kTop + 2] === 255 && g.c[kTop + 2] === 0 &&
+      /t\.z > 127\.0 \? 1\.0 : FOG_FADE/.test(M.FOG_GLSL));
     const fogBank = [along([500, 1500, 41], [1500, 1500, 41]), along([500, 1500, 400], [1500, 1500, 400]), along([500, 1500, 1200], [1500, 1500, 1200])];
     check('seen from outside the fog is a bank that thins upward into the sky, not a column',
       fogBank[0] < fogBank[1] && fogBank[1] < fogBank[2] && fogBank[2] > 0.95, fogBank.map(v => v.toFixed(3)).join(' '));
@@ -14747,6 +14752,65 @@ section('light and fog');
   }
 
 
+}
+
+/* ---------- THE SPRAWL ---------- */
+/* THE DEMO LEVEL, at the user's request: sprawling, made of every asset
+   the user has given and none that were generated, under the earth
+   tones and the pixel dither, which came back with it. The thing that
+   can go quietly wrong is a texture: a sector with no wall texture of
+   its own falls back to GRIDWALL, which is drawn here, and nothing on
+   screen says so. So the COMPILED level is walked, every surface of it,
+   and every name it wears is held to the pack. */
+section('the sprawl');
+{
+  const SP = await import('../js/maps/sprawl.js');
+  const D = await import('../js/editor/doc.js');
+  const TP = await import('../js/texpack.js');
+  const fsS = await import('node:fs');
+  const doc = SP.sprawlDoc();
+  const c = D.compileDoc(doc);
+  const L = c.level;
+  note('THE SPRAWL', `${doc.sectors.length} sectors, ${doc.props.length} props, ${L.things.length} things, ${L.plants.length} plants`);
+  check('it compiles with no problems, every sector into the level', c.problems.length === 0 && c.index.every(i => i >= 0), JSON.stringify(c.problems.slice(0, 3)));
+  check('and it sprawls: sixteen districts over half a kilometre, with a crowd and a wood in it',
+    L.bounds[2] - L.bounds[0] === SP.SPRAWL_SIZE && doc.sectors.length > 100 && L.plants.length > 1000 &&
+    L.things.filter(t => t.type === 'SHOPPER' || t.type === 'TOWNIE').length > 200);
+  check('it is the same every time', JSON.stringify(SP.sprawlDoc()) === JSON.stringify(doc));
+  const pack = new Set(TP.PACK_NAMES);
+  const ok = n => !n || n === 'NONE' || pack.has(n) || SP.SPRAWL_OWN_TEXTURES.includes(n);
+  const worn = new Set();
+  for (const sc of L.sectors) for (const k of ['floorTex', 'ceilTex', 'wallTex', 'upperTex', 'lowerTex', 'roofTex']) if (sc[k]) worn.add(sc[k]);
+  for (const l of L.lines) {
+    for (const k of ['middle', 'upper', 'lower']) if (l[k]) worn.add(l[k]);
+    for (const bd of l.bands || []) if (bd.tex) worn.add(bd.tex);
+    for (const sd of Object.values(l.sides || {})) for (const t of Object.values(sd)) if (typeof t === 'string') worn.add(t);
+  }
+  for (const pr of L.props) { worn.add(pr.tex); worn.add(pr.topTex); }
+  const bad = [...worn].filter(n => !ok(n));
+  check('EVERY SURFACE of the compiled level wears the user\'s pack, the cemetery iron or the sky — nothing painted here',
+    bad.length === 0, bad.join(' '));
+  const types = new Set([...doc.things, ...L.things].map(t => t.type));
+  const items = doc.scatters.flatMap(sc => sc.items.map(i => i.type.replace(/:.*/, '')));
+  check('and every thing is the user\'s: people, headstones, street lamps, plants and the start — no trolley, bollard, crate, fuel can or ceiling lamp',
+    [...types, ...items].every(t => SP.SPRAWL_THINGS.includes(t)), [...types, ...items].filter(t => !SP.SPRAWL_THINGS.includes(t)).join(' '));
+  const used = new Set(TP.packNamesIn(doc));
+  const missing = TP.PACK_NAMES.filter(n => !used.has(n));
+  check('ALL THE PACK is in it: every texture, every animated run', missing.length === 0, missing.join(' '));
+  check('under one of the pack\'s skyboxes', doc.world.skybox in TP.SKIES && L.skybox === doc.world.skybox);
+  const plantKinds = new Set([...L.plants.map(p => p.kind)]);
+  check('with the wood\'s plants and the photographed street trees', ['fir_tall_1', 'fir_tall_2', 'fir_medium', 'fir_young', 'fern', 'grass',
+    'street_round', 'street_broad', 'street_oval', 'street_upright', 'street_dense', 'street_big'].every(k => plantKinds.has(k)));
+  check('the start stands at the crossroads in the middle',
+    (() => { const st = L.things.find(t => t.type === 'START'); return st && st.x === SP.SPRAWL_START[0] && st.y === SP.SPRAWL_START[1]; })());
+  const mainSrc = fsS.readFileSync('js/main.js', 'utf8'), edSrc = fsS.readFileSync('js/editor/editor.js', 'utf8'), uiSrc = fsS.readFileSync('js/editor/ui.js', 'utf8');
+  check('the game plays it at ?demo, and the editor opens it from the File menu',
+    /if \(q\.has\('demo'\)\) \{\s*const doc = sprawlDoc\(\);/.test(mainSrc) && /this\.replace\(sprawlDoc\(\), 'open demo'\)/.test(edSrc) &&
+    /\['Open demo: THE SPRAWL', '', \(\) => ed\.fileDemo\(\)\]/.test(uiSrc));
+  check('EARTH TONES AND THE PIXEL DITHER ARE BACK: the frame is dithered and snapped to the earth box, on a 320-row grid',
+    /dither: 1\.0, snap: 1\.0,/.test(mainSrc) && /const DEFAULT_PIXELS = PIXELS\.indexOf\(320\);/.test(mainSrc) &&
+    /const DEFAULT_DETAIL = DETAIL\.indexOf\(960\);/.test(mainSrc) && /const PREF_VERSION = 11;/.test(mainSrc) &&
+    /TONE_SET = \[\{ v: 'earth'/.test(mainSrc) && /snap: 1 \},/.test(mainSrc));
 }
 
 /* ---------- the download ---------- */

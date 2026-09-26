@@ -138,6 +138,7 @@ export function buildUI(ed) {
     menu('File', [
       ['New map', '', () => ed.fileNew(false)],
       ['New from THE GRID', '', () => ed.fileNew(true)],
+      ['Open demo: THE SPRAWL', '', () => ed.fileDemo()],
       '-',
       ['Open…', 'Ctrl+O', () => ed.fileOpen()],
       ['Save as file', 'Ctrl+S', () => ed.fileSave()],

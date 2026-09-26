@@ -5686,8 +5686,61 @@ under the sky (FOG_TOP in js/sectorgrid.js; a third grid picture holds
 it). Above its top it thins away every 128 units (FOG_FADE). So a
 fogged field seen from outside is a fog bank fading up into the sky,
 not a column to the stars, and standing in it the sky overhead is
-dimmed only by the fog above you. The game's own levels, which have no
-fog, are untouched.
+dimmed only by the fog above you. Under a roof the fog stops dead at
+the ceiling, so the air over a fogged building is clear. Along one
+stretch of the same air the top is the one it had where the stretch
+began, so a line of sight over a street of kerbs and roofs is not
+banded by each one's slightly different height. The game's own levels,
+which have no fog, are untouched.
+
+THE SPRAWL, THE DEMO LEVEL (js/maps/sprawl.js). At the user's request:
+a sprawling level made of every asset the user has given and none that
+were generated. Play it at index.html?demo, or open it in the editor
+(File > Open demo: THE SPRAWL) to take it apart. It is an editor
+document built in code, the same every time.
+
+  THE LAYOUT  sixteen blocks, 3200 units square, on a four by four grid
+              with roads 768 wide, about half a kilometre across. Cliffs
+              wall it in, and the pack's painted backdrops (TREEBACK,
+              MEADOWBG, MOUNTBG, CLOUDS01/02, TREELINE, MNTN0001,
+              RUINLINE) stand in front of them. You start at the
+              crossroads in the middle. Every block has a pavement with
+              the user's photographed street lamps and street trees.
+  THE BLOCKS  south to north, west to east:
+                the park (lawn, pond, ivy hedges) · the car park and a
+                kiosk · the cube farm (cubicles, desks, monitors) · the
+                plaza (a stage with the test card on a screen, the
+                GZDOOM badge)
+                the cemetery (the iron, stones in ranks, mist, a
+                mausoleum) · the ops centre (animated panels, a red
+                reactor room, a DR1 door) · the mansion round a
+                courtyard with a fountain · the market square
+                the wood (firs, undergrowth, green mist) · the quarry
+                (twelve climbable terraces of cliff and a spring whose
+                walls are the waterfall) · the brutalist hall (pillars
+                and a pit in the gloom) · the yard (containers, a water
+                channel)
+                the meadow · the test chamber (the TEST and DEBUG sets,
+                the squirrel, the two checkers) · the lake with islands
+                · the ruins
+  ITS ASSETS  every texture in the pack, every animated run (the smoke
+              test checks this); the BSKY2 skybox; the wood's firs,
+              bushes, ferns and grass and the six street trees; the
+              headstones, the cemetery iron and the street lamp, which
+              are the user's photographs; the shoppers and townsfolk.
+  NOT IN IT   anything js/textures.js paints (GRIDWALL, the drawn
+              hedge), and the drawn trolley, bollard, crate, fuel can
+              and ceiling lamp. The smoke test walks every surface of
+              the compiled level and holds each name it wears to the
+              pack, the iron and the sky.
+
+EARTH TONES AND THE PIXEL DITHER ARE BACK, at the user's request. The
+finished frame is Bayer-dithered and snapped to the earth box again,
+pack textures and skies included, on a grid of 320 rows of 2:3 pixels
+off a 960-row render. The sky bake is held to the box as well. Saved
+settings from the full-colour spell are dropped once (PREF_VERSION 11).
+The pause menu's ladders still reach full colour (PIXELS OFF, render
+NATIVE). The editor's 3D view stays in full colour.
 
 THE SKYBOXES. Seven, picked on the Map tab (Skybox): BSKY1, BSKY2,
 LSKYA, NSKY1, OSKY1, UNSKY, XSKY. The sky here is a sphere wearing a

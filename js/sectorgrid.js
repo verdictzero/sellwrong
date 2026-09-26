@@ -25,6 +25,8 @@
              fog thins away (FOG_FADE in js/material.js), so a fogged
              sector under the sky is a fog bank that fades into the sky
              rather than a column of fog up to the stars.
+        b    255 under a roof: the fog STOPS at the ceiling, and the air
+             over the building has none of it
 
    Only for a map from the editor (a level with mapLight): the game's own
    levels light their things themselves, and it is switched off for them.
@@ -75,6 +77,7 @@ export function sampleSectorGrid(level) {
       /* how high its fog reaches; off the map, as high as there is */
       const top = !s ? 32767 : s.outdoor === false ? (s.ceil ?? 32767) : (s.floor ?? 0) + FOG_TOP;
       [c[k], c[k + 1]] = packHeight(top);
+      c[k + 2] = s && s.outdoor === false ? 255 : 0;
     }
   }
   return { cell, cols, rows, x0, y0, a, b, c };

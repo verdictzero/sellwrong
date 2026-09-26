@@ -47,6 +47,7 @@ import { View3D } from './view3d.js';
 import { buildUI } from './ui.js';
 import { scatterFrom } from './scatter.js';
 import { registerTextures } from './texcompose.js';
+import { sprawlDoc } from '../maps/sprawl.js';
 import { PACK_NAMES, loadPack, packNamesIn, PackAnimator } from '../texpack.js';
 
 /* where the editor keeps its work in the browser */
@@ -913,6 +914,17 @@ export class Editor {
     if (this.history.dirty && !confirm('Start a new map? The current one is autosaved and can be undone back to.')) return;
     this.replace(grid ? gridDoc() : newDoc(), grid ? 'new from grid' : 'new map');
     this.say(grid ? 'new map from THE GRID' : 'new map');
+  }
+
+  /** THE DEMO LEVEL, THE SPRAWL (js/maps/sprawl.js), to play or take
+   *  apart */
+  fileDemo() {
+    if (this.history.dirty && !confirm('Open the demo level? The current map is autosaved and can be undone back to.')) return;
+    this.replace(sprawlDoc(), 'open demo');
+    /* it is big: show all of it on the plan, and the 3D view at the start */
+    this.view2d?.frame();
+    this.view3d?.toStart?.();
+    this.say('opened the demo level, THE SPRAWL');
   }
 
   fileSave() {

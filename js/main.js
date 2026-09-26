@@ -33,6 +33,7 @@ import { CELLS, GIBLETS, BLAST_SPRITE, addStandees, addSplats, addTroops } from 
    still exported and still tested; nothing builds them any more. */
 import { buildGrid } from './maps/grid.js';
 import { compileDoc, parseDoc } from './editor/doc.js';
+import { sprawlDoc } from './maps/sprawl.js';
 import { registerTextures } from './editor/texcompose.js';
 import { loadPack, loadSky, packNamesIn, PackAnimator } from './texpack.js';
 import { Game } from './game.js';
@@ -82,7 +83,10 @@ const nativeRows = () => Math.round((typeof window === 'undefined' ? 720 : windo
   * Math.min(2, (typeof devicePixelRatio === 'undefined' ? 1 : devicePixelRatio) || 1));
 const detailRows = i => DETAIL[i] || nativeRows();
 const detailName = i => (DETAIL[i] ? DETAIL[i] + 'P' : 'NATIVE');
-const DEFAULT_DETAIL = DETAIL.length - 1;   // native, at the user's request
+/* 960 rows again, at the user's request, now that the picture is held
+   to the earth box and dithered once more: the render the 320-row grid
+   of 2:3 pixels averages six buffer pixels into each chunky one from */
+const DEFAULT_DETAIL = DETAIL.indexOf(960);
 
 /* AND HOW BIG A PIXEL IS, which is a different question and used to be
    the same one. This is the grid the finished frame is filtered down
@@ -103,7 +107,10 @@ const DEFAULT_DETAIL = DETAIL.length - 1;   // native, at the user's request
    step nobody can see. */
 const PIXELS = [120, 150, 200, 240, 320, 400, 480, 600, 0];
 const PIXELS_OFF = PIXELS.length - 1;
-const DEFAULT_PIXELS = PIXELS_OFF;     // off, at the user's request: no chunky grid
+/* 320 rows, at the user's request: the chunky grid is back, with the
+   earth tones and the dither (see LofiPipeline below). OFF is still the
+   last rung of the ladder in the pause menu. */
+const DEFAULT_PIXELS = PIXELS.indexOf(320);
 
 /* THE SHAPE OF ONE, width over height as displayed. 320x200 filling a
    4:3 monitor is not a square-pixel mode and never was: each pixel stood
@@ -203,7 +210,7 @@ const PREF_KEY = 'sellwrong.prefs';
    so a saved 0 meant AS DRAWN and now means EARTH, which is the right
    answer for anybody who never touched it and the wrong one for
    anybody who did. Dropped rather than reinterpreted. */
-const PREF_VERSION = 10;
+const PREF_VERSION = 11;
 const DEFAULT_PREFS = { v: PREF_VERSION, sens: 1, invert: false, lefty: false, haptics: true,
                         detail: DEFAULT_DETAIL, pixels: DEFAULT_PIXELS, pixar: DEFAULT_PIXAR,
                         crowd: 0, fx: 0, wood: 0, fps: false,
@@ -253,6 +260,9 @@ function loadPrefs() {
       /* and at 10, when the picture went full colour: EARTH is first
          again, and the render and pixel ladders are not what they were */
       if (was < 10) { delete saved.tone; delete saved.detail; delete saved.pixels; delete saved.pixar; }
+      /* and at 11, when the earth tones and the pixel dither came back:
+         the saved full-colour picture is not kept alive either */
+      if (was < 11) { delete saved.tone; delete saved.detail; delete saved.pixels; delete saved.pixar; }
       saved.v = PREF_VERSION;
     }
     return { ...DEFAULT_PREFS, ...saved };
@@ -472,32 +482,29 @@ async function boot() {
      hour and the weather, and again as the night goes. It needs the
      palette atlas the post pass builds, so the pipeline comes first. */
   status('THE SKY', 0.62); await breathe();
-  /* FULL COLOUR AND FULL RESOLUTION, at the user's request, and it is a
-     SETTING rather than a removal. js/lofi.js is untouched and still
-     does everything it did — the buffer, the block average, the ordered
-     dither, the palette snap, the chunky grid — and js/palette.js still
-     builds the box of crayons that the art is painted in. What has
-     moved is the four numbers it is handed:
+  /* EARTH TONES AND PIXEL DITHER, at the user's request — back after a
+     spell in full colour, which was a SETTING and not a removal, so
+     this is four numbers again (js/lofi.js never changed):
 
-       PIXELS off       the chunky grid becomes the buffer, so the
-                        filter is a straight copy
-       DITHER 0         nothing to spread, because
-       SNAP 0           nothing is being snapped: the frame goes to the
-                        screen in the colours it was shaded in
-       RENDER native    the buffer is the window, so the world is drawn
-                        at the size it is shown at
+       PIXELS 320       the chunky grid, 2:3 pixels, each the average of
+                        six buffer pixels
+       DITHER 1         the Bayer wobble before the snap, one step of
+                        the box's own grid
+       SNAP 1           every pixel to the nearest colour in the box —
+                        the earth ramps (TONE_SET), so the pack's full-
+                        colour textures and skies come out earth too
+       RENDER 960       the buffer the grid averages from
 
-     THE ART IS STILL EARTH, which is the other half of the user's
-     request and is a different question — see TONE_SET. Every texture
-     and every sprite in this game is still PAINTED out of the 256
-     earth ramps; what is gone is the screen being held to them as
-     well. The ladders in the pause menu all still work, so turning the
-     look back on is three presses. */
+     The ladders in the pause menu still reach full colour: PIXELS OFF
+     and the render at NATIVE. */
   const pipeline = new LofiPipeline(renderer, {
     height: detailRows(detailIndex),
     pixelHeight: PIXELS[pixelIndex],
     pixelAspect: PIXEL_ASPECT[pixarIndex].v,
-    dither: 0.0, snap: 0.0,
+    /* EARTH TONES AND THE PIXEL DITHER, BACK, at the user's request:
+       the finished frame is Bayer-dithered and snapped to the earth box
+       the art is painted in (TONE_SET), pack textures and all */
+    dither: 1.0, snap: 1.0,
   });
   /* THE SKY OVER THE GRID: green at the horizon, dark green through the
      middle of it and black overhead, at the user's request — and the
@@ -534,9 +541,9 @@ async function boot() {
               rest stays as this world has it: */
            ...(played?.level.sky || {}),
            bare: true,
-           /* and the bake keeps its own colours, like everything else
-              now — see uSnapAmt in js/skyart.js */
-           snap: 0 },
+           /* and the bake is held to the box, like everything else
+              again — see uSnapAmt in js/skyart.js */
+           snap: 1 },
   });
   const skyBaker = new SkyBaker(renderer, pipeline.lut, { seed: 11 });
   skyBaker.bake(weather.frame);
@@ -1292,7 +1299,14 @@ boot().catch(e => {
 /** The map GSS-EDIT handed over for a test run, compiled — or null, and
  *  the game plays THE GRID. See PLAY_KEY in js/editor/editor.js. */
 function playedMap() {
-  if (!new URLSearchParams(location.search).has('play')) return null;
+  const q = new URLSearchParams(location.search);
+  /* THE DEMO LEVEL, at the user's request: THE SPRAWL, built in code out
+     of the user's own assets (js/maps/sprawl.js) — ?demo */
+  if (q.has('demo')) {
+    const doc = sprawlDoc();
+    return { ...compileDoc(doc), doc };
+  }
+  if (!q.has('play')) return null;
   try {
     const text = localStorage.getItem('gss-edit:play');
     if (!text) return null;

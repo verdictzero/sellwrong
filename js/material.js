@@ -406,23 +406,26 @@ vec4 fogAirAt(vec3 p) {
   vec4 b = texture2D(sectorB, uv);
   return b.a > 0.0 ? vec4(b.rgb, b.a * 100.0) : fogDefault;
 }
-/* how high the fog at a point reaches */
-float fogTopAt(vec3 p) {
-  if (sectorOn < 0.5) return 1e9;
+/* how high the fog at a point reaches, and how it ends there: x the
+   top, y how far over it the fog thins away — FOG_FADE under the sky,
+   and next to nothing under a roof, where the fog stops at the ceiling
+   and there is none in the air over the building */
+vec2 fogTopAt(vec3 p) {
+  if (sectorOn < 0.5) return vec2(1e9, FOG_FADE);
   vec2 uv = (vec2(p.x, -p.z) - sectorRect.xy) * sectorRect.zw;
-  if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return 1e9;
-  vec2 t = floor(texture2D(sectorC, uv).rg * 255.0 + 0.5);
-  return t.x * 256.0 + t.y - 32768.0;
+  if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return vec2(1e9, FOG_FADE);
+  vec3 t = floor(texture2D(sectorC, uv).rgb * 255.0 + 0.5);
+  return vec2(t.x * 256.0 + t.y - 32768.0, t.z > 127.0 ? 1.0 : FOG_FADE);
 }
 /* the fog's thickness summed up to height z, under a top: all of it
    below, thinning away above */
-float fogG(float z, float top) {
-  return z <= top ? z : top + FOG_FADE * (1.0 - exp((top - z) / FOG_FADE));
+float fogG(float z, vec2 top) {
+  return z <= top.x ? z : top.x + top.y * (1.0 - exp((top.x - z) / top.y));
 }
 /* its mean between two heights */
-float fogThick(float z0, float z1, float top) {
+float fogThick(float z0, float z1, vec2 top) {
   float dz = z1 - z0;
-  if (abs(dz) < 1.0) { float z = 0.5 * (z0 + z1); return z <= top ? 1.0 : exp((top - z) / FOG_FADE); }
+  if (abs(dz) < 1.0) { float z = 0.5 * (z0 + z1); return z <= top.x ? 1.0 : exp((top.x - z) / top.y); }
   return (fogG(z1, top) - fogG(z0, top)) / dz;
 }
 bool fogSame(vec4 a, vec4 b) {
@@ -431,7 +434,7 @@ bool fogSame(vec4 a, vec4 b) {
 }
 /* one stretch of air, len long, from height z0 to z1 under a fog top:
    what it lets through (T) and adds */
-void fogSpan(inout vec3 add, inout float T, vec4 fg, float len, float z0, float z1, float top) {
+void fogSpan(inout vec3 add, inout float T, vec4 fg, float len, float z0, float z1, vec2 top) {
   if (fg.a <= 0.0 || len <= 0.0) return;
   float t = exp2(-len * fg.a * fogThick(z0, z1, top) / 25600.0);
   add += T * (1.0 - t) * (fg.rgb * lightColor + ambientColor * fogAmbient);
@@ -444,17 +447,21 @@ vec4 fogAlong(vec3 a, vec3 b, vec4 endFog) {
   vec3 add = vec3(0.0);
   float T = 1.0;
   vec4 gPrev = fogAirAt(a);
-  float tPrev = fogTopAt(a);
+  vec2 tPrev = fogTopAt(a);
   float sPrev = 0.0;
   for (int i = 1; i <= FOG_STEPS; i++) {
     float u = float(i) / float(FOG_STEPS);
     float s = u * u;                        /* finer near the eye */
     vec3 p = mix(a, b, s);
     vec4 g = i == FOG_STEPS ? endFog : fogAirAt(p);
-    float top = fogTopAt(p);
+    vec2 top = fogTopAt(p);
     float z0 = mix(a.y, b.y, sPrev), z1 = p.y;
     if (fogSame(g, gPrev)) {
+      /* the same air: its top is the one it had where it began, so a
+         line of sight over a street of kerbs and roofs is not banded by
+         each one's slightly different height */
       fogSpan(add, T, gPrev, (s - sPrev) * len, z0, z1, tPrev);
+      top = tPrev;
     } else {
       float lo = sPrev, hi = s;
       for (int k = 0; k < FOG_HALVINGS; k++) {

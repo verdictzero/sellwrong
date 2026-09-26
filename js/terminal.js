@@ -370,9 +370,11 @@ class Terminal {
 /* STRAIGHT PAST THE DOOR, for the two round trips the editor makes:
    `?edit` is the way back from a test run (F2 in the game) and opens
    the editor with no terminal; `?play` is a test run of an edited map,
-   which js/main.js picks up on its own. Anything else is the terminal. */
+   which js/main.js picks up on its own; and `?demo`, at the user's
+   request, is the demo level, THE SPRAWL (js/maps/sprawl.js), which
+   js/main.js picks up the same way. Anything else is the terminal. */
 const params = new URLSearchParams(location.search);
-if (params.has('edit') || params.has('play')) {
+if (params.has('edit') || params.has('play') || params.has('demo')) {
   $('term').remove();
   const go = params.has('edit')
     ? import('./editor/editor.js').then(m => m.startEditor())
