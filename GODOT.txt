@@ -1,0 +1,527 @@
+MEWD — THE GODOT PORT
+=====================
+
+(MEWD: Made Entirely Without Doom.)
+
+At the user's request: the whole game rewritten in Godot 4 (4.3), in
+GDScript, on the branch claude/godot-rewrite. The web build in js/ stays
+where it is and keeps working; it is the reference every file here was
+ported from, and the ported files say which JS file they came from in
+their first lines.
+
+
+RUNNING IT
+
+  The project is the repository's root: open the folder in Godot 4.3
+  and press F5, or from a shell:
+
+    godot                      # the editor
+    godot --path . -- --play   # straight into the game, past the title
+
+  The web build's folders (js/, vendor/, tools/, css/, art/) carry a
+  .gdignore, so Godot sees assets/ and godot/ and nothing else. The
+  game's own assets are res://assets/ exactly as the web build has them.
+
+  Arguments after `--`:
+    --play               skip the title
+    --seed=N             the maze for seed N (the same maze the web
+                         build makes for ?seed=N — the generator is a
+                         straight port, random-number call for call)
+    --map=NAME           maze (the default), jesse, sprawl (THE SPRAWL,
+                         the web build's ?sprawl), grid (?grid) or layers
+                         (THE ANNEXE: a map in two storeys, room over room)
+    --at=X,Y,DEG[,LAYER] stand the start somewhere else (for pictures);
+                         LAYER: on that layer's floor, on a map in layers
+    --eye=RISE[,PITCH]   the eye that far over the body, tilted PITCH
+                         degrees (for pictures)
+    --weapon=NAME        start holding FLAMER, EXTINGUISHER, BORE,
+                         MINIGUN, LANCE, LAUNCHER, ARC or POTATO
+    --autofire           hold the trigger (for pictures and tests)
+    --shot=out.png       render --shot-frames=N frames (default 20),
+                         save the picture, quit — how every picture of
+                         the port was checked
+    --title              with --shot, stay on the title
+    --pause              open the pause menu
+    --touch              the phone's controls, without a touch screen
+    --zoom=N             the scope of the gun in hand starts at step N
+                         (the lance's screen, the launcher's thermal)
+    --prof               print where a frame's time goes, every 2 s
+                         (fps, draw calls, and the game's own sections);
+                         FRAME RATE in the pause menu's DEBUG tab shows
+                         the same under the frame rate, on any machine
+    --edit               straight into MEWD Editor, the map editor (the
+                         web build's ?edit); at the terminal, E or EDIT
+    --edit-ops=FILE      with --edit, run a script of edits (the format
+                         of godot/tests/editor_ops.json) — for pictures
+
+  Controls are the web build's: WASD or the arrows (Q/E strafe too),
+  mouse to look (click to capture it), Shift to run, Space to jump, F
+  to use, left mouse or Ctrl to fire, Z, C or the right button to put
+  the lance's scope or the launcher's thermal sight up and step its zoom
+  (AIM and ZOOM on the phone), 1-7 or the wheel for the guns,
+  Esc or P to pause. On the title, up/down and Enter, or the mouse.
+  F2 in the game opens the map editor on the map last edited (a test
+  run from the editor has an "◀ EDITOR F2" button too).
+
+
+HOW IT IS BUILT, AND WHERE EACH PIECE OF THE WEB BUILD WENT
+
+  THE PICTURE (js/lofi.js -> godot/scripts/render/lofi.gd,
+  godot/shaders/lofi.gdshader). The world is drawn into a SubViewport
+  as many pixels across as the chunky PIXELS grid has columns (320 rows
+  of 2:3 pixels; RENDER in the pause menu can ask for more), and the
+  filter runs ONCE PER CHUNKY PIXEL into a grid-sized buffer — it
+  Bayer-dithers one step and snaps to the earth palette through the
+  same 32x32x32 atlas the web build builds (godot/data/palette_lut.png)
+  — which is blown up to the window nearest-neighbour: a 4K window costs
+  what a small one does. Every texture is sampled nearest, every
+  surface is unlit (its light is worked out in its own shader), and the
+  renderer is Compatibility on every platform. The gun is a second
+  SubViewport in a world of its own, composited over the room and under
+  the filter, exactly as the web build's overlay pass. The HUD, the
+  title's menu and the pause menu are CanvasLayers above all of that and
+  are never filtered.
+
+  THE LIGHT (js/material.js -> godot/shaders/world_light.gdshaderinc).
+  One set of GLOBAL shader uniforms — sky_light, light_falloff,
+  min_light, global_light, air_near, air_far, air_color — declared in
+  project.godot and written by the weather (godot/scripts/game/
+  weather.gd), read by every surface: walls and floors, sprites, decals,
+  particles. worldBand is ported line for line: depth diminishing, the
+  sky's lift, Doom's 32 light steps, then the air.
+
+  THE LEVEL (js/level.js, js/mapgeo.js, js/editor/doc.js compileDoc ->
+  godot/scripts/level/). A document (the maps write one) is compiled to
+  a Level of sectors and lines with a 128-unit blockmap; the collision,
+  sight and hitscan are the web build's 2.5D ones — slide along the
+  lines, step 24, never a physics engine — so it moves like the web
+  build and like Doom. The compiler (doc_compile.gd) is compileCore:
+  edges split at T-junctions, sectors inside sectors bridged in as
+  holes (rooms sharing a wall one hole), free-standing linedefs stood
+  up as walls, the line overrides (blocking, blind, a skin per face,
+  offsets, scale, a fill in an opening), the outside wall where a roofed
+  room meets the open air, no sky walls and a roof over every roofed
+  room, Doom 64's sector colours and each sector's fog, the free boxes
+  (props — drawn, and solid to nothing, as on the web), the plants, and
+  the scatters (scatter.gd, dart for dart the web build's). MapGeo
+  builds the floors (earcut.gd round holes), ceilings, roofs, walls
+  whose textures follow the world (v is height, u the way round the
+  room's ring: no slots, no pegs, no aligning — at the user's request),
+  the middles standing in openings and the boxes,
+  one mesh per texture; a level with colours, fog or two-faced walls is
+  drawn with godot/shaders/world_tint.gdshader (the colour and fog per
+  vertex, faces culled).
+
+  ROOM OVER ROOM (js/level.js's COLUMNS, js/editor/doc.js's LAYERS). A
+  map drawn in the editor's layers is compiled WHOLE, as the web build
+  compiles it: each layer's linedefs stood up on their own, every
+  layer's outlines laid over each other (DocCompile.overlay — cut where
+  they cross, walked face by face), and each face built as a COLUMN,
+  Level.add_column: the room of every layer over it, bottom-up, each
+  storey's ceiling brought down to the underside of the DECK under the
+  one over it. A deck is Level.DECK (16) thick, always — the web
+  build's have none: the slab between is solid to movers, rays, eyes
+  and fire, and its edge is drawn as a band (in a building's outside
+  wall where the line is one); an upper floor with no room for a deck
+  over the floor under it is left out and said. The room under has the
+  upper floor's texture for its ceiling. A ROOF is as thick, over the
+  ceiling of the room it roofs, and its edge is drawn wherever what is
+  beside it is lower (MapGeo._roof_edge) — on every map with roofs.
+
+  A BUILDING'S OUTSIDE WALL is DocCompile.WALL_THICK (16) thick, always
+  (DocCompile.thick_walls; the web build's are a face with no depth):
+  a roofed room drawn against the open air is its INSIDE, and the wall
+  grows out of it — a strip out of each edge and a mitred corner out of
+  each outward corner, each cut to the open-air sector it stands in and
+  off every room, solid sector and wall already there. A wall is solid
+  from the ground to the room's ceiling, the room's roof over it; on an
+  upper layer, from the room's floor (__base) over whatever is under.
+  A doorway (a line marked an opening) is a PASSAGE through the wall in
+  the room's own floor and roof. Where a wall meets the edge of the open
+  air it stands in, the open air is cut back round it. Overrides on the
+  room's lines follow: the room's side (its middle becomes the wall's
+  bottom, the face it sees) and the open air's side onto the wall's
+  outer face. The tests that hold a build to the web build's turn it
+  off (DocCompile.thick) for that comparison. Every other sector is a
+  column of one — every sector of every map not in layers — and for
+  those nothing below is asked or costs anything different (the level's
+  `layered` is false and each new question is behind it or behind a
+  column's `above`/a line's `multi`).
+    - A point is in one column: sector_at answers with its GROUND storey
+      (the web build's sectorAt). The storey is asked by height:
+      span_in / span_at (the one whose floor..ceiling holds z, or the
+      highest under it — the web build's spanIn), and stand_in for a
+      body on its feet: the highest floor a step (24) or less over them,
+      so the top of a stair a step under an upper floor walks onto it.
+    - A line joins two whole columns (front_col, back_col). Walking
+      through it asks the two storeys at the mover's height (a hall's
+      door is a door, the landing over it a wall); the crowd will not
+      walk off a drop of more than 96 to the LOWER floor; nobody goes
+      under a deck head first. It is drawn as its BANDS — every interval
+      of z where exactly one side is open, in the skin of the storey
+      that is shut there — and a middle in each HOLE, where both are.
+    - A building's outside wall (a roofed room against open air) is
+      walled storey by storey: only in the openings where that is so
+      (mid_z — a terrace beside an office is open), each storey in its
+      own room's walls; a line marked as a doorway (opening) is one on
+      ITS OWN LAYER only, so a ground-floor door is not a hole in the
+      wall upstairs.
+    - Rays: sight_blocked and ray_hit_wall ask the storeys at the
+      crossing's height, and on a layered map ray_hit_flat walks the
+      segment column by column for the first floor, deck or roof it
+      passes through (a sky ceiling is air). So the hitscan, the eye's
+      trace and sight stop at a floor, and a round can pass over an
+      upper storey's edge or under it.
+    - Everything that moves or lands asks the storey by height: the
+      player (stand_in on his feet, span_in in the air), the crowd and
+      the troops (spawned on their layer's floor, kept on their storey,
+      solid only to what is at their height), the flame, frost, water,
+      bore, missiles, arc, beam, embers, giblets, rain (onto the top of
+      a column) and the decals under them; a blast does not reach
+      through a floor. The fire grid's planes are the storeys (as in
+      js/fire.js) and ignite/douse/heat_at take the height, so a fire on
+      a terrace burns up there and does not come down, and one under it
+      does not go up (open air under a deck has no way up; an indoor
+      room climbs slowly into the storey over it, the web build's
+      CEIL_SPREAD). A client puts each body in the storey at the height
+      the host's snapshot gives (the wire is unchanged); sound falls off
+      with height too.
+    - Vehicles, the wood, the street lamps, the scatters, a match's
+      spawn pads and the plants stay on the ground (as in the web build).
+
+  THE MAPS (js/maps/ -> godot/scripts/maps/). THE MAZE, JESSE, THE
+  SPRAWL (sprawl.gd) and THE GRID (grid.gd) are ported and produce the
+  SAME document as the JS — JESSE was diffed against js/maps/jesse.js
+  for 48 seeds (godot/tests/jesse_dump.gd); THE SPRAWL's document and
+  its compiled level (every sector, line, band, side, thing, plant and
+  box) against compileDoc(sprawlDoc()) (godot/tests/sprawl_dump.gd,
+  which the suite runs to hold the counts), and the grid's crowd
+  against buildGrid. THE ANNEXE (godot/scripts/maps/layers.gd,
+  --map=layers) is the port's own: a yard, a shop with an office over
+  it and a terrace beside that over open yard, drawn in two layers, with
+  stairs cut by the editor's step generator — the map room over room is
+  tested and pictured on.
+
+  THE SIMULATION runs at 35 tics a second, at most six a frame, and
+  the picture is drawn between the last two (godot/scripts/game/
+  game.gd). The actors are the web build's state tables and actions
+  (states.gd, actor.gd): Doom's chase for the troops; the crowd's watch,
+  flee and contagious panic; burning, freezing, thawing, shattering,
+  burning away, the bore's hold. THE FIRE THAT SPREAD IS GONE, at the
+  user's request: no fuel grid, no burn meter, no haze, no wood catching,
+  no brigade. People and cars still catch and burn (Actor.ignite,
+  Effects.body_fire) — that is the fire the game keeps.
+
+  THE DATA the port reads from the web build's own tables is written by
+  `node tools/godot-data.mjs`: the texture list (godot/data/
+  texpack.json), the palette and its LUT, and the lamp art. Everything
+  else — the effect atlases, the ash — is baked in GDScript at
+  start-up, from the same generators.
+
+  THE REST, file for file:
+    js/player.js, weapon tables   game/player.gd, game/weapons.gd
+    js/flame.js / frost.js        game/flame.gd / game/frost.gd
+    js/bore.js                    game/bore.gd
+    js/missiles.js                game/missiles.gd
+    js/arc.js                     game/arc.gd
+    (the Godot build's own)       game/potatoes.gd, shaders/nuke.gdshader
+    js/beam.js, js/scope.js       game/beam.gd (+ weapon3d aim/screen)
+    js/thermal.js, world.thermal  render/thermal.gd, shaders/thermal.gdshaderinc,
+                                  shaders/thermal_screen.gdshader
+    js/weapon3d.js                render/weapon3d.gd, shaders/gun.gdshader
+    js/people.js (gore), effects  game/giblets.gd, game/effects.gd
+    js/decals.js                  render/decals.gd, render/gore_decals.gd
+    js/tracers.js                 render/tracers.gd
+    js/particles.js               render/particles.gd
+    js/standees.js                render/standees.gd
+    js/forest.js                  game/forest.gd, render/forest_view.gd
+    js/lamplight.js, lamp posts   render/lamps.gd
+    js/responders.js, vehicles.js game/vehicles.gd, vehicle*.gd, swat_van.gd,
+      car.js                        army_apc.gd
+    js/weather.js                 game/weather.gd
+    js/hud.js                     render/hud.gd
+    js/audio.js, js/music.js      audio/sound.gd, audio/music.gd
+    js/titlescene.js, the title   title/title_forest.gd, title/title.gd
+    the pause menu                ui/pause.gd
+    js/touch.js, portrait notice  ui/touch.gd, ui/rotate.gd
+    js/net/*.js, tools/server.mjs net/*.gd (see NETWORK PLAY)
+
+
+NETWORK PLAY (js/net/ -> godot/scripts/net/)
+
+  The web build's LAN play, ported file for file, and ON THE SAME WIRE:
+  the same seventeen-byte TicCmd in a binary WebSocket frame, the same
+  JSON handshake, snapshots, pings and goodbyes in text frames, at
+  ws://host:port/net. So a Godot client can join the Node host, a web
+  page can join the Godot host, and either kind of client can play the
+  other on either host.
+
+    godot --headless --path . -- --server[=PORT]      host (default 7777)
+          [--map=jesse|maze] [--seed=N] [--max=16] [--frags=N]
+    godot --path . -- --join=HOST[:PORT]               join a host
+          [--name=NAME]
+    node tools/server.mjs --map maze --port 7777       the web build's host
+    http://…/?join=HOST:PORT                           a web page joining
+
+  or JOIN / JOIN host:port at the terminal (a failed join comes back to
+  it saying why). JESSE is team deathmatch (A in SWAT black, B in army
+  green), THE MAZE deathmatch with its crowd left at home; the network
+  loadout is the minigun, and the match's rules (frag limit, respawns,
+  spawn guard, the pvp scale, infinite ammo) are js/net/match.js's.
+  TAB shows the table; the score line is at the top of the screen.
+
+    net/ticcmd.gd     js/net/ticcmd.js — the command; rounded with
+                      JavaScript's Math.round, so the bytes are the JS's
+    net/protocol.gd   js/net/protocol.js
+    net/transport.gd  js/net/transport.js + tools/server.mjs's socket:
+                      a loopback pipe, WebSocketPeer, and a TCPServer
+                      listener handing each upgraded line to the host
+    net/session.gd    js/net/session.js (Local, Host)
+    net/match.gd      js/net/match.js (NetMatch: DM/TDM, spawns, frags)
+    net/server.gd     js/net/server.js (SimServer: handshake, the
+                      rewind, snapshots)
+    net/client.gd     js/net/client.js (NetClient)
+    net/remote.gd     js/net/remote.js (NetGame: prediction and
+                      reconciliation, the puppets drawn in the past,
+                      toasts, the score board — drawn by render/hud.gd)
+    net/host.gd       tools/server.mjs (the dedicated server's loop)
+
+  The Game is many-player the way js/game.js is: game.players, each
+  with a session (the game's own LocalSession for the one on this
+  machine), game.rules (a NetMatch on a host), game.rewind, targets and
+  collision among players, a match's own idea of a death. On a client
+  the look taken each frame is held (game.net_look) and rounded into the
+  tic's command, so the host turns you exactly as your screen did.
+
+  Test hooks: --netbot (turn toward the nearest of the others through
+  the command, walk at them, fire when in sight; --netbot=look holds
+  fire), --quit-after=S, --report=PATH (a client's numbers), and on the
+  host --spawns=x,y;x,y… (a deathmatch's pads) and --score-file=PATH.
+
+
+THE MAP EDITOR (js/editor/ -> godot/scripts/editor/)
+
+  MEWD Editor, in the game: MAP EDITOR on the title (whose "Back to
+  the title" comes back to it), the terminal's E or EDIT, `-- --edit`, or
+  F2 from the game. It is the web build's editor ported feature for
+  feature, on Godot Controls in the web build's look (css/editor.css):
+  the plan (view2d.gd), the 3D view drawn by the game's own MapGeo
+  (view3d.gd), the combined workspace (3D big and the plan inset, Tab
+  swaps them; Split, 2D, 3D), the top bar, the tabs down the left
+  (textures, things, scatter, the map and its problems), the inspector
+  down the right, the status line and info bar; every mode (vertices,
+  lines, sectors, things, props, draw, shape, scatter) in both views;
+  Q for visual mode; the step generator, the scatters, the texture
+  editor (layers of textures and imported images), copy and paste,
+  layers, undo and redo, the keyboard — see the Help menu, and the
+  header of each file. PLAY (F5) hands the document to the game (the
+  map's own textures drawn for it by ed_texcompose.gd into TexBank),
+  and F2 comes back to it. PLAY FROM HERE, at the user's request: with
+  the 3D view on screen you start where its camera stands, looking the
+  way it looks, on the layer you are editing (the START is moved in the
+  copy the game gets, never in the map); with only the plan on screen,
+  or the camera over no room, the START as drawn.
+
+    ed_doc.gd       the document: the web build's JSON (Vector2 vertices
+                    in memory, [x, y] on disk), undo, the tidy after an
+                    edit, problems, layers, texture alignment (doc.js)
+    ed_ops.gd       the edits on it (editor.js's document helpers)
+    editor.gd       the state, the edits a person makes, files, keyboard
+    ed_ui.gd, ed_panels.gd, ed_style.gd   the bars, panels and look (ui.js)
+    view2d.gd, view3d.gd                  the two views
+    ed_steps.gd, ed_scatter.gd            steps.js, scatter.js
+    ed_texcompose.gd, ed_texeditor.gd     texcompose.js, texeditor.js
+    ed_script.gd    a script of edits, for the tests and --edit-ops
+
+  FILES are the web build's own: File > Open… and Save as file… (any
+  path on the desktop; the file dialog), Ctrl+S into user://mewd-editor/
+  maps/, and an autosave (user://mewd-editor/autosave.gssmap.json) the
+  editor opens on; its grid, snap and left panel are remembered in
+  user://mewd-editor/prefs.json. A map saved by either editor opens in
+  the other. File > Open demo: a new MAZE, THE SPRAWL, a new JESSE,
+  THE GRID, THE ANNEXE (a map in two storeys). The compile runs in a
+  thread, on a copy, so a big map never holds the mouse.
+
+  A map in LAYERS is edited in full (each layer's plan, the others
+  ghosted, rooms standing on the layer under), saved in full, and BUILT
+  in full — every storey in the 3D view and in the game, room over room
+  (see THE LEVEL); each layer's problems are listed with its number.
+  The 3D view's picking is of the layer being edited.
+
+  DOORS (the Godot build's own; not in the web build). Doors mode (O):
+  click a wall, in the plan or in 3D, and a door goes in there — the
+  line cut to a piece the tool's width round the click (its edges on
+  the grid with snap on), that piece an opening with a door in it (a
+  building's outside wall gets its passage through the thick wall too)
+  — and the next click puts in another, as the panel on top of the
+  inspector sets it: width, height, swinging or sliding, opening by
+  itself or only on the use key, its texture. Shift+click takes a door
+  out. A line's inspector has its Door (height, how it opens, by
+  itself, locked, texture, No door) or "Door here". A door is a line
+  override `door` {h, tex, style, auto, locked, lintelTex} next to
+  `opening`; DocCompile builds a Level.Door on the level lines along it
+  (standing on the higher floor either side, never higher than the
+  lower ceiling, a lintel over it to that ceiling, swinging into the
+  roofed room); Level stops movers, rays and eyes at it while it is
+  shut, and at its lintel always; game/doors.gd opens it as anybody
+  walking comes near (auto) or on the use key (F, touch USE) from a
+  player facing it, keeps it open while anybody is in its way, shuts it
+  three seconds after, and swings it a quarter turn on its hinge or
+  slides it into the wall. It all runs in the tic, the same on every
+  machine of a match. The editor's 3D view draws the doors shut. THE
+  ANNEXE has one of each.
+
+  THE TROOPS FIND THE WAY (game/nav.gd; the Godot build's own). Doom's
+  chase is on the plan — straight at you, round what is in the way — and
+  never finds a stair or a door. Nav makes the level a graph: a node for
+  each storey of each sector a trooper can stand in, a way across each
+  two-sided line it can walk over (tall enough, a step up at most, a
+  drop of 96 down at most, not walled at that height, no locked or low
+  door). A trooper whose target is in another room plans the way there
+  (A*, each room costed from where it was entered), again every two
+  seconds or when the target changes room, and chases the next point on
+  it — just over the next line — aiming again each step; in the target's
+  own room it chases as Doom does. Doors open as it comes (auto doors
+  open for anybody walking), and steps are steps: up the stairs to the
+  terrace, through the shop's door, into the office by both.
+
+  LOOP SELECT (the Godot editor's own; not in the web build): in Lines
+  mode double-click or Alt+click a line, or Alt+click a wall in 3D, or
+  a sector's "Select its walls" — every wall of the room on that side
+  (its outline and the rooms drawn inside it), on the side facing it.
+  A texture clicked in the browser then goes on all of them (the
+  walls, and the tops and bottoms of its openings), and the inspector
+  sets each part alone: walls, tops, bottoms, middles. Shift adds
+  another room's loop.
+
+  NOT PORTED: the web's "Export Godot scene…" (this is Godot); a pen's
+  eraser end; the texture pack's animation in the 3D view (the port's
+  game does not animate them either).
+
+
+THE IRISH POTATO CANNON (game/potatoes.gd; the Godot build's own)
+
+  Slot 8, at the user's request: "it will shoot potatoes that bounce
+  around until they hit something, with a thick rainbow particle trail.
+  when they hit something the explosion will be a spectacular color
+  cycling nuke equivalent". The model is the user's
+  (assets/models/potato_cannon.glb — its textures brought down to 512 on
+  the long side, 24 MB to 1.6, and the barrel's knotwork UVs, which the
+  file had collapsed to streaks, laid round it again), held the way the
+  file draws it — the sight at the back by the eye, the hopper of
+  potatoes (its glass kept glass) out front — its little screen
+  a THERMAL SIGHT in night-vision green (ThermalScope with `green`: the
+  launcher's heat picture run up a green ramp, a plain cross with lob
+  ticks, the range in metres, six potato pips, the zoom; Z raises the
+  gun so the screen is straight ahead, the hold solved from where the
+  screen is in the model), and every
+  other part in its OWN material — chrome, gold, red lacquer, the
+  knotwork's normal maps, the shamrock decal — lit by a rig of its own
+  (weapon3d "pbr": a key, a fill, a made-up sky for the metal to
+  reflect) instead of the flat gun shader the other guns wear. A potato
+  leaves down the sight, lofted, falls, and BOUNCES off walls, floors
+  and ceilings until it touches somebody — or its eight-second fuse
+  runs out, or it rolls to a stop; the shooter is safe from it for the
+  first few tics. Behind it a thick trail of added light, a hue on each
+  puff. The warhead: a nuke's worth of blast and fire, a white flash,
+  and a fireball, a climbing column, a cap and a ring of shock, every
+  colour and cycling (shaders/nuke.gdshader), a storm of rainbow sparks
+  and the heaviest shake in the game. While a potato is in the air the
+  palette gives way by half, and while a nuke burns all but completely
+  (Lofi.set_unsnap), so the rainbow reaches the glass as a rainbow. Six
+  in the hopper, one back every two seconds. godot/tests/potato_shot.gd
+  takes its pictures; the weapons test fires it.
+
+THE MAIN MENU FIRST (at the user's request): the game opens on the MEWD
+title, not on the web build's terminal (`-- --terminal` still opens
+that), and the editor's "Back" and a failed join come back to it. At
+the bottom of the menu, DOWNLOAD ZIP: GitHub's zip of the main branch,
+the whole thing (Title.ZIP_URL).
+
+THE WEB BUILD (the site)
+
+  The GitHub Pages site is this, exported for the web: Godot 4.3's Web
+  export (export_presets.cfg, "Web"), the Compatibility renderer on
+  WebGL 2, and no threads — GitHub Pages cannot send the headers a
+  browser wants before it lends a page threads, so the export is the
+  no-threads one, and the editor compiles in place instead of on its
+  thread when OS.has_feature("threads") says there are none.
+  tools/build-web.sh [outdir] makes it (Godot 4.3 on the path and its
+  web export template installed); the publish job in
+  .github/workflows/pages.yml fetches both (the template kept in the
+  Actions cache), exports it to the root of the site, and puts the web
+  build in js/ (tools/build-site.sh) under classic/. Hosting a match
+  needs a machine (--server); a page can JOIN one over WebSocket.
+
+TESTS
+
+    tools/godot-test.sh
+
+  runs the headless suites: the weapons against real people in the
+  maze (godot/tests/weapons_test.gd — minigun, flamer, extinguisher,
+  bore, launcher, arc), the fire grid, the forest, and the JESSE
+  generator, and THE SPRAWL and the grid against the web build's counts,
+  and network play (godot/tests/net_test.gd: the TicCmd bytes against
+  js/net/ticcmd.js's — node godot/tests/net_js.mjs prints them — a match
+  over loopback pipes with prediction, a kill through the rewind and a
+  respawn, and a headless --server with two headless --join clients
+  fragging each other on a real socket), and MEWD Editor: its edits
+  and its files against the web build's editor (godot/tests/
+  editor_test.gd runs the script godot/tests/editor_ops.json — shapes,
+  splits, linedefs closing into sectors, stairs, rings, merges,
+  alignment, drags, scatters, paste, undo, layers — and holds every
+  checkpoint's document, problems, selection and build to the one
+  js/editor/editor.js made from the same script, godot/tests/
+  editor_ref.json, written by `node godot/tests/editor_js.mjs`; then
+  the web build's files open and save back the same, textures,
+  bake and layers), and the editor driven by input events
+  (godot/tests/editor_ui_test.gd: drags, clicks, keys, the inspector's
+  fields, the 3D view's picking, visual mode, PLAY into the game and F2
+  back), and ROOM OVER ROOM (godot/tests/layers_test.gd on THE ANNEXE:
+  the compile's columns, walls and doors a storey at a time; walking up
+  the step generator's stairs onto the terrace, round it, into the
+  office, the walls up there, off the edge and down; under the deck,
+  its walls, a jump into it; a round from under stopping in the deck
+  while the shopper over it lives, one over the edge from the yard
+  finding them; sight blocked by the slab; an actor on each storey
+  staying on it, frightened or not; fire on the terrace not coming
+  down, fire under it not going up; and over a loopback network the
+  snapshot's height and the client's bodies on the right storey). The
+  editor's test holds its map in layers to the web build's build of it.
+  A shell with xvfb can also render pictures with --shot.
+
+  CROSS-PLAY, by hand (needs node, and Playwright for the second):
+
+    node godot/tests/net_cross.mjs node-host    Godot clients on the Node host
+    PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \
+    PLAYWRIGHT_MODULE=$(npm root -g)/playwright/index.mjs \
+    node godot/tests/net_cross.mjs godot-host   a web page on the Godot host
+
+
+WHAT IS NOT PORTED YET
+
+  - Of the map compiler: the storeys and slopes of a SECTOR (its own
+    `storeys` and `floorSlope` — off in the web build too, FEATURES in
+    js/editor/doc.js; a map in LAYERS is the way to build upstairs, and
+    is built); fog FOLLOWED along the line of sight from sector
+    to sector (a surface here is fogged by its own sector's over the
+    whole distance), and a sector's thing colour and fog on sprites and
+    plants.
+  - Small picture differences left after the lighting pass: sprites
+    and the sky get the map's default fog, not the fog of the sectors
+    along the line of sight; the web's smoke on world surfaces; the
+    grid sky's palette snap order; JESSE's lamp-post colour and red
+    barrels; a few extra rooftop conifers in THE SPRAWL.
+  - Of MEWD Editor: see THE MAP EDITOR above — the Godot-scene export.
+  - Of room over room: the web build's decks and outside walls have no
+    thickness and these always do (not a port, a change); the crowd's
+    scare and the rain's spawning ask the plan; a match's spawn pads are
+    on the ground.
+  - Of network play: the Node host's serving of the web build's files
+    on its own port (the Godot host is a socket and nothing else; serve
+    the page from anywhere), the `use` key in the command (the Godot
+    player has no use yet), and the web page's saved player name (a
+    Godot client is --name=NAME or a random PLAYER nnn).
+
+NOT TO BE PORTED (the user's decision): the VTOL gunship, breaches and
+ruins, and rebuilding the geometry of charred sectors.

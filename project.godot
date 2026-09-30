@@ -1,0 +1,135 @@
+; MEWD, the Godot 4 port. The project is the repository's root so the
+; game's own assets/ are res://assets/ without a copy; the web build's
+; folders (js/, vendor/, tools/, css/, art/) carry a .gdignore.
+
+config_version=5
+
+[application]
+
+config/name="MEWD"
+config/description="MEWD — Made Entirely Without Doom"
+run/main_scene="res://godot/scenes/main.tscn"
+config/features=PackedStringArray("4.3", "GL Compatibility")
+config/icon="res://icon.png"
+boot_splash/bg_color=Color(0.043, 0.075, 0.078, 1)
+boot_splash/image="res://godot/data/splash.png"
+boot_splash/fullsize=false
+boot_splash/use_filter=true
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[rendering]
+
+; the same renderer everywhere, the web build's: everything is drawn
+; unlit, so Forward+'s clustered lights and sky radiance buy nothing
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/default_filters/use_nearest_mipmap_filter=true
+textures/default_filters/anisotropic_filtering_level=0
+
+textures/canvas_textures/default_texture_filter=0
+anti_aliasing/quality/msaa_3d=0
+
+[shader_globals]
+
+sky_light={
+"type": "float",
+"value": 0.85
+}
+global_light={
+"type": "float",
+"value": 1.0
+}
+light_falloff={
+"type": "float",
+"value": 1400.0
+}
+min_light={
+"type": "float",
+"value": 0.12
+}
+air_near={
+"type": "float",
+"value": 1200.0
+}
+air_far={
+"type": "float",
+"value": 14000.0
+}
+air_color={
+"type": "color",
+"value": Color(0.55, 0.62, 0.72, 1)
+}
+light_color={
+"type": "color",
+"value": Color(1, 1, 1, 1)
+}
+beam_level={
+"type": "float",
+"value": 0.0
+}
+beam_pos={
+"type": "vec3",
+"value": Vector3(0, -10000, 0)
+}
+beam_dir={
+"type": "vec3",
+"value": Vector3(0, 0, 1)
+}
+beam_len={
+"type": "float",
+"value": 0.0
+}
+beam_range={
+"type": "float",
+"value": 700.0
+}
+beam_seed={
+"type": "float",
+"value": 0.0
+}
+beam_color={
+"type": "color",
+"value": Color(0.62, 1, 0.78, 1)
+}
+thermal_view={
+"type": "vec2",
+"value": Vector2(0, 0)
+}
+thermal_fire={
+"type": "vec4",
+"value": Vector4(0, -10000, 0, 0)
+}
+thermal_fire_range={
+"type": "float",
+"value": 420.0
+}
+thermal_raw={
+"type": "float",
+"value": 0.0
+}
+ambient_light={
+"type": "color",
+"value": Color(0, 0, 0, 1)
+}
+map_fog={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+map_fog_ambient={
+"type": "float",
+"value": 1.0
+}
+air_sky={
+"type": "sampler2D",
+"value": ""
+}
+air_sky_on={
+"type": "float",
+"value": 0.0
+}
